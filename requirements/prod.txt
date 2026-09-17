@@ -1,0 +1,5 @@
+-r base.txt
+
+# Ajoutés lors de la phase Déploiement (ADR-002, architecture.md §10) :
+# psycopg[binary]>=3.2
+# gunicorn>=23
