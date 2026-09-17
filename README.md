@@ -23,7 +23,7 @@ python manage.py runserver
 ## Avancement (phases CDC §5)
 
 - [x] Étape 0 — Squelette Django (settings, apps vides core/accounts/audit)
-- [ ] Étape 1 — Fondations (BaseModel, User + rôles, AuditLog)
+- [x] Étape 1 — Fondations (BaseModel, User + rôles, AuditLog)
 - [ ] Étape 2 — Référentiels (hr, drivers, customers, fleet)
 - [ ] Étape 3 — Exploitation (missions, fuel, garage, inventory)
 - [ ] Étape 4 — Finance (billing, finance)
