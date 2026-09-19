@@ -20,3 +20,11 @@ class OrCloture(StockError):
 
 class MotifRequis(StockError):
     """Un ajustement d'inventaire doit être justifié."""
+
+
+class ArticleInvalide(StockError):
+    """Référence ou désignation vide, seuil négatif."""
+
+
+class DoublonArticle(StockError):
+    """Référence déjà utilisée par un autre article."""

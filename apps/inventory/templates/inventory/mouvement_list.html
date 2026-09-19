@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% load humanize ui %}
+{% block titre %}Journal des mouvements{% endblock %}
+{% block entete %}Stock{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-7xl">
+  <nav aria-label="Fil d'Ariane" class="text-sm text-slate-600">
+    <a href="{% url 'inventory:articles' %}" class="underline-offset-2 hover:underline">Stock</a>
+    <span aria-hidden="true">/</span> Journal des mouvements
+  </nav>
+  <h1 class="mt-2 text-2xl font-bold text-slate-900">Journal des mouvements</h1>
+  <p class="mt-1 text-sm text-slate-600">
+    {{ paginator.count|default:0 }} mouvement{{ paginator.count|pluralize }} · le journal est immuable : une erreur se corrige par un ajustement.
+  </p>
+
+  <form method="get" class="mt-5 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div class="min-w-[14rem] flex-1">
+      <label for="q" class="block text-sm font-medium text-slate-800">Rechercher</label>
+      <input type="search" id="q" name="q" value="{{ recherche }}" placeholder="Article, n° d'OR, motif…"
+             class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-marque-600 focus:outline-none focus:ring-2 focus:ring-marque-600/30">
+    </div>
+    <div>
+      <label for="type" class="block text-sm font-medium text-slate-800">Type</label>
+      <select id="type" name="type" class="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-marque-600 focus:outline-none focus:ring-2 focus:ring-marque-600/30">
+        <option value="">Tous</option>
+        {% for code, libelle in types %}<option value="{{ code }}" {% if code == type_choisi %}selected{% endif %}>{{ libelle }}</option>{% endfor %}
+      </select>
+    </div>
+    <button type="submit" class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2">Filtrer</button>
+    {% if recherche or type_choisi %}
+      <a href="{% url 'inventory:mouvements' %}" class="px-2 py-2 text-sm font-medium text-slate-700 underline hover:text-slate-900">Réinitialiser</a>
+    {% endif %}
+  </form>
+
+  {% if mouvements %}
+    <div class="mt-5 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+      <table class="min-w-full divide-y divide-slate-200 text-sm">
+        <caption class="sr-only">Journal des mouvements de stock</caption>
+        <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+          <tr>
+            <th scope="col" class="px-4 py-3">Date</th>
+            <th scope="col" class="px-4 py-3">Article</th>
+            <th scope="col" class="px-4 py-3">Type</th>
+            <th scope="col" class="px-4 py-3 text-right">Variation</th>
+            <th scope="col" class="px-4 py-3 text-right">Stock après</th>
+            <th scope="col" class="px-4 py-3 text-right">Prix unit.</th>
+            <th scope="col" class="px-4 py-3">Détail</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          {% for m in mouvements %}
+            <tr class="hover:bg-slate-50">
+              <td class="whitespace-nowrap px-4 py-3 text-slate-700">{{ m.date_mouvement|date:"d/m/Y H:i" }}</td>
+              <td class="px-4 py-3"><a href="{% url 'inventory:article_detail' m.article.pk %}" class="font-semibold text-marque-700 underline-offset-2 hover:underline">{{ m.article.reference }}</a> <span class="text-slate-700">{{ m.article.designation }}</span></td>
+              <td class="whitespace-nowrap px-4 py-3">{% badge m.type_mouvement m.get_type_mouvement_display %}</td>
+              <td class="whitespace-nowrap px-4 py-3 text-right font-medium {% if m.variation > 0 %}text-emerald-800{% else %}text-slate-900{% endif %}">{{ m.variation|stringformat:"+d" }}</td>
+              <td class="whitespace-nowrap px-4 py-3 text-right text-slate-700">{{ m.quantite_apres }}</td>
+              <td class="whitespace-nowrap px-4 py-3 text-right text-slate-700">{{ m.prix_unitaire|floatformat:0|intcomma }}</td>
+              <td class="px-4 py-3 text-slate-700">
+                {% if m.ordre_reparation %}<a href="{% url 'garage:detail' m.ordre_reparation.pk %}" class="font-medium text-marque-700 underline-offset-2 hover:underline">{{ m.ordre_reparation.numero }}</a>{% endif %}
+                {% if m.motif %}{{ m.motif }}{% endif %}
+                {% if m.acteur %}<span class="text-xs text-slate-500">· {{ m.acteur.get_full_name|default:m.acteur.username }}</span>{% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% include "components/_pagination.html" %}
+  {% else %}
+    <div class="mt-5 rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center">
+      <p class="font-semibold text-slate-900">Aucun mouvement trouvé</p>
+      <p class="mt-1 text-sm text-slate-600">{% if recherche or type_choisi %}Aucun résultat pour ces critères.{% else %}Les entrées, sorties et ajustements apparaîtront ici.{% endif %}</p>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block titre %}{{ titre }}{% endblock %}
+{% block entete %}Stock{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-3xl">
+  <nav aria-label="Fil d'Ariane" class="text-sm text-slate-600">
+    <a href="{% url 'inventory:articles' %}" class="underline-offset-2 hover:underline">Stock</a>
+    {% if article %}<span aria-hidden="true">/</span> <a href="{% url 'inventory:article_detail' article.pk %}" class="underline-offset-2 hover:underline">{{ article.reference }}</a>{% endif %}
+    <span aria-hidden="true">/</span> {% if article %}Modifier{% else %}Nouvel article{% endif %}
+  </nav>
+  <h1 class="mt-2 text-2xl font-bold text-slate-900">{{ titre }}</h1>
+  <p class="mt-1 text-sm text-slate-600">
+    {% if article %}La référence, la quantité et le PUMP ne se modifient pas ici : ils viennent de l'identité de l'article et des mouvements de stock.
+    {% else %}L'article est créé avec un stock à 0 ; enregistrez ensuite une entrée d'achat pour l'alimenter.{% endif %}
+  </p>
+
+  <form method="post" novalidate class="mt-6 space-y-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+      <div role="alert" class="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">
+        {% for erreur in form.non_field_errors %}<p>{{ erreur }}</p>{% endfor %}
+      </div>
+    {% endif %}
+    <div class="grid gap-5 sm:grid-cols-2">
+      {% if form.reference %}{% include "components/_champ.html" with champ=form.reference %}{% endif %}
+      <div class="{% if not form.reference %}sm:col-span-2{% endif %}">{% include "components/_champ.html" with champ=form.designation %}</div>
+      {% include "components/_champ.html" with champ=form.categorie %}
+      {% include "components/_champ.html" with champ=form.emplacement %}
+      <div class="sm:col-span-2">{% include "components/_champ.html" with champ=form.seuil_minimal %}</div>
+    </div>
+    <div class="flex items-center justify-end gap-3 border-t border-slate-100 pt-5">
+      <a href="{% if article %}{% url 'inventory:article_detail' article.pk %}{% else %}{% url 'inventory:articles' %}{% endif %}" class="rounded-lg px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Annuler</a>
+      <button type="submit" class="rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">{{ bouton }}</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

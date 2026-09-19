@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% load humanize ui %}
+{% block titre %}Stock{% endblock %}
+{% block entete %}Stock{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-7xl">
+  <div class="flex flex-wrap items-end justify-between gap-3">
+    <div>
+      <h1 class="text-2xl font-bold text-slate-900">Stock de pièces détachées</h1>
+      <p class="mt-1 text-sm text-slate-600">{{ paginator.count|default:0 }} article{{ paginator.count|pluralize }}</p>
+    </div>
+    <div class="flex flex-wrap gap-3">
+      <a href="{% url 'inventory:mouvements' %}"
+         class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+        <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> Journal des mouvements
+      </a>
+      {% if peut_modifier %}
+        <a href="{% url 'inventory:article_creer' %}"
+           class="inline-flex items-center gap-2 rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">
+          <i class="fa-solid fa-plus" aria-hidden="true"></i> Nouvel article
+        </a>
+      {% endif %}
+    </div>
+  </div>
+
+  <dl class="mt-5 grid gap-4 sm:grid-cols-2">
+    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <dt class="text-sm text-slate-600">Valeur du stock (au PUMP)</dt>
+      <dd class="mt-1 text-2xl font-bold text-slate-900">{{ valeur_totale|floatformat:0|intcomma }} FCFA</dd>
+    </div>
+    <div class="rounded-xl border p-4 shadow-sm {% if nombre_sous_seuil %}border-amber-300 bg-amber-50{% else %}border-slate-200 bg-white{% endif %}">
+      <dt class="text-sm {% if nombre_sous_seuil %}text-amber-900{% else %}text-slate-600{% endif %}">Articles à réapprovisionner</dt>
+      <dd class="mt-1 flex items-center gap-3 text-2xl font-bold text-slate-900">
+        {{ nombre_sous_seuil }}
+        {% if nombre_sous_seuil %}<a href="?alerte=1" class="text-sm font-medium text-marque-700 underline-offset-2 hover:underline">Voir la liste</a>{% endif %}
+      </dd>
+    </div>
+  </dl>
+
+  <form method="get" class="mt-5 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div class="min-w-[14rem] flex-1">
+      <label for="q" class="block text-sm font-medium text-slate-800">Rechercher</label>
+      <input type="search" id="q" name="q" value="{{ recherche }}" placeholder="Référence, désignation, emplacement…"
+             class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-marque-600 focus:outline-none focus:ring-2 focus:ring-marque-600/30">
+    </div>
+    <div>
+      <label for="categorie" class="block text-sm font-medium text-slate-800">Catégorie</label>
+      <select id="categorie" name="categorie" class="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-marque-600 focus:outline-none focus:ring-2 focus:ring-marque-600/30">
+        <option value="">Toutes</option>
+        {% for c in categories %}<option value="{{ c }}" {% if c == categorie_choisie %}selected{% endif %}>{{ c }}</option>{% endfor %}
+      </select>
+    </div>
+    <label class="flex items-center gap-2 pb-2 text-sm font-medium text-slate-800">
+      <input type="checkbox" name="alerte" value="1" {% if alerte %}checked{% endif %}
+             class="h-4 w-4 rounded border-slate-400 text-marque-700 focus:ring-marque-600">
+      Sous le seuil
+    </label>
+    <button type="submit" class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2">Filtrer</button>
+    {% if recherche or categorie_choisie or alerte %}
+      <a href="{% url 'inventory:articles' %}" class="px-2 py-2 text-sm font-medium text-slate-700 underline hover:text-slate-900">Réinitialiser</a>
+    {% endif %}
+  </form>
+
+  {% if articles %}
+    <div class="mt-5 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+      <table class="min-w-full divide-y divide-slate-200 text-sm">
+        <caption class="sr-only">Liste des articles en stock</caption>
+        <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+          <tr>
+            <th scope="col" class="px-4 py-3">Référence</th>
+            <th scope="col" class="px-4 py-3">Désignation</th>
+            <th scope="col" class="hidden px-4 py-3 xl:table-cell">Catégorie</th>
+            <th scope="col" class="hidden px-4 py-3 2xl:table-cell">Emplacement</th>
+            <th scope="col" class="px-4 py-3 text-right">Quantité</th>
+            <th scope="col" class="px-4 py-3 text-right">Seuil</th>
+            <th scope="col" class="px-4 py-3 text-right">PUMP</th>
+            <th scope="col" class="px-4 py-3 text-right">Valeur</th>
+            <th scope="col" class="px-4 py-3">Alerte</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          {% for article in articles %}
+            <tr class="hover:bg-slate-50">
+              <td class="whitespace-nowrap px-4 py-3 font-semibold">
+                <a href="{% url 'inventory:article_detail' article.pk %}" class="text-marque-700 underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">{{ article.reference }}</a>
+              </td>
+              <td class="px-4 py-3 text-slate-800">{{ article.designation }}</td>
+              <td class="hidden whitespace-nowrap px-4 py-3 text-slate-700 xl:table-cell">{{ article.categorie|default:"—" }}</td>
+              <td class="hidden whitespace-nowrap px-4 py-3 text-slate-700 2xl:table-cell">{{ article.emplacement|default:"—" }}</td>
+              <td class="whitespace-nowrap px-4 py-3 text-right font-medium text-slate-900">{{ article.quantite }}</td>
+              <td class="whitespace-nowrap px-4 py-3 text-right text-slate-700">{% if article.seuil_minimal %}{{ article.seuil_minimal }}{% else %}—{% endif %}</td>
+              <td class="whitespace-nowrap px-4 py-3 text-right text-slate-700">{{ article.pump|floatformat:0|intcomma }}</td>
+              <td class="whitespace-nowrap px-4 py-3 text-right text-slate-800">{{ article.valeur_stock|floatformat:0|intcomma }}</td>
+              <td class="whitespace-nowrap px-4 py-3">
+                {% if article.sous_seuil %}
+                  {% if article.quantite == 0 %}{% badge "RUPTURE" "Rupture" %}{% else %}{% badge "STOCK_BAS" "Stock bas" %}{% endif %}
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% include "components/_pagination.html" %}
+  {% else %}
+    <div class="mt-5 rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center">
+      <span class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-600">
+        <i class="fa-solid fa-boxes-stacked" aria-hidden="true"></i>
+      </span>
+      <p class="mt-3 font-semibold text-slate-900">Aucun article trouvé</p>
+      <p class="mt-1 text-sm text-slate-600">
+        {% if recherche or categorie_choisie or alerte %}Aucun résultat pour ces critères.{% else %}Les articles du magasin apparaîtront ici.{% endif %}
+      </p>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

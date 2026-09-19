@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% load humanize ui %}
+{% block titre %}{{ article.reference }}{% endblock %}
+{% block entete %}Stock{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-5xl">
+  <nav aria-label="Fil d'Ariane" class="text-sm text-slate-600">
+    <a href="{% url 'inventory:articles' %}" class="underline-offset-2 hover:underline">Stock</a>
+    <span aria-hidden="true">/</span> {{ article.reference }}
+  </nav>
+
+  <div class="mt-2 flex flex-wrap items-center justify-between gap-3">
+    <div class="flex flex-wrap items-center gap-3">
+      <h1 class="text-2xl font-bold text-slate-900">{{ article.reference }}</h1>
+      {% if article.sous_seuil %}
+        {% if article.quantite == 0 %}{% badge "RUPTURE" "Rupture" %}{% else %}{% badge "STOCK_BAS" "Stock bas" %}{% endif %}
+      {% endif %}
+    </div>
+    {% if peut_modifier %}
+      <a href="{% url 'inventory:article_modifier' article.pk %}"
+         class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+        <i class="fa-solid fa-pen" aria-hidden="true"></i> Modifier
+      </a>
+    {% endif %}
+  </div>
+  <p class="mt-1 text-sm text-slate-600">{{ article.designation }}</p>
+
+  <dl class="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">En stock</dt><dd class="mt-1 text-2xl font-bold text-slate-900">{{ article.quantite }}</dd></div>
+    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Seuil minimal</dt><dd class="mt-1 text-2xl font-bold text-slate-900">{% if article.seuil_minimal %}{{ article.seuil_minimal }}{% else %}<span class="text-base font-medium text-slate-600">Aucun</span>{% endif %}</dd></div>
+    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">PUMP</dt><dd class="mt-1 text-2xl font-bold text-slate-900">{{ article.pump|floatformat:0|intcomma }} <span class="text-sm font-medium text-slate-600">FCFA</span></dd></div>
+    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Valeur</dt><dd class="mt-1 text-2xl font-bold text-slate-900">{{ article.valeur_stock|floatformat:0|intcomma }} <span class="text-sm font-medium text-slate-600">FCFA</span></dd></div>
+  </dl>
+
+  <div class="mt-6 grid gap-6 xl:grid-cols-3">
+    <div class="space-y-6 xl:col-span-2">
+      <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-fiche">
+        <h2 id="titre-fiche" class="text-base font-semibold text-slate-900">Fiche</h2>
+        <dl class="mt-4 grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
+          <div><dt class="text-slate-600">Catégorie</dt><dd class="mt-0.5 font-medium text-slate-900">{{ article.categorie|default:"—" }}</dd></div>
+          <div><dt class="text-slate-600">Emplacement</dt><dd class="mt-0.5 font-medium text-slate-900">{{ article.emplacement|default:"—" }}</dd></div>
+        </dl>
+      </section>
+
+      <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-journal">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <h2 id="titre-journal" class="text-base font-semibold text-slate-900">Derniers mouvements</h2>
+          <a href="{% url 'inventory:mouvements' %}?q={{ article.reference|urlencode }}" class="text-sm font-medium text-marque-700 underline-offset-2 hover:underline">Tout le journal</a>
+        </div>
+        {% if mouvements %}
+          <div class="mt-4 overflow-x-auto">
+            <table class="min-w-full divide-y divide-slate-200 text-sm">
+              <caption class="sr-only">Derniers mouvements de l'article</caption>
+              <thead class="text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+                <tr>
+                  <th scope="col" class="py-2 pr-4">Date</th>
+                  <th scope="col" class="px-4 py-2">Type</th>
+                  <th scope="col" class="px-4 py-2 text-right">Variation</th>
+                  <th scope="col" class="px-4 py-2 text-right">Stock après</th>
+                  <th scope="col" class="px-4 py-2">Détail</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100">
+                {% for m in mouvements %}
+                  <tr>
+                    <td class="whitespace-nowrap py-2 pr-4 text-slate-700">{{ m.date_mouvement|date:"d/m/Y H:i" }}</td>
+                    <td class="whitespace-nowrap px-4 py-2">{% badge m.type_mouvement m.get_type_mouvement_display %}</td>
+                    <td class="whitespace-nowrap px-4 py-2 text-right font-medium {% if m.variation > 0 %}text-emerald-800{% else %}text-slate-900{% endif %}">{{ m.variation|stringformat:"+d" }}</td>
+                    <td class="whitespace-nowrap px-4 py-2 text-right text-slate-700">{{ m.quantite_apres }}</td>
+                    <td class="px-4 py-2 text-slate-700">
+                      {% if m.ordre_reparation %}<a href="{% url 'garage:detail' m.ordre_reparation.pk %}" class="font-medium text-marque-700 underline-offset-2 hover:underline">{{ m.ordre_reparation.numero }}</a>{% endif %}
+                      {% if m.motif %}{{ m.motif }}{% endif %}
+                      {% if m.type_mouvement == "ENTREE" %}achat à {{ m.prix_unitaire|floatformat:0|intcomma }} FCFA{% endif %}
+                      {% if m.acteur %}<span class="text-xs text-slate-500">· {{ m.acteur.get_full_name|default:m.acteur.username }}</span>{% endif %}
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <p class="mt-3 text-sm text-slate-700">Aucun mouvement pour cet article. Enregistrez une entrée d'achat pour alimenter le stock.</p>
+        {% endif %}
+      </section>
+    </div>
+
+    {% if peut_modifier %}
+      <div class="space-y-6">
+        <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-entree">
+          <h2 id="titre-entree" class="text-base font-semibold text-slate-900">Entrée d'achat</h2>
+          <p class="mt-1 text-xs text-slate-600">Le prix moyen pondéré (PUMP) est recalculé avec ce prix d'achat.</p>
+          <form method="post" action="{% url 'inventory:entree' article.pk %}" class="mt-4 space-y-4">
+            {% csrf_token %}
+            {% include "components/_champ.html" with champ=form_entree.quantite %}
+            {% include "components/_champ.html" with champ=form_entree.prix_unitaire %}
+            <button type="submit" class="w-full rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">Enregistrer l'entrée</button>
+          </form>
+        </section>
+
+        <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-ajustement">
+          <h2 id="titre-ajustement" class="text-base font-semibold text-slate-900">Ajustement d'inventaire</h2>
+          <p class="mt-1 text-xs text-slate-600">Corrige le stock après comptage. Le PUMP ne change pas.</p>
+          <form method="post" action="{% url 'inventory:ajustement' article.pk %}" class="mt-4 space-y-4"
+                onsubmit="return confirm('Enregistrer cet ajustement de stock ? Il sera tracé dans le journal.');">
+            {% csrf_token %}
+            {% include "components/_champ.html" with champ=form_ajustement.variation %}
+            {% include "components/_champ.html" with champ=form_ajustement.motif %}
+            <button type="submit" class="w-full rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2">Enregistrer l'ajustement</button>
+          </form>
+        </section>
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

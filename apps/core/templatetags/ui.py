@@ -46,6 +46,12 @@ COULEURS_STATUT = {
     # ordres de réparation
     "OUVERT": "ambre",
     "CLOTURE": "gris",
+    # stock
+    "STOCK_BAS": "ambre",
+    "RUPTURE": "rouge",
+    "ENTREE": "vert",
+    "SORTIE": "bleu",
+    "AJUSTEMENT": "ambre",
 }
 
 

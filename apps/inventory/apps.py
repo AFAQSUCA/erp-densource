@@ -7,8 +7,14 @@ class InventoryConfig(AppConfig):
     label = 'inventory'
 
     def ready(self):
+        from apps.accounts.navigation import EntreeMenu, enregistrer
         from apps.garage.sections import DETAIL_OR
 
-        from . import sections
+        from . import permissions, sections
 
         DETAIL_OR.enregistrer(sections.section_pieces)
+        enregistrer(
+            EntreeMenu(
+                "Stock", "inventory:articles", "fa-boxes-stacked", permissions.CONSULTATION, ordre=50
+            )
+        )

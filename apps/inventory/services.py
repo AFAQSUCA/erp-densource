@@ -11,11 +11,13 @@ from __future__ import annotations
 from decimal import ROUND_HALF_UP, Decimal
 
 from django.db import transaction
-from django.db.models import F, QuerySet
+from django.db.models import F, Q, QuerySet
 
 from apps.garage.models import OrdreReparation, StatutOr
 
 from .exceptions import (
+    ArticleInvalide,
+    DoublonArticle,
     MotifRequis,
     OrCloture,
     PrixInvalide,
@@ -76,14 +78,56 @@ def creer_article(
     emplacement: str = "",
     seuil_minimal: int = 0,
 ) -> Article:
-    """Crée un article à stock nul : le stock initial arrive par une entrée."""
+    """Crée un article à stock nul : le stock initial arrive par une entrée.
+
+    La référence est normalisée (majuscules, sans espaces autour) et doit être
+    unique, y compris parmi les articles supprimés logiquement.
+    """
+    reference = reference.strip().upper()
+    _verifier_fiche(reference=reference, designation=designation, seuil_minimal=seuil_minimal)
+    if Article.all_objects.filter(reference=reference).exists():
+        raise DoublonArticle(f"La référence {reference} est déjà utilisée.")
     return Article.objects.create(
         reference=reference,
-        designation=designation,
-        categorie=categorie,
-        emplacement=emplacement,
+        designation=designation.strip(),
+        categorie=categorie.strip(),
+        emplacement=emplacement.strip(),
         seuil_minimal=seuil_minimal,
     )
+
+
+def _verifier_fiche(*, reference: str, designation: str, seuil_minimal: int) -> None:
+    if not reference:
+        raise ArticleInvalide("La référence est obligatoire.")
+    if not designation.strip():
+        raise ArticleInvalide("La désignation est obligatoire.")
+    if seuil_minimal < 0:
+        raise ArticleInvalide("Le seuil minimal ne peut pas être négatif.")
+
+
+@transaction.atomic
+def modifier_article(
+    article: Article,
+    *,
+    designation: str,
+    categorie: str = "",
+    emplacement: str = "",
+    seuil_minimal: int = 0,
+) -> Article:
+    """Met à jour la fiche. Référence, quantité et PUMP ne changent jamais ici :
+    la référence identifie l'article, la quantité et le PUMP viennent des mouvements."""
+    _verifier_fiche(
+        reference=article.reference, designation=designation, seuil_minimal=seuil_minimal
+    )
+    _verrouiller(article)
+    article.designation = designation.strip()
+    article.categorie = categorie.strip()
+    article.emplacement = emplacement.strip()
+    article.seuil_minimal = seuil_minimal
+    article.save(
+        update_fields=["designation", "categorie", "emplacement", "seuil_minimal", "updated_at"]
+    )
+    return article
 
 
 @transaction.atomic
@@ -208,3 +252,67 @@ def sorties_de_l_or(ordre: OrdreReparation) -> QuerySet[MouvementStock]:
         .filter(ordre_reparation=ordre, type_mouvement=TypeMouvement.SORTIE)
         .order_by("date_mouvement", "pk")
     )
+
+
+def rechercher_articles(
+    *, recherche: str = "", categorie: str = "", sous_seuil: bool = False
+) -> QuerySet[Article]:
+    """Articles filtrés par texte (référence, désignation, catégorie, emplacement),
+    catégorie exacte et/ou stock au seuil ou en dessous."""
+    articles = Article.objects.order_by("reference")
+    recherche = recherche.strip()
+    if recherche:
+        articles = articles.filter(
+            Q(reference__icontains=recherche)
+            | Q(designation__icontains=recherche)
+            | Q(categorie__icontains=recherche)
+            | Q(emplacement__icontains=recherche)
+        )
+    if categorie:
+        articles = articles.filter(categorie=categorie)
+    if sous_seuil:
+        articles = articles.filter(pk__in=articles_sous_seuil().values("pk"))
+    return articles
+
+
+def categories_articles() -> list[str]:
+    """Catégories utilisées, sans doublon ni valeur vide, triées."""
+    return sorted(
+        set(Article.objects.exclude(categorie="").values_list("categorie", flat=True))
+    )
+
+
+def valeur_totale_stock() -> Decimal:
+    """Valeur du stock au PUMP. Somme en Python : SQLite passerait par des flottants."""
+    return sum(
+        (quantite * pump for quantite, pump in Article.objects.values_list("quantite", "pump")),
+        Decimal("0"),
+    )
+
+
+def mouvements_queryset() -> QuerySet[MouvementStock]:
+    """Mouvements avec article, OR et acteur chargés (évite les requêtes en boucle)."""
+    return MouvementStock.objects.select_related("article", "ordre_reparation", "acteur")
+
+
+def rechercher_mouvements(
+    *, type_mouvement: str | None = None, recherche: str = ""
+) -> QuerySet[MouvementStock]:
+    """Journal des mouvements filtré par type et texte (article, n° d'OR, motif)."""
+    mouvements = mouvements_queryset()
+    if type_mouvement in TypeMouvement.values:
+        mouvements = mouvements.filter(type_mouvement=type_mouvement)
+    recherche = recherche.strip()
+    if recherche:
+        mouvements = mouvements.filter(
+            Q(article__reference__icontains=recherche)
+            | Q(article__designation__icontains=recherche)
+            | Q(ordre_reparation__numero__icontains=recherche)
+            | Q(motif__icontains=recherche)
+        )
+    return mouvements
+
+
+def mouvements_de_l_article(article: Article, *, limite: int = 20) -> QuerySet[MouvementStock]:
+    """Derniers mouvements d'un article, du plus récent au plus ancien."""
+    return mouvements_queryset().filter(article=article)[:limite]

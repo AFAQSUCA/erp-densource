@@ -28,7 +28,8 @@ python manage.py createsuperuser   # un superutilisateur agit comme ADMIN
 Modules disponibles : connexion / déconnexion, accueil, **missions** (liste, fiche,
 création, cycle de vie complet), **flotte** (camions, fiche, documents réglementaires
 avec alerte à 30 jours), **chauffeurs** (fiche, permis, visite médicale, suspension), **garage** (ordres de
-réparation avec pièces et coût, immobilisation et remise en service des camions). Le menu et les actions dépendent du rôle ; chaque
+réparation avec pièces et coût, immobilisation et remise en service des camions),
+**stock** (articles, valeur au PUMP, entrées d'achat, ajustements, alerte de seuil, journal). Le menu et les actions dépendent du rôle ; chaque
 app déclare ses entrées de menu dans son `AppConfig.ready()`
 (`apps/accounts/navigation.py`).
 
@@ -53,7 +54,8 @@ Identité visuelle : couleurs du logo DEN Source Group (bordeaux `#8B0319`, oran
 - [x] Interface web : flotte (camions, documents réglementaires)
 - [x] Interface web : chauffeurs (fiche, permis, visite médicale, statut)
 - [x] Interface web : garage (OR, pièces utilisées, immobilisation, remise en service)
-- [ ] Interface web : autres modules (carburant, stock, congés, clients)
+- [x] Interface web : stock (articles, entrées, ajustements, journal, alerte de seuil)
+- [ ] Interface web : autres modules (carburant, congés, clients)
 - [ ] Étape 4 — Finance (billing, finance)
 - [ ] Étape 5 — Pilotage (dashboard, notifications)
 - [ ] Étape 6 — API (api/v1, mobile_api)
