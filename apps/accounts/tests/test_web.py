@@ -125,7 +125,7 @@ def test_le_menu_depend_du_role(client):
     assert 'href="/missions/"' in client.get(reverse("home")).content.decode()
 
     autre = Client()
-    _connecte(autre, Role.RH)
+    _connecte(autre, Role.FINANCES)  # aucun écran pour ce rôle pour l'instant
     contenu = autre.get(reverse("home")).content.decode()
     assert 'href="/missions/"' not in contenu
     assert "Aucun écran n" in contenu

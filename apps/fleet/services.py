@@ -11,6 +11,7 @@ from django.db.models import Q, QuerySet
 from django.utils import timezone
 
 from apps.core.constants import DELAI_ALERTE_JOURS
+from apps.core.services import etat_echeance
 
 from apps.drivers.models import Chauffeur
 
@@ -311,17 +312,11 @@ def etat_documents(
     situation = []
     for code, libelle in TypeDocument.choices:
         document = existants.get(code)
-        if document is None:
-            etat, restants = "MANQUANT", None
-        else:
-            restants = document.jours_restants(aujourd_hui)
-            etat = (
-                "EXPIRE"
-                if restants < 0
-                else "A_RENOUVELER"
-                if restants <= jours
-                else "VALIDE"
-            )
+        etat, restants = etat_echeance(
+            document.date_expiration if document else None,
+            aujourd_hui=aujourd_hui,
+            jours=jours,
+        )
         situation.append(
             {
                 "code": code,
