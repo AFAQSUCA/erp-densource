@@ -13,12 +13,18 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from django.db import transaction
-from django.db.models import Sum
+from django.db.models import F, Q, QuerySet, Sum
 from django.utils import timezone
 
-from apps.accounts.models import Role
+from apps.accounts.models import Role, User
 
-from .exceptions import ActionNonAutorisee, CongeError, SoldeInsuffisant, TransitionInterdite
+from .exceptions import (
+    ActionNonAutorisee,
+    CongeError,
+    PersonnelError,
+    SoldeInsuffisant,
+    TransitionInterdite,
+)
 from .models import (
     AttributionConge,
     Conge,
@@ -40,7 +46,57 @@ STATUTS_DECOMPTES = (StatutConge.APPROUVE, StatutConge.EN_COURS, StatutConge.TER
 DIMANCHE = 6
 
 
-# --- recrutement ---
+# --- fiche du personnel et recrutement ---
+
+
+def personnel_queryset() -> QuerySet[Personnel]:
+    return Personnel.objects.select_related("superieur", "utilisateur")
+
+
+def rechercher_personnel(*, departement: str = "", recherche: str = "") -> QuerySet[Personnel]:
+    """Personnel filtré par département et par texte (nom, prénom, matricule, poste)."""
+    resultat = personnel_queryset()
+    if departement:
+        resultat = resultat.filter(departement=departement)
+    recherche = recherche.strip()
+    if recherche:
+        resultat = resultat.filter(
+            Q(nom__icontains=recherche)
+            | Q(prenom__icontains=recherche)
+            | Q(matricule__icontains=recherche)
+            | Q(poste__icontains=recherche)
+        )
+    return resultat
+
+
+def comptes_disponibles(*, garder: Personnel | None = None) -> QuerySet[User]:
+    """Comptes actifs pas encore rattachés à une fiche (et celui de ``garder``)."""
+    filtre = Q(personnel__isnull=True)
+    if garder is not None and garder.utilisateur_id:
+        filtre |= Q(pk=garder.utilisateur_id)
+    return User.objects.filter(filtre, is_active=True).order_by(
+        "last_name", "first_name", "username"
+    )
+
+
+def _verifier_rattachements(personnel: Personnel | None, superieur, utilisateur) -> None:
+    """Le supérieur ne doit pas créer de boucle ; un compte ne sert qu'à une seule fiche."""
+    if superieur is not None and personnel is not None:
+        courant, vus = superieur, set()
+        while courant is not None and courant.pk not in vus:
+            if courant.pk == personnel.pk:
+                raise PersonnelError(
+                    "Ce supérieur dépend déjà de cet employé : "
+                    "la hiérarchie ne peut pas former une boucle."
+                )
+            vus.add(courant.pk)
+            courant = courant.superieur
+    if utilisateur is not None:
+        deja = Personnel.all_objects.filter(utilisateur=utilisateur)
+        if personnel is not None:
+            deja = deja.exclude(pk=personnel.pk)
+        if deja.exists():
+            raise PersonnelError("Ce compte utilisateur est déjà rattaché à une autre fiche.")
 
 
 @transaction.atomic
@@ -55,12 +111,17 @@ def recruter(
     date_embauche: date,
     salaire_base: Decimal,
     superieur: Personnel | None = None,
+    utilisateur: User | None = None,
 ) -> Personnel:
     """Enregistre un recrutement (cahier-des-charges.md:209-210).
 
     Si le poste est « Chauffeur », la fiche chauffeur est créée par le signal
-    de ``drivers`` (cahier-des-charges.md:108).
+    de ``drivers`` (cahier-des-charges.md:108). Le matricule reste réservé même
+    après suppression logique (cahier-des-charges.md:107).
     """
+    if Personnel.all_objects.filter(matricule=matricule).exists():
+        raise PersonnelError(f"Le matricule {matricule} est déjà attribué.")
+    _verifier_rattachements(None, superieur, utilisateur)
     return Personnel.objects.create(
         matricule=matricule,
         nom=nom,
@@ -71,7 +132,33 @@ def recruter(
         date_embauche=date_embauche,
         salaire_base=salaire_base,
         superieur=superieur,
+        utilisateur=utilisateur,
     )
+
+
+@transaction.atomic
+def modifier_personnel(
+    personnel: Personnel,
+    *,
+    nom: str,
+    prenom: str,
+    poste: str,
+    departement: str,
+    type_contrat: str,
+    salaire_base: Decimal,
+    superieur: Personnel | None,
+    utilisateur: User | None,
+) -> Personnel:
+    """Met à jour la fiche. Le matricule et la date d'embauche ne changent pas."""
+    if superieur is not None and superieur.pk == personnel.pk:
+        raise PersonnelError("Un employé ne peut pas être son propre supérieur.")
+    _verifier_rattachements(personnel, superieur, utilisateur)
+    personnel.nom, personnel.prenom, personnel.poste = nom, prenom, poste
+    personnel.departement, personnel.type_contrat = departement, type_contrat
+    personnel.salaire_base, personnel.superieur = salaire_base, superieur
+    personnel.utilisateur = utilisateur
+    personnel.save()
+    return personnel
 
 
 # --- droits des validateurs ---
@@ -183,6 +270,85 @@ def accorder_jours_exceptionnels(
     return AttributionConge.objects.create(
         employe=employe, annee=annee, jours=jours, motif=motif, accorde_par=acteur
     )
+
+
+# --- lecture et actions possibles (écrans) ---
+
+
+def fiche_personnel(acteur) -> Personnel | None:
+    """Fiche de l'employé rattachée au compte, ou ``None``."""
+    return _fiche_de(acteur)
+
+
+def peut_accorder_jours(acteur, employe: Personnel) -> bool:
+    return _est_rh_pour(acteur, employe)
+
+
+def conges_queryset() -> QuerySet[Conge]:
+    return Conge.objects.select_related("employe", "employe__superieur", "employe__utilisateur")
+
+
+def conges_de(employe: Personnel) -> QuerySet[Conge]:
+    return conges_queryset().filter(employe=employe)
+
+
+def conges_a_valider(acteur) -> QuerySet[Conge]:
+    """Demandes qui attendent la décision de ``acteur`` (N1 hiérarchique et/ou N2 RH)."""
+    n1 = Q(employe__superieur__utilisateur=acteur) & ~Q(employe__superieur=F("employe"))
+    if acteur.role == Role.DIRECTION:
+        n1 |= Q(employe__superieur__isnull=True, employe__utilisateur=acteur)
+    conditions = Q(statut=StatutConge.DEMANDE) & n1
+    fiche = _fiche_de(acteur)
+    if acteur.role == Role.RH:
+        conditions |= Q(statut=StatutConge.VALIDATION_N1)
+    resultat = conges_queryset().filter(conditions)
+    if acteur.role == Role.RH and fiche is not None:
+        # La RH ne valide pas sa propre demande en N2 (:func:`_est_rh_pour`).
+        resultat = resultat.exclude(statut=StatutConge.VALIDATION_N1, employe=fiche)
+    return resultat
+
+
+def est_concerne_par(conge: Conge, acteur) -> bool:
+    """L'employé lui-même ou son supérieur hiérarchique direct."""
+    fiche = _fiche_de(acteur)
+    return (fiche is not None and fiche.pk == conge.employe_id) or _est_superieur_de(
+        acteur, conge.employe
+    )
+
+
+ACTION_VALIDER, ACTION_REFUSER, ACTION_ANNULER = "valider", "refuser", "annuler"
+
+
+def actions_disponibles(conge: Conge, acteur) -> frozenset[str]:
+    """Actions que ``acteur`` peut faire sur ce congé dans son état actuel."""
+    if conge.statut == StatutConge.DEMANDE and _est_superieur_de(acteur, conge.employe):
+        return frozenset({ACTION_VALIDER, ACTION_REFUSER})
+    if _est_rh_pour(acteur, conge.employe):
+        if conge.statut == StatutConge.VALIDATION_N1:
+            return frozenset({ACTION_VALIDER, ACTION_REFUSER})
+        if conge.statut == StatutConge.APPROUVE:
+            return frozenset({ACTION_ANNULER})
+    return frozenset()
+
+
+def echeance_en_attente(conge: Conge, *, maintenant: datetime | None = None):
+    """Échéance de la décision attendue : ``(niveau, limite, en_retard)`` ou ``None``."""
+    if conge.statut == StatutConge.DEMANDE:
+        niveau, limite = NiveauValidation.N1, conge.date_limite_n1
+    elif conge.statut == StatutConge.VALIDATION_N1:
+        niveau, limite = NiveauValidation.N2, conge.date_limite_n2
+    else:
+        return None
+    if limite is None:
+        return None
+    return niveau, limite, limite < (maintenant or timezone.now())
+
+
+def valider_conge(conge: Conge, acteur, *, commentaire: str = "") -> Conge:
+    """Validation du niveau en cours : N1 sur une demande, N2 sur un congé validé N1."""
+    if conge.statut == StatutConge.DEMANDE:
+        return valider_n1(conge, acteur, commentaire=commentaire)
+    return valider_n2(conge, acteur, commentaire=commentaire)
 
 
 # --- workflow ---

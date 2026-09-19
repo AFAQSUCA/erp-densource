@@ -54,6 +54,15 @@ COULEURS_STATUT = {
     "ENTREE": "vert",
     "SORTIE": "bleu",
     "AJUSTEMENT": "ambre",
+    # congés
+    "DEMANDE": "ambre",
+    "VALIDATION_N1": "bleu",
+    "APPROUVE": "vert",
+    "EN_COURS": "indigo",
+    "TERMINE": "gris",
+    "REFUSE": "rouge",
+    # clients
+    "RECLAMATION": "rouge",
     # carburant
     "JAUNE": "ambre",
     "ROUGE": "rouge",

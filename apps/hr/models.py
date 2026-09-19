@@ -137,7 +137,7 @@ class Conge(BaseModel):
 
 
 class NiveauValidation(models.IntegerChoices):
-    N1 = 1, _("N1 - chef de département")
+    N1 = 1, _("N1 - supérieur hiérarchique")
     N2 = 2, _("N2 - RH")
 
 

@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block titre %}Demander un congé{% endblock %}
+{% block entete %}Congés{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-3xl">
+  <nav aria-label="Fil d'Ariane" class="text-sm text-slate-600">
+    <a href="{% url 'hr:conges_liste' %}" class="underline-offset-2 hover:underline">Congés</a>
+    <span aria-hidden="true">/</span> Nouvelle demande
+  </nav>
+  <h1 class="mt-2 text-2xl font-bold text-slate-900">Demander un congé</h1>
+  <p class="mt-1 text-sm text-slate-600">
+    Les jours sont comptés en jours ouvrables : tous les jours sauf les dimanches et les jours fériés.
+    Votre solde {{ annee }} est de <strong class="{% if droits.disponible <= 0 %}text-red-700{% else %}text-emerald-800{% endif %}">{{ droits.disponible }} jour{{ droits.disponible|pluralize }}</strong>
+    ({{ droits.droit_annuel }} de droit annuel{% if droits.exceptionnels %} + {{ droits.exceptionnels }} exceptionnel{{ droits.exceptionnels|pluralize }}{% endif %}, {{ droits.consommes }} déjà approuvé{{ droits.consommes|pluralize }}).
+  </p>
+
+  <form method="post" novalidate class="mt-6 space-y-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+      <div role="alert" class="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">
+        {% for erreur in form.non_field_errors %}<p>{{ erreur }}</p>{% endfor %}
+      </div>
+    {% endif %}
+    <div class="grid gap-5 sm:grid-cols-2">
+      {% include "components/_champ.html" with champ=form.date_debut %}
+      {% include "components/_champ.html" with champ=form.date_fin %}
+    </div>
+    {% include "components/_champ.html" with champ=form.motif %}
+    <div class="flex items-center justify-end gap-3 border-t border-slate-100 pt-5">
+      <a href="{% url 'hr:conges_liste' %}" class="rounded-lg px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Annuler</a>
+      <button type="submit" class="rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">Envoyer la demande</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

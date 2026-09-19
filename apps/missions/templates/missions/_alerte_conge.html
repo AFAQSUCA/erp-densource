@@ -1,0 +1,14 @@
+{% load ui %}
+<div role="alert" class="mt-4 rounded-lg border border-amber-400 bg-amber-50 p-4 text-sm text-amber-950">
+  <p class="font-semibold"><i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>Ce chauffeur a {{ section.contexte.missions|length }} mission{{ section.contexte.missions|length|pluralize }} prévue{{ section.contexte.missions|length|pluralize }} pendant cette période</p>
+  <ul class="mt-2 space-y-1">
+    {% for m in section.contexte.missions %}
+      <li>
+        {% if section.contexte.peut_ouvrir %}<a href="{% url 'missions:detail' m.pk %}" class="font-semibold underline underline-offset-2">{{ m.numero }}</a>{% else %}<strong>{{ m.numero }}</strong>{% endif %}
+        · départ prévu le {{ m.date_depart_prevue|date:"d/m/Y" }} · {{ m.client }} · {{ m.lieu_chargement }} → {{ m.lieu_livraison }}
+        · {% badge m.statut m.get_statut_display %}
+      </li>
+    {% endfor %}
+  </ul>
+  <p class="mt-2">Vérifiez avec l'exploitation que la mission peut être réaffectée avant de valider.</p>
+</div>

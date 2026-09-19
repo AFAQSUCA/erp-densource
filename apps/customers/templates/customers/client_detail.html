@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% load ui %}
+{% block titre %}{{ client.raison_sociale }}{% endblock %}
+{% block entete %}Clients{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-5xl">
+  <nav aria-label="Fil d'Ariane" class="text-sm text-slate-600">
+    <a href="{% url 'customers:liste' %}" class="underline-offset-2 hover:underline">Clients</a>
+    <span aria-hidden="true">/</span> {{ client.raison_sociale }}
+  </nav>
+
+  <div class="mt-2 flex flex-wrap items-center justify-between gap-3">
+    <h1 class="text-2xl font-bold text-slate-900">{{ client.raison_sociale }}</h1>
+    {% if peut_modifier %}
+      <a href="{% url 'customers:modifier' client.pk %}"
+         class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+        <i class="fa-solid fa-pen" aria-hidden="true"></i> Modifier
+      </a>
+    {% endif %}
+  </div>
+  <p class="mt-1 text-sm text-slate-600">NCC / NIF {{ client.ncc_nif }}</p>
+
+  <div class="mt-6 grid gap-6 xl:grid-cols-3">
+    <div class="space-y-6 xl:col-span-1">
+      <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-fiche">
+        <h2 id="titre-fiche" class="text-base font-semibold text-slate-900">Fiche</h2>
+        <dl class="mt-4 space-y-3 text-sm">
+          <div><dt class="text-slate-600">Contact principal</dt><dd class="mt-0.5 font-medium text-slate-900">{{ client.contact_principal }}</dd></div>
+          <div><dt class="text-slate-600">Téléphone</dt><dd class="mt-0.5 font-medium text-slate-900">{{ client.telephone }}</dd></div>
+          <div><dt class="text-slate-600">Email</dt><dd class="mt-0.5 font-medium text-slate-900">{% if client.email %}<a href="mailto:{{ client.email }}" class="text-marque-700 underline-offset-2 hover:underline">{{ client.email }}</a>{% else %}Non renseigné{% endif %}</dd></div>
+          <div><dt class="text-slate-600">Adresse / siège</dt><dd class="mt-0.5 whitespace-pre-line font-medium text-slate-900">{{ client.adresse }}</dd></div>
+          <div><dt class="text-slate-600">Chargé clientèle attitré</dt><dd class="mt-0.5 font-medium text-slate-900">{{ client.charge_clientele|default:"Non attribué" }}</dd></div>
+          <div><dt class="text-slate-600">TVA</dt><dd class="mt-0.5 font-medium text-slate-900">
+            {% if client.taux_tva == 0 %}Exonéré : {{ client.get_motif_exoneration_display }}{% else %}{{ client.taux_tva|floatformat:"-2" }} %{% endif %}</dd></div>
+        </dl>
+      </section>
+    </div>
+
+    <div class="space-y-6 xl:col-span-2">
+      <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-historique">
+        <h2 id="titre-historique" class="text-base font-semibold text-slate-900">Historique commercial ({{ client.nb_interactions }})</h2>
+
+        {% if form_interaction %}
+          <form method="post" action="{% url 'customers:interaction' client.pk %}" class="mt-4 space-y-4 rounded-lg bg-slate-50 p-4">
+            {% csrf_token %}
+            <h3 class="text-sm font-semibold text-slate-900">Ajouter une interaction</h3>
+            <div class="grid gap-4 sm:grid-cols-2">
+              {% include "components/_champ.html" with champ=form_interaction.type_interaction %}
+              {% include "components/_champ.html" with champ=form_interaction.date_interaction %}
+            </div>
+            {% include "components/_champ.html" with champ=form_interaction.resume %}
+            <button type="submit" class="rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">Enregistrer l'interaction</button>
+          </form>
+        {% endif %}
+
+        {% if interactions %}
+          <ol class="mt-5 space-y-4 text-sm">
+            {% for i in interactions %}
+              <li class="flex gap-3">
+                <span class="mt-1 h-2.5 w-2.5 shrink-0 rounded-full {% if i.type_interaction == 'RECLAMATION' %}bg-red-600{% else %}bg-slate-400{% endif %}" aria-hidden="true"></span>
+                <div>
+                  <p class="flex flex-wrap items-center gap-2">
+                    {% if i.type_interaction == "RECLAMATION" %}{% badge "RECLAMATION" i.get_type_interaction_display %}{% else %}<strong class="text-slate-900">{{ i.get_type_interaction_display }}</strong>{% endif %}
+                    <span class="text-slate-600">{{ i.date_interaction|date:"d/m/Y à H:i" }}{% if i.auteur %} · {{ i.auteur }}{% endif %}</span>
+                  </p>
+                  <p class="mt-1 whitespace-pre-line text-slate-800">{{ i.resume }}</p>
+                </div>
+              </li>
+            {% endfor %}
+          </ol>
+        {% else %}
+          <p class="mt-4 text-sm text-slate-600">Aucune interaction enregistrée.</p>
+        {% endif %}
+      </section>
+
+      {% for section in sections %}{% include section.template with section=section %}{% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}

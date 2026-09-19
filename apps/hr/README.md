@@ -26,3 +26,21 @@ dans l'admin.
 Points en attente d'autres apps :
 - Alerte N1 « chauffeur avec mission sur la période » : à câbler avec `missions` (étape 3).
 - Notifications et rappels d'échéance (`date_limite_n1/n2`) : `notifications` (étape 5).
+
+Interface (`views.py`, `templates/hr/`, montée sous `/rh/`) :
+- **Congés** (`/rh/conges/`) : ouverts à tout compte de bureau rattaché à une fiche
+  (`Personnel.utilisateur`) ; le chauffeur passera par l'espace mobile (étape 6). Trois
+  vues : « Mes demandes », « À valider » (N1 pour le supérieur hiérarchique, N2 pour la
+  RH) et « Tous les congés » (ADMIN, DIRECTION, RH). Le droit de décider vient de la
+  hiérarchie, pas du rôle : `services.actions_disponibles` le tranche et l'écran n'affiche
+  que ces boutons. Un refus ou une annulation exige un motif.
+- **Personnel** (`/rh/personnel/`) : ADMIN, DIRECTION (lecture) et RH ; recrutement et
+  modification par ADMIN et RH. Le matricule et la date d'embauche ne se modifient pas ;
+  le compte utilisateur et le supérieur se règlent ici (sans compte rattaché, l'employé
+  ne peut ni demander ni valider de congé). Jours exceptionnels : RH seulement.
+- Alerte N1 « chauffeur avec mission sur la période » : fournie par `missions`
+  (`hr.sections.DETAIL_CONGE`), sur les missions planifiées, affectées ou en cours qui ont
+  une date de départ prévue.
+
+Pas encore d'écran : licenciement (sortie du personnel), jours fériés (à saisir dans
+l'admin, notamment les fêtes musulmanes), notifications (étape 5).

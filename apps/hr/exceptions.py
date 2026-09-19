@@ -12,3 +12,7 @@ class TransitionInterdite(CongeError):
 
 class ActionNonAutorisee(CongeError):
     """L'acteur n'a pas le droit d'effectuer cette action sur ce congé."""
+
+
+class PersonnelError(Exception):
+    """Erreur métier sur la fiche du personnel (matricule, hiérarchie, compte)."""

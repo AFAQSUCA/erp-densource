@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% load ui %}
+{% block titre %}Congés{% endblock %}
+{% block entete %}Congés{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-7xl">
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <div>
+      <h1 class="text-2xl font-bold text-slate-900">Congés</h1>
+      <p class="mt-1 text-sm text-slate-600">
+        Trois étapes : la demande, la validation de votre supérieur hiérarchique (48 h), puis celle de la RH (24 h).
+      </p>
+    </div>
+    {% if fiche %}
+      <a href="{% url 'hr:conges_nouveau' %}"
+         class="inline-flex items-center gap-2 rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">
+        <i class="fa-solid fa-plus" aria-hidden="true"></i> Demander un congé
+      </a>
+    {% endif %}
+  </div>
+
+  {% if droits %}
+    <dl class="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Droit annuel {{ annee }}</dt><dd class="mt-1 text-2xl font-bold text-slate-900">{{ droits.droit_annuel }} <span class="text-sm font-medium text-slate-600">jours ouvrables</span></dd></div>
+      <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Jours exceptionnels</dt><dd class="mt-1 text-2xl font-bold text-slate-900">{{ droits.exceptionnels }}</dd></div>
+      <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Déjà pris ou approuvés</dt><dd class="mt-1 text-2xl font-bold text-slate-900">{{ droits.consommes }}</dd></div>
+      <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Solde disponible</dt><dd class="mt-1 text-2xl font-bold {% if droits.disponible <= 0 %}text-red-700{% else %}text-emerald-800{% endif %}">{{ droits.disponible }}</dd></div>
+    </dl>
+  {% endif %}
+
+  <div class="mt-6 flex flex-wrap items-end justify-between gap-3 border-b border-slate-200">
+    <nav aria-label="Affichage des congés" class="-mb-px flex gap-1">
+      {% for v in vues %}
+        <a href="?vue={{ v }}"
+           {% if v == vue %}aria-current="page"{% endif %}
+           class="rounded-t-lg border-b-2 px-4 py-2 text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 {% if v == vue %}border-marque-600 text-marque-700{% else %}border-transparent text-slate-600 hover:text-slate-900{% endif %}">
+          {% if v == "mes" %}Mes demandes{% elif v == "a_valider" %}À valider{% if nombre_a_valider %} <span class="ml-1 rounded-full bg-accent-500 px-2 py-0.5 text-xs text-slate-900">{{ nombre_a_valider }}</span>{% endif %}{% else %}Tous les congés{% endif %}
+        </a>
+      {% endfor %}
+    </nav>
+    <form method="get" class="flex items-end gap-2 pb-2">
+      <input type="hidden" name="vue" value="{{ vue }}">
+      <div>
+        <label for="statut" class="sr-only">Statut</label>
+        <select id="statut" name="statut" class="block w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm focus:border-marque-600 focus:outline-none focus:ring-2 focus:ring-marque-600/30">
+          <option value="">Tous les statuts</option>
+          {% for code, libelle in statuts %}<option value="{{ code }}" {% if code == statut_choisi %}selected{% endif %}>{{ libelle }}</option>{% endfor %}
+        </select>
+      </div>
+      <button type="submit" class="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2">Filtrer</button>
+    </form>
+  </div>
+
+  {% if lignes %}
+    <div class="mt-4 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+      <table class="min-w-full divide-y divide-slate-200 text-sm">
+        <caption class="sr-only">Liste des congés</caption>
+        <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+          <tr>
+            <th scope="col" class="px-4 py-3">Employé</th>
+            <th scope="col" class="px-4 py-3">Période</th>
+            <th scope="col" class="px-4 py-3 text-right">Jours</th>
+            <th scope="col" class="px-4 py-3">Statut</th>
+            <th scope="col" class="hidden px-4 py-3 xl:table-cell">Décision attendue avant</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          {% for ligne in lignes %}
+            {% with c=ligne.conge e=ligne.echeance %}
+              <tr class="hover:bg-slate-50">
+                <td class="whitespace-nowrap px-4 py-3 font-semibold">
+                  <a href="{% url 'hr:conges_detail' c.pk %}" class="text-marque-700 underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">{{ c.employe.prenom }} {{ c.employe.nom }}</a>
+                </td>
+                <td class="whitespace-nowrap px-4 py-3 text-slate-700">du {{ c.date_debut|date:"d/m/Y" }} au {{ c.date_fin|date:"d/m/Y" }}</td>
+                <td class="whitespace-nowrap px-4 py-3 text-right text-slate-700">{{ c.jours }}</td>
+                <td class="whitespace-nowrap px-4 py-3">{% badge c.statut c.get_statut_display %}</td>
+                <td class="hidden whitespace-nowrap px-4 py-3 xl:table-cell">
+                  {% if e %}
+                    <span class="text-slate-700">{{ e.1|date:"d/m/Y H:i" }}</span>
+                    {% if e.2 %}<span class="ml-2 text-xs font-semibold text-red-700">en retard</span>{% endif %}
+                  {% else %}<span class="text-slate-500">—</span>{% endif %}
+                </td>
+              </tr>
+            {% endwith %}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% include "components/_pagination.html" %}
+  {% else %}
+    <div class="mt-4 rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center">
+      <span class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-600"><i class="fa-solid fa-umbrella-beach" aria-hidden="true"></i></span>
+      <p class="mt-3 font-semibold text-slate-900">
+        {% if vue == "a_valider" %}Aucune demande n'attend votre décision{% else %}Aucun congé à afficher{% endif %}
+      </p>
+      <p class="mt-1 text-sm text-slate-600">
+        {% if not fiche and vue != "tous" %}Votre compte n'est rattaché à aucune fiche du personnel : la RH doit le renseigner pour que vous puissiez demander un congé.{% else %}Rien à afficher pour ces critères.{% endif %}
+      </p>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% load ui %}
+{% block titre %}Clients{% endblock %}
+{% block entete %}Clients{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-7xl">
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <div>
+      <h1 class="text-2xl font-bold text-slate-900">Clients</h1>
+      <p class="mt-1 text-sm text-slate-600">{{ paginator.count|default:0 }} client{{ paginator.count|pluralize }}</p>
+    </div>
+    {% if peut_modifier %}
+      <a href="{% url 'customers:creer' %}"
+         class="inline-flex items-center gap-2 rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">
+        <i class="fa-solid fa-plus" aria-hidden="true"></i> Nouveau client
+      </a>
+    {% endif %}
+  </div>
+
+  <form method="get" class="mt-5 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div class="min-w-[14rem] flex-1">
+      <label for="q" class="block text-sm font-medium text-slate-800">Rechercher</label>
+      <input type="search" id="q" name="q" value="{{ filtre.q.value|default:'' }}" placeholder="Raison sociale, NCC / NIF, contact, téléphone…"
+             class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-marque-600 focus:outline-none focus:ring-2 focus:ring-marque-600/30">
+    </div>
+    {% if a_un_portefeuille %}
+      <label class="flex items-center gap-2 pb-2 text-sm font-medium text-slate-800">
+        <input type="checkbox" name="mes_clients" value="on" {% if filtre.mes_clients.value %}checked{% endif %}
+               class="h-4 w-4 rounded border-slate-400 text-marque-700 focus:ring-marque-600">
+        Mon portefeuille
+      </label>
+    {% endif %}
+    <label class="flex items-center gap-2 pb-2 text-sm font-medium text-slate-800">
+      <input type="checkbox" name="exonere" value="on" {% if filtre.exonere.value %}checked{% endif %}
+             class="h-4 w-4 rounded border-slate-400 text-marque-700 focus:ring-marque-600">
+      Exonérés de TVA
+    </label>
+    <button type="submit" class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2">Filtrer</button>
+    {% if filtres_actifs %}
+      <a href="{% url 'customers:liste' %}" class="px-2 py-2 text-sm font-medium text-slate-700 underline hover:text-slate-900">Réinitialiser</a>
+    {% endif %}
+  </form>
+
+  {% if clients %}
+    <div class="mt-5 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+      <table class="min-w-full divide-y divide-slate-200 text-sm">
+        <caption class="sr-only">Liste des clients</caption>
+        <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+          <tr>
+            <th scope="col" class="px-4 py-3">Client</th>
+            <th scope="col" class="px-4 py-3">Contact</th>
+            <th scope="col" class="px-4 py-3">Chargé clientèle</th>
+            <th scope="col" class="px-4 py-3 text-right">TVA</th>
+            <th scope="col" class="hidden px-4 py-3 xl:table-cell">Dernière interaction</th>
+            <th scope="col" class="hidden px-4 py-3 xl:table-cell">Réclamations</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          {% for c in clients %}
+            <tr class="hover:bg-slate-50">
+              <td class="whitespace-nowrap px-4 py-3 font-semibold">
+                <a href="{% url 'customers:detail' c.pk %}" class="text-marque-700 underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">{{ c.raison_sociale }}</a>
+                <span class="block text-xs font-normal text-slate-600">{{ c.ncc_nif }}</span>
+              </td>
+              <td class="whitespace-nowrap px-4 py-3 text-slate-700">{{ c.contact_principal }}<span class="block text-xs text-slate-600">{{ c.telephone }}</span></td>
+              <td class="whitespace-nowrap px-4 py-3 text-slate-700">{% if c.charge_clientele %}{{ c.charge_clientele }}{% else %}<span class="text-slate-500">Non attribué</span>{% endif %}</td>
+              <td class="whitespace-nowrap px-4 py-3 text-right text-slate-700">{% if c.taux_tva == 0 %}<span class="font-semibold text-amber-900">Exonéré</span>{% else %}{{ c.taux_tva|floatformat:"-2" }} %{% endif %}</td>
+              <td class="hidden whitespace-nowrap px-4 py-3 text-slate-700 xl:table-cell">{% if c.derniere_interaction %}{{ c.derniere_interaction|date:"d/m/Y" }}{% else %}—{% endif %}</td>
+              <td class="hidden whitespace-nowrap px-4 py-3 xl:table-cell">{% if c.nb_reclamations %}{% badge "RECLAMATION" c.nb_reclamations %}{% else %}<span class="text-slate-500">0</span>{% endif %}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% include "components/_pagination.html" %}
+  {% else %}
+    <div class="mt-5 rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center">
+      <span class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-600"><i class="fa-solid fa-handshake" aria-hidden="true"></i></span>
+      <p class="mt-3 font-semibold text-slate-900">Aucun client trouvé</p>
+      <p class="mt-1 text-sm text-slate-600">{% if filtres_actifs %}Aucun résultat pour ces critères.{% else %}Créez la fiche du premier client pour commencer.{% endif %}</p>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

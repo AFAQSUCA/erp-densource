@@ -124,11 +124,16 @@ def test_le_menu_depend_du_role(client):
     _connecte(client, Role.DIRECTION)
     assert 'href="/missions/"' in client.get(reverse("home")).content.decode()
 
-    autre = Client()
-    _connecte(autre, Role.FINANCES)  # aucun écran pour ce rôle pour l'instant
-    contenu = autre.get(reverse("home")).content.decode()
+    finances = Client()
+    _connecte(finances, Role.FINANCES)  # seuls les congés sont ouverts à ce rôle pour l'instant
+    contenu = finances.get(reverse("home")).content.decode()
     assert 'href="/missions/"' not in contenu
-    assert "Aucun écran n" in contenu
+    assert 'href="/rh/conges/"' in contenu
+    assert "Aucun écran n" not in contenu
+
+    chauffeur = Client()
+    _connecte(chauffeur, Role.CHAUFFEUR)  # passe par l'espace mobile : aucun écran web
+    assert "Aucun écran n" in chauffeur.get(reverse("home")).content.decode()
 
 
 def test_un_chauffeur_est_renvoye_vers_l_espace_mobile(client):

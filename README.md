@@ -30,7 +30,10 @@ création, cycle de vie complet), **flotte** (camions, fiche, documents régleme
 avec alerte à 30 jours), **chauffeurs** (fiche, permis, visite médicale, suspension), **garage** (ordres de
 réparation avec pièces et coût, immobilisation et remise en service des camions),
 **stock** (articles, valeur au PUMP, entrées d'achat, ajustements, alerte de seuil, journal), **carburant** (pleins, alertes de surconsommation, analyse par
-camion et par chauffeur). Le menu et les actions dépendent du rôle ; chaque
+camion et par chauffeur), **clients** (portefeuille, fiche, TVA, historique commercial,
+missions du client), **personnel** (fiche, recrutement, hiérarchie, jours de congé
+exceptionnels) et **congés** (demande, validation N1 puis N2, annulation, alerte mission).
+Le menu et les actions dépendent du rôle ; chaque
 app déclare ses entrées de menu dans son `AppConfig.ready()`
 (`apps/accounts/navigation.py`).
 
@@ -57,7 +60,8 @@ Identité visuelle : couleurs du logo DEN Source Group (bordeaux `#8B0319`, oran
 - [x] Interface web : garage (OR, pièces utilisées, immobilisation, remise en service)
 - [x] Interface web : stock (articles, entrées, ajustements, journal, alerte de seuil)
 - [x] Interface web : carburant (pleins, alertes, confirmation des saisies suspectes, analyse)
-- [ ] Interface web : autres modules (congés, clients, recrutement)
+- [x] Interface web : clients (portefeuille, fiche, interactions)
+- [x] Interface web : personnel, recrutement et congés (workflow 3 niveaux)
 - [ ] Étape 4 — Finance (billing, finance)
 - [ ] Étape 5 — Pilotage (dashboard, notifications)
 - [ ] Étape 6 — API (api/v1, mobile_api)
