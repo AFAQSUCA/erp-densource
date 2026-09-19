@@ -26,7 +26,7 @@ python manage.py runserver
 - [x] Étape 1 — Fondations (BaseModel, User + rôles, AuditLog)
 - [x] Étape 2a — Référentiels (hr, drivers, customers, fleet)
 - [x] Étape 2b — Congés et recrutements (hr)
-- [ ] Étape 3 — Exploitation : [x] missions, [x] garage, [x] inventory, [ ] fuel
+- [x] Étape 3 — Exploitation (missions, garage, inventory, fuel)
 - [ ] Étape 4 — Finance (billing, finance)
 - [ ] Étape 5 — Pilotage (dashboard, notifications)
 - [ ] Étape 6 — API (api/v1, mobile_api)
