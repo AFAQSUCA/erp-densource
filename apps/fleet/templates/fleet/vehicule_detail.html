@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% load humanize ui %}
+{% block titre %}{{ vehicule.immatriculation }}{% endblock %}
+{% block entete %}Flotte{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-5xl">
+  <nav aria-label="Fil d'Ariane" class="text-sm text-slate-600">
+    <a href="{% url 'fleet:liste' %}" class="underline-offset-2 hover:underline">Flotte</a>
+    <span aria-hidden="true">/</span> {{ vehicule.immatriculation }}
+  </nav>
+
+  <div class="mt-2 flex flex-wrap items-center justify-between gap-3">
+    <div class="flex flex-wrap items-center gap-3">
+      <h1 class="text-2xl font-bold text-slate-900">{{ vehicule.immatriculation }}</h1>
+      {% badge vehicule.statut vehicule.get_statut_display %}
+    </div>
+    {% if peut_modifier %}
+      <a href="{% url 'fleet:modifier' vehicule.pk %}"
+         class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+        <i class="fa-solid fa-pen" aria-hidden="true"></i> Modifier
+      </a>
+    {% endif %}
+  </div>
+  <p class="mt-1 text-sm text-slate-600">{{ vehicule.marque }} {{ vehicule.modele }} · {{ vehicule.annee }}</p>
+
+  <div class="mt-6 grid gap-6 xl:grid-cols-3">
+    <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm xl:col-span-1" aria-labelledby="titre-fiche">
+      <h2 id="titre-fiche" class="text-base font-semibold text-slate-900">Caractéristiques</h2>
+      <dl class="mt-4 space-y-3 text-sm">
+        <div><dt class="text-slate-600">N° de châssis (VIN)</dt><dd class="mt-0.5 break-all font-medium text-slate-900">{{ vehicule.vin }}</dd></div>
+        <div><dt class="text-slate-600">Kilométrage</dt><dd class="mt-0.5 font-medium text-slate-900">{{ vehicule.kilometrage|intcomma }} km</dd></div>
+        <div><dt class="text-slate-600">Capacité de charge</dt><dd class="mt-0.5 font-medium text-slate-900">{{ vehicule.capacite_charge_t|floatformat:"-2" }} t</dd></div>
+        <div><dt class="text-slate-600">Réservoir</dt><dd class="mt-0.5 font-medium text-slate-900">{{ vehicule.reservoir_l }} L</dd></div>
+        <div><dt class="text-slate-600">Chauffeur habituel</dt>
+          <dd class="mt-0.5 font-medium text-slate-900">{% if vehicule.chauffeur_habituel %}{{ vehicule.chauffeur_habituel.personnel.prenom }} {{ vehicule.chauffeur_habituel.personnel.nom }}{% else %}Aucun{% endif %}</dd></div>
+      </dl>
+    </section>
+
+    <div class="space-y-6 xl:col-span-2">
+      <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-documents">
+        <h2 id="titre-documents" class="text-base font-semibold text-slate-900">Documents réglementaires</h2>
+        <p class="mt-1 text-xs text-slate-600">Une alerte apparaît 30 jours avant l'expiration.</p>
+        <div class="mt-4 overflow-x-auto">
+          <table class="min-w-full divide-y divide-slate-200 text-sm">
+            <caption class="sr-only">Documents réglementaires du camion</caption>
+            <thead class="text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+              <tr>
+                <th scope="col" class="py-2 pr-4">Document</th>
+                <th scope="col" class="px-4 py-2">Délivré le</th>
+                <th scope="col" class="px-4 py-2">Expire le</th>
+                <th scope="col" class="px-4 py-2">État</th>
+                {% if peut_modifier %}<th scope="col" class="py-2 pl-4"><span class="sr-only">Action</span></th>{% endif %}
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              {% for d in documents %}
+                <tr>
+                  <th scope="row" class="whitespace-nowrap py-3 pr-4 text-left font-medium text-slate-900">{{ d.libelle }}</th>
+                  <td class="whitespace-nowrap px-4 py-3 text-slate-700">{{ d.document.date_delivrance|date:"d/m/Y"|default:"—" }}</td>
+                  <td class="whitespace-nowrap px-4 py-3 text-slate-700">{{ d.document.date_expiration|date:"d/m/Y"|default:"—" }}</td>
+                  <td class="whitespace-nowrap px-4 py-3">
+                    {% if d.etat == "EXPIRE" %}{% badge d.etat "Expiré" %}<span class="ml-2 text-xs text-slate-600">depuis {% widthratio d.jours_restants 1 -1 %} j</span>
+                    {% elif d.etat == "A_RENOUVELER" %}{% badge d.etat "À renouveler" %}<span class="ml-2 text-xs text-slate-600">dans {{ d.jours_restants }} j</span>
+                    {% elif d.etat == "VALIDE" %}{% badge d.etat "Valide" %}
+                    {% else %}{% badge d.etat "Non enregistré" %}{% endif %}
+                  </td>
+                  {% if peut_modifier %}
+                    <td class="whitespace-nowrap py-3 pl-4 text-right">
+                      <a href="?document={{ d.code }}#nouveau-document" class="text-sm font-medium text-marque-700 underline-offset-2 hover:underline">
+                        {% if d.document %}Renouveler{% else %}Enregistrer{% endif %}<span class="sr-only"> {{ d.libelle }}</span>
+                      </a>
+                    </td>
+                  {% endif %}
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {% if form_document %}
+        <section id="nouveau-document" class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-form-document">
+          <h2 id="titre-form-document" class="text-base font-semibold text-slate-900">Enregistrer ou renouveler un document</h2>
+          <p class="mt-1 text-xs text-slate-600">Un renouvellement remplace les dates ; les anciennes restent dans le journal d'audit.</p>
+          <form method="post" action="{% url 'fleet:document' vehicule.pk %}" class="mt-4 grid gap-4 sm:grid-cols-3">
+            {% csrf_token %}
+            {% include "components/_champ.html" with champ=form_document.type_document %}
+            {% include "components/_champ.html" with champ=form_document.date_delivrance %}
+            {% include "components/_champ.html" with champ=form_document.date_expiration %}
+            <div class="sm:col-span-3 flex justify-end">
+              <button type="submit" class="rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">Enregistrer le document</button>
+            </div>
+          </form>
+        </section>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

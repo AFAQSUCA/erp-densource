@@ -21,8 +21,8 @@
     {% for etape in etapes %}
       <li class="flex items-center" {% if etape.etat == "courante" %}aria-current="step"{% endif %}>
         <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold
-              {% if etape.etat == 'faite' %}bg-emerald-600 text-white
-              {% elif etape.etat == 'courante' %}bg-indigo-600 text-white ring-4 ring-indigo-200
+              {% if etape.etat == 'faite' %}bg-emerald-700 text-white
+              {% elif etape.etat == 'courante' %}bg-accent-500 text-slate-900 ring-4 ring-accent-200
               {% else %}bg-slate-200 text-slate-600{% endif %}">
           {% if etape.etat == "faite" %}<i class="fa-solid fa-check" aria-hidden="true"></i><span class="sr-only">Terminée : </span>{% else %}{{ forloop.counter }}{% endif %}
         </span>
@@ -80,7 +80,7 @@
           <form method="post" action="{% url 'missions:planifier' mission.pk %}" class="mt-4">
             {% csrf_token %}
             <p class="mb-2 text-sm text-slate-700">Valider la mission pour la rendre disponible à l'affectation.</p>
-            <button type="submit" class="w-full rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 focus-visible:ring-offset-2">Valider et planifier</button>
+            <button type="submit" class="w-full rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">Valider et planifier</button>
           </form>
         {% endif %}
 
@@ -89,7 +89,7 @@
             {% csrf_token %}
             {% include "components/_champ.html" with champ=form_affectation.vehicule %}
             {% include "components/_champ.html" with champ=form_affectation.chauffeur %}
-            <button type="submit" class="w-full rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 focus-visible:ring-offset-2">Affecter</button>
+            <button type="submit" class="w-full rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">Affecter</button>
           </form>
         {% endif %}
 
@@ -97,7 +97,7 @@
           <form method="post" action="{% url 'missions:demarrer' mission.pk %}" class="mt-4"
                 onsubmit="return confirm('Démarrer la mission ? Le camion et le chauffeur passeront « En mission ».');">
             {% csrf_token %}
-            <button type="submit" class="w-full rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-600 focus-visible:ring-offset-2">Démarrer la mission</button>
+            <button type="submit" class="w-full rounded-lg bg-accent-500 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-accent-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-600 focus-visible:ring-offset-2">Démarrer la mission</button>
           </form>
         {% endif %}
 
@@ -106,7 +106,7 @@
             {% csrf_token %}
             <p class="text-sm text-slate-700">L'expéditeur confirme la récupération du colis avec son code.</p>
             {% include "components/_champ.html" with champ=form_recuperation.code %}
-            <button type="submit" class="w-full rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 focus-visible:ring-offset-2">Confirmer la récupération</button>
+            <button type="submit" class="w-full rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">Confirmer la récupération</button>
           </form>
         {% endif %}
 
@@ -116,7 +116,7 @@
             <p class="text-sm text-slate-700">Le destinataire confirme la livraison avec son code.</p>
             {% include "components/_champ.html" with champ=form_livraison.code %}
             {% include "components/_champ.html" with champ=form_livraison.km_arrivee %}
-            <button type="submit" class="w-full rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">Confirmer la livraison</button>
+            <button type="submit" class="w-full rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:ring-offset-2">Confirmer la livraison</button>
           </form>
         {% endif %}
 

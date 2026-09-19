@@ -12,7 +12,7 @@
     </div>
     {% if peut_creer %}
       <a href="{% url 'missions:creer' %}"
-         class="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 focus-visible:ring-offset-2">
+         class="inline-flex items-center gap-2 rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">
         <i class="fa-solid fa-plus" aria-hidden="true"></i> Nouvelle mission
       </a>
     {% endif %}
@@ -22,12 +22,12 @@
     <div class="min-w-[14rem] flex-1">
       <label for="q" class="block text-sm font-medium text-slate-800">Rechercher</label>
       <input type="search" id="q" name="q" value="{{ recherche }}" placeholder="N°, client, lieu…"
-             class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-600/30">
+             class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-marque-600 focus:outline-none focus:ring-2 focus:ring-marque-600/30">
     </div>
     <div>
       <label for="statut" class="block text-sm font-medium text-slate-800">Statut</label>
       <select id="statut" name="statut"
-              class="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-600/30">
+              class="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-marque-600 focus:outline-none focus:ring-2 focus:ring-marque-600/30">
         <option value="">Tous les statuts</option>
         {% for code, libelle in statuts %}
           <option value="{{ code }}" {% if code == statut_choisi %}selected{% endif %}>{{ libelle }}</option>
@@ -60,7 +60,7 @@
           {% for mission in missions %}
             <tr class="hover:bg-slate-50">
               <td class="whitespace-nowrap px-4 py-3 font-semibold">
-                <a href="{% url 'missions:detail' mission.pk %}" class="text-indigo-700 underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600">{{ mission.numero }}</a>
+                <a href="{% url 'missions:detail' mission.pk %}" class="text-marque-700 underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">{{ mission.numero }}</a>
               </td>
               <td class="px-4 py-3 text-slate-800">{{ mission.client }}</td>
               <td class="px-4 py-3 text-slate-700">{{ mission.lieu_chargement }} <span aria-label="vers">→</span> {{ mission.lieu_livraison }}</td>

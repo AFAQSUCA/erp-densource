@@ -40,6 +40,15 @@ def changer_statut(chauffeur: Chauffeur, statut: str) -> Chauffeur:
     return chauffeur
 
 
+def chauffeurs_actifs() -> QuerySet[Chauffeur]:
+    """Chauffeurs non inactifs, pour les listes de choix (ex. chauffeur habituel)."""
+    return (
+        Chauffeur.objects.select_related("personnel")
+        .exclude(statut=StatutChauffeur.INACTIF)
+        .order_by("personnel__nom", "personnel__prenom")
+    )
+
+
 def chauffeurs_disponibles() -> QuerySet[Chauffeur]:
     """Chauffeurs au statut « Disponible », pour l'affectation d'une mission."""
     return Chauffeur.objects.select_related("personnel").filter(

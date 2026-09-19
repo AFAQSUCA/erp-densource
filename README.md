@@ -26,9 +26,14 @@ python manage.py createsuperuser   # un superutilisateur agit comme ADMIN
 ```
 
 Modules disponibles : connexion / déconnexion, accueil, **missions** (liste, fiche,
-création, cycle de vie complet). Le menu et les actions dépendent du rôle ; chaque
+création, cycle de vie complet), **flotte** (camions, fiche, documents réglementaires
+avec alerte à 30 jours). Le menu et les actions dépendent du rôle ; chaque
 app déclare ses entrées de menu dans son `AppConfig.ready()`
 (`apps/accounts/navigation.py`).
+
+Identité visuelle : couleurs du logo DEN Source Group (bordeaux `#8B0319`, orange
+`#F28A14`), définies sous les noms `marque` et `accent` dans la configuration Tailwind de
+`templates/base.html`. Images dans `static/img/`.
 
 ## Structure
 
@@ -44,7 +49,8 @@ app déclare ses entrées de menu dans son `AppConfig.ready()`
 - [x] Étape 2b — Congés et recrutements (hr)
 - [x] Étape 3 — Exploitation (missions, garage, inventory, fuel)
 - [x] Interface web : connexion, mise en page, module missions
-- [ ] Interface web : autres modules (flotte, chauffeurs, carburant, garage, stock, congés, clients)
+- [x] Interface web : flotte (camions, documents réglementaires)
+- [ ] Interface web : autres modules (chauffeurs, carburant, garage, stock, congés, clients)
 - [ ] Étape 4 — Finance (billing, finance)
 - [ ] Étape 5 — Pilotage (dashboard, notifications)
 - [ ] Étape 6 — API (api/v1, mobile_api)

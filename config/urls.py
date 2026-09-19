@@ -13,5 +13,6 @@ urlpatterns = [
     path("", AccueilView.as_view(), name="home"),
     path("", include("apps.accounts.urls")),
     path("missions/", include("apps.missions.urls")),
+    path("flotte/", include("apps.fleet.urls")),
     path("admin/", admin.site.urls),
 ]

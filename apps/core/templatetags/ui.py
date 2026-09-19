@@ -28,6 +28,21 @@ COULEURS_STATUT = {
     "EN_COURS_COLIS_RECUPERE": "ambre",
     "LIVREE": "vert",
     "CLOTUREE": "gris",
+    # camions
+    "DISPONIBLE": "vert",
+    "EN_MISSION": "bleu",
+    "EN_MAINTENANCE": "ambre",
+    "IMMOBILISE": "rouge",
+    "HORS_SERVICE": "gris",
+    # chauffeurs
+    "EN_CONGE": "indigo",
+    "SUSPENDU": "rouge",
+    "INACTIF": "gris",
+    # documents réglementaires
+    "VALIDE": "vert",
+    "A_RENOUVELER": "ambre",
+    "EXPIRE": "rouge",
+    "MANQUANT": "gris",
 }
 
 

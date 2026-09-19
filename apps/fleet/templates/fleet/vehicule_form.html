@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block titre %}{{ titre }}{% endblock %}
+{% block entete %}Flotte{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-3xl">
+  <nav aria-label="Fil d'Ariane" class="text-sm text-slate-600">
+    <a href="{% url 'fleet:liste' %}" class="underline-offset-2 hover:underline">Flotte</a>
+    {% if vehicule %}<span aria-hidden="true">/</span> <a href="{% url 'fleet:detail' vehicule.pk %}" class="underline-offset-2 hover:underline">{{ vehicule.immatriculation }}</a>{% endif %}
+    <span aria-hidden="true">/</span> {% if vehicule %}Modifier{% else %}Nouveau camion{% endif %}
+  </nav>
+  <h1 class="mt-2 text-2xl font-bold text-slate-900">{{ titre }}</h1>
+  <p class="mt-1 text-sm text-slate-600">
+    Le statut du camion n'est pas saisi ici : il se calcule à partir des missions et des ordres de réparation.
+  </p>
+
+  <form method="post" novalidate class="mt-6 space-y-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+      <div role="alert" class="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">
+        {% for erreur in form.non_field_errors %}<p>{{ erreur }}</p>{% endfor %}
+      </div>
+    {% endif %}
+
+    <div class="grid gap-5 sm:grid-cols-2">
+      {% include "components/_champ.html" with champ=form.immatriculation %}
+      {% include "components/_champ.html" with champ=form.vin %}
+      {% include "components/_champ.html" with champ=form.marque %}
+      {% include "components/_champ.html" with champ=form.modele %}
+      {% include "components/_champ.html" with champ=form.annee %}
+      {% include "components/_champ.html" with champ=form.kilometrage %}
+      {% include "components/_champ.html" with champ=form.capacite_charge_t %}
+      {% include "components/_champ.html" with champ=form.reservoir_l %}
+      <div class="sm:col-span-2">{% include "components/_champ.html" with champ=form.chauffeur_habituel %}</div>
+    </div>
+
+    <div class="flex items-center justify-end gap-3 border-t border-slate-100 pt-5">
+      <a href="{% if vehicule %}{% url 'fleet:detail' vehicule.pk %}{% else %}{% url 'fleet:liste' %}{% endif %}" class="rounded-lg px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Annuler</a>
+      <button type="submit" class="rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">
+        {{ bouton }}
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}
