@@ -40,6 +40,19 @@ def changer_statut(chauffeur: Chauffeur, statut: str) -> Chauffeur:
     return chauffeur
 
 
+def mettre_en_mission(chauffeur: Chauffeur) -> Chauffeur:
+    """Départ d'une mission : statut « En mission » (cahier-des-charges.md:135)."""
+    return changer_statut(chauffeur, StatutChauffeur.EN_MISSION)
+
+
+def rappeler_de_mission(chauffeur: Chauffeur) -> Chauffeur:
+    """Fin de mission : « Disponible », sauf statut changé entre-temps
+    (En congé, Suspendu, Inactif), qui reste alors conservé."""
+    if chauffeur.statut == StatutChauffeur.EN_MISSION:
+        return changer_statut(chauffeur, StatutChauffeur.DISPONIBLE)
+    return chauffeur
+
+
 def mettre_en_conge(chauffeur: Chauffeur) -> Chauffeur:
     """Début d'un congé : statut « En congé »."""
     return changer_statut(chauffeur, StatutChauffeur.EN_CONGE)

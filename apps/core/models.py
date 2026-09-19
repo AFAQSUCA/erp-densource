@@ -67,3 +67,27 @@ class BaseModel(models.Model):
         self.deleted_at = None
         self.deleted_by = None
         self.save(update_fields=["is_deleted", "deleted_at", "deleted_by", "updated_at"])
+
+
+class CompteurNumero(models.Model):
+    """Dernier numéro attribué par préfixe et par année (MIS-2026-0007...).
+
+    Table technique (pas de soft delete) : un compteur ne se supprime jamais,
+    sous peine de réattribuer un numéro déjà émis.
+    """
+
+    prefixe = models.CharField(_("préfixe"), max_length=10)
+    annee = models.PositiveSmallIntegerField(_("année"))
+    dernier = models.PositiveIntegerField(_("dernier numéro attribué"), default=0)
+
+    class Meta:
+        verbose_name = _("compteur de numéros")
+        verbose_name_plural = _("compteurs de numéros")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["prefixe", "annee"], name="compteur_numero_unique"
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.prefixe}-{self.annee} : {self.dernier}"

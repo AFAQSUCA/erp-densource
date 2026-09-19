@@ -35,19 +35,27 @@ def _valeur(field, valeur):
     return valeur
 
 
-def _snapshot(instance: Model) -> dict:
+def _snapshot(instance: Model, exclure: frozenset[str] = frozenset()) -> dict:
     """Valeurs des colonnes de l'instance, sérialisables en JSON."""
     data = {
         f.attname: _valeur(f, getattr(instance, f.attname))
         for f in instance._meta.concrete_fields
-        if f.attname not in CHAMPS_IGNORES
+        if f.attname not in CHAMPS_IGNORES and f.attname not in exclure
     }
     return json.loads(json.dumps(data, cls=DjangoJSONEncoder))
 
 
-def audit_model(model: type[Model], module: str) -> None:
-    """Active l'audit automatique de ``model`` sous le nom de module ``module``."""
+def audit_model(
+    model: type[Model], module: str, exclure: tuple[str, ...] = ()
+) -> None:
+    """Active l'audit automatique de ``model`` sous le nom de module ``module``.
+
+    ``exclure`` liste les champs à ne jamais écrire dans le journal (secrets :
+    codes de mission, etc.). Un changement sur ces seuls champs ne produit
+    aucune entrée.
+    """
     label = model._meta.label
+    exclus = frozenset(exclure)
     entite = model.__name__
 
     def capturer_avant(sender, instance, raw=False, **kwargs):
@@ -57,12 +65,12 @@ def audit_model(model: type[Model], module: str) -> None:
         if instance.pk:
             ancien = sender._base_manager.filter(pk=instance.pk).first()
             if ancien is not None:
-                instance._audit_avant = _snapshot(ancien)
+                instance._audit_avant = _snapshot(ancien, exclus)
 
     def journaliser(sender, instance, created, raw=False, **kwargs):
         if raw:
             return
-        apres = _snapshot(instance)
+        apres = _snapshot(instance, exclus)
         avant = getattr(instance, "_audit_avant", None)
 
         if created or avant is None:

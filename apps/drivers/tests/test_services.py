@@ -112,3 +112,31 @@ def test_chauffeurs_a_renouveler_ignore_les_dates_non_renseignees():
     resultat = services.chauffeurs_a_renouveler(aujourd_hui=date(2026, 9, 20))
 
     assert sans_dates not in resultat
+
+
+# --- missions ---
+
+
+def test_mettre_en_mission_puis_rappeler_remet_disponible():
+    fiche = ChauffeurFactory()
+
+    services.mettre_en_mission(fiche)
+    fiche.refresh_from_db()
+    assert fiche.statut == StatutChauffeur.EN_MISSION
+
+    services.rappeler_de_mission(fiche)
+    fiche.refresh_from_db()
+    assert fiche.statut == StatutChauffeur.DISPONIBLE
+
+
+@pytest.mark.parametrize(
+    "statut",
+    [StatutChauffeur.EN_CONGE, StatutChauffeur.SUSPENDU, StatutChauffeur.INACTIF],
+)
+def test_rappeler_de_mission_conserve_un_autre_statut(statut):
+    fiche = ChauffeurFactory(statut=statut)
+
+    services.rappeler_de_mission(fiche)
+
+    fiche.refresh_from_db()
+    assert fiche.statut == statut

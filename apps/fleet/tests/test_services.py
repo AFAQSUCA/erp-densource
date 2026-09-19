@@ -130,3 +130,48 @@ def test_documents_a_renouveler_utilise_les_types_du_cdc():
         "VISITE_TECHNIQUE",
         "PATENTE",
     }
+
+
+# --- fin de mission et compteur kilométrique ---
+
+
+def test_liberer_apres_mission_remet_un_camion_en_mission_disponible():
+    camion = VehiculeFactory(statut=StatutVehicule.EN_MISSION)
+
+    services.liberer_apres_mission(camion)
+
+    camion.refresh_from_db()
+    assert camion.statut == StatutVehicule.DISPONIBLE
+
+
+@pytest.mark.parametrize(
+    "statut",
+    [
+        StatutVehicule.EN_MAINTENANCE,
+        StatutVehicule.IMMOBILISE,
+        StatutVehicule.HORS_SERVICE,
+    ],
+)
+def test_liberer_apres_mission_conserve_les_autres_statuts(statut):
+    camion = VehiculeFactory(statut=statut)
+
+    services.liberer_apres_mission(camion)
+
+    camion.refresh_from_db()
+    assert camion.statut == statut
+
+
+def test_enregistrer_kilometrage_met_a_jour_le_compteur():
+    camion = VehiculeFactory(kilometrage=1000)
+
+    services.enregistrer_kilometrage(camion, 1500)
+
+    camion.refresh_from_db()
+    assert camion.kilometrage == 1500
+
+
+def test_enregistrer_kilometrage_refuse_de_reculer():
+    camion = VehiculeFactory(kilometrage=1000)
+
+    with pytest.raises(ValueError):
+        services.enregistrer_kilometrage(camion, 999)

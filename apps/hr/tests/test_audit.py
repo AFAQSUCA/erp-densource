@@ -57,3 +57,12 @@ def test_decimal_et_date_sont_serialises_en_json():
     entree = _entrees(personnel).get()
     assert entree.nouvelle_valeur["date_embauche"] == "2024-01-15"
     assert entree.nouvelle_valeur["salaire_base"] == "250000.00"
+
+
+def test_champs_exclus_ne_sont_jamais_journalises():
+    from apps.audit.registry import _snapshot
+
+    personnel = PersonnelFactory(nom="Traore")
+
+    assert "nom" in _snapshot(personnel)
+    assert "nom" not in _snapshot(personnel, frozenset({"nom"}))

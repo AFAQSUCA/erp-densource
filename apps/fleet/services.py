@@ -57,6 +57,26 @@ def definir_statut(vehicule: Vehicule, statut: str) -> Vehicule:
     return vehicule
 
 
+def liberer_apres_mission(vehicule: Vehicule) -> Vehicule:
+    """Fin de mission : « En mission » → « Disponible » (cahier-des-charges.md:139).
+
+    Un camion passé entre-temps en maintenance, immobilisé ou hors service
+    garde ce statut : seule la mission le libérait, pas le reste.
+    """
+    if vehicule.statut == StatutVehicule.EN_MISSION:
+        return definir_statut(vehicule, StatutVehicule.DISPONIBLE)
+    return vehicule
+
+
+def enregistrer_kilometrage(vehicule: Vehicule, kilometrage: int) -> Vehicule:
+    """Met à jour le compteur ; il ne peut jamais reculer (cahier-des-charges.md:139)."""
+    if kilometrage < vehicule.kilometrage:
+        raise ValueError("Le kilométrage ne peut pas diminuer.")
+    vehicule.kilometrage = kilometrage
+    vehicule.save(update_fields=["kilometrage", "updated_at"])
+    return vehicule
+
+
 def documents_a_renouveler(
     *, aujourd_hui: date | None = None, jours: int = DELAI_ALERTE_JOURS
 ) -> QuerySet[DocumentReglementaire]:
