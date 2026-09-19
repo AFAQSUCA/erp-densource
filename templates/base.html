@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="fr" class="h-full bg-slate-50">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block titre %}Accueil{% endblock %} · DEN Source ERP</title>
+
+  {% comment %}
+    Tailwind, Alpine.js et FontAwesome par CDN (cahier-des-charges.md:249) : pratique en développement.
+    Avant la mise en production, passer à un build Tailwind et héberger ces fichiers (CSP, hors-ligne).
+  {% endcomment %}
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: { extend: { fontFamily: { sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'] } } }
+    }
+  </script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
+  <style>[x-cloak] { display: none !important; }</style>
+</head>
+<body class="h-full text-slate-900 antialiased"
+      x-data="{ menuOuvert: false }" @keydown.escape.window="menuOuvert = false">
+  <a href="#contenu"
+     class="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-50 focus:rounded-md focus:bg-white focus:px-3 focus:py-2 focus:text-sm focus:font-semibold focus:shadow">
+    Aller au contenu
+  </a>
+
+  {% block layout %}
+  <div class="min-h-full lg:flex">
+    <div x-show="menuOuvert" x-cloak x-transition.opacity @click="menuOuvert = false"
+         class="fixed inset-0 z-30 bg-slate-900/50 lg:hidden" aria-hidden="true"></div>
+
+    <aside id="navigation" aria-label="Navigation principale"
+           class="fixed inset-y-0 left-0 z-40 w-64 shrink-0 -translate-x-full transform bg-slate-900 text-slate-100 transition-transform duration-200 lg:static lg:translate-x-0"
+           :class="menuOuvert ? '!translate-x-0' : ''">
+      <div class="flex h-16 items-center gap-3 border-b border-slate-800 px-5">
+        <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-500 text-white">
+          <i class="fa-solid fa-truck" aria-hidden="true"></i>
+        </span>
+        <div class="leading-tight">
+          <p class="text-sm font-semibold">DEN Source</p>
+          <p class="text-xs text-slate-400">ERP Transport</p>
+        </div>
+      </div>
+      <nav class="space-y-1 px-3 py-4">
+        {% for entree in menu %}
+          <a href="{{ entree.url }}"
+             {% if entree.actif %}aria-current="page"{% endif %}
+             class="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400
+                    {% if entree.actif %}bg-slate-800 text-white{% else %}text-slate-300 hover:bg-slate-800 hover:text-white{% endif %}">
+            <i class="fa-solid {{ entree.icone }} w-5 text-center" aria-hidden="true"></i>
+            {{ entree.libelle }}
+          </a>
+        {% endfor %}
+      </nav>
+    </aside>
+
+    <div class="flex min-h-full flex-1 flex-col lg:min-w-0">
+      <header class="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-slate-200 bg-white px-4 sm:px-6 lg:px-8">
+        <div class="flex items-center gap-3">
+          <button type="button" class="rounded-lg p-2 text-slate-600 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 lg:hidden"
+                  @click="menuOuvert = !menuOuvert" aria-controls="navigation" :aria-expanded="menuOuvert.toString()">
+            <span class="sr-only">Ouvrir le menu</span>
+            <i class="fa-solid fa-bars" aria-hidden="true"></i>
+          </button>
+          <p class="text-sm font-semibold text-slate-800">{% block entete %}{% endblock %}</p>
+        </div>
+        {% if user.is_authenticated %}
+          <div class="flex items-center gap-4">
+            <div class="hidden text-right leading-tight sm:block">
+              <p class="text-sm font-medium text-slate-900">{{ user.get_full_name|default:user.username }}</p>
+              <p class="text-xs text-slate-600">{{ user.get_role_display|default:"Administrateur" }}</p>
+            </div>
+            <form method="post" action="{% url 'accounts:logout' %}">
+              {% csrf_token %}
+              <button type="submit"
+                      class="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600">
+                <i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i>
+                Déconnexion
+              </button>
+            </form>
+          </div>
+        {% endif %}
+      </header>
+
+      <main id="contenu" class="flex-1 px-4 py-6 sm:px-6 lg:px-8">
+        {% include "components/_messages.html" %}
+        {% block contenu %}{% endblock %}
+      </main>
+    </div>
+  </div>
+  {% endblock layout %}
+</body>
+</html>

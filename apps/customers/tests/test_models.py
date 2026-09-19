@@ -68,3 +68,12 @@ def test_creation_client_est_auditee():
 
     entree = AuditLog.objects.get(entite="Client", entite_id=client.pk)
     assert entree.module == "CLIENTELE"
+
+
+def test_clients_pour_selection_est_trie_par_raison_sociale():
+    from apps.customers import services
+
+    b = ClientFactory(raison_sociale="Bolloré")
+    a = ClientFactory(raison_sociale="Abidjan Cargo")
+
+    assert list(services.clients_pour_selection()) == [a, b]

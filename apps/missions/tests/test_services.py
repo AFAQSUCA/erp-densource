@@ -448,3 +448,30 @@ def test_le_cycle_complet_est_audite():
         "LIVREE",
         "CLOTUREE",
     ]
+
+
+# --- lecture : recherche des missions ---
+
+
+def test_rechercher_missions_sans_critere_retourne_tout():
+    _creer(), _planifiee()
+
+    assert services.rechercher_missions().count() == 2
+
+
+def test_rechercher_missions_combine_statut_et_texte():
+    cible = _planifiee(lieu_livraison="Korhogo")
+    _planifiee(lieu_livraison="Bouaké")
+    _creer(lieu_livraison="Korhogo")
+
+    resultat = services.rechercher_missions(
+        statut=StatutMission.PLANIFIEE, recherche="korhogo"
+    )
+
+    assert list(resultat) == [cible]
+
+
+def test_rechercher_missions_ignore_un_statut_inconnu_et_les_espaces():
+    _creer()
+
+    assert services.rechercher_missions(statut="???", recherche="   ").count() == 1

@@ -15,6 +15,7 @@ from datetime import date
 from decimal import Decimal
 
 from django.db import transaction
+from django.db.models import Q, QuerySet
 from django.utils import timezone
 
 from apps.core.services import prochain_numero
@@ -66,6 +67,32 @@ def _verifier_code(saisi: str, attendu: str) -> None:
 
 
 # --- consultation ---
+
+
+def missions_queryset() -> QuerySet[Mission]:
+    """Missions avec leurs relations chargées (évite les requêtes en boucle)."""
+    return Mission.objects.select_related(
+        "client", "vehicule", "chauffeur__personnel"
+    )
+
+
+def rechercher_missions(
+    *, statut: str | None = None, recherche: str = ""
+) -> QuerySet[Mission]:
+    """Missions filtrées par statut et/ou texte (numéro, client, lieux)."""
+    missions = missions_queryset()
+    if statut in StatutMission.values:
+        missions = missions.filter(statut=statut)
+    recherche = recherche.strip()
+    if recherche:
+        missions = missions.filter(
+            Q(numero__icontains=recherche)
+            | Q(client__raison_sociale__icontains=recherche)
+            | Q(lieu_chargement__icontains=recherche)
+            | Q(lieu_livraison__icontains=recherche)
+        )
+    return missions
+
 
 
 def vehicule_a_mission_active(vehicule: Vehicule) -> bool:

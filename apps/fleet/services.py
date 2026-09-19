@@ -12,6 +12,13 @@ from apps.core.constants import DELAI_ALERTE_JOURS
 from .models import DocumentReglementaire, StatutVehicule, Vehicule
 
 
+def vehicules_disponibles() -> QuerySet[Vehicule]:
+    """Camions au statut « Disponible », pour l'affectation d'une mission."""
+    return Vehicule.objects.filter(statut=StatutVehicule.DISPONIBLE).order_by(
+        "immatriculation"
+    )
+
+
 def calculer_statut(
     statut_actuel: str, *, or_ouverts: bool, mission_active: bool
 ) -> str:

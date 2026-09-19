@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% load humanize ui %}
+{% block titre %}{{ mission.numero }}{% endblock %}
+{% block entete %}Missions{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-5xl">
+  <nav aria-label="Fil d'Ariane" class="text-sm text-slate-600">
+    <a href="{% url 'missions:liste' %}" class="underline-offset-2 hover:underline">Missions</a>
+    <span aria-hidden="true">/</span> {{ mission.numero }}
+  </nav>
+
+  <div class="mt-2 flex flex-wrap items-center gap-3">
+    <h1 class="text-2xl font-bold text-slate-900">{{ mission.numero }}</h1>
+    {% badge mission.statut mission.get_statut_display %}
+  </div>
+  <p class="mt-1 text-sm text-slate-600">{{ mission.client }}</p>
+
+  {# Frise du cycle de vie #}
+  <ol class="mt-6 flex flex-wrap gap-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm" aria-label="Avancement de la mission">
+    {% for etape in etapes %}
+      <li class="flex items-center" {% if etape.etat == "courante" %}aria-current="step"{% endif %}>
+        <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold
+              {% if etape.etat == 'faite' %}bg-emerald-600 text-white
+              {% elif etape.etat == 'courante' %}bg-indigo-600 text-white ring-4 ring-indigo-200
+              {% else %}bg-slate-200 text-slate-600{% endif %}">
+          {% if etape.etat == "faite" %}<i class="fa-solid fa-check" aria-hidden="true"></i><span class="sr-only">Terminée : </span>{% else %}{{ forloop.counter }}{% endif %}
+        </span>
+        <span class="ml-2 text-sm {% if etape.etat == 'courante' %}font-semibold text-slate-900{% elif etape.etat == 'faite' %}text-slate-800{% else %}text-slate-600{% endif %}">{{ etape.libelle }}</span>
+        {% if not forloop.last %}<span class="mx-3 hidden h-px w-6 bg-slate-300 sm:block" aria-hidden="true"></span>{% endif %}
+      </li>
+    {% endfor %}
+  </ol>
+
+  <div class="mt-6 grid gap-6 lg:grid-cols-3">
+    <div class="space-y-6 lg:col-span-2">
+      <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-transport">
+        <h2 id="titre-transport" class="text-base font-semibold text-slate-900">Transport</h2>
+        <dl class="mt-4 grid gap-x-6 gap-y-4 text-sm sm:grid-cols-2">
+          <div><dt class="text-slate-600">Chargement</dt><dd class="mt-0.5 font-medium text-slate-900">{{ mission.lieu_chargement }}</dd></div>
+          <div><dt class="text-slate-600">Livraison</dt><dd class="mt-0.5 font-medium text-slate-900">{{ mission.lieu_livraison }}</dd></div>
+          <div><dt class="text-slate-600">Marchandise</dt><dd class="mt-0.5 font-medium text-slate-900">{{ mission.nature_marchandise }}</dd></div>
+          <div><dt class="text-slate-600">Poids</dt><dd class="mt-0.5 font-medium text-slate-900">{{ mission.poids_t|floatformat:"-2" }} t</dd></div>
+          <div><dt class="text-slate-600">Prix convenu</dt><dd class="mt-0.5 font-medium text-slate-900">{{ mission.prix_convenu|floatformat:0|intcomma }} FCFA</dd></div>
+          <div><dt class="text-slate-600">Départ prévu</dt><dd class="mt-0.5 font-medium text-slate-900">{{ mission.date_depart_prevue|date:"d/m/Y"|default:"Non renseigné" }}</dd></div>
+        </dl>
+      </section>
+
+      <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-affectation">
+        <h2 id="titre-affectation" class="text-base font-semibold text-slate-900">Camion et chauffeur</h2>
+        {% if mission.vehicule %}
+          <dl class="mt-4 grid gap-x-6 gap-y-4 text-sm sm:grid-cols-2">
+            <div><dt class="text-slate-600">Camion</dt><dd class="mt-0.5 font-medium text-slate-900">{{ mission.vehicule.immatriculation }} — {{ mission.vehicule.marque }} {{ mission.vehicule.modele }}</dd></div>
+            <div><dt class="text-slate-600">Chauffeur</dt><dd class="mt-0.5 font-medium text-slate-900">{{ mission.chauffeur.personnel.prenom }} {{ mission.chauffeur.personnel.nom }}</dd></div>
+            <div><dt class="text-slate-600">Km au départ</dt><dd class="mt-0.5 font-medium text-slate-900">{{ mission.km_depart|default_if_none:"—"|intcomma }}</dd></div>
+            <div><dt class="text-slate-600">Km à l'arrivée</dt><dd class="mt-0.5 font-medium text-slate-900">{{ mission.km_arrivee|default_if_none:"—"|intcomma }}</dd></div>
+          </dl>
+        {% else %}
+          <p class="mt-3 text-sm text-slate-700">Aucun camion ni chauffeur affecté pour l'instant.</p>
+        {% endif %}
+      </section>
+
+      <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-dates">
+        <h2 id="titre-dates" class="text-base font-semibold text-slate-900">Historique</h2>
+        <dl class="mt-4 grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
+          <div><dt class="text-slate-600">Créée le</dt><dd class="mt-0.5 font-medium text-slate-900">{{ mission.created_at|date:"d/m/Y H:i" }}</dd></div>
+          <div><dt class="text-slate-600">Départ effectif</dt><dd class="mt-0.5 font-medium text-slate-900">{{ mission.date_depart|date:"d/m/Y H:i"|default:"—" }}</dd></div>
+          <div><dt class="text-slate-600">Colis récupéré le</dt><dd class="mt-0.5 font-medium text-slate-900">{{ mission.date_recuperation|date:"d/m/Y H:i"|default:"—" }}</dd></div>
+          <div><dt class="text-slate-600">Livrée le</dt><dd class="mt-0.5 font-medium text-slate-900">{{ mission.date_livraison|date:"d/m/Y H:i"|default:"—" }}</dd></div>
+          <div><dt class="text-slate-600">Clôturée le</dt><dd class="mt-0.5 font-medium text-slate-900">{{ mission.date_cloture|date:"d/m/Y H:i"|default:"—" }}</dd></div>
+        </dl>
+      </section>
+    </div>
+
+    <div class="space-y-6">
+      <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-actions">
+        <h2 id="titre-actions" class="text-base font-semibold text-slate-900">Actions</h2>
+
+        {% if actions.planifier %}
+          <form method="post" action="{% url 'missions:planifier' mission.pk %}" class="mt-4">
+            {% csrf_token %}
+            <p class="mb-2 text-sm text-slate-700">Valider la mission pour la rendre disponible à l'affectation.</p>
+            <button type="submit" class="w-full rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 focus-visible:ring-offset-2">Valider et planifier</button>
+          </form>
+        {% endif %}
+
+        {% if actions.affecter %}
+          <form method="post" action="{% url 'missions:affecter' mission.pk %}" class="mt-4 space-y-4">
+            {% csrf_token %}
+            {% include "components/_champ.html" with champ=form_affectation.vehicule %}
+            {% include "components/_champ.html" with champ=form_affectation.chauffeur %}
+            <button type="submit" class="w-full rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 focus-visible:ring-offset-2">Affecter</button>
+          </form>
+        {% endif %}
+
+        {% if actions.demarrer %}
+          <form method="post" action="{% url 'missions:demarrer' mission.pk %}" class="mt-4"
+                onsubmit="return confirm('Démarrer la mission ? Le camion et le chauffeur passeront « En mission ».');">
+            {% csrf_token %}
+            <button type="submit" class="w-full rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-600 focus-visible:ring-offset-2">Démarrer la mission</button>
+          </form>
+        {% endif %}
+
+        {% if actions.recuperation %}
+          <form method="post" action="{% url 'missions:recuperation' mission.pk %}" class="mt-4 space-y-4">
+            {% csrf_token %}
+            <p class="text-sm text-slate-700">L'expéditeur confirme la récupération du colis avec son code.</p>
+            {% include "components/_champ.html" with champ=form_recuperation.code %}
+            <button type="submit" class="w-full rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 focus-visible:ring-offset-2">Confirmer la récupération</button>
+          </form>
+        {% endif %}
+
+        {% if actions.livraison %}
+          <form method="post" action="{% url 'missions:livraison' mission.pk %}" class="mt-4 space-y-4">
+            {% csrf_token %}
+            <p class="text-sm text-slate-700">Le destinataire confirme la livraison avec son code.</p>
+            {% include "components/_champ.html" with champ=form_livraison.code %}
+            {% include "components/_champ.html" with champ=form_livraison.km_arrivee %}
+            <button type="submit" class="w-full rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2">Confirmer la livraison</button>
+          </form>
+        {% endif %}
+
+        {% if actions.cloturer %}
+          <form method="post" action="{% url 'missions:cloturer' mission.pk %}" class="mt-4"
+                onsubmit="return confirm('Clôturer et valider définitivement cette mission ?');">
+            {% csrf_token %}
+            <button type="submit" class="w-full rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2">Clôturer et valider</button>
+          </form>
+        {% endif %}
+
+        {% if not actions.planifier and not actions.affecter and not actions.demarrer and not actions.recuperation and not actions.livraison and not actions.cloturer %}
+          <p class="mt-3 text-sm text-slate-700">Aucune action disponible pour votre rôle à cette étape.</p>
+        {% endif %}
+      </section>
+
+      {% if codes.expediteur or codes.destinataire %}
+        <section class="rounded-xl border border-amber-300 bg-amber-50 p-5 shadow-sm" aria-labelledby="titre-codes">
+          <h2 id="titre-codes" class="text-base font-semibold text-amber-900"><i class="fa-solid fa-key mr-2" aria-hidden="true"></i>Codes à communiquer</h2>
+          <p class="mt-1 text-xs text-amber-900">Confidentiels : à remettre uniquement à la personne concernée.</p>
+          {% if codes.expediteur %}
+            <div class="mt-4">
+              <p class="text-sm text-amber-900">Expéditeur (récupération du colis)</p>
+              <p class="mt-1 rounded-lg bg-white px-3 py-2 text-center font-mono text-xl font-bold tracking-widest text-slate-900">{{ codes.expediteur }}</p>
+            </div>
+          {% endif %}
+          {% if codes.destinataire %}
+            <div class="mt-4">
+              <p class="text-sm text-amber-900">Destinataire (confirmation de livraison)</p>
+              <p class="mt-1 rounded-lg bg-white px-3 py-2 text-center font-mono text-xl font-bold tracking-widest text-slate-900">{{ codes.destinataire }}</p>
+            </div>
+          {% endif %}
+        </section>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

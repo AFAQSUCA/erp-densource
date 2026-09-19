@@ -1,0 +1,11 @@
+{# Champ de formulaire accessible : {% include "components/_champ.html" with champ=form.nom %} #}
+<div>
+  <label for="{{ champ.id_for_label }}" class="block text-sm font-medium text-slate-800">
+    {{ champ.label }}{% if champ.field.required %}<span class="text-red-700" aria-hidden="true"> *</span>{% endif %}
+  </label>
+  <div class="mt-1">{{ champ }}</div>
+  {% if champ.help_text %}<p class="mt-1 text-xs text-slate-600">{{ champ.help_text }}</p>{% endif %}
+  {% for erreur in champ.errors %}
+    <p class="mt-1 text-xs font-medium text-red-700" role="alert">{{ erreur }}</p>
+  {% endfor %}
+</div>

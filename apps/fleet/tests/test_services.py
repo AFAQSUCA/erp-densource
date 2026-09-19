@@ -175,3 +175,11 @@ def test_enregistrer_kilometrage_refuse_de_reculer():
 
     with pytest.raises(ValueError):
         services.enregistrer_kilometrage(camion, 999)
+
+
+def test_vehicules_disponibles_exclut_les_autres_statuts():
+    libre = VehiculeFactory(immatriculation="1000 AA 01")
+    VehiculeFactory(statut=StatutVehicule.EN_MISSION)
+    VehiculeFactory(statut=StatutVehicule.EN_MAINTENANCE)
+
+    assert list(services.vehicules_disponibles()) == [libre]

@@ -14,6 +14,11 @@ km d'arrivée → compteur du camion, camion + chauffeur libérés),
 `cloturer_mission`. `vehicule_a_mission_active` fournit `mission_active` à
 `fleet.services.calculer_statut`.
 
+Interface (`views.py`, `templates/missions/`) : liste filtrée et paginée, fiche avec
+frise du cycle de vie, création, et une action POST par transition. Droits par rôle
+dans `permissions.py` (direction : affectation, suivi, clôture ; chargé clientèle :
+création et planification). Les codes ne s'affichent que tant qu'ils servent.
+
 Reste à faire :
 - Contrôle des rôles (chargé clientèle, direction, chauffeur) : permissions DRF, étape 6.
 - Image QR des deux codes (bibliothèque `qrcode` + Pillow) : étape 6 / mobile.

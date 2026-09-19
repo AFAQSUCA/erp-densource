@@ -44,6 +44,15 @@ class User(AbstractUser):
         return self.get_full_name() or self.username
 
     @property
+    def role_effectif(self) -> str:
+        """Rôle utilisé pour les droits : un superutilisateur agit en ADMIN.
+
+        ``createsuperuser`` ne renseigne pas ``role`` ; sans cela le premier
+        compte créé ne verrait aucun écran de l'interface.
+        """
+        return Role.ADMIN if self.is_superuser else self.role
+
+    @property
     def is_admin(self):
         return self.role == Role.ADMIN
 

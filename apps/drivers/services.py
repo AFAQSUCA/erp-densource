@@ -40,6 +40,13 @@ def changer_statut(chauffeur: Chauffeur, statut: str) -> Chauffeur:
     return chauffeur
 
 
+def chauffeurs_disponibles() -> QuerySet[Chauffeur]:
+    """Chauffeurs au statut « Disponible », pour l'affectation d'une mission."""
+    return Chauffeur.objects.select_related("personnel").filter(
+        statut=StatutChauffeur.DISPONIBLE
+    )
+
+
 def mettre_en_mission(chauffeur: Chauffeur) -> Chauffeur:
     """Départ d'une mission : statut « En mission » (cahier-des-charges.md:135)."""
     return changer_statut(chauffeur, StatutChauffeur.EN_MISSION)

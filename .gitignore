@@ -13,3 +13,4 @@ htmlcov/
 .coverage
 .vscode/
 .idea/
+.claude/

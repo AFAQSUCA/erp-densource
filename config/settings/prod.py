@@ -34,8 +34,4 @@ SECURE_HSTS_PRELOAD = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = "DENY"
 
-# Sessions 15 min mobile / 30 min desktop — cahier-des-charges.md:285.
-# Valeur par défaut desktop ; l'API mobile applique sa propre durée JWT.
-SESSION_COOKIE_AGE = 30 * 60
-
 CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=[])

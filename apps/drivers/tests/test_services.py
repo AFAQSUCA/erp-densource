@@ -140,3 +140,11 @@ def test_rappeler_de_mission_conserve_un_autre_statut(statut):
 
     fiche.refresh_from_db()
     assert fiche.statut == statut
+
+
+def test_chauffeurs_disponibles_exclut_les_autres_statuts():
+    libre = ChauffeurFactory()
+    ChauffeurFactory(statut=StatutChauffeur.EN_CONGE)
+    ChauffeurFactory(statut=StatutChauffeur.EN_MISSION)
+
+    assert list(services.chauffeurs_disponibles()) == [libre]
