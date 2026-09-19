@@ -40,6 +40,19 @@ def changer_statut(chauffeur: Chauffeur, statut: str) -> Chauffeur:
     return chauffeur
 
 
+def mettre_en_conge(chauffeur: Chauffeur) -> Chauffeur:
+    """Début d'un congé : statut « En congé »."""
+    return changer_statut(chauffeur, StatutChauffeur.EN_CONGE)
+
+
+def rappeler_de_conge(chauffeur: Chauffeur) -> Chauffeur:
+    """Fin d'un congé : « Disponible », sauf si le statut a changé entre-temps
+    (ex. Suspendu ou Inactif), qui reste alors conservé."""
+    if chauffeur.statut == StatutChauffeur.EN_CONGE:
+        return changer_statut(chauffeur, StatutChauffeur.DISPONIBLE)
+    return chauffeur
+
+
 def chauffeurs_a_renouveler(
     *, aujourd_hui: date | None = None, jours: int = DELAI_ALERTE_JOURS
 ) -> QuerySet[Chauffeur]:

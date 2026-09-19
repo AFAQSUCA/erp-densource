@@ -1,9 +1,10 @@
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 
-from apps.hr.models import Personnel
+from apps.hr.models import Conge, Personnel, StatutConge
 
 from . import services
+from .models import Chauffeur
 
 
 @receiver(post_save, sender=Personnel)
@@ -17,3 +18,21 @@ def creer_fiche_chauffeur(sender, instance, raw=False, **kwargs):
         return
     if instance.est_chauffeur:
         services.assurer_fiche_chauffeur(instance)
+
+
+@receiver(post_save, sender=Conge)
+def aligner_statut_chauffeur_sur_conge(sender, instance, raw=False, **kwargs):
+    """Congé d'un chauffeur en cours → « En congé » (cahier-des-charges.md:216).
+
+    Appliqué au démarrage effectif du congé (EN_COURS) et non à l'approbation,
+    pour ne pas immobiliser le chauffeur des semaines avant son départ.
+    """
+    if raw or instance.statut not in (StatutConge.EN_COURS, StatutConge.TERMINE):
+        return
+    fiche = Chauffeur.objects.filter(personnel_id=instance.employe_id).first()
+    if fiche is None:
+        return
+    if instance.statut == StatutConge.EN_COURS:
+        services.mettre_en_conge(fiche)
+    else:
+        services.rappeler_de_conge(fiche)
