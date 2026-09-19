@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% load ui %}
+{% block titre %}Incidents{% endblock %}
+{% block entete %}Garage{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-7xl">
+  <div class="flex flex-wrap items-end justify-between gap-3">
+    <div>
+      <h1 class="text-2xl font-bold text-slate-900">Incidents signalés par les chauffeurs</h1>
+      <p class="mt-1 text-sm text-slate-600">
+        {{ paginator.count|default:0 }} incident{{ paginator.count|pluralize }}
+        {% if a_traiter %}· <strong class="text-red-800">{{ a_traiter }} à traiter</strong>{% endif %}
+      </p>
+    </div>
+    <a href="{% url 'garage:checklists' %}" class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+      <i class="fa-solid fa-list-check" aria-hidden="true"></i> Check-lists
+    </a>
+  </div>
+
+  <form method="get" class="mt-5 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div class="min-w-[14rem] flex-1">{% include "components/_champ.html" with champ=filtre.q %}</div>
+    <div class="min-w-[10rem]">{% include "components/_champ.html" with champ=filtre.statut %}</div>
+    <div class="min-w-[10rem]">{% include "components/_champ.html" with champ=filtre.gravite %}</div>
+    <button type="submit" class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2">Filtrer</button>
+    {% if filtres_actifs %}<a href="{% url 'garage:incidents' %}" class="px-2 py-2 text-sm font-medium text-slate-700 underline hover:text-slate-900">Réinitialiser</a>{% endif %}
+  </form>
+
+  {% if incidents %}
+    <div class="mt-5 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+      <table class="min-w-full divide-y divide-slate-200 text-sm">
+        <caption class="sr-only">Liste des incidents</caption>
+        <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+          <tr><th scope="col" class="px-4 py-3">Date</th><th scope="col" class="px-4 py-3">Camion</th><th scope="col" class="px-4 py-3">Incident</th><th scope="col" class="px-4 py-3">Gravité</th><th scope="col" class="px-4 py-3">Statut</th><th scope="col" class="hidden px-4 py-3 xl:table-cell">Chauffeur</th></tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          {% for i in incidents %}
+            <tr class="hover:bg-slate-50">
+              <td class="whitespace-nowrap px-4 py-3 text-slate-700">{{ i.created_at|date:"d/m/Y H:i" }}</td>
+              <td class="whitespace-nowrap px-4 py-3 font-semibold"><a href="{% url 'garage:incident' i.pk %}" class="text-marque-700 underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">{{ i.vehicule.immatriculation }}</a></td>
+              <td class="px-4 py-3 text-slate-900">{{ i.get_type_incident_display }}<span class="block max-w-xs truncate text-xs text-slate-600">{{ i.description }}</span></td>
+              <td class="whitespace-nowrap px-4 py-3">{% badge i.gravite i.get_gravite_display %}</td>
+              <td class="whitespace-nowrap px-4 py-3">{% badge i.statut i.get_statut_display %}</td>
+              <td class="hidden whitespace-nowrap px-4 py-3 text-slate-700 xl:table-cell">{% if i.chauffeur %}{{ i.chauffeur.personnel.prenom }} {{ i.chauffeur.personnel.nom }}{% else %}—{% endif %}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% include "components/_pagination.html" %}
+  {% else %}
+    <div class="mt-5 rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center">
+      <span class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-600"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i></span>
+      <p class="mt-3 font-semibold text-slate-900">Aucun incident</p>
+      <p class="mt-1 text-sm text-slate-600">{% if filtres_actifs %}Aucun résultat pour ces critères.{% else %}Les pannes et incidents signalés depuis l'espace mobile apparaîtront ici.{% endif %}</p>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,14 @@
+{% extends "mobile/base.html" %}
+{% block titre %}Mes missions{% endblock %}
+
+{% block contenu %}
+<h1 class="text-xl font-bold text-slate-900">Mes missions</h1>
+<p class="text-sm text-slate-600">À faire, en cours, et livrées cette semaine.</p>
+<div class="mt-4 space-y-3">
+  {% for mission in missions %}
+    {% include "mobile/_carte_mission.html" %}
+  {% empty %}
+    <p class="rounded-2xl border border-dashed border-slate-300 bg-white p-6 text-center text-slate-700">Aucune mission pour le moment.</p>
+  {% endfor %}
+</div>
+{% endblock %}

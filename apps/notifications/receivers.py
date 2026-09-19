@@ -6,6 +6,7 @@ Qui est prévenu de quoi (les destinataires suivent les rôles du cahier-des-cha
 - congé validé N1 → RH (N2) ; décision finale, refus ou annulation → l'employé ;
 - stock au seuil → PARCAUTO ; surconsommation ou anomalie → PARCAUTO et DIRECTION ;
 - mission partie → chargé clientèle attitré du client (à défaut, tous les chargés clientèle) ;
+- incident signalé → PARCAUTO et DIRECTION ; check-list avec point KO → PARCAUTO ;
 - facture soumise → DIRECTION ; validée → FINANCES et son auteur ; renvoyée → son auteur.
 
 Les domaines métier ne connaissent pas ce module : ils émettent des signaux.
@@ -20,6 +21,8 @@ from apps.billing import signals as billing_signals
 from apps.core.formats import nombre, pourcentage_signe
 from apps.fuel.models import NiveauAlerte
 from apps.fuel.signals import alerte_consommation
+from apps.garage import signals as garage_signals
+from apps.garage.models import GraviteIncident
 from apps.hr import services as hr_services
 from apps.hr import signals as hr_signals
 from apps.inventory.signals import seuil_bas_atteint
@@ -252,4 +255,39 @@ def prevenir_du_refus_d_une_facture(sender, facture, motif, **kwargs):
         titre=f"Facture renvoyée par la direction : {facture.client.raison_sociale}",
         message=f"Motif : {motif}",
         url=_lien_facture(facture),
+    )
+
+
+# --- signalements du chauffeur ---
+
+
+@receiver(garage_signals.incident_signale)
+def prevenir_d_un_incident(sender, incident, **kwargs):
+    chauffeur = incident.chauffeur.personnel if incident.chauffeur else None
+    auteur = f"{chauffeur.prenom} {chauffeur.nom}" if chauffeur else "un chauffeur"
+    detail = f" ({incident.lieu})" if incident.lieu else ""
+    notifier(
+        utilisateurs_du_role(Role.PARCAUTO, Role.DIRECTION),
+        categorie=CategorieNotification.INCIDENT,
+        niveau=(
+            NiveauNotification.URGENT
+            if incident.gravite == GraviteIncident.GRAVE
+            else NiveauNotification.ATTENTION
+        ),
+        titre=f"{incident.get_type_incident_display()} signalé : {incident.vehicule.immatriculation}",
+        message=f"{auteur}{detail} : {incident.description}",
+        url=reverse("garage:incident", args=[incident.pk]),
+    )
+
+
+@receiver(garage_signals.checklist_anomalie)
+def prevenir_d_une_anomalie_de_checklist(sender, checklist, **kwargs):
+    ko = [p["libelle"] for p in checklist.points if not p["ok"]]
+    notifier(
+        utilisateurs_du_role(Role.PARCAUTO),
+        categorie=CategorieNotification.INCIDENT,
+        niveau=NiveauNotification.ATTENTION,
+        titre=f"Check-list : {len(ko)} point{'s' if len(ko) > 1 else ''} KO sur {checklist.vehicule.immatriculation}",
+        message=f"Mission {checklist.mission.numero} : " + ", ".join(ko) + ".",
+        url=reverse("garage:checklists"),
     )

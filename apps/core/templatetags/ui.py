@@ -54,6 +54,13 @@ COULEURS_STATUT = {
     "ENTREE": "vert",
     "SORTIE": "bleu",
     "AJUSTEMENT": "ambre",
+    # incidents
+    "SIGNALE": "rouge",
+    "PRIS_EN_COMPTE": "bleu",
+    "CLOS": "gris",
+    "FAIBLE": "gris",
+    "MOYENNE": "ambre",
+    "GRAVE": "rouge",
     # facturation
     "A_VALIDER": "ambre",
     "EMISE": "bleu",

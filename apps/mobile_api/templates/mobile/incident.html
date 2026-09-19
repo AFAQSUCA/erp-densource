@@ -1,0 +1,32 @@
+{% extends "mobile/base.html" %}
+{% load ui %}
+{% block titre %}Signaler un incident{% endblock %}
+
+{% block contenu %}
+<h1 class="text-xl font-bold text-slate-900">Signaler une panne ou un incident</h1>
+<p class="text-sm text-slate-600">Le Parc Auto et la Direction sont prévenus tout de suite. Ils décident de la suite.</p>
+
+<form method="post" class="mt-4 space-y-4" novalidate>
+  {% csrf_token %}
+  {% if form.non_field_errors %}
+    <div role="alert" class="rounded-2xl border border-red-300 bg-red-50 px-4 py-3 text-sm font-medium text-red-900">{% for e in form.non_field_errors %}<p>{{ e }}</p>{% endfor %}</div>
+  {% endif %}
+  {% include "components/_champ.html" with champ=form.type_incident %}
+  {% include "components/_champ.html" with champ=form.gravite %}
+  {% include "components/_champ.html" with champ=form.description %}
+  {% include "components/_champ.html" with champ=form.lieu %}
+  {% include "components/_champ.html" with champ=form.mission %}
+  <button type="submit" class="w-full rounded-2xl bg-slate-900 px-4 py-4 text-lg font-bold text-white shadow active:bg-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900"><i class="fa-solid fa-paper-plane mr-2" aria-hidden="true"></i>Envoyer le signalement</button>
+</form>
+
+{% if derniers %}
+  <section class="mt-6" aria-labelledby="titre-derniers">
+    <h2 id="titre-derniers" class="text-sm font-semibold uppercase tracking-wide text-slate-600">Mes derniers signalements</h2>
+    <ul class="mt-2 divide-y divide-slate-200 rounded-2xl border border-slate-200 bg-white text-sm">
+      {% for i in derniers %}
+        <li class="px-4 py-3"><div class="flex items-center justify-between gap-2"><span class="font-medium">{{ i.get_type_incident_display }} · {{ i.vehicule.immatriculation }}</span>{% badge i.statut i.get_statut_display %}</div><p class="mt-1 text-slate-700">{{ i.description|truncatechars:80 }}</p></li>
+      {% endfor %}
+    </ul>
+  </section>
+{% endif %}
+{% endblock %}

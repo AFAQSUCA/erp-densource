@@ -1,0 +1,46 @@
+{% extends "mobile/base.html" %}
+{% load ui %}
+{% block titre %}Plein de carburant{% endblock %}
+
+{% block contenu %}
+<h1 class="text-xl font-bold text-slate-900">Plein de carburant</h1>
+<p class="text-sm text-slate-600">{% if vehicule %}Camion {{ vehicule.immatriculation }}{% else %}<strong class="text-red-800">Aucun camion ne vous est affecté : contactez le Parc Auto.</strong>{% endif %}</p>
+
+<form method="post" class="mt-4 space-y-4" novalidate>
+  {% csrf_token %}
+
+  {% if saisie_suspecte %}
+    <div role="alert" class="rounded-2xl border border-amber-400 bg-amber-50 p-4 text-sm text-amber-950">
+      <p class="text-base font-semibold"><i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>Vérifiez votre saisie</p>
+      <p class="mt-2">Consommation calculée : <strong>{{ saisie_suspecte.consommation|floatformat:1 }} L/100 km</strong> ({{ saisie_suspecte.ecart_pct|pourcentage_signe }} % par rapport à votre moyenne de {{ saisie_suspecte.moyenne|floatformat:1 }}). Une erreur sur les <strong>litres</strong> ou le <strong>kilométrage</strong> est probable.</p>
+      <p class="mt-2">Corrigez, ou confirmez si les valeurs sont exactes.</p>
+    </div>
+  {% endif %}
+  {% if form.non_field_errors %}
+    <div role="alert" class="rounded-2xl border border-red-300 bg-red-50 px-4 py-3 text-sm font-medium text-red-900">{% for e in form.non_field_errors %}<p>{{ e }}</p>{% endfor %}</div>
+  {% endif %}
+
+  {% include "components/_champ.html" with champ=form.station %}
+  {% include "components/_champ.html" with champ=form.quantite_litres %}
+  {% include "components/_champ.html" with champ=form.prix_unitaire %}
+  {% include "components/_champ.html" with champ=form.km_compteur %}
+  {% include "components/_champ.html" with champ=form.numero_ticket %}
+  {% include "components/_champ.html" with champ=form.date_plein %}
+
+  {% if saisie_suspecte %}
+    <button type="submit" name="confirmer" value="1" class="w-full rounded-2xl bg-accent-500 px-4 py-4 text-lg font-bold text-slate-900 shadow active:bg-accent-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-700">Confirmer : les valeurs sont exactes</button>
+  {% endif %}
+  <button type="submit" class="w-full rounded-2xl bg-marque-600 px-4 py-4 text-lg font-bold text-white shadow active:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-800">{% if saisie_suspecte %}Enregistrer avec mes corrections{% else %}Enregistrer le plein{% endif %}</button>
+</form>
+
+{% if derniers %}
+  <section class="mt-6" aria-labelledby="titre-derniers">
+    <h2 id="titre-derniers" class="text-sm font-semibold uppercase tracking-wide text-slate-600">Mes derniers pleins</h2>
+    <ul class="mt-2 divide-y divide-slate-200 rounded-2xl border border-slate-200 bg-white text-sm">
+      {% for p in derniers %}
+        <li class="flex items-center justify-between gap-3 px-4 py-3"><span>{{ p.date_plein|date:"d/m" }} · {{ p.quantite_litres|floatformat:"-2" }} L</span><span class="font-medium">{% if p.consommation %}{{ p.consommation|floatformat:1 }} L/100{% else %}—{% endif %}{% if p.niveau_alerte != "AUCUNE" %} {% badge p.niveau_alerte "!" %}{% endif %}</span></li>
+      {% endfor %}
+    </ul>
+  </section>
+{% endif %}
+{% endblock %}

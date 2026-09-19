@@ -23,5 +23,7 @@ urlpatterns = [
     path("facturation/", include("apps.billing.urls")),
     path("finances/", include("apps.finance.urls")),
     path("notifications/", include("apps.notifications.urls")),
+    path("api/v1/", include("apps.api.urls")),
+    path("chauffeur/", include("apps.mobile_api.urls_web")),
     path("admin/", admin.site.urls),
 ]

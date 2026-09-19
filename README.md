@@ -64,7 +64,7 @@ Identité visuelle : couleurs du logo DEN Source Group (bordeaux `#8B0319`, oran
 - [x] Interface web : personnel, recrutement et congés (workflow 3 niveaux)
 - [x] Étape 4 — Finance (facturation, règlements, dépenses, trésorerie) : sans écritures comptables ni rapprochement bancaire (voir apps/billing/README.md)
 - [x] Étape 5 — Pilotage (tableau de bord par rôle, notifications) : sans les indicateurs financiers (étape 4) ni Celery / SMS / push (voir apps/notifications/README.md)
-- [ ] Étape 6 — API (api/v1, mobile_api)
+- [x] Étape 6 — API (api/v1 en lecture seule, API et espace mobile du chauffeur, codes QR) : sans mode hors ligne (voir apps/mobile_api/README.md)
 - [ ] Étape 7 — Tests & déploiement
 
 ## Tableau de bord et notifications
@@ -88,3 +88,12 @@ mission livrée (FINANCES), se valide par la DIRECTION (numéro `FACT-AAAA-XXXX`
 acomptes et solde. Les indicateurs du mois (CA, encaissé, charges, marge, créances, trésorerie) et les
 factures échues apparaissent au tableau de bord. Mentions de l'émetteur sur la facture imprimable :
 `ENTREPRISE_NOM`, `ENTREPRISE_ADRESSE`, `ENTREPRISE_NCC`.
+
+## API et espace chauffeur
+
+- **API** : `/api/v1/` (JWT). Connexion : `POST /api/v1/auth/token/`. Documentation interactive pour
+  l'ADMIN et la DIRECTION : `/api/v1/docs/`. Variable d'environnement : `CORS_ALLOWED_ORIGINS`.
+- **Espace chauffeur** : `/chauffeur/`, à ouvrir sur un téléphone puis « Ajouter à l'écran d'accueil ».
+  Un compte de rôle CHAUFFEUR arrive directement dessus après sa connexion.
+- **Codes QR** : sur la fiche d'une mission, l'expéditeur et le destinataire disposent de leur code et
+  de son QR ; le chauffeur le scanne pour confirmer la récupération puis la livraison.

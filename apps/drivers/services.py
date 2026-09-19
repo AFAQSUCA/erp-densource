@@ -227,3 +227,14 @@ def changer_statut_manuel(chauffeur: Chauffeur, statut: str) -> Chauffeur:
             "par les missions et les congés."
         )
     return changer_statut(chauffeur, statut)
+
+
+def chauffeur_de(utilisateur) -> Chauffeur | None:
+    """Fiche chauffeur du compte (via sa fiche du personnel), ou ``None``.
+
+    Sert à l'espace mobile : un chauffeur n'agit que sur ses propres missions.
+    """
+    fiche = getattr(utilisateur, "personnel", None)
+    if fiche is None:
+        return None
+    return getattr(fiche, "chauffeur", None)

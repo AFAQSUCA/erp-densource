@@ -12,12 +12,19 @@ class GarageConfig(AppConfig):
         from apps.fleet.sections import DETAIL_VEHICULE
 
         from . import permissions, sections
-        from .models import OrdreReparation
+        from .models import Incident, OrdreReparation
 
         audit_model(OrdreReparation, module="PARC_AUTO")
+        audit_model(Incident, module="PARC_AUTO")
         enregistrer(
             EntreeMenu(
                 "Garage", "garage:liste", "fa-screwdriver-wrench", permissions.CONSULTATION, ordre=40
+            )
+        )
+        enregistrer(
+            EntreeMenu(
+                "Incidents", "garage:incidents", "fa-triangle-exclamation",
+                permissions.CONSULTATION, ordre=41,
             )
         )
         DETAIL_VEHICULE.enregistrer(sections.section_maintenance)

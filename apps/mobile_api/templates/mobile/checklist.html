@@ -1,0 +1,40 @@
+{% extends "mobile/base.html" %}
+{% block titre %}Check-list du camion{% endblock %}
+
+{% block contenu %}
+<a href="{% url 'chauffeur:mission' mission.pk %}" class="text-sm font-medium text-marque-700 underline-offset-2 hover:underline"><i class="fa-solid fa-chevron-left mr-1" aria-hidden="true"></i>Mission {{ mission.numero }}</a>
+<h1 class="mt-2 text-xl font-bold text-slate-900">Check-list du camion</h1>
+<p class="text-sm text-slate-600">{{ mission.vehicule.immatriculation }} · à remplir avant le départ. Un point KO prévient le Parc Auto, sans vous empêcher de partir.</p>
+
+<form method="post" class="mt-4 space-y-3" novalidate>
+  {% csrf_token %}
+  {% if form.non_field_errors %}
+    <div role="alert" class="rounded-2xl border border-red-300 bg-red-50 px-4 py-3 text-sm font-medium text-red-900">{% for e in form.non_field_errors %}<p>{{ e }}</p>{% endfor %}</div>
+  {% endif %}
+
+  {% for code, libelle, champ_ok, champ_remarque in form.points %}
+    <fieldset class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" x-data="{ ko: {% if champ_ok.value == '0' %}true{% else %}false{% endif %} }">
+      <legend class="px-1 text-base font-semibold text-slate-900">{{ libelle }}</legend>
+      <div class="mt-2 grid grid-cols-2 gap-3">
+        <label class="flex cursor-pointer items-center justify-center gap-2 rounded-xl border-2 px-3 py-3 text-base font-bold has-[:checked]:border-emerald-600 has-[:checked]:bg-emerald-50 has-[:checked]:text-emerald-900 border-slate-300 text-slate-700">
+          <input type="radio" name="{{ champ_ok.html_name }}" value="1" class="sr-only" {% if champ_ok.value == "1" %}checked{% endif %} @change="ko = false" required> <i class="fa-solid fa-check" aria-hidden="true"></i> OK
+        </label>
+        <label class="flex cursor-pointer items-center justify-center gap-2 rounded-xl border-2 px-3 py-3 text-base font-bold has-[:checked]:border-red-600 has-[:checked]:bg-red-50 has-[:checked]:text-red-900 border-slate-300 text-slate-700">
+          <input type="radio" name="{{ champ_ok.html_name }}" value="0" class="sr-only" {% if champ_ok.value == "0" %}checked{% endif %} @change="ko = true"> <i class="fa-solid fa-xmark" aria-hidden="true"></i> KO
+        </label>
+      </div>
+      {% for e in champ_ok.errors %}<p class="mt-2 text-sm font-medium text-red-700" role="alert">{{ e }}</p>{% endfor %}
+      <div class="mt-3" x-show="ko" x-cloak>
+        <label for="{{ champ_remarque.id_for_label }}" class="block text-sm font-medium text-slate-800">Quel est le problème ? <span class="text-red-700" aria-hidden="true">*</span></label>
+        <div class="mt-1">{{ champ_remarque }}</div>
+      </div>
+    </fieldset>
+  {% endfor %}
+
+  <div>
+    <label for="{{ form.remarque.id_for_label }}" class="block text-sm font-medium text-slate-800">{{ form.remarque.label }}</label>
+    <div class="mt-1">{{ form.remarque }}</div>
+  </div>
+  <button type="submit" class="w-full rounded-2xl bg-marque-600 px-4 py-4 text-lg font-bold text-white shadow active:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-800">Enregistrer la check-list</button>
+</form>
+{% endblock %}

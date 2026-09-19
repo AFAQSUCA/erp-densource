@@ -5,7 +5,11 @@ formulaire et délèguent à ``services.py`` (conventions.md:19-23). Une erreur
 métier (``MissionError``) devient un message affiché à l'utilisateur.
 """
 
+import io
+
+import qrcode
 from django.contrib import messages
+from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.views import View
 from django.views.generic import DetailView, FormView, ListView
@@ -199,3 +203,29 @@ class CloturerView(ActionMissionView):
 
     def message_succes(self, mission):
         return f"Mission {mission.numero} clôturée et validée."
+
+
+class CodeQrView(RoleRequiredMixin, View):
+    """Image PNG du code QR d'une mission (« expediteur » ou « destinataire »).
+
+    Le QR ne contient que le code : le chauffeur le scanne (ou le saisit) pour confirmer la
+    récupération ou la livraison. Réservé aux rôles qui voient déjà le code, et seulement tant
+    que le code est utile ; jamais mis en cache (le code est un secret).
+    """
+
+    roles = permissions.CONSULTATION
+    http_method_names = ["get"]
+
+    def get(self, request, pk, qui):
+        if qui not in ("expediteur", "destinataire"):
+            raise Http404
+        mission = get_object_or_404(services.missions_queryset(), pk=pk)
+        code = permissions.codes_visibles(request.user, mission)[qui]
+        if not code:
+            raise Http404
+        image = qrcode.make(code, box_size=8, border=2)
+        tampon = io.BytesIO()
+        image.save(tampon, format="PNG")
+        reponse = HttpResponse(tampon.getvalue(), content_type="image/png")
+        reponse["Cache-Control"] = "no-store, private"
+        return reponse

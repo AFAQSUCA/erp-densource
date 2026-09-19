@@ -1,0 +1,73 @@
+{% extends "mobile/base.html" %}
+{% load ui %}
+{% block titre %}Mission {{ mission.numero }}{% endblock %}
+
+{% block contenu %}
+<a href="{% url 'chauffeur:missions' %}" class="text-sm font-medium text-marque-700 underline-offset-2 hover:underline"><i class="fa-solid fa-chevron-left mr-1" aria-hidden="true"></i>Mes missions</a>
+
+<div class="mt-2 flex items-start justify-between gap-2">
+  <h1 class="text-xl font-bold text-slate-900">{{ mission.numero }}</h1>
+  {% badge mission.statut mission.get_statut_display %}
+</div>
+
+<section class="mt-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" aria-labelledby="titre-trajet">
+  <h2 id="titre-trajet" class="sr-only">Trajet</h2>
+  <p class="text-lg font-bold leading-snug">{{ mission.lieu_chargement }} <i class="fa-solid fa-arrow-right mx-1 text-marque-600" aria-hidden="true"></i> {{ mission.lieu_livraison }}</p>
+  <dl class="mt-3 space-y-2 text-sm">
+    <div class="flex justify-between gap-3"><dt class="text-slate-600">Client</dt><dd class="text-right font-medium">{{ mission.client.raison_sociale }}</dd></div>
+    <div class="flex justify-between gap-3"><dt class="text-slate-600">Marchandise</dt><dd class="text-right font-medium">{{ mission.nature_marchandise }} · {{ mission.poids_t|floatformat:"-2" }} t</dd></div>
+    {% if mission.date_depart_prevue %}<div class="flex justify-between gap-3"><dt class="text-slate-600">Départ prévu</dt><dd class="font-medium">{{ mission.date_depart_prevue|date:"l j F" }}</dd></div>{% endif %}
+    {% if mission.vehicule %}<div class="flex justify-between gap-3"><dt class="text-slate-600">Camion</dt><dd class="font-medium">{{ mission.vehicule.immatriculation }}</dd></div>{% endif %}
+    {% if mission.km_depart %}<div class="flex justify-between gap-3"><dt class="text-slate-600">Km au départ</dt><dd class="font-medium">{{ mission.km_depart }}</dd></div>{% endif %}
+    {% if mission.km_arrivee %}<div class="flex justify-between gap-3"><dt class="text-slate-600">Km à l'arrivée</dt><dd class="font-medium">{{ mission.km_arrivee }}</dd></div>{% endif %}
+  </dl>
+</section>
+
+{% if mission.statut == "AFFECTEE" %}
+  <section class="mt-4 space-y-3" aria-labelledby="titre-depart">
+    <h2 id="titre-depart" class="text-sm font-semibold uppercase tracking-wide text-slate-600">Avant le départ</h2>
+    {% if actions.checklist %}
+      <a href="{% url 'chauffeur:checklist' mission.pk %}" class="flex items-center justify-center gap-2 rounded-2xl bg-accent-500 px-4 py-4 text-lg font-bold text-slate-900 shadow active:bg-accent-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-700"><i class="fa-solid fa-list-check" aria-hidden="true"></i> Check-list du camion</a>
+    {% elif checklist_faite %}
+      <p class="rounded-2xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900"><i class="fa-solid fa-circle-check mr-2" aria-hidden="true"></i>Check-list du camion faite.</p>
+    {% endif %}
+    <form method="post" action="{% url 'chauffeur:demarrer' mission.pk %}" onsubmit="return confirm('Démarrer la mission maintenant ?');">{% csrf_token %}
+      <button type="submit" class="flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-700 px-4 py-4 text-lg font-bold text-white shadow active:bg-emerald-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-800"><i class="fa-solid fa-truck-fast" aria-hidden="true"></i> Démarrer la mission</button>
+    </form>
+  </section>
+{% endif %}
+
+{% if form_recuperation %}
+  <section class="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" aria-labelledby="titre-recup">
+    <h2 id="titre-recup" class="text-base font-bold">Récupération du colis</h2>
+    <p class="mt-1 text-sm text-slate-700">L'expéditeur vous donne son code ou vous montre son QR : scannez-le ou saisissez-le.</p>
+    <form method="post" action="{% url 'chauffeur:recuperation' mission.pk %}" class="mt-3 space-y-3" x-data="scannerCode('id_code')">{% csrf_token %}
+      {% include "mobile/_scanner.html" %}
+      {{ form_recuperation.code }}
+      <button type="submit" class="w-full rounded-2xl bg-marque-600 px-4 py-4 text-lg font-bold text-white shadow active:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-800">Confirmer la récupération</button>
+    </form>
+  </section>
+{% endif %}
+
+{% if form_livraison %}
+  <section class="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" aria-labelledby="titre-livraison">
+    <h2 id="titre-livraison" class="text-base font-bold">Livraison</h2>
+    <p class="mt-1 text-sm text-slate-700">Le destinataire vous donne son code (ou son QR). Indiquez aussi le kilométrage à l'arrivée.</p>
+    <form method="post" action="{% url 'chauffeur:livraison' mission.pk %}" class="mt-3 space-y-3" x-data="scannerCode('id_code')">{% csrf_token %}
+      {% include "mobile/_scanner.html" %}
+      {{ form_livraison.code }}
+      <div>
+        <label for="{{ form_livraison.km_arrivee.id_for_label }}" class="block text-sm font-medium text-slate-800">{{ form_livraison.km_arrivee.label }}</label>
+        <div class="mt-1">{{ form_livraison.km_arrivee }}</div>
+      </div>
+      <button type="submit" class="w-full rounded-2xl bg-marque-600 px-4 py-4 text-lg font-bold text-white shadow active:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-800">Confirmer la livraison</button>
+    </form>
+  </section>
+{% endif %}
+
+{% if mission.statut == "LIVREE" or mission.statut == "CLOTUREE" %}
+  <p class="mt-4 rounded-2xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900"><i class="fa-solid fa-circle-check mr-2" aria-hidden="true"></i>Mission livrée. Merci !</p>
+{% endif %}
+
+<a href="{% url 'chauffeur:incident' %}?mission={{ mission.pk }}" class="mt-6 flex items-center justify-center gap-2 rounded-2xl border border-slate-300 bg-white px-4 py-3 font-semibold text-slate-800 active:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> Signaler un problème sur cette mission</a>
+{% endblock %}

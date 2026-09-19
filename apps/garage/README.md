@@ -30,3 +30,12 @@ Blocs enregistrables (`core/sections.py`) : `garage` ajoute un bloc « Maintenan
 fiche d'un camion (`fleet.sections.DETAIL_VEHICULE`) et expose `sections.DETAIL_OR` où
 `inventory` ajoute les pièces utilisées. Ainsi `fleet` ne connaît pas `garage`, et
 `garage` ne connaît pas `inventory`.
+
+Signalements du chauffeur (`terrain.py`, `views_terrain.py`) :
+- **Check-list du véhicule** : 8 points fixes (`POINTS_CHECKLIST` : pneus, freins, feux, huile, eau,
+  carrosserie, documents, extincteur et triangle), OK ou KO, un KO exige une remarque. Une seule par
+  mission, avant le départ. **Non bloquante** : un KO prévient le Parc Auto sans empêcher la mission.
+- **Incident** : panne, accident ou autre, avec gravité, description et lieu. Il prévient le Parc Auto
+  et la Direction ; **aucune action automatique** : le Parc Auto le prend en compte, ouvre un OR s'il le
+  juge utile, puis le clôt avec la suite donnée (`/garage/incidents/`, `/garage/checklists/`).
+Les signaux `incident_signale` et `checklist_anomalie` sont souscrits par `notifications`.

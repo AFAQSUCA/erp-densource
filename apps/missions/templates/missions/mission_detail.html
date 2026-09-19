@@ -141,12 +141,15 @@
             <div class="mt-4">
               <p class="text-sm text-amber-900">Expéditeur (récupération du colis)</p>
               <p class="mt-1 rounded-lg bg-white px-3 py-2 text-center font-mono text-xl font-bold tracking-widest text-slate-900">{{ codes.expediteur }}</p>
+              <img src="{% url 'missions:qr' mission.pk 'expediteur' %}" alt="Code QR de l'expéditeur : {{ codes.expediteur }}" width="160" height="160" class="mx-auto mt-2 rounded-lg bg-white p-1">
+              <p class="mt-1 text-center text-xs text-amber-900">Le chauffeur scanne ce QR avec l'espace mobile.</p>
             </div>
           {% endif %}
           {% if codes.destinataire %}
             <div class="mt-4">
               <p class="text-sm text-amber-900">Destinataire (confirmation de livraison)</p>
               <p class="mt-1 rounded-lg bg-white px-3 py-2 text-center font-mono text-xl font-bold tracking-widest text-slate-900">{{ codes.destinataire }}</p>
+              <img src="{% url 'missions:qr' mission.pk 'destinataire' %}" alt="Code QR du destinataire : {{ codes.destinataire }}" width="160" height="160" class="mx-auto mt-2 rounded-lg bg-white p-1">
             </div>
           {% endif %}
         </section>

@@ -35,6 +35,9 @@ from apps.fleet.models import StatutVehicule
 from apps.fuel import permissions as fuel_permissions
 from apps.fuel import services as fuel_services
 from apps.fuel.models import NiveauAlerte
+from apps.garage import permissions as garage_permissions
+from apps.garage import terrain as garage_terrain
+from apps.garage.models import GraviteIncident
 from apps.hr import permissions as hr_permissions
 from apps.hr import services as hr_services
 from apps.inventory import permissions as inventory_permissions
@@ -287,6 +290,25 @@ def _alertes_factures(aujourd_hui):
     )
 
 
+def _alertes_incidents():
+    lignes = []
+    incidents = list(garage_terrain.incidents_a_traiter().order_by("-created_at"))
+    for incident in incidents:
+        lignes.append(
+            {
+                "libelle": f"{incident.get_type_incident_display()} · {incident.vehicule.immatriculation}",
+                "detail": incident.get_gravite_display().split(" :")[0],
+                "etat": "URGENT" if incident.gravite == GraviteIncident.GRAVE else "ATTENTION",
+                "url": reverse("garage:incident", args=[incident.pk]),
+            }
+        )
+    niveau = "URGENT" if any(i.gravite == GraviteIncident.GRAVE for i in incidents) else "ATTENTION"
+    return _alerte(
+        "incidents", "Incidents signalés à traiter", "fa-triangle-exclamation", lignes,
+        niveau=niveau, voir_tout=f"{reverse('garage:incidents')}?statut=SIGNALE",
+    )
+
+
 def _alertes_conges():
     lignes = []
     for conge in hr_services.conges_en_retard():
@@ -322,6 +344,8 @@ def centre_alertes(role: str, *, aujourd_hui: date | None = None) -> list[dict] 
         constructeurs.append(_alertes_stock)
     if role in fuel_permissions.CONSULTATION:
         constructeurs.append(lambda: _alertes_carburant(aujourd_hui))
+    if role in garage_permissions.CONSULTATION:
+        constructeurs.append(_alertes_incidents)
     if role in hr_permissions.CONGES_TOUS:
         constructeurs.append(_alertes_conges)
     if role in billing_permissions.CONSULTATION:

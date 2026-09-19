@@ -1,0 +1,12 @@
+{# Bouton et aperçu de la caméra du composant scannerCode (static/js/scanner.js). Absent si le téléphone ne sait pas lire les QR. #}
+<div x-show="disponible" x-cloak>
+  <button type="button" @click="ouvrir()" x-show="!actif"
+          class="flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-marque-600 bg-white px-4 py-3 text-base font-bold text-marque-700 active:bg-marque-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+    <i class="fa-solid fa-qrcode" aria-hidden="true"></i> Scanner le QR
+  </button>
+  <div x-show="actif" x-cloak class="space-y-2">
+    <video x-ref="video" playsinline muted class="w-full rounded-2xl bg-black"></video>
+    <button type="button" @click="fermer()" class="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 font-semibold text-slate-800">Fermer la caméra</button>
+  </div>
+  <p x-show="erreur" x-text="erreur" class="mt-2 text-sm font-medium text-red-700" role="alert"></p>
+</div>

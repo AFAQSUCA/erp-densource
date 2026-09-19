@@ -5,6 +5,7 @@ Stack : Django 5.2.x, DRF 3.15+, PostgreSQL 16+ (SQLite en dev/démo).
 Réf. cahier-des-charges.md §4 (Spécifications Techniques).
 """
 
+from datetime import timedelta
 from pathlib import Path
 
 import environ
@@ -39,6 +40,10 @@ DJANGO_APPS = [
 
 THIRD_PARTY_APPS = [
     "rest_framework",
+    "rest_framework_simplejwt.token_blacklist",  # révocation des refresh tokens (déconnexion)
+    "django_filters",
+    "drf_spectacular",
+    "corsheaders",
 ]
 
 LOCAL_APPS = [
@@ -57,6 +62,8 @@ LOCAL_APPS = [
     "apps.finance",
     "apps.notifications",
     "apps.dashboard",
+    "apps.api",
+    "apps.mobile_api",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -75,6 +82,7 @@ SESSION_SAVE_EVERY_REQUEST = True
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -140,12 +148,50 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # Pagination obligatoire sur toutes les listes — conventions.md §5.
 REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
+    ],
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 20,
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
     ],
+    "DEFAULT_FILTER_BACKENDS": ["django_filters.rest_framework.DjangoFilterBackend"],
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    "EXCEPTION_HANDLER": "apps.api.exceptions.gestionnaire_erreurs",
+    # Limitation de débit (anti force brute) : la connexion est limitée à part et plus strictement.
+    "DEFAULT_THROTTLE_CLASSES": ["rest_framework.throttling.UserRateThrottle"],
+    "DEFAULT_THROTTLE_RATES": {"user": "300/min", "connexion": "10/min"},
 }
+
+# JWT : accès de 15 minutes (cahier-des-charges.md:285), refresh de 7 jours renouvelé à chaque usage
+# et révoqué à la déconnexion.
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=15),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
+    "UPDATE_LAST_LOGIN": True,
+    "AUTH_HEADER_TYPES": ("Bearer",),
+}
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "ERP DEN Source Group : API",
+    "DESCRIPTION": (
+        "API REST versionnée. `/api/v1/` : lecture des principales ressources selon le rôle. "
+        "`/api/v1/mobile/` : espace chauffeur (missions, codes QR, plein, check-list, incident)."
+    ),
+    "VERSION": "1.0.0",
+    "SERVE_INCLUDE_SCHEMA": False,
+    "COMPONENT_SPLIT_REQUEST": True,
+}
+
+# CORS restreint aux domaines connus (cahier-des-charges.md:277), et seulement pour l'API.
+CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=[])
+CORS_URLS_REGEX = r"^/api/.*$"
+
+# Session de l'espace mobile chauffeur : 15 minutes d'inactivité (cahier-des-charges.md:285).
+SESSION_COOKIE_AGE_MOBILE = 15 * 60
 
 
 # Notifications (étape 5) : toujours enregistrées dans l'application ; l'envoi par e-mail

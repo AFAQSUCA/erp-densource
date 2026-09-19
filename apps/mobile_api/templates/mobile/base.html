@@ -1,0 +1,52 @@
+{% load static %}<!DOCTYPE html>
+<html lang="fr" class="h-full bg-slate-100">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#8b0319">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>{% block titre %}Espace chauffeur{% endblock %} · DEN Source</title>
+  <link rel="manifest" href="{% url 'chauffeur:manifeste' %}">
+  <link rel="icon" type="image/png" href="{% static 'img/favicon.png' %}">
+  <link rel="apple-touch-icon" href="{% static 'img/icon-192.png' %}">
+  {% include "components/_assets.html" %}
+  <script src="{% static 'js/scanner.js' %}"></script>
+</head>
+<body class="min-h-full pb-28 text-slate-900 antialiased">
+  <header class="sticky top-0 z-20 bg-marque-800 text-white shadow">
+    <div class="mx-auto flex max-w-lg items-center justify-between gap-3 px-4 py-3">
+      <a href="{% url 'chauffeur:accueil' %}" class="flex items-center gap-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-400">
+        <span class="flex h-10 w-12 items-center justify-center rounded-lg bg-white p-1"><img src="{% static 'img/logo-emblem.jpg' %}" alt="" class="h-full w-auto"></span>
+        <span class="leading-tight"><span class="block text-sm font-extrabold tracking-wide">DEN Chauffeur</span><span class="block text-xs text-marque-100">{{ user.first_name|default:user.username }}</span></span>
+      </a>
+      <form method="post" action="{% url 'accounts:logout' %}">{% csrf_token %}
+        <button type="submit" class="rounded-lg border border-white/30 px-3 py-2 text-sm font-medium hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-400"><i class="fa-solid fa-right-from-bracket mr-1" aria-hidden="true"></i>Sortir</button>
+      </form>
+    </div>
+  </header>
+
+  <main class="mx-auto max-w-lg px-4 py-4">
+    {% include "components/_messages.html" %}
+    {% block contenu %}{% endblock %}
+  </main>
+
+  <nav aria-label="Navigation de l'espace chauffeur" class="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white pb-[env(safe-area-inset-bottom)] shadow-[0_-2px_8px_rgba(0,0,0,0.06)]">
+    <ul class="mx-auto grid max-w-lg grid-cols-4">
+      {% for cle, url, icone, libelle in navigation %}
+        <li>
+          <a href="{{ url }}" {% if nav == cle %}aria-current="page"{% endif %}
+             class="flex flex-col items-center gap-1 px-2 py-3 text-xs font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 {% if nav == cle %}text-marque-700{% else %}text-slate-600{% endif %}">
+            <i class="fa-solid {{ icone }} text-xl" aria-hidden="true"></i>{{ libelle }}
+          </a>
+        </li>
+      {% endfor %}
+    </ul>
+  </nav>
+
+  <script>
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("{% url 'chauffeur:sw' %}").catch(function () {});
+    }
+  </script>
+</body>
+</html>

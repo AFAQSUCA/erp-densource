@@ -1,3 +1,11 @@
 Django>=5.2,<5.3
 djangorestframework>=3.15
 django-environ>=0.11
+
+# Étape 6 — API REST et espace mobile chauffeur (cahier-des-charges.md:250-252)
+djangorestframework-simplejwt>=5.3   # JWT court + refresh pour l'API mobile
+django-filter>=24                    # filtres des listes de l'API
+drf-spectacular>=0.27                # documentation OpenAPI
+django-cors-headers>=4.3             # CORS restreint aux domaines connus
+qrcode>=7.4                          # codes QR des missions
+Pillow>=10                           # images PNG des codes QR et icônes de l'application

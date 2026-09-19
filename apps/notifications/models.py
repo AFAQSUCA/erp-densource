@@ -13,6 +13,7 @@ class CategorieNotification(models.TextChoices):
     DOCUMENT = "DOCUMENT", _("Échéance")
     MISSION = "MISSION", _("Mission")
     FACTURE = "FACTURE", _("Facturation")
+    INCIDENT = "INCIDENT", _("Incident")
 
 
 class NiveauNotification(models.TextChoices):

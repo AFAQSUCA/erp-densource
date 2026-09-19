@@ -1,0 +1,26 @@
+{% load static %}<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#8b0319">
+  <title>Hors connexion · DEN Chauffeur</title>
+  <style>
+    body { margin: 0; font-family: system-ui, sans-serif; background: #f1f5f9; color: #0f172a; display: flex; min-height: 100vh; align-items: center; justify-content: center; padding: 1.5rem; }
+    main { max-width: 26rem; text-align: center; }
+    img { width: 96px; height: 96px; border-radius: 1rem; }
+    h1 { font-size: 1.4rem; margin: 1rem 0 .5rem; }
+    p { color: #334155; line-height: 1.5; }
+    button { margin-top: 1rem; width: 100%; padding: 1rem; font-size: 1.1rem; font-weight: 700; border: 0; border-radius: 1rem; background: #a80c26; color: #fff; }
+  </style>
+</head>
+<body>
+  <main>
+    <img src="{% static 'img/icon-192.png' %}" alt="">
+    <h1>Vous êtes hors connexion</h1>
+    <p>Le réseau est indisponible. Vos missions et vos saisies demandent une connexion : rien n'est enregistré tant que vous n'êtes pas reconnecté.</p>
+    <p>Si vous êtes en panne, appelez directement le Parc Auto.</p>
+    <button type="button" onclick="location.reload()">Réessayer</button>
+  </main>
+</body>
+</html>

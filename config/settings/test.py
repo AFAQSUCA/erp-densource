@@ -25,3 +25,10 @@ EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 # Pas de cache dans les tests (indicateurs toujours recalculés) ; e-mails activés par test.
 DASHBOARD_CACHE_SECONDS = 0
 NOTIFICATIONS_EMAIL = False
+
+# Les compteurs de limitation de débit ne doivent pas s'accumuler d'un test à l'autre : plafonds
+# très hauts par défaut ; les tests de limitation les abaissent eux-mêmes.
+REST_FRAMEWORK = {
+    **REST_FRAMEWORK,  # noqa: F405
+    "DEFAULT_THROTTLE_RATES": {"user": "100000/min", "connexion": "100000/min"},
+}
