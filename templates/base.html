@@ -48,7 +48,7 @@
          class="fixed inset-0 z-30 bg-slate-900/50 lg:hidden" aria-hidden="true"></div>
 
     <aside id="navigation" aria-label="Navigation principale"
-           class="fixed inset-y-0 left-0 z-40 w-64 shrink-0 -translate-x-full transform bg-marque-900 text-marque-100 transition-transform duration-200 lg:static lg:translate-x-0"
+           class="fixed inset-y-0 left-0 z-40 w-64 shrink-0 -translate-x-full transform bg-marque-900 text-marque-100 transition-transform duration-200 lg:sticky lg:top-0 lg:bottom-auto lg:h-screen lg:translate-x-0 lg:overflow-y-auto"
            :class="menuOuvert ? '!translate-x-0' : ''">
       <a href="{% url 'home' %}" class="flex h-16 items-center gap-3 border-b border-white/10 px-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-400">
         <span class="flex h-11 w-14 shrink-0 items-center justify-center rounded-lg bg-white p-1">

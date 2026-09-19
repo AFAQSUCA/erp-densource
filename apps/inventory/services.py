@@ -191,3 +191,20 @@ def cout_pieces(ordre: OrdreReparation) -> Decimal:
 def cout_total(ordre: OrdreReparation) -> Decimal:
     """Coût total d'un OR : main-d'œuvre + pièces."""
     return ordre.cout_main_oeuvre + cout_pieces(ordre)
+
+
+# --- lecture pour les écrans ---
+
+
+def articles_en_stock() -> QuerySet[Article]:
+    """Articles dont il reste au moins une unité (choix d'une sortie de pièces)."""
+    return Article.objects.filter(quantite__gt=0).order_by("reference")
+
+
+def sorties_de_l_or(ordre: OrdreReparation) -> QuerySet[MouvementStock]:
+    """Sorties de pièces d'un OR, de la plus ancienne à la plus récente."""
+    return (
+        MouvementStock.objects.select_related("article")
+        .filter(ordre_reparation=ordre, type_mouvement=TypeMouvement.SORTIE)
+        .order_by("date_mouvement", "pk")
+    )

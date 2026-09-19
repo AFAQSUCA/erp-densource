@@ -94,6 +94,9 @@
           </form>
         </section>
       {% endif %}
+
+      {# Blocs ajoutés par d'autres apps (ex. maintenance du garage) #}
+      {% for section in sections %}{% include section.template %}{% endfor %}
     </div>
   </div>
 </div>

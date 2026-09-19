@@ -11,7 +11,7 @@ from django.views.generic import DetailView, FormView, ListView
 
 from apps.accounts.mixins import RoleRequiredMixin
 
-from . import permissions, services
+from . import permissions, sections, services
 from .exceptions import FlotteError
 from .forms import DocumentForm, VehiculeForm
 from .models import StatutVehicule, TypeDocument
@@ -57,6 +57,7 @@ class VehiculeDetailView(RoleRequiredMixin, DetailView):
         type_choisi = self.request.GET.get("document")
         contexte.update(
             documents=services.etat_documents(self.object),
+            sections=sections.DETAIL_VEHICULE.sections(self.object, self.request.user),
             peut_modifier=peut_modifier,
             form_document=(
                 DocumentForm(

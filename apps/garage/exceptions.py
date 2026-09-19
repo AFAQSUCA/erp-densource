@@ -8,3 +8,7 @@ class TransitionOrInterdite(GarageError):
 
 class CoutInvalide(GarageError):
     """Coût de main-d'œuvre négatif."""
+
+
+class StatutVehiculeInvalide(GarageError):
+    """Immobilisation, mise hors service ou remise en service impossible."""

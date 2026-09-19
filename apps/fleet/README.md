@@ -16,3 +16,7 @@ normalisés, compteur qui ne recule pas), `rechercher_vehicules`, `enregistrer_d
 
 Reste à faire : marquer un camion Immobilisé / Hors service et le remettre en service
 (demande de croiser garage et missions : à porter par l'écran du garage).
+
+La fiche d'un camion accueille des blocs enregistrés par d'autres apps
+(`sections.DETAIL_VEHICULE`) : `garage` y ajoute la maintenance et les actions
+d'immobilisation / remise en service.

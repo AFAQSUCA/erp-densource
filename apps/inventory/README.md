@@ -18,3 +18,9 @@ Signal `signals.seuil_bas_atteint` : émis quand un mouvement fait passer un art
 au seuil minimal ou en dessous ; `notifications` (étape 5) s'y abonnera.
 
 Dépend de `garage` (la sortie est liée à un OR), jamais l'inverse.
+
+Interface : pour l'instant, le bloc « Pièces utilisées » de la fiche d'un OR (sorties
+valorisées au PUMP, coût des pièces, coût total avec la main-d'œuvre) et le formulaire de
+sortie de pièces (`SortieOrView`). Accès : ADMIN, DIRECTION (lecture) et PARCAUTO ; seuls
+ADMIN et PARCAUTO font sortir des pièces. Les écrans de gestion du stock (articles,
+entrées, ajustements, alertes de seuil) restent à faire.

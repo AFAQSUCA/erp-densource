@@ -43,6 +43,9 @@ COULEURS_STATUT = {
     "A_RENOUVELER": "ambre",
     "EXPIRE": "rouge",
     "MANQUANT": "gris",
+    # ordres de réparation
+    "OUVERT": "ambre",
+    "CLOTURE": "gris",
 }
 
 

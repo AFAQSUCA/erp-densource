@@ -15,5 +15,18 @@ Services :
 
 Dépend de `fleet` et `missions` (jamais l'inverse).
 
-Reste à faire (app `inventory`, étape 3c) : coût automatique des pièces utilisées
-et total de l'OR (cahier-des-charges.md:167-168).
+Interface (`views.py`, `templates/garage/`) : liste des OR (filtres statut, type, lieu,
+texte), fiche d'un OR, ouverture (préremplie depuis la fiche d'un camion), clôture avec
+saisie de la main-d'œuvre. Accès : ADMIN, DIRECTION et PARCAUTO en consultation ; ADMIN
+et PARCAUTO pour ouvrir, clôturer, immobiliser (`permissions.py`, la DIRECTION est en
+lecture seule sur le parc auto).
+
+Statut des camions (services) : `immobiliser_vehicule`, `mettre_hors_service`,
+`remettre_en_service` (repart de « Disponible » puis applique l'algorithme complet :
+OR ouvert, mission, sinon disponible). Un camion réservé ou en route pour une mission ne
+s'immobilise pas : en cas de panne, on ouvre un OR.
+
+Blocs enregistrables (`core/sections.py`) : `garage` ajoute un bloc « Maintenance » à la
+fiche d'un camion (`fleet.sections.DETAIL_VEHICULE`) et expose `sections.DETAIL_OR` où
+`inventory` ajoute les pièces utilisées. Ainsi `fleet` ne connaît pas `garage`, et
+`garage` ne connaît pas `inventory`.

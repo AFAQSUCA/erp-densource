@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block titre %}Nouvel ordre de réparation{% endblock %}
+{% block entete %}Garage{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-3xl">
+  <nav aria-label="Fil d'Ariane" class="text-sm text-slate-600">
+    <a href="{% url 'garage:liste' %}" class="underline-offset-2 hover:underline">Garage</a>
+    <span aria-hidden="true">/</span> Nouvel OR
+  </nav>
+  <h1 class="mt-2 text-2xl font-bold text-slate-900">Nouvel ordre de réparation</h1>
+  <p class="mt-1 text-sm text-slate-600">
+    L'OR reçoit son numéro à l'ouverture et le camion passe « En maintenance ». Si le camion est en mission,
+    c'est l'enregistrement d'une panne en route : la mission continue et le statut sera recalculé à la clôture.
+  </p>
+
+  <form method="post" novalidate class="mt-6 space-y-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+      <div role="alert" class="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">
+        {% for erreur in form.non_field_errors %}<p>{{ erreur }}</p>{% endfor %}
+      </div>
+    {% endif %}
+    <div class="grid gap-5 sm:grid-cols-2">
+      <div class="sm:col-span-2">{% include "components/_champ.html" with champ=form.vehicule %}</div>
+      {% include "components/_champ.html" with champ=form.type_or %}
+      {% include "components/_champ.html" with champ=form.lieu %}
+      <div class="sm:col-span-2">{% include "components/_champ.html" with champ=form.motif %}</div>
+    </div>
+    <div class="flex items-center justify-end gap-3 border-t border-slate-100 pt-5">
+      <a href="{% url 'garage:liste' %}" class="rounded-lg px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Annuler</a>
+      <button type="submit" class="rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">Ouvrir l'OR</button>
+    </div>
+  </form>
+</div>
+{% endblock %}
