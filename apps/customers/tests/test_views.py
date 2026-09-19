@@ -41,6 +41,7 @@ def _donnees(**surcharges):
         "charge_clientele": "",
         "taux_tva": "18",
         "motif_exoneration": "",
+        "delai_paiement_jours": "30",
     }
     donnees.update(surcharges)
     return donnees
@@ -352,3 +353,24 @@ def test_la_modification_refuse_le_nif_d_un_autre_client(client):
     assert "déjà utilisé" in reponse.content.decode()
     fiche.refresh_from_db()
     assert fiche.ncc_nif == "CI-0000001A"
+
+
+def test_le_delai_de_paiement_se_saisit_et_s_affiche(client):
+    _connecte(client, Role.ADMIN)
+
+    reponse = client.post(
+        reverse("customers:creer"), _donnees(delai_paiement_jours="45"), follow=True
+    )
+
+    fiche = Client.objects.get(ncc_nif="CI-1234567A")
+    assert fiche.delai_paiement_jours == 45
+    assert "45 jours" in reponse.content.decode()
+
+
+def test_le_delai_de_paiement_doit_etre_entre_1_et_365_jours(client):
+    _connecte(client, Role.ADMIN)
+
+    for valeur in ("0", "366", "abc"):
+        reponse = client.post(reverse("customers:creer"), _donnees(delai_paiement_jours=valeur))
+        assert reponse.status_code == 200, valeur
+    assert not Client.objects.exists()

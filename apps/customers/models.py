@@ -10,6 +10,7 @@ from django.utils.translation import gettext_lazy as _
 from apps.core.models import BaseModel
 
 TVA_DEFAUT = Decimal("18.00")
+DELAI_PAIEMENT_DEFAUT = 30  # jours ; échéance d'une facture = émission + délai du client
 
 
 class MotifExoneration(models.TextChoices):
@@ -49,6 +50,12 @@ class Client(BaseModel):
         blank=True,
     )
 
+    delai_paiement_jours = models.PositiveSmallIntegerField(
+        _("délai de paiement (jours)"),
+        default=DELAI_PAIEMENT_DEFAUT,
+        help_text=_("Date d'échéance de ses factures = date d'émission + ce délai."),
+    )
+
     class Meta:
         verbose_name = _("client")
         verbose_name_plural = _("clients")
@@ -62,6 +69,10 @@ class Client(BaseModel):
             models.CheckConstraint(
                 condition=Q(taux_tva__gte=0) & Q(taux_tva__lte=100),
                 name="client_taux_tva_entre_0_et_100",
+            ),
+            models.CheckConstraint(
+                condition=Q(delai_paiement_jours__gte=1) & Q(delai_paiement_jours__lte=365),
+                name="client_delai_paiement_entre_1_et_365",
             ),
         ]
 

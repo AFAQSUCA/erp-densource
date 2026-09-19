@@ -53,6 +53,8 @@ LOCAL_APPS = [
     "apps.garage",
     "apps.inventory",
     "apps.fuel",
+    "apps.billing",
+    "apps.finance",
     "apps.notifications",
     "apps.dashboard",
 ]
@@ -156,3 +158,8 @@ DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="ERP DEN Source Group <no
 # Durée (secondes) de mise en cache des indicateurs du tableau de bord ; 0 = pas de cache.
 # Avec Redis en production (CACHES), le cache est partagé entre les processus.
 DASHBOARD_CACHE_SECONDS = env.int("DASHBOARD_CACHE_SECONDS", default=60)
+
+# Mentions de l'émetteur sur la facture imprimable (à renseigner par l'environnement).
+ENTREPRISE_NOM = env("ENTREPRISE_NOM", default="DEN Source Group")
+ENTREPRISE_ADRESSE = env("ENTREPRISE_ADRESSE", default="")
+ENTREPRISE_NCC = env("ENTREPRISE_NCC", default="")

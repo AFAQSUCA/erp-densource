@@ -1,0 +1,71 @@
+{% load humanize %}<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ facture.numero|default:"Brouillon" }} · {{ facture.client.raison_sociale }}</title>
+  <style>
+    body { font-family: Arial, Helvetica, sans-serif; color: #111; margin: 2rem auto; max-width: 780px; padding: 0 1rem; font-size: 14px; }
+    h1 { font-size: 1.6rem; margin: 0; }
+    table { width: 100%; border-collapse: collapse; margin-top: 1.5rem; }
+    th, td { padding: .5rem .6rem; border-bottom: 1px solid #ccc; text-align: left; vertical-align: top; }
+    th { background: #f3f3f3; font-size: .8rem; text-transform: uppercase; letter-spacing: .03em; }
+    .droite { text-align: right; white-space: nowrap; }
+    .entete { display: flex; justify-content: space-between; gap: 2rem; }
+    .totaux { margin-left: auto; width: 320px; margin-top: 1rem; }
+    .totaux div { display: flex; justify-content: space-between; padding: .25rem 0; }
+    .total { border-top: 2px solid #111; font-weight: bold; font-size: 1.1rem; }
+    .filigrane { color: #b91c1c; border: 2px solid #b91c1c; display: inline-block; padding: .2rem .8rem; font-weight: bold; margin-top: .5rem; }
+    .petit { color: #555; font-size: .85rem; }
+    .actions { margin-bottom: 1rem; }
+    @media print { .actions { display: none; } body { margin: 0; } }
+  </style>
+</head>
+<body>
+  <div class="actions"><button type="button" onclick="window.print()">Imprimer ou enregistrer en PDF</button></div>
+
+  <div class="entete">
+    <div>
+      <strong>{{ entreprise.nom }}</strong><br>
+      {% if entreprise.adresse %}<span class="petit">{{ entreprise.adresse|linebreaksbr }}</span><br>{% endif %}
+      {% if entreprise.ncc %}<span class="petit">NCC {{ entreprise.ncc }}</span>{% endif %}
+    </div>
+    <div style="text-align:right">
+      <h1>{% if facture.est_emise %}FACTURE {{ facture.numero }}{% else %}PROJET DE FACTURE{% endif %}</h1>
+      {% if facture.date_emission %}<div>Émise le {{ facture.date_emission|date:"d/m/Y" }}</div><div>Échéance : {{ facture.date_echeance|date:"d/m/Y" }}</div>{% endif %}
+      {% if not facture.est_emise %}<div class="filigrane">NON VALIDÉE</div>{% endif %}
+    </div>
+  </div>
+
+  <p style="margin-top:1.5rem">
+    <strong>{{ facture.client.raison_sociale }}</strong><br>
+    <span class="petit">{{ facture.client.adresse|linebreaksbr }}<br>NCC / NIF {{ facture.client.ncc_nif }}</span>
+  </p>
+  <p class="petit">Mission {{ facture.mission.numero }}</p>
+
+  <table>
+    <thead><tr><th>Désignation</th><th class="droite">Qté</th><th class="droite">Prix unit. HT</th><th class="droite">Montant HT</th></tr></thead>
+    <tbody>
+      {% for l in lignes %}
+        <tr><td>{{ l.designation }}</td><td class="droite">{{ l.quantite|floatformat:"-2" }}</td><td class="droite">{{ l.prix_unitaire_ht|floatformat:0|intcomma }}</td><td class="droite">{{ l.montant_ht|floatformat:0|intcomma }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="totaux">
+    <div><span>Total HT</span><span>{{ facture.montant_ht|floatformat:0|intcomma }} FCFA</span></div>
+    <div><span>TVA {% if facture.taux_tva == 0 %}(exonérée : {{ facture.get_motif_exoneration_display }}){% else %}({{ facture.taux_tva|floatformat:"-2" }} %){% endif %}</span><span>{{ facture.montant_tva|floatformat:0|intcomma }} FCFA</span></div>
+    <div class="total"><span>Total TTC</span><span>{{ facture.montant_ttc|floatformat:0|intcomma }} FCFA</span></div>
+    {% if facture.est_emise %}
+      <div><span>Déjà réglé</span><span>{{ facture.montant_regle|floatformat:0|intcomma }} FCFA</span></div>
+      <div><strong>Reste à payer</strong><strong>{{ facture.reste|floatformat:0|intcomma }} FCFA</strong></div>
+    {% endif %}
+  </div>
+
+  {% if reglements %}
+    <p class="petit" style="margin-top:1.5rem">Règlements reçus :
+      {% for r in reglements %}{{ r.date_reglement|date:"d/m/Y" }} — {{ r.montant|floatformat:0|intcomma }} FCFA ({{ r.get_mode_display }}){% if not forloop.last %} ; {% endif %}{% endfor %}
+    </p>
+  {% endif %}
+</body>
+</html>

@@ -8,6 +8,7 @@ OR), jamais l'inverse.
 
 from __future__ import annotations
 
+from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 
 from django.db import transaction
@@ -312,3 +313,19 @@ def rechercher_mouvements(
 def mouvements_de_l_article(article: Article, *, limite: int = 20) -> QuerySet[MouvementStock]:
     """Derniers mouvements d'un article, du plus récent au plus ancien."""
     return mouvements_queryset().filter(article=article)[:limite]
+
+
+def cout_des_or_clotures(debut: date, fin: date) -> Decimal:
+    """Coût (main-d'œuvre + pièces au PUMP) des OR clôturés pendant la période, en FCFA.
+
+    Alimente les charges du mois (cahier-des-charges.md:227). Les pièces sont lues en une
+    seule requête pour tous les OR de la période.
+    """
+    ordres = OrdreReparation.objects.filter(
+        statut=StatutOr.CLOTURE, date_cloture__date__range=(debut, fin)
+    )
+    main_oeuvre = sum(ordres.values_list("cout_main_oeuvre", flat=True), Decimal("0"))
+    sorties = MouvementStock.objects.filter(
+        ordre_reparation__in=ordres, type_mouvement=TypeMouvement.SORTIE
+    ).values_list("variation", "prix_unitaire")
+    return main_oeuvre + sum((-variation * prix for variation, prix in sorties), Decimal("0"))

@@ -14,6 +14,8 @@ from django.urls import reverse
 from django.utils import timezone
 
 from apps.accounts.models import Role
+from apps.billing import services as billing_services
+from apps.core.formats import nombre
 from apps.core.services import etat_echeance
 from apps.drivers import services as drivers_services
 from apps.drivers.models import StatutChauffeur
@@ -125,6 +127,33 @@ def relancer_validations_en_retard(*, maintenant: datetime | None = None) -> int
     return crees
 
 
+def alerter_factures_echues(*, aujourd_hui: date | None = None) -> int:
+    """Factures émises non soldées dont l'échéance est dépassée : FINANCES et DIRECTION.
+
+    Une seule alerte par facture et par date d'échéance (le montant restant peut évoluer).
+    """
+    aujourd_hui = aujourd_hui or timezone.localdate()
+    destinataires = list(utilisateurs_du_role(Role.FINANCES, Role.DIRECTION))
+    crees = 0
+    for facture in billing_services.factures_echues(aujourd_hui):
+        retard = (aujourd_hui - facture.date_echeance).days
+        crees += len(
+            notifier(
+                destinataires,
+                categorie=CategorieNotification.FACTURE,
+                niveau=NiveauNotification.URGENT,
+                titre=f"Facture {facture.numero} échue : {facture.client.raison_sociale}",
+                message=(
+                    f"Reste à recouvrer : {nombre(facture.reste)} FCFA, "
+                    f"échue depuis {retard} jour{'s' if retard > 1 else ''}."
+                ),
+                url=reverse("billing:facture", args=[facture.pk]),
+                cle=f"facture-echue:{facture.pk}:{facture.date_echeance.isoformat()}",
+            )
+        )
+    return crees
+
+
 def executer_taches_quotidiennes(*, aujourd_hui: date | None = None) -> dict[str, int]:
     """Lance toutes les tâches du jour et retourne leurs compteurs."""
     aujourd_hui = aujourd_hui or timezone.localdate()
@@ -132,6 +161,7 @@ def executer_taches_quotidiennes(*, aujourd_hui: date | None = None) -> dict[str
         "documents_vehicules": alerter_documents_vehicules(aujourd_hui=aujourd_hui),
         "echeances_chauffeurs": alerter_echeances_chauffeurs(aujourd_hui=aujourd_hui),
         "validations_en_retard": relancer_validations_en_retard(),
+        "factures_echues": alerter_factures_echues(aujourd_hui=aujourd_hui),
     }
     conges = hr_services.synchroniser_statuts_conges(aujourd_hui=aujourd_hui)
     resultat["conges_demarres"] = conges["demarres"]

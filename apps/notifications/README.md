@@ -12,7 +12,9 @@ Qui est prévenu de quoi (`receivers.py`) :
 - congé déposé → supérieur hiérarchique (N1), plus une alerte urgente s'il y a une mission
   prévue sur la période ; validé en N1 → RH ; approuvé, refusé ou annulé → l'employé ;
 - stock au seuil → PARCAUTO ; surconsommation, anomalie ou saisie suspecte → PARCAUTO et DIRECTION ;
-- mission partie → chargé clientèle attitré du client (à défaut, tous les chargés clientèle).
+- mission partie → chargé clientèle attitré du client (à défaut, tous les chargés clientèle) ;
+- facture soumise → DIRECTION ; validée → FINANCES et son auteur ; renvoyée → son auteur ;
+  facture échue (tâche du jour) → FINANCES et DIRECTION, une fois par facture.
 
 Tâches du jour (`taches.py`, commande `taches_quotidiennes`) : documents des camions et
 permis / visites des chauffeurs à 30 jours puis expirés (une alerte à chaque changement d'état),

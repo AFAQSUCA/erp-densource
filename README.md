@@ -62,7 +62,7 @@ Identité visuelle : couleurs du logo DEN Source Group (bordeaux `#8B0319`, oran
 - [x] Interface web : carburant (pleins, alertes, confirmation des saisies suspectes, analyse)
 - [x] Interface web : clients (portefeuille, fiche, interactions)
 - [x] Interface web : personnel, recrutement et congés (workflow 3 niveaux)
-- [ ] Étape 4 — Finance (billing, finance)
+- [x] Étape 4 — Finance (facturation, règlements, dépenses, trésorerie) : sans écritures comptables ni rapprochement bancaire (voir apps/billing/README.md)
 - [x] Étape 5 — Pilotage (tableau de bord par rôle, notifications) : sans les indicateurs financiers (étape 4) ni Celery / SMS / push (voir apps/notifications/README.md)
 - [ ] Étape 6 — API (api/v1, mobile_api)
 - [ ] Étape 7 — Tests & déploiement
@@ -80,3 +80,11 @@ python manage.py taches_quotidiennes   # rejouable : aucune alerte en double
 Les e-mails de notification s'affichent dans la console en développement ; en production,
 réglez `NOTIFICATIONS_EMAIL=True`, `NOTIFICATIONS_URL_BASE` et l'envoi d'e-mails de Django.
 Comptes d'essai : `python manage.py creer_comptes_demo`.
+
+## Facturation et finances
+
+`/facturation/` (factures, dépenses) et `/finances/` (trésorerie). Une facture se prépare depuis une
+mission livrée (FINANCES), se valide par la DIRECTION (numéro `FACT-AAAA-XXXX`), puis s'encaisse par
+acomptes et solde. Les indicateurs du mois (CA, encaissé, charges, marge, créances, trésorerie) et les
+factures échues apparaissent au tableau de bord. Mentions de l'émetteur sur la facture imprimable :
+`ENTREPRISE_NOM`, `ENTREPRISE_ADRESSE`, `ENTREPRISE_NCC`.

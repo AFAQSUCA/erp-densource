@@ -10,6 +10,9 @@ motif effacé si la TVA redevient positive, NCC / NIF unique même parmi les cli
 supprimés, chargé clientèle = compte actif de ce rôle), `enregistrer_interaction` (résumé
 obligatoire, date non future), `rechercher_clients`.
 
+Délai de paiement : `delai_paiement_jours` (30 par défaut, entre 1 et 365), repris par ses
+factures pour calculer l'échéance.
+
 Interface (`views.py`, `templates/customers/`, montée sous `/clients/`) : portefeuille
 filtrable (texte, « Mon portefeuille », exonérés de TVA) avec dernière interaction et
 nombre de réclamations ; fiche avec historique commercial ; création et modification ;
@@ -18,5 +21,4 @@ Les missions du client s'affichent dans sa fiche via `customers.sections.DETAIL_
 (fournisseur enregistré par `missions`).
 
 Pas encore de gestion des devis ni des contrats à renouveler (indicateurs du tableau de
-bord chargé clientèle, étape 5) ; l'accès des FINANCES aux clients se décidera avec la
-facturation (étape 4).
+bord chargé clientèle, étape 5) ; les FINANCES ont accès à la facturation, pas à la fiche client.

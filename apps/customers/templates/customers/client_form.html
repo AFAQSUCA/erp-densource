@@ -55,6 +55,7 @@
         <div x-show="parseFloat(tva) === 0" x-cloak>
           {% include "components/_champ.html" with champ=form.motif_exoneration %}
         </div>
+        {% include "components/_champ.html" with champ=form.delai_paiement_jours %}
       </div>
     </fieldset>
 

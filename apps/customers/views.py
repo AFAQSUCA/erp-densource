@@ -105,6 +105,7 @@ class ClientUpdateView(RoleRequiredMixin, FormView):
             "charge_clientele": c.charge_clientele,
             "taux_tva": c.taux_tva,
             "motif_exoneration": c.motif_exoneration,
+            "delai_paiement_jours": c.delai_paiement_jours,
         }
 
     def get_context_data(self, **kwargs):

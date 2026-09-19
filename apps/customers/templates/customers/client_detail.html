@@ -33,6 +33,7 @@
           <div><dt class="text-slate-600">Chargé clientèle attitré</dt><dd class="mt-0.5 font-medium text-slate-900">{{ client.charge_clientele|default:"Non attribué" }}</dd></div>
           <div><dt class="text-slate-600">TVA</dt><dd class="mt-0.5 font-medium text-slate-900">
             {% if client.taux_tva == 0 %}Exonéré : {{ client.get_motif_exoneration_display }}{% else %}{{ client.taux_tva|floatformat:"-2" }} %{% endif %}</dd></div>
+          <div><dt class="text-slate-600">Délai de paiement</dt><dd class="mt-0.5 font-medium text-slate-900">{{ client.delai_paiement_jours }} jours</dd></div>
         </dl>
       </section>
     </div>

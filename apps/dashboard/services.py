@@ -3,7 +3,8 @@
 Ce module ne calcule rien lui-même : il assemble les lectures fournies par les apps métier
 (``fleet.repartition_statuts``, ``fuel.consommation_moyenne``, ``hr.absents_du_jour``...)
 et décide qui voit quoi. Les indicateurs financiers (chiffre d'affaires, encaissements,
-créances, marge) et les factures impayées viendront avec la facturation (étape 4).
+charges, marge, créances, trésorerie) et les factures impayées viennent de ``finance`` et
+``billing`` (étape 4).
 
 Les indicateurs globaux (exploitation, clientèle) peuvent être mis en cache
 (``DASHBOARD_CACHE_SECONDS``) ; le centre d'alertes est toujours recalculé.
@@ -19,12 +20,15 @@ from django.urls import reverse
 from django.utils import timezone
 
 from apps.accounts.models import Role
+from apps.billing import permissions as billing_permissions
+from apps.billing import services as billing_services
 from apps.core.formats import nombre
 from apps.core.services import etat_echeance
 from apps.customers import permissions as customers_permissions
 from apps.customers import services as customers_services
 from apps.drivers import permissions as drivers_permissions
 from apps.drivers import services as drivers_services
+from apps.finance import services as finance_services
 from apps.fleet import permissions as fleet_permissions
 from apps.fleet import services as fleet_services
 from apps.fleet.models import StatutVehicule
@@ -44,7 +48,7 @@ JOURS_ALERTES_CARBURANT = 30
 ROLES_EXPLOITATION = fleet_permissions.CONSULTATION
 ROLES_RH = hr_permissions.PERSONNEL_CONSULTATION
 ROLES_CLIENTELE = customers_permissions.CONSULTATION
-ROLES_FINANCES = frozenset({Role.ADMIN, Role.DIRECTION, Role.FINANCES})
+ROLES_FINANCES = billing_permissions.CONSULTATION
 
 
 def _en_cache(cle: str, calcul):
@@ -117,6 +121,24 @@ def clientele() -> dict:
         }
 
     return _en_cache("clientele", calculer)
+
+
+# --- finances ---
+
+
+def finances(*, jour: date | None = None) -> dict:
+    """Indicateurs du mois en cours : CA HT facturé, encaissé, charges, marge, créances, trésorerie.
+
+    Les charges se décomposent en dépenses saisies, carburant et coût des OR clôturés
+    (voir ``finance.services``).
+    """
+    jour = jour or timezone.localdate()
+    debut = jour.replace(day=1)
+
+    def calculer():
+        return finance_services.indicateurs(debut, jour, aujourd_hui=jour)
+
+    return _en_cache(f"finances:{jour.isoformat()}", calculer)
 
 
 # --- centre d'alertes ---
@@ -247,6 +269,24 @@ def _alertes_carburant(aujourd_hui):
     )
 
 
+def _alertes_factures(aujourd_hui):
+    lignes = []
+    for facture in billing_services.factures_echues(aujourd_hui).order_by("date_echeance"):
+        retard = (aujourd_hui - facture.date_echeance).days
+        lignes.append(
+            {
+                "libelle": f"{facture.numero} · {facture.client.raison_sociale}",
+                "detail": f"reste {nombre(facture.reste)} FCFA, échue depuis {retard} j",
+                "etat": "URGENT",
+                "url": reverse("billing:facture", args=[facture.pk]),
+            }
+        )
+    return _alerte(
+        "factures", "Factures impayées échues", "fa-file-invoice-dollar", lignes,
+        niveau="URGENT", voir_tout=f"{reverse('billing:factures')}?echues=on",
+    )
+
+
 def _alertes_conges():
     lignes = []
     for conge in hr_services.conges_en_retard():
@@ -269,9 +309,8 @@ def centre_alertes(role: str, *, aujourd_hui: date | None = None) -> list[dict] 
     """Groupes d'alertes non vides visibles pour ce rôle ; ``None`` si le rôle n'en a aucun.
 
     Le centre d'alertes du CDC couvre les documents expirants, les pièces sous seuil et les
-    factures impayées (cahier-des-charges.md:231-232) ; ces dernières viendront avec la
-    facturation. S'y ajoutent les alertes de carburant, de permis et de validations de
-    congés déjà émises par les notifications.
+    factures impayées échues (cahier-des-charges.md:231-232). S'y ajoutent les alertes de
+    carburant, de permis et de validations de congés déjà émises par les notifications.
     """
     aujourd_hui = aujourd_hui or timezone.localdate()
     constructeurs = []
@@ -285,6 +324,8 @@ def centre_alertes(role: str, *, aujourd_hui: date | None = None) -> list[dict] 
         constructeurs.append(lambda: _alertes_carburant(aujourd_hui))
     if role in hr_permissions.CONGES_TOUS:
         constructeurs.append(_alertes_conges)
+    if role in billing_permissions.CONSULTATION:
+        constructeurs.append(lambda: _alertes_factures(aujourd_hui))
     if not constructeurs:
         return None
     groupes = [construire() for construire in constructeurs]
@@ -308,6 +349,6 @@ def tableau_de_bord(utilisateur, *, aujourd_hui: date | None = None) -> dict:
             ressources_humaines(jour=aujourd_hui) if role in ROLES_RH else None
         ),
         "clientele": clientele() if role in ROLES_CLIENTELE else None,
-        "finances_a_venir": role in ROLES_FINANCES,
+        "finances": finances(jour=aujourd_hui) if role in ROLES_FINANCES else None,
         "espace_mobile": role == Role.CHAUFFEUR,
     }

@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block titre %}Nouvelle facture{% endblock %}
+{% block entete %}Facturation{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-3xl">
+  <nav aria-label="Fil d'Ariane" class="text-sm text-slate-600">
+    <a href="{% url 'billing:factures' %}" class="underline-offset-2 hover:underline">Facturation</a>
+    <span aria-hidden="true">/</span> Nouvelle facture
+  </nav>
+  <h1 class="mt-2 text-2xl font-bold text-slate-900">Nouvelle facture</h1>
+  <p class="mt-1 text-sm text-slate-600">
+    Une facture correspond à une mission livrée. Le brouillon reprend le prix convenu, la TVA et le délai de paiement du client ;
+    vous pourrez les ajuster avant de le soumettre à la direction.
+  </p>
+
+  <form method="post" novalidate class="mt-6 space-y-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+      <div role="alert" class="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">{% for erreur in form.non_field_errors %}<p>{{ erreur }}</p>{% endfor %}</div>
+    {% endif %}
+    {% if form.mission.field.queryset %}
+      {% include "components/_champ.html" with champ=form.mission %}
+    {% else %}
+      <p class="rounded-lg border border-dashed border-slate-300 p-4 text-sm text-slate-700">Aucune mission livrée n'attend de facture.</p>
+    {% endif %}
+    <div class="flex items-center justify-end gap-3 border-t border-slate-100 pt-5">
+      <a href="{% url 'billing:factures' %}" class="rounded-lg px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Annuler</a>
+      {% if form.mission.field.queryset %}<button type="submit" class="rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">Créer le brouillon</button>{% endif %}
+    </div>
+  </form>
+</div>
+{% endblock %}

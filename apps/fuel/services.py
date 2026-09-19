@@ -334,3 +334,15 @@ def consommation_par_chauffeur() -> list[dict]:
     return _consommation_par_groupe(
         "chauffeur_id", "chauffeur__personnel__prenom", "chauffeur__personnel__nom"
     )
+
+
+def cout_carburant(debut: date, fin: date) -> Decimal:
+    """Valeur des pleins de la période (litres x prix unitaire), en FCFA.
+
+    Calculée en Python : l'arithmétique décimale de SQLite passerait par des flottants.
+    Alimente les charges du mois (cahier-des-charges.md:227).
+    """
+    lignes = Plein.objects.filter(date_plein__range=(debut, fin)).values_list(
+        "quantite_litres", "prix_unitaire"
+    )
+    return sum((litres * prix for litres, prix in lignes), Decimal("0"))

@@ -16,7 +16,7 @@ from apps.accounts.models import Role, User
 from apps.core.search import filtrer_par_texte
 
 from .exceptions import ClientError
-from .models import TVA_DEFAUT, Client, Interaction, TypeInteraction
+from .models import DELAI_PAIEMENT_DEFAUT, TVA_DEFAUT, Client, Interaction, TypeInteraction
 
 CHAMPS_MODIFIABLES = (
     "raison_sociale",
@@ -28,6 +28,7 @@ CHAMPS_MODIFIABLES = (
     "charge_clientele",
     "taux_tva",
     "motif_exoneration",
+    "delai_paiement_jours",
 )
 
 
@@ -84,7 +85,10 @@ def _controler(champs: dict, *, client: Client | None = None) -> dict:
         raise ClientError("Le taux de TVA doit être compris entre 0 et 100 %.")
     if taux == 0 and not champs.get("motif_exoneration"):
         raise ClientError("Un motif d'exonération est obligatoire quand la TVA est à 0 %.")
-    resultat = dict(champs, taux_tva=taux)
+    delai = champs.get("delai_paiement_jours", DELAI_PAIEMENT_DEFAUT)
+    if not 1 <= delai <= 365:
+        raise ClientError("Le délai de paiement doit être compris entre 1 et 365 jours.")
+    resultat = dict(champs, taux_tva=taux, delai_paiement_jours=delai)
     if taux > 0:
         resultat["motif_exoneration"] = ""  # sans exonération, aucun motif n'a de sens
     charge = champs.get("charge_clientele")

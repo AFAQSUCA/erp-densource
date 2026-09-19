@@ -5,7 +5,8 @@ Qui est prévenu de quoi (les destinataires suivent les rôles du cahier-des-cha
 - congé déposé → supérieur hiérarchique (N1), avec une alerte s'il y a une mission prévue ;
 - congé validé N1 → RH (N2) ; décision finale, refus ou annulation → l'employé ;
 - stock au seuil → PARCAUTO ; surconsommation ou anomalie → PARCAUTO et DIRECTION ;
-- mission partie → chargé clientèle attitré du client (à défaut, tous les chargés clientèle).
+- mission partie → chargé clientèle attitré du client (à défaut, tous les chargés clientèle) ;
+- facture soumise → DIRECTION ; validée → FINANCES et son auteur ; renvoyée → son auteur.
 
 Les domaines métier ne connaissent pas ce module : ils émettent des signaux.
 """
@@ -15,6 +16,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from apps.accounts.models import Role
+from apps.billing import signals as billing_signals
 from apps.core.formats import nombre, pourcentage_signe
 from apps.fuel.models import NiveauAlerte
 from apps.fuel.signals import alerte_consommation
@@ -198,4 +200,56 @@ def prevenir_du_depart(sender, mission, **kwargs):
             f"vers {mission.lieu_livraison}."
         ),
         url=reverse("missions:detail", args=[mission.pk]),
+    )
+
+
+# --- facturation ---
+
+
+def _lien_facture(facture) -> str:
+    return reverse("billing:facture", args=[facture.pk])
+
+
+@receiver(billing_signals.facture_a_valider)
+def prevenir_la_direction_d_une_facture(sender, facture, **kwargs):
+    notifier(
+        utilisateurs_du_role(Role.DIRECTION),
+        categorie=CategorieNotification.FACTURE,
+        niveau=NiveauNotification.ATTENTION,
+        titre=f"Facture à valider : {facture.client.raison_sociale}",
+        message=(
+            f"{nombre(facture.montant_ttc)} FCFA TTC pour la mission {facture.mission.numero}, "
+            f"préparée par {facture.cree_par or 'un compte supprimé'}."
+        ),
+        url=_lien_facture(facture),
+    )
+
+
+@receiver(billing_signals.facture_validee)
+def prevenir_de_la_validation_d_une_facture(sender, facture, **kwargs):
+    destinataires = list(utilisateurs_du_role(Role.FINANCES))
+    destinataires.append(facture.cree_par)
+    notifier(
+        destinataires,
+        categorie=CategorieNotification.FACTURE,
+        niveau=NiveauNotification.INFO,
+        titre=f"Facture {facture.numero} validée",
+        message=(
+            f"{facture.client.raison_sociale} : {nombre(facture.montant_ttc)} FCFA TTC, "
+            f"échéance le {_jour(facture.date_echeance)}."
+        ),
+        url=_lien_facture(facture),
+    )
+
+
+@receiver(billing_signals.facture_refusee)
+def prevenir_du_refus_d_une_facture(sender, facture, motif, **kwargs):
+    destinataires = [facture.cree_par] if facture.cree_par else utilisateurs_du_role(Role.FINANCES)
+    notifier(
+        destinataires,
+        categorie=CategorieNotification.FACTURE,
+        niveau=NiveauNotification.ATTENTION,
+        titre=f"Facture renvoyée par la direction : {facture.client.raison_sociale}",
+        message=f"Motif : {motif}",
+        url=_lien_facture(facture),
     )

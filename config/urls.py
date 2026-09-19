@@ -20,6 +20,8 @@ urlpatterns = [
     path("garage/", include("apps.garage.urls")),
     path("carburant/", include("apps.fuel.urls")),
     path("stock/", include("apps.inventory.urls")),
+    path("facturation/", include("apps.billing.urls")),
+    path("finances/", include("apps.finance.urls")),
     path("notifications/", include("apps.notifications.urls")),
     path("admin/", admin.site.urls),
 ]

@@ -4,7 +4,7 @@ from django.utils import timezone
 from apps.core.forms import StyleTailwindMixin
 
 from . import services
-from .models import TVA_DEFAUT, MotifExoneration, TypeInteraction
+from .models import DELAI_PAIEMENT_DEFAUT, TVA_DEFAUT, MotifExoneration, TypeInteraction
 
 
 def _libelle_compte(u) -> str:
@@ -36,6 +36,14 @@ class ClientForm(StyleTailwindMixin, forms.Form):
         label="Motif d'exonération",
         choices=[("", "—")] + MotifExoneration.choices,
         required=False,
+    )
+
+    delai_paiement_jours = forms.IntegerField(
+        label="Délai de paiement (jours)",
+        min_value=1,
+        max_value=365,
+        initial=DELAI_PAIEMENT_DEFAUT,
+        help_text="L'échéance de ses factures = date d'émission + ce délai.",
     )
 
     def __init__(self, *args, **kwargs):

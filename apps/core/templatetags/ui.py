@@ -54,6 +54,12 @@ COULEURS_STATUT = {
     "ENTREE": "vert",
     "SORTIE": "bleu",
     "AJUSTEMENT": "ambre",
+    # facturation
+    "A_VALIDER": "ambre",
+    "EMISE": "bleu",
+    "PARTIELLEMENT_PAYEE": "indigo",
+    "PAYEE": "vert",
+    "ECHUE": "rouge",
     # notifications
     "INFO": "bleu",
     "ATTENTION": "ambre",

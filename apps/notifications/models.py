@@ -12,6 +12,7 @@ class CategorieNotification(models.TextChoices):
     CARBURANT = "CARBURANT", _("Carburant")
     DOCUMENT = "DOCUMENT", _("Échéance")
     MISSION = "MISSION", _("Mission")
+    FACTURE = "FACTURE", _("Facturation")
 
 
 class NiveauNotification(models.TextChoices):

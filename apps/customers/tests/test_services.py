@@ -199,3 +199,22 @@ def test_clients_pour_selection_est_trie_par_raison_sociale():
 
     assert [c.raison_sociale for c in services.clients_pour_selection()] == ["Alpha", "Zeta"]
     assert Client.objects.count() == 2
+
+
+def test_le_delai_de_paiement_par_defaut_est_de_30_jours():
+    assert services.creer_client(**_champs()).delai_paiement_jours == 30
+
+
+@pytest.mark.parametrize("delai", [0, 366, -5])
+def test_un_delai_de_paiement_hors_bornes_est_refuse(delai):
+    with pytest.raises(ClientError, match="entre 1 et 365"):
+        services.creer_client(**_champs(delai_paiement_jours=delai))
+
+
+def test_modifier_le_delai_de_paiement():
+    client = ClientFactory()
+
+    services.modifier_client(client, delai_paiement_jours=60)
+
+    client.refresh_from_db()
+    assert client.delai_paiement_jours == 60

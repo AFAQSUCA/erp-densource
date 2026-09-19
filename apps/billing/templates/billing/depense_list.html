@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% load ui humanize %}
+{% block titre %}Dépenses{% endblock %}
+{% block entete %}Dépenses{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-7xl">
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <div>
+      <h1 class="text-2xl font-bold text-slate-900">Dépenses</h1>
+      <p class="mt-1 text-sm text-slate-600">{{ paginator.count|default:0 }} dépense{{ paginator.count|pluralize }}</p>
+    </div>
+    {% if peut_saisir %}
+      <a href="{% url 'billing:depense_nouvelle' %}" class="inline-flex items-center gap-2 rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2"><i class="fa-solid fa-plus" aria-hidden="true"></i> Nouvelle dépense</a>
+    {% endif %}
+  </div>
+
+  <section class="mt-5" aria-labelledby="titre-mois">
+    <h2 id="titre-mois" class="text-sm font-semibold text-slate-900">Ce mois-ci : {{ total_mois|floatformat:0|intcomma }} FCFA</h2>
+    <dl class="mt-2 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {% for c in par_categorie %}
+        <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">{{ c.libelle }}</dt><dd class="mt-1 text-xl font-bold text-slate-900">{{ c.total|floatformat:0|intcomma }} <span class="text-sm font-medium text-slate-600">FCFA</span></dd></div>
+      {% endfor %}
+    </dl>
+    <p class="mt-2 text-xs text-slate-600">Le carburant et les ordres de réparation clôturés sont comptés à part dans les charges du mois : ne les saisissez pas ici pour éviter un double compte.</p>
+  </section>
+
+  <form method="get" class="mt-5 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div class="min-w-[14rem] flex-1">{% include "components/_champ.html" with champ=filtre.q %}</div>
+    <div class="min-w-[10rem]">{% include "components/_champ.html" with champ=filtre.categorie %}</div>
+    {% include "components/_champ.html" with champ=filtre.date_debut %}
+    {% include "components/_champ.html" with champ=filtre.date_fin %}
+    <button type="submit" class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2">Filtrer</button>
+    {% if filtres_actifs %}<a href="{% url 'billing:depenses' %}" class="px-2 py-2 text-sm font-medium text-slate-700 underline hover:text-slate-900">Réinitialiser</a>{% endif %}
+  </form>
+
+  {% if depenses %}
+    <div class="mt-5 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+      <table class="min-w-full divide-y divide-slate-200 text-sm">
+        <caption class="sr-only">Liste des dépenses</caption>
+        <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+          <tr><th scope="col" class="px-4 py-3">Date</th><th scope="col" class="px-4 py-3">Libellé</th><th scope="col" class="px-4 py-3">Catégorie</th><th scope="col" class="hidden px-4 py-3 xl:table-cell">Mission</th><th scope="col" class="hidden px-4 py-3 xl:table-cell">Mode</th><th scope="col" class="px-4 py-3 text-right">Montant</th></tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          {% for d in depenses %}
+            <tr class="hover:bg-slate-50">
+              <td class="whitespace-nowrap px-4 py-3 text-slate-700">{{ d.date_depense|date:"d/m/Y" }}</td>
+              <td class="px-4 py-3 text-slate-900">{{ d.libelle }}{% if d.reference %}<span class="block text-xs text-slate-600">Pièce {{ d.reference }}</span>{% endif %}</td>
+              <td class="whitespace-nowrap px-4 py-3 text-slate-700">{{ d.get_categorie_display }}</td>
+              <td class="hidden whitespace-nowrap px-4 py-3 text-slate-700 xl:table-cell">{{ d.mission.numero|default:"—" }}</td>
+              <td class="hidden whitespace-nowrap px-4 py-3 text-slate-700 xl:table-cell">{{ d.get_mode_display }}</td>
+              <td class="whitespace-nowrap px-4 py-3 text-right font-medium text-slate-900">{{ d.montant|floatformat:0|intcomma }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% include "components/_pagination.html" %}
+  {% else %}
+    <div class="mt-5 rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center">
+      <span class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-600"><i class="fa-solid fa-receipt" aria-hidden="true"></i></span>
+      <p class="mt-3 font-semibold text-slate-900">Aucune dépense</p>
+      <p class="mt-1 text-sm text-slate-600">{% if filtres_actifs %}Aucun résultat pour ces critères.{% else %}Péages, entretien, frais administratifs : les dépenses saisies apparaîtront ici.{% endif %}</p>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

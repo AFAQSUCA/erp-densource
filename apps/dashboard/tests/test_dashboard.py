@@ -51,13 +51,13 @@ def test_le_tableau_de_bord_exige_la_connexion(client):
 
 
 VISIBLE = {
-    #  exploitation, alertes, rh, clientele, finances_a_venir
+    #  exploitation, alertes, rh, clientele, finances
     Role.ADMIN: (True, True, True, True, True),
     Role.DIRECTION: (True, True, True, True, True),
     Role.RH: (False, True, True, False, False),
     Role.CHARGE_CLIENTELE: (False, False, False, True, False),
     Role.PARCAUTO: (True, True, False, False, False),
-    Role.FINANCES: (False, False, False, False, True),
+    Role.FINANCES: (False, True, False, False, True),
     Role.CHAUFFEUR: (False, False, False, False, False),
 }
 
@@ -72,7 +72,7 @@ def test_chaque_role_ne_voit_que_ses_blocs(role):
         tableau["alertes"] is not None,
         tableau["ressources_humaines"] is not None,
         tableau["clientele"] is not None,
-        tableau["finances_a_venir"],
+        tableau["finances"] is not None,
     ) == attendu
     assert tableau["espace_mobile"] == (role == Role.CHAUFFEUR)
 
@@ -91,11 +91,18 @@ def test_le_chauffeur_est_renvoye_vers_l_espace_mobile(client):
     assert "espace mobile" in texte and "Centre d'alertes" not in texte
 
 
-def test_les_finances_voient_l_annonce_des_indicateurs_financiers_et_pas_de_faux_chiffres(client):
+def test_les_finances_voient_leurs_indicateurs_du_mois(client):
     texte = _page(client, Role.FINANCES).content.decode()
 
-    assert "Indicateurs financiers" in texte
-    assert "avec le module de facturation" in texte
+    for libelle in ("Finances du mois", "CA facturé (HT)", "Total encaissé", "Charges du mois",
+                    "Marge nette", "Créances clients", "Trésorerie"):
+        assert libelle in texte
+    assert "Centre d'alertes" in texte
+
+
+def test_les_autres_roles_ne_voient_pas_les_finances(client):
+    for role in (Role.RH, Role.PARCAUTO, Role.CHARGE_CLIENTELE, Role.CHAUFFEUR):
+        assert "Finances du mois" not in _page(client, role).content.decode()
 
 
 def test_les_blocs_interdits_ne_sont_pas_dans_la_page_du_charge_clientele(client):
@@ -276,7 +283,8 @@ def test_chaque_role_ne_recoit_que_les_alertes_de_ses_ecrans():
     assert set(_groupes(Role.PARCAUTO)) == {"documents", "stock"}
     assert set(_groupes(Role.RH)) == {"chauffeurs"}
     assert set(_groupes(Role.DIRECTION)) == {"documents", "chauffeurs", "stock"}
-    assert services.centre_alertes(Role.FINANCES, aujourd_hui=AUJOURD_HUI) is None
+    assert services.centre_alertes(Role.FINANCES, aujourd_hui=AUJOURD_HUI) == []  # aucune facture échue
+    assert services.centre_alertes(Role.CHARGE_CLIENTELE, aujourd_hui=AUJOURD_HUI) is None
     assert services.centre_alertes(Role.CHAUFFEUR, aujourd_hui=AUJOURD_HUI) is None
 
 
@@ -398,5 +406,76 @@ def test_le_tableau_de_bord_de_l_admin_reste_a_requetes_constantes(client, djang
         MissionFactory(client=ClientFactory())
     client.force_login(_utilisateur(Role.ADMIN))
 
-    with django_assert_max_num_queries(25):
+    with django_assert_max_num_queries(36):
         assert client.get(reverse("home")).status_code == 200
+
+
+# --- finances et factures échues ---
+
+
+def _facture_emise(prix="1000000", jour=date(2026, 9, 1), **surcharges):
+    from apps.billing.tests.helpers import emise
+
+    return emise(prix=prix, aujourd_hui=jour, **surcharges)
+
+
+def test_le_bloc_finances_reprend_les_indicateurs_du_mois():
+    from apps.billing import services as billing
+    from apps.billing.models import ModePaiement
+    from apps.billing.tests.helpers import finances as compte_finances
+
+    facture = _facture_emise(prix="1000000", jour=date(2026, 9, 3))
+    billing.enregistrer_reglement(
+        facture, compte_finances(), montant=Decimal("400000"), mode=ModePaiement.WAVE,
+        date_reglement=date(2026, 9, 10),
+    )
+    billing.enregistrer_depense(
+        compte_finances(), categorie="PEAGES", date_depense=date(2026, 9, 5), libelle="Péage",
+        montant=Decimal("50000"), mode=ModePaiement.ESPECES,
+    )
+
+    kpi = services.finances(jour=date(2026, 9, 15))
+
+    assert kpi["chiffre_affaires"] == Decimal("1000000")
+    assert kpi["encaisse"] == Decimal("400000")
+    assert kpi["charges"]["depenses"] == Decimal("50000")
+    assert kpi["marge_nette"] == Decimal("950000")
+    assert kpi["creances"]["total"] == Decimal("780000")
+    assert kpi["tresorerie"] == Decimal("350000")
+
+
+def test_alerte_des_factures_impayees_echues_pour_finances_direction_et_admin():
+    _facture_emise(jour=date(2026, 8, 1))  # échéance 2026-08-31, dépassée au 1er septembre
+
+    for role in (Role.FINANCES, Role.DIRECTION, Role.ADMIN):
+        groupe = _groupes(role)["factures"]
+        assert groupe["niveau"] == "URGENT" and groupe["nombre"] == 1
+        assert "reste 1 180 000 FCFA" in groupe["lignes"][0]["detail"].replace("\u202f", " ").replace("\xa0", " ")
+        assert "échue depuis 1 j" in groupe["lignes"][0]["detail"]
+    assert "factures" not in _groupes(Role.PARCAUTO)
+
+
+def test_pas_d_alerte_pour_une_facture_non_echue_ou_soldee():
+    from apps.billing import services as billing
+    from apps.billing.models import ModePaiement
+    from apps.billing.tests.helpers import finances as compte_finances
+
+    _facture_emise(jour=date(2026, 8, 25))  # échéance 24/09 : pas encore
+    soldee = _facture_emise(jour=date(2026, 8, 1), prix="1000")
+    billing.enregistrer_reglement(
+        soldee, compte_finances(), montant=Decimal("1180"), mode=ModePaiement.VIREMENT,
+        date_reglement=date(2026, 8, 5),
+    )
+
+    assert "factures" not in _groupes(Role.FINANCES)
+
+
+def test_les_indicateurs_financiers_peuvent_etre_mis_en_cache(settings):
+    settings.DASHBOARD_CACHE_SECONDS = 60
+    cache.clear()
+    premier = services.finances(jour=date(2026, 9, 15))
+    _facture_emise(jour=date(2026, 9, 3))
+
+    assert services.finances(jour=date(2026, 9, 15)) == premier
+    cache.clear()
+    assert services.finances(jour=date(2026, 9, 15))["chiffre_affaires"] == Decimal("1000000")
