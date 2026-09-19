@@ -337,7 +337,10 @@ def test_enregistrer_une_entree_recalcule_le_pump_et_le_dit(client):
     assert (article.quantite, article.pump) == (20, Decimal("1500.00"))
     dernier = MouvementStock.objects.filter(type_mouvement=TypeMouvement.ENTREE).latest("pk")
     assert dernier.acteur == utilisateur
-    assert any("Stock : 20" in texte and "1500" in texte for _, texte in _messages(reponse))
+    assert any(
+        "Stock : 20" in texte and "1 500 FCFA" in texte.replace(" ", " ")
+        for _, texte in _messages(reponse)
+    )
 
 
 @pytest.mark.parametrize(

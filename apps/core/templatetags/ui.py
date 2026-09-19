@@ -7,6 +7,8 @@ la seule information (accessibilité WCAG 2.1 AA, cahier-des-charges.md:304).
 from django import template
 from django.utils.html import format_html
 
+from apps.core.formats import pourcentage_signe as _pourcentage_signe
+
 register = template.Library()
 
 STYLES = {
@@ -52,6 +54,11 @@ COULEURS_STATUT = {
     "ENTREE": "vert",
     "SORTIE": "bleu",
     "AJUSTEMENT": "ambre",
+    # carburant
+    "JAUNE": "ambre",
+    "ROUGE": "rouge",
+    "ANOMALIE": "rouge",
+    "SAISIE_SUSPECTE": "ambre",
 }
 
 
@@ -65,3 +72,11 @@ def badge(code: str, libelle: str):
         couleur,
         libelle,
     )
+
+
+@register.filter
+def pourcentage_signe(valeur, decimales=1):
+    """``{{ ecart|pourcentage_signe }} %`` → « +23,3 % » (virgule française, signe explicite)."""
+    if valeur is None:
+        return ""
+    return _pourcentage_signe(valeur, int(decimales))

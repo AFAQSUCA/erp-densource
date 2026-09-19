@@ -205,3 +205,111 @@ def pleins_a_surveiller() -> QuerySet[Plein]:
         | Q(anomalie=True)
         | Q(alerte_saisie=True)
     )
+
+
+# --- lecture pour les écrans ---
+
+ALERTES_FILTRABLES = ("JAUNE", "ROUGE", "ANOMALIE", "SAISIE", "A_SURVEILLER")
+
+
+def pleins_queryset() -> QuerySet[Plein]:
+    """Pleins avec camion et chauffeur chargés (évite les requêtes en boucle)."""
+    return Plein.objects.select_related("vehicule", "chauffeur__personnel")
+
+
+def rechercher_pleins(
+    *,
+    vehicule: Vehicule | None = None,
+    chauffeur: Chauffeur | None = None,
+    date_debut: date | None = None,
+    date_fin: date | None = None,
+    alerte: str = "",
+    recherche: str = "",
+) -> QuerySet[Plein]:
+    """Pleins filtrés par camion, chauffeur, période, alerte et texte (station, ticket).
+
+    ``alerte`` : ``JAUNE``, ``ROUGE``, ``ANOMALIE``, ``SAISIE`` (saisie suspecte
+    confirmée) ou ``A_SURVEILLER`` (l'un des précédents).
+    """
+    pleins = pleins_queryset()
+    if vehicule is not None:
+        pleins = pleins.filter(vehicule=vehicule)
+    if chauffeur is not None:
+        pleins = pleins.filter(chauffeur=chauffeur)
+    if date_debut is not None:
+        pleins = pleins.filter(date_plein__gte=date_debut)
+    if date_fin is not None:
+        pleins = pleins.filter(date_plein__lte=date_fin)
+    if alerte == "JAUNE":
+        pleins = pleins.filter(niveau_alerte=NiveauAlerte.JAUNE)
+    elif alerte == "ROUGE":
+        pleins = pleins.filter(niveau_alerte=NiveauAlerte.ROUGE)
+    elif alerte == "ANOMALIE":
+        pleins = pleins.filter(anomalie=True)
+    elif alerte == "SAISIE":
+        pleins = pleins.filter(alerte_saisie=True)
+    elif alerte == "A_SURVEILLER":
+        pleins = pleins.filter(
+            Q(niveau_alerte__in=[NiveauAlerte.JAUNE, NiveauAlerte.ROUGE])
+            | Q(anomalie=True)
+            | Q(alerte_saisie=True)
+        )
+    recherche = recherche.strip()
+    if recherche:
+        pleins = pleins.filter(
+            Q(station__icontains=recherche) | Q(numero_ticket__icontains=recherche)
+        )
+    return pleins
+
+
+def _consommation_par_groupe(cle: str, *libelles: str) -> list[dict]:
+    """Regroupe les consommations calculées par ``cle`` (camion ou chauffeur).
+
+    Chaque groupe : litres et km cumulés, consommation moyenne pondérée par la
+    distance, écart en % à la moyenne de la flotte. Trié du plus gourmand au plus
+    économe. Sommes en Python : SQLite passerait par des flottants.
+    """
+    lignes = Plein.objects.filter(consommation__isnull=False).values_list(
+        cle, *libelles, "quantite_litres", "distance_km"
+    )
+    groupes: dict[int, dict] = {}
+    for identifiant, *noms, litres, distance in lignes:
+        g = groupes.setdefault(
+            identifiant,
+            {
+                "id": identifiant,
+                "libelle": " ".join(noms),
+                "litres": Decimal("0"),
+                "distance": 0,
+                "pleins": 0,
+            },
+        )
+        g["litres"] += litres
+        g["distance"] += distance
+        g["pleins"] += 1
+    moyenne_flotte = consommation_moyenne()
+    resultat = []
+    for g in groupes.values():
+        g["consommation"] = calculer_consommation(g["litres"], g["distance"])
+        g["ecart_flotte_pct"] = (
+            ((g["consommation"] - moyenne_flotte) / moyenne_flotte * 100).quantize(
+                CENTIME, rounding=ROUND_HALF_UP
+            )
+            if moyenne_flotte
+            else None
+        )
+        g["anomalie"] = est_anomalie(g["consommation"])
+        resultat.append(g)
+    return sorted(resultat, key=lambda g: g["consommation"], reverse=True)
+
+
+def consommation_par_vehicule() -> list[dict]:
+    """Consommation moyenne de chaque camion (cahier-des-charges.md:156)."""
+    return _consommation_par_groupe("vehicule_id", "vehicule__immatriculation")
+
+
+def consommation_par_chauffeur() -> list[dict]:
+    """Consommation moyenne de chaque chauffeur (cahier-des-charges.md:156)."""
+    return _consommation_par_groupe(
+        "chauffeur_id", "chauffeur__personnel__prenom", "chauffeur__personnel__nom"
+    )

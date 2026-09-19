@@ -10,6 +10,7 @@ from django.views import View
 from django.views.generic import DetailView, FormView, ListView
 
 from apps.accounts.mixins import RoleRequiredMixin
+from apps.core.formats import nombre
 from apps.garage import services as garage_services
 
 from . import permissions, services
@@ -167,7 +168,7 @@ class EntreeView(RoleRequiredMixin, View):
             messages.success(
                 request,
                 f"Entrée de {form.cleaned_data['quantite']} x {article.reference} enregistrée. "
-                f"Stock : {article.quantite}, PUMP : {article.pump} FCFA.",
+                f"Stock : {article.quantite}, PUMP : {nombre(article.pump)} FCFA.",
             )
         return redirect("inventory:article_detail", pk=article.pk)
 

@@ -25,3 +25,18 @@ Reste à faire :
 - Correction d'un plein saisi par erreur (aucun service de modification pour l'instant).
 - Saisies hors ordre venant de la synchronisation hors-ligne du mobile (étape 6).
 - Notification des alertes : `notifications` (étape 5).
+
+Interface (`views.py`, `templates/fuel/`) : liste des pleins (filtres camion, chauffeur,
+période, type d'alerte, texte) avec la consommation moyenne et le nombre de pleins à
+surveiller ; saisie d'un plein ; page d'analyse par camion et par chauffeur. Accès :
+ADMIN, DIRECTION (lecture) et PARCAUTO en consultation ; ADMIN et PARCAUTO saisissent
+(`permissions.py`). Le chauffeur saisira lui-même depuis le mobile (étape 6).
+
+Saisie suspecte (écart > ±60 %) : la page se réaffiche avec l'avertissement, les valeurs
+saisies et un bouton « Confirmer » ; rien n'est enregistré tant que l'utilisateur n'a pas
+corrigé ou confirmé. Les alertes jaune / rouge et les anomalies sont signalées par un
+message après l'enregistrement.
+
+Affichage des nombres : `core/formats.py` (`nombre`, `pourcentage_signe`) et le filtre
+`pourcentage_signe` — virgule française et arrondi correct ; ne jamais écrire un nombre
+dans un message avec `f"{valeur}"` (point décimal).

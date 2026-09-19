@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% load ui %}
+{% block titre %}Nouveau plein{% endblock %}
+{% block entete %}Carburant{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-3xl">
+  <nav aria-label="Fil d'Ariane" class="text-sm text-slate-600">
+    <a href="{% url 'fuel:liste' %}" class="underline-offset-2 hover:underline">Carburant</a>
+    <span aria-hidden="true">/</span> Nouveau plein
+  </nav>
+  <h1 class="mt-2 text-2xl font-bold text-slate-900">Nouveau plein</h1>
+  <p class="mt-1 text-sm text-slate-600">
+    La consommation se calcule à partir du plein précédent du même camion : saisissez les pleins dans l'ordre,
+    avec un kilométrage qui augmente.
+  </p>
+
+  <form method="post" novalidate class="mt-6 space-y-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+    {% csrf_token %}
+
+    {% if saisie_suspecte %}
+      <div role="alert" class="rounded-lg border border-amber-400 bg-amber-50 p-4 text-sm text-amber-950">
+        <p class="font-semibold"><i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>Vérifiez cette saisie avant de l'enregistrer</p>
+        <p class="mt-2">
+          Consommation calculée : <strong>{{ saisie_suspecte.consommation|floatformat:1 }} L/100 km</strong>,
+          soit <strong>{{ saisie_suspecte.ecart_pct|pourcentage_signe }} %</strong> par rapport à la moyenne des
+          derniers pleins de ce camion ({{ saisie_suspecte.moyenne|floatformat:1 }} L/100 km).
+        </p>
+        <p class="mt-2">
+          Un écart aussi important vient souvent d'une erreur sur les <strong>litres</strong> ou sur le
+          <strong>kilométrage</strong>. Corrigez les valeurs ci-dessous, ou confirmez si elles sont exactes :
+          le plein sera alors enregistré avec la mention « saisie confirmée ».
+        </p>
+      </div>
+    {% endif %}
+
+    {% if form.non_field_errors %}
+      <div role="alert" class="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">
+        {% for erreur in form.non_field_errors %}<p>{{ erreur }}</p>{% endfor %}
+      </div>
+    {% endif %}
+
+    <div class="grid gap-5 sm:grid-cols-2">
+      {% include "components/_champ.html" with champ=form.vehicule %}
+      {% include "components/_champ.html" with champ=form.chauffeur %}
+      {% include "components/_champ.html" with champ=form.date_plein %}
+      {% include "components/_champ.html" with champ=form.station %}
+      {% include "components/_champ.html" with champ=form.quantite_litres %}
+      {% include "components/_champ.html" with champ=form.prix_unitaire %}
+      {% include "components/_champ.html" with champ=form.km_compteur %}
+      {% include "components/_champ.html" with champ=form.numero_ticket %}
+    </div>
+
+    <div class="flex flex-wrap items-center justify-end gap-3 border-t border-slate-100 pt-5">
+      <a href="{% url 'fuel:liste' %}" class="rounded-lg px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Annuler</a>
+      {% if saisie_suspecte %}
+        <button type="submit" name="confirmer" value="1"
+                class="rounded-lg bg-accent-500 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-accent-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-600 focus-visible:ring-offset-2">
+          Confirmer : les valeurs sont exactes
+        </button>
+      {% endif %}
+      <button type="submit" class="rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">
+        {% if saisie_suspecte %}Enregistrer avec mes corrections{% else %}Enregistrer le plein{% endif %}
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}

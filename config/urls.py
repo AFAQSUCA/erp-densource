@@ -16,6 +16,7 @@ urlpatterns = [
     path("flotte/", include("apps.fleet.urls")),
     path("chauffeurs/", include("apps.drivers.urls")),
     path("garage/", include("apps.garage.urls")),
+    path("carburant/", include("apps.fuel.urls")),
     path("stock/", include("apps.inventory.urls")),
     path("admin/", admin.site.urls),
 ]

@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% load humanize ui %}
+{% block titre %}Carburant{% endblock %}
+{% block entete %}Carburant{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-7xl">
+  <div class="flex flex-wrap items-end justify-between gap-3">
+    <div>
+      <h1 class="text-2xl font-bold text-slate-900">Carburant</h1>
+      <p class="mt-1 text-sm text-slate-600">{{ paginator.count|default:0 }} plein{{ paginator.count|pluralize }}</p>
+    </div>
+    <div class="flex flex-wrap gap-3">
+      <a href="{% url 'fuel:analyse' %}"
+         class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+        <i class="fa-solid fa-chart-column" aria-hidden="true"></i> Analyse de la consommation
+      </a>
+      {% if peut_modifier %}
+        <a href="{% url 'fuel:creer' %}"
+           class="inline-flex items-center gap-2 rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">
+          <i class="fa-solid fa-plus" aria-hidden="true"></i> Nouveau plein
+        </a>
+      {% endif %}
+    </div>
+  </div>
+
+  <dl class="mt-5 grid gap-4 sm:grid-cols-2">
+    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <dt class="text-sm text-slate-600">Consommation moyenne{% if filtre.cleaned_data.vehicule or filtre.cleaned_data.chauffeur %} (selon le filtre){% else %} de la flotte{% endif %}</dt>
+      <dd class="mt-1 text-2xl font-bold text-slate-900">
+        {% if consommation_moyenne %}{{ consommation_moyenne|floatformat:1 }} <span class="text-sm font-medium text-slate-600">L/100 km</span>{% else %}<span class="text-base font-medium text-slate-600">Pas encore de donnée</span>{% endif %}
+      </dd>
+    </div>
+    <div class="rounded-xl border p-4 shadow-sm {% if nombre_a_surveiller %}border-amber-300 bg-amber-50{% else %}border-slate-200 bg-white{% endif %}">
+      <dt class="text-sm {% if nombre_a_surveiller %}text-amber-900{% else %}text-slate-600{% endif %}">Pleins à surveiller</dt>
+      <dd class="mt-1 flex items-center gap-3 text-2xl font-bold text-slate-900">
+        {{ nombre_a_surveiller }}
+        {% if nombre_a_surveiller %}<a href="?alerte=A_SURVEILLER" class="text-sm font-medium text-marque-700 underline-offset-2 hover:underline">Voir la liste</a>{% endif %}
+      </dd>
+    </div>
+  </dl>
+
+  <form method="get" class="mt-5 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      {% include "components/_champ.html" with champ=filtre.q %}
+      {% include "components/_champ.html" with champ=filtre.vehicule %}
+      {% include "components/_champ.html" with champ=filtre.chauffeur %}
+      {% include "components/_champ.html" with champ=filtre.date_debut %}
+      {% include "components/_champ.html" with champ=filtre.date_fin %}
+      {% include "components/_champ.html" with champ=filtre.alerte %}
+    </div>
+    <div class="mt-4 flex items-center gap-3">
+      <button type="submit" class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2">Filtrer</button>
+      {% if filtres_actifs %}<a href="{% url 'fuel:liste' %}" class="px-2 py-2 text-sm font-medium text-slate-700 underline hover:text-slate-900">Réinitialiser</a>{% endif %}
+    </div>
+  </form>
+
+  {% if pleins %}
+    <div class="mt-5 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+      <table class="min-w-full divide-y divide-slate-200 text-sm">
+        <caption class="sr-only">Liste des pleins de carburant</caption>
+        <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+          <tr>
+            <th scope="col" class="px-4 py-3">Date</th>
+            <th scope="col" class="px-4 py-3">Camion</th>
+            <th scope="col" class="hidden px-4 py-3 xl:table-cell">Chauffeur</th>
+            <th scope="col" class="hidden px-4 py-3 2xl:table-cell">Station</th>
+            <th scope="col" class="px-4 py-3 text-right">Litres</th>
+            <th scope="col" class="hidden px-4 py-3 text-right 2xl:table-cell">Montant</th>
+            <th scope="col" class="hidden px-4 py-3 text-right xl:table-cell">Km compteur</th>
+            <th scope="col" class="px-4 py-3 text-right">L/100 km</th>
+            <th scope="col" class="px-4 py-3 text-right">Écart</th>
+            <th scope="col" class="px-4 py-3">Alertes</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          {% for plein in pleins %}
+            <tr class="hover:bg-slate-50">
+              <td class="whitespace-nowrap px-4 py-3 text-slate-700">{{ plein.date_plein|date:"d/m/Y" }}</td>
+              <td class="whitespace-nowrap px-4 py-3 font-semibold text-slate-900">{{ plein.vehicule.immatriculation }}</td>
+              <td class="hidden whitespace-nowrap px-4 py-3 text-slate-700 xl:table-cell">{{ plein.chauffeur.personnel.prenom }} {{ plein.chauffeur.personnel.nom }}</td>
+              <td class="hidden whitespace-nowrap px-4 py-3 text-slate-700 2xl:table-cell">{{ plein.station }}</td>
+              <td class="whitespace-nowrap px-4 py-3 text-right text-slate-800">{{ plein.quantite_litres|floatformat:"-1" }}</td>
+              <td class="hidden whitespace-nowrap px-4 py-3 text-right text-slate-700 2xl:table-cell">{{ plein.montant_total|floatformat:0|intcomma }}</td>
+              <td class="hidden whitespace-nowrap px-4 py-3 text-right text-slate-700 xl:table-cell">{{ plein.km_compteur|intcomma }}</td>
+              <td class="whitespace-nowrap px-4 py-3 text-right font-semibold text-slate-900">{% if plein.consommation %}{{ plein.consommation|floatformat:1 }}{% else %}<span class="font-normal text-slate-500">—</span>{% endif %}</td>
+              <td class="whitespace-nowrap px-4 py-3 text-right text-slate-700">{% if plein.ecart_pct is not None %}{{ plein.ecart_pct|pourcentage_signe }} %{% else %}—{% endif %}</td>
+              <td class="whitespace-nowrap px-4 py-3">
+                <div class="flex flex-wrap gap-1">
+                  {% if plein.niveau_alerte == "JAUNE" %}{% badge "JAUNE" "Jaune" %}{% elif plein.niveau_alerte == "ROUGE" %}{% badge "ROUGE" "Rouge" %}{% endif %}
+                  {% if plein.anomalie %}{% badge "ANOMALIE" "Anomalie" %}{% endif %}
+                  {% if plein.alerte_saisie %}{% badge "SAISIE_SUSPECTE" "Saisie confirmée" %}{% endif %}
+                  {% if plein.niveau_alerte == "AUCUNE" and not plein.anomalie and not plein.alerte_saisie %}<span class="text-slate-500">—</span>{% endif %}
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% include "components/_pagination.html" %}
+  {% else %}
+    <div class="mt-5 rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center">
+      <span class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-600">
+        <i class="fa-solid fa-gas-pump" aria-hidden="true"></i>
+      </span>
+      <p class="mt-3 font-semibold text-slate-900">Aucun plein trouvé</p>
+      <p class="mt-1 text-sm text-slate-600">{% if filtres_actifs %}Aucun résultat pour ces critères.{% else %}Les pleins saisis apparaîtront ici.{% endif %}</p>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}
