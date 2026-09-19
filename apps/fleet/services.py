@@ -7,10 +7,11 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from django.db import transaction
-from django.db.models import Q, QuerySet
+from django.db.models import Count, QuerySet
 from django.utils import timezone
 
 from apps.core.constants import DELAI_ALERTE_JOURS
+from apps.core.search import filtrer_par_texte
 from apps.core.services import etat_echeance
 
 from apps.drivers.models import Chauffeur
@@ -233,20 +234,28 @@ def rechercher_vehicules(
     vehicules = vehicules_queryset()
     if statut in StatutVehicule.values:
         vehicules = vehicules.filter(statut=statut)
-    recherche = recherche.strip()
-    if recherche:
-        vehicules = vehicules.filter(
-            Q(immatriculation__icontains=recherche)
-            | Q(marque__icontains=recherche)
-            | Q(modele__icontains=recherche)
-            | Q(vin__icontains=recherche)
-        )
+    vehicules = filtrer_par_texte(
+        vehicules, recherche, "immatriculation", "marque", "modele", "vin"
+    )
     if documents_a_renouveler:
         vehicules = vehicules.filter(pk__in=vehicules_avec_documents_a_renouveler())
     return vehicules
 
 
 # --- documents réglementaires (cahier-des-charges.md:93-95) ---
+
+
+def repartition_statuts() -> dict[str, int]:
+    """Nombre de camions par statut (tous les statuts, y compris à 0) et total.
+
+    Tableau de bord d'exploitation : disponibles / en mission / au garage
+    (cahier-des-charges.md:229-230).
+    """
+    comptes = dict.fromkeys(StatutVehicule.values, 0)
+    for statut, nombre in Vehicule.objects.values_list("statut").annotate(n=Count("pk")):
+        comptes[statut] = nombre
+    comptes["total"] = sum(comptes.values())
+    return comptes
 
 
 def vehicules_avec_documents_a_renouveler(

@@ -10,6 +10,7 @@ from django.views import View
 from django.views.generic import DetailView, FormView, ListView
 
 from apps.accounts.mixins import RoleRequiredMixin
+from apps.core.views import PaginationTolerante
 
 from . import permissions, sections, services
 from .exceptions import FlotteError
@@ -17,7 +18,7 @@ from .forms import DocumentForm, VehiculeForm
 from .models import StatutVehicule, TypeDocument
 
 
-class VehiculeListView(RoleRequiredMixin, ListView):
+class VehiculeListView(PaginationTolerante, RoleRequiredMixin, ListView):
     roles = permissions.CONSULTATION
     template_name = "fleet/vehicule_list.html"
     context_object_name = "vehicules"

@@ -10,6 +10,7 @@ from django.views import View
 from django.views.generic import DetailView, FormView, ListView
 
 from apps.accounts.mixins import RoleRequiredMixin
+from apps.core.views import PaginationTolerante
 
 from . import permissions, services
 from .exceptions import ChauffeurError
@@ -17,7 +18,7 @@ from .forms import ChauffeurForm, StatutForm
 from .models import StatutChauffeur
 
 
-class ChauffeurListView(RoleRequiredMixin, ListView):
+class ChauffeurListView(PaginationTolerante, RoleRequiredMixin, ListView):
     roles = permissions.CONSULTATION
     template_name = "drivers/chauffeur_list.html"
     context_object_name = "chauffeurs"

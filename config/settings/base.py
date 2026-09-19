@@ -53,6 +53,8 @@ LOCAL_APPS = [
     "apps.garage",
     "apps.inventory",
     "apps.fuel",
+    "apps.notifications",
+    "apps.dashboard",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -93,6 +95,7 @@ TEMPLATES = [
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
                 "apps.accounts.context_processors.menu",
+                "apps.notifications.context_processors.notifications",
             ],
         },
     },
@@ -141,3 +144,15 @@ REST_FRAMEWORK = {
         "rest_framework.permissions.IsAuthenticated",
     ],
 }
+
+
+# Notifications (étape 5) : toujours enregistrées dans l'application ; l'envoi par e-mail
+# est facultatif et se règle par l'environnement. SMS et notifications push (Twilio,
+# Firebase) demandent des comptes externes et ne sont pas branchés.
+NOTIFICATIONS_EMAIL = env.bool("NOTIFICATIONS_EMAIL", default=False)
+NOTIFICATIONS_URL_BASE = env("NOTIFICATIONS_URL_BASE", default="http://localhost:8000")
+DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="ERP DEN Source Group <noreply@densourcegroup.ci>")
+
+# Durée (secondes) de mise en cache des indicateurs du tableau de bord ; 0 = pas de cache.
+# Avec Redis en production (CACHES), le cache est partagé entre les processus.
+DASHBOARD_CACHE_SECONDS = env.int("DASHBOARD_CACHE_SECONDS", default=60)

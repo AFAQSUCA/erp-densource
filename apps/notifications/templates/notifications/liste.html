@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% load ui %}
+{% block titre %}Notifications{% endblock %}
+{% block entete %}Notifications{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-4xl">
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <div>
+      <h1 class="text-2xl font-bold text-slate-900">Notifications</h1>
+      <p class="mt-1 text-sm text-slate-600">
+        {% if nombre_non_lues %}{{ nombre_non_lues }} non lue{{ nombre_non_lues|pluralize }}{% else %}Tout est lu{% endif %}
+      </p>
+    </div>
+    <div class="flex flex-wrap items-center gap-3">
+      <a href="{% if non_lues_seulement %}{% url 'notifications:liste' %}{% else %}?non_lues=1{% endif %}"
+         class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+        {% if non_lues_seulement %}Afficher toutes{% else %}Non lues seulement{% endif %}
+      </a>
+      {% if nombre_non_lues %}
+        <form method="post" action="{% url 'notifications:tout_lire' %}">
+          {% csrf_token %}
+          <button type="submit" class="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2">Tout marquer comme lu</button>
+        </form>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if notifications %}
+    <ul class="mt-5 divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      {% for n in notifications %}
+        <li class="flex items-start gap-4 p-4 {% if not n.est_lue %}bg-marque-50/40{% endif %}">
+          <span class="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full {% if n.est_lue %}bg-transparent{% else %}bg-marque-600{% endif %}" aria-hidden="true"></span>
+          <div class="min-w-0 flex-1">
+            <p class="flex flex-wrap items-center gap-2">
+              {% badge n.niveau n.get_niveau_display %}
+              <span class="text-xs font-semibold uppercase tracking-wide text-slate-600">{{ n.get_categorie_display }}</span>
+              <span class="text-xs text-slate-600">{{ n.created_at|date:"d/m/Y H:i" }}</span>
+              {% if not n.est_lue %}<span class="sr-only">Non lue</span>{% endif %}
+            </p>
+            <p class="mt-1 font-semibold text-slate-900">{{ n.titre }}</p>
+            {% if n.message %}<p class="mt-0.5 text-sm text-slate-700">{{ n.message }}</p>{% endif %}
+          </div>
+          <form method="post" action="{% url 'notifications:lire' n.pk %}" class="shrink-0">
+            {% csrf_token %}
+            <button type="submit"
+                    class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+              {% if n.url %}Ouvrir{% elif n.est_lue %}Lue{% else %}Marquer comme lue{% endif %}
+            </button>
+          </form>
+        </li>
+      {% endfor %}
+    </ul>
+    {% include "components/_pagination.html" %}
+  {% else %}
+    <div class="mt-5 rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center">
+      <span class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-600"><i class="fa-regular fa-bell" aria-hidden="true"></i></span>
+      <p class="mt-3 font-semibold text-slate-900">{% if non_lues_seulement %}Aucune notification non lue{% else %}Aucune notification{% endif %}</p>
+      <p class="mt-1 text-sm text-slate-600">Les alertes (congés, stock, carburant, échéances) apparaîtront ici.</p>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

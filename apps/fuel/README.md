@@ -24,7 +24,7 @@ sans filtre = moyenne globale de la flotte), `pleins_a_surveiller()`.
 Reste à faire :
 - Correction d'un plein saisi par erreur (aucun service de modification pour l'instant).
 - Saisies hors ordre venant de la synchronisation hors-ligne du mobile (étape 6).
-- Notification des alertes : `notifications` (étape 5).
+- Notifications : signal `alerte_consommation`, abonné par `notifications` (fait, étape 5).
 
 Interface (`views.py`, `templates/fuel/`) : liste des pleins (filtres camion, chauffeur,
 période, type d'alerte, texte) avec la consommation moyenne et le nombre de pleins à
@@ -40,3 +40,5 @@ message après l'enregistrement.
 Affichage des nombres : `core/formats.py` (`nombre`, `pourcentage_signe`) et le filtre
 `pourcentage_signe` — virgule française et arrondi correct ; ne jamais écrire un nombre
 dans un message avec `f"{valeur}"` (point décimal).
+
+Recherche : `filtrer_par_texte` (core) — insensible aux accents et à la casse.

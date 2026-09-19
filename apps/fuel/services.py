@@ -9,12 +9,14 @@ jaune > +20 %, rouge > +40 %, alerte de saisie > ±60 %. Anomalie : conso
 
 from __future__ import annotations
 
+import logging
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 
 from django.db import transaction
 from django.db.models import Q, QuerySet
 
+from apps.core.search import filtrer_par_texte
 from apps.drivers.models import Chauffeur
 from apps.fleet import services as fleet_services
 from apps.fleet.models import Vehicule
@@ -27,6 +29,7 @@ from .exceptions import (
     TicketDejaEnregistre,
 )
 from .models import NiveauAlerte, Plein
+from .signals import alerte_consommation
 
 CENTIME = Decimal("0.01")
 NB_PLEINS_REFERENCE = 3
@@ -35,6 +38,8 @@ SEUIL_ROUGE = Decimal("40")
 SEUIL_SAISIE = Decimal("60")
 CONSO_MAX = Decimal("45")
 CONSO_MIN = Decimal("20")
+
+logger = logging.getLogger(__name__)
 
 
 def calculer_consommation(litres: Decimal, distance_km: int) -> Decimal:
@@ -169,7 +174,20 @@ def enregistrer_plein(
     )
     if km_compteur > vehicule.kilometrage:
         fleet_services.enregistrer_kilometrage(vehicule, km_compteur)
+    if (
+        plein.niveau_alerte != NiveauAlerte.AUCUNE
+        or plein.anomalie
+        or plein.alerte_saisie
+    ):
+        _emettre(alerte_consommation, plein=plein)
     return plein
+
+
+def _emettre(signal, **arguments) -> None:
+    """Un récepteur en erreur ne doit pas faire échouer la saisie du plein."""
+    for recepteur, resultat in signal.send_robust(sender=Plein, **arguments):
+        if isinstance(resultat, Exception):
+            logger.error("Récepteur %r en erreur", recepteur, exc_info=resultat)
 
 
 # --- analyse (cahier-des-charges.md:156) ---
@@ -198,13 +216,20 @@ def consommation_moyenne(
     return calculer_consommation(litres, distance)
 
 
-def pleins_a_surveiller() -> QuerySet[Plein]:
-    """Pleins en alerte (jaune/rouge), en anomalie ou à saisie suspecte confirmée."""
-    return Plein.objects.select_related("vehicule", "chauffeur__personnel").filter(
+def pleins_a_surveiller(*, depuis: date | None = None) -> QuerySet[Plein]:
+    """Pleins en alerte (jaune/rouge), en anomalie ou à saisie suspecte confirmée.
+
+    ``depuis`` : ne garde que les pleins de cette date ou plus récents (le centre d'alertes
+    du tableau de bord n'affiche que les alertes récentes).
+    """
+    pleins = Plein.objects.select_related("vehicule", "chauffeur__personnel").filter(
         Q(niveau_alerte__in=[NiveauAlerte.JAUNE, NiveauAlerte.ROUGE])
         | Q(anomalie=True)
         | Q(alerte_saisie=True)
     )
+    if depuis is not None:
+        pleins = pleins.filter(date_plein__gte=depuis)
+    return pleins
 
 
 # --- lecture pour les écrans ---
@@ -254,11 +279,7 @@ def rechercher_pleins(
             | Q(anomalie=True)
             | Q(alerte_saisie=True)
         )
-    recherche = recherche.strip()
-    if recherche:
-        pleins = pleins.filter(
-            Q(station__icontains=recherche) | Q(numero_ticket__icontains=recherche)
-        )
+    pleins = filtrer_par_texte(pleins, recherche, "station", "numero_ticket")
     return pleins
 
 

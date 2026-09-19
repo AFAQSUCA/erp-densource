@@ -10,14 +10,16 @@ permissions DRF de l'API (étape 6), pas de ce module.
 
 from __future__ import annotations
 
+import logging
 import secrets
-from datetime import date
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from django.db import transaction
-from django.db.models import Q, QuerySet
+from django.db.models import Count, QuerySet, Sum
 from django.utils import timezone
 
+from apps.core.search import filtrer_par_texte
 from apps.core.services import prochain_numero
 from apps.customers.models import Client
 from apps.drivers import services as drivers_services
@@ -34,11 +36,14 @@ from .exceptions import (
     TransitionMissionInterdite,
 )
 from .models import STATUTS_ACTIFS, Mission, StatutMission
+from .signals import mission_demarree
 
 PREFIXE_NUMERO = "MIS"
 # Sans caractères ambigus (0/O, 1/I) : les codes se dictent au téléphone.
 ALPHABET_CODES = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 LONGUEUR_CODE = 8
+
+logger = logging.getLogger(__name__)
 
 
 def generer_code() -> str:
@@ -83,16 +88,79 @@ def rechercher_missions(
     missions = missions_queryset()
     if statut in StatutMission.values:
         missions = missions.filter(statut=statut)
-    recherche = recherche.strip()
-    if recherche:
-        missions = missions.filter(
-            Q(numero__icontains=recherche)
-            | Q(client__raison_sociale__icontains=recherche)
-            | Q(lieu_chargement__icontains=recherche)
-            | Q(lieu_livraison__icontains=recherche)
-        )
+    missions = filtrer_par_texte(
+        missions, recherche, "numero", "client__raison_sociale", "lieu_chargement", "lieu_livraison"
+    )
     return missions
 
+
+
+STATUTS_A_SURVEILLER = (
+    StatutMission.PLANIFIEE,
+    StatutMission.AFFECTEE,
+    StatutMission.EN_COURS_DEPART,
+    StatutMission.EN_COURS_COLIS_RECUPERE,
+)
+
+
+def missions_du_personnel_sur_periode(personnel_id: int, debut, fin) -> QuerySet[Mission]:
+    """Missions planifiées, affectées ou en cours d'un chauffeur (identifié par sa fiche du
+    personnel) dont le départ prévu tombe dans la période.
+
+    Alimente l'alerte N1 des congés (cahier-des-charges.md:219-221). Une mission sans date
+    de départ prévue ne peut pas être détectée.
+    """
+    return (
+        Mission.objects.filter(
+            chauffeur__personnel_id=personnel_id,
+            statut__in=STATUTS_A_SURVEILLER,
+            date_depart_prevue__range=(debut, fin),
+        )
+        .select_related("client")
+        .order_by("date_depart_prevue")
+    )
+
+
+def repartition_par_statut() -> dict[str, int]:
+    """Nombre de missions par statut (tous les statuts, y compris à 0)."""
+    comptes = dict.fromkeys(StatutMission.values, 0)
+    for statut, nombre in Mission.objects.values_list("statut").annotate(n=Count("pk")):
+        comptes[statut] = nombre
+    return comptes
+
+
+def clients_actifs(*, jours: int = 90, maintenant: datetime | None = None) -> int:
+    """Clients ayant au moins une mission créée sur les ``jours`` derniers jours."""
+    depuis = (maintenant or timezone.now()) - timedelta(days=jours)
+    return Mission.objects.filter(created_at__gte=depuis).values("client").distinct().count()
+
+
+def meilleurs_clients(
+    *, limite: int = 3, mois: int = 12, maintenant: datetime | None = None
+) -> list[dict]:
+    """Clients classés par montant des missions livrées ou clôturées sur ``mois`` mois.
+
+    Le montant est le prix convenu des missions (l'écran de facturation viendra avec
+    l'étape 4). Chaque ligne : ``client``, ``montant``, ``missions``.
+    """
+    depuis = (maintenant or timezone.now()) - timedelta(days=30 * mois)
+    lignes = (
+        Mission.objects.filter(
+            statut__in=[StatutMission.LIVREE, StatutMission.CLOTUREE], date_livraison__gte=depuis
+        )
+        .values("client_id", "client__raison_sociale")
+        .annotate(montant=Sum("prix_convenu"), missions=Count("pk"))
+        .order_by("-montant", "client__raison_sociale")[:limite]
+    )
+    return [
+        {
+            "client_id": ligne["client_id"],
+            "client": ligne["client__raison_sociale"],
+            "montant": ligne["montant"],
+            "missions": ligne["missions"],
+        }
+        for ligne in lignes
+    ]
 
 
 def vehicule_a_mission_active(vehicule: Vehicule) -> bool:
@@ -229,6 +297,9 @@ def demarrer_mission(mission: Mission) -> Mission:
     mission.date_depart = timezone.now()
     mission.statut = StatutMission.EN_COURS_DEPART
     mission.save(update_fields=["km_depart", "date_depart", "statut", "updated_at"])
+    for recepteur, resultat in mission_demarree.send_robust(sender=Mission, mission=mission):
+        if isinstance(resultat, Exception):
+            logger.error("Récepteur %r en erreur", recepteur, exc_info=resultat)
     return mission
 
 

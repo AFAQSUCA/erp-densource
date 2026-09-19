@@ -9,28 +9,17 @@
 
 from apps.hr.models import StatutConge
 
-from . import permissions
-from .models import Mission, StatutMission
-
-STATUTS_A_SURVEILLER = (
-    StatutMission.PLANIFIEE,
-    StatutMission.AFFECTEE,
-    StatutMission.EN_COURS_DEPART,
-    StatutMission.EN_COURS_COLIS_RECUPERE,
-)
+from . import permissions, services
+from .models import Mission
 
 
 def section_alerte_conge(conge, utilisateur):
     if conge.statut not in (StatutConge.DEMANDE, StatutConge.VALIDATION_N1):
         return None
     missions = list(
-        Mission.objects.filter(
-            chauffeur__personnel_id=conge.employe_id,
-            statut__in=STATUTS_A_SURVEILLER,
-            date_depart_prevue__range=(conge.date_debut, conge.date_fin),
+        services.missions_du_personnel_sur_periode(
+            conge.employe_id, conge.date_debut, conge.date_fin
         )
-        .select_related("client")
-        .order_by("date_depart_prevue")
     )
     if not missions:
         return None

@@ -9,6 +9,7 @@ from django.db.models import Q, QuerySet
 from django.utils import timezone
 
 from apps.core.constants import DELAI_ALERTE_JOURS
+from apps.core.search import filtrer_par_texte
 from apps.core.services import etat_echeance
 from apps.hr.models import Personnel
 
@@ -127,14 +128,14 @@ def rechercher_chauffeurs(
     chauffeurs = chauffeurs_queryset()
     if statut in StatutChauffeur.values:
         chauffeurs = chauffeurs.filter(statut=statut)
-    recherche = recherche.strip()
-    if recherche:
-        chauffeurs = chauffeurs.filter(
-            Q(personnel__matricule__icontains=recherche)
-            | Q(personnel__nom__icontains=recherche)
-            | Q(personnel__prenom__icontains=recherche)
-            | Q(numero_permis__icontains=recherche)
-        )
+    chauffeurs = filtrer_par_texte(
+        chauffeurs,
+        recherche,
+        "personnel__matricule",
+        "personnel__nom",
+        "personnel__prenom",
+        "numero_permis",
+    )
     if a_renouveler:
         chauffeurs = chauffeurs.filter(pk__in=chauffeurs_avec_echeance_proche())
     return chauffeurs.order_by("personnel__nom", "personnel__prenom")

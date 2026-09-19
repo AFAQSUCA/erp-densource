@@ -11,9 +11,10 @@ from __future__ import annotations
 from decimal import Decimal
 
 from django.db import transaction
-from django.db.models import Q, QuerySet
+from django.db.models import QuerySet
 from django.utils import timezone
 
+from apps.core.search import filtrer_par_texte
 from apps.core.services import prochain_numero
 from apps.fleet import services as fleet_services
 from apps.fleet.models import StatutVehicule, Vehicule
@@ -114,13 +115,7 @@ def rechercher_ordres(
         ordres = ordres.filter(type_or=type_or)
     if lieu in LieuReparation.values:
         ordres = ordres.filter(lieu=lieu)
-    recherche = recherche.strip()
-    if recherche:
-        ordres = ordres.filter(
-            Q(numero__icontains=recherche)
-            | Q(vehicule__immatriculation__icontains=recherche)
-            | Q(motif__icontains=recherche)
-        )
+    ordres = filtrer_par_texte(ordres, recherche, "numero", "vehicule__immatriculation", "motif")
     return ordres
 
 

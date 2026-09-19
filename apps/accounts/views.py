@@ -1,6 +1,4 @@
-from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.views import LoginView, LogoutView
-from django.views.generic import TemplateView
 
 
 class ConnexionView(LoginView):
@@ -13,7 +11,3 @@ class ConnexionView(LoginView):
 
 class DeconnexionView(LogoutView):
     """Déconnexion (POST uniquement, protégée par CSRF)."""
-
-
-class AccueilView(LoginRequiredMixin, TemplateView):
-    template_name = "home.html"

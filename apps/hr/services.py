@@ -13,11 +13,13 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from django.db import transaction
-from django.db.models import F, Q, QuerySet, Sum
+from django.db.models import Count, F, Q, QuerySet, Sum
 from django.utils import timezone
 
 from apps.accounts.models import Role, User
+from apps.core.search import filtrer_par_texte
 
+from . import signals
 from .exceptions import (
     ActionNonAutorisee,
     CongeError,
@@ -29,6 +31,7 @@ from .models import (
     AttributionConge,
     Conge,
     DecisionConge,
+    Departement,
     JourFerie,
     NiveauValidation,
     Personnel,
@@ -58,14 +61,7 @@ def rechercher_personnel(*, departement: str = "", recherche: str = "") -> Query
     resultat = personnel_queryset()
     if departement:
         resultat = resultat.filter(departement=departement)
-    recherche = recherche.strip()
-    if recherche:
-        resultat = resultat.filter(
-            Q(nom__icontains=recherche)
-            | Q(prenom__icontains=recherche)
-            | Q(matricule__icontains=recherche)
-            | Q(poste__icontains=recherche)
-        )
+    resultat = filtrer_par_texte(resultat, recherche, "nom", "prenom", "matricule", "poste")
     return resultat
 
 
@@ -275,6 +271,23 @@ def accorder_jours_exceptionnels(
 # --- lecture et actions possibles (écrans) ---
 
 
+def validateur_n1(employe: Personnel) -> User | None:
+    """Compte qui valide en N1 la demande de l'employé (son supérieur, ou lui-même s'il
+    est le directeur) ; ``None`` si aucun compte n'est rattaché."""
+    if _est_sommet_hierarchie(employe):
+        return employe.utilisateur
+    superieur = employe.superieur
+    return superieur.utilisateur if superieur is not None else None
+
+
+def comptes_rh(*, sauf: Personnel | None = None) -> QuerySet[User]:
+    """Comptes RH actifs qui peuvent valider en N2 (sauf pour leur propre demande)."""
+    comptes = User.objects.filter(role=Role.RH, is_active=True)
+    if sauf is not None and sauf.utilisateur_id:
+        comptes = comptes.exclude(pk=sauf.utilisateur_id)
+    return comptes
+
+
 def fiche_personnel(acteur) -> Personnel | None:
     """Fiche de l'employé rattachée au compte, ou ``None``."""
     return _fiche_de(acteur)
@@ -344,6 +357,58 @@ def echeance_en_attente(conge: Conge, *, maintenant: datetime | None = None):
     return niveau, limite, limite < (maintenant or timezone.now())
 
 
+# --- indicateurs (tableau de bord RH, cahier-des-charges.md:233-235) ---
+
+
+def effectif_par_departement() -> list[dict]:
+    """Effectif par département (tous les départements, y compris à 0) et total."""
+    comptes = dict(
+        Personnel.objects.values_list("departement").annotate(n=Count("pk")).order_by()
+    )
+    return [
+        {"code": code, "libelle": libelle, "nombre": comptes.get(code, 0)}
+        for code, libelle in Departement.choices
+    ]
+
+
+def absents_du_jour(jour: date | None = None) -> QuerySet[Conge]:
+    """Congés approuvés ou en cours qui couvrent ``jour`` (avant la synchronisation
+    quotidienne, un congé approuvé dont la date est arrivée compte déjà comme absent)."""
+    jour = jour or timezone.localdate()
+    return conges_queryset().filter(
+        statut__in=[StatutConge.APPROUVE, StatutConge.EN_COURS],
+        date_debut__lte=jour,
+        date_fin__gte=jour,
+    )
+
+
+def prochains_conges(jour: date | None = None, *, jours: int = 30) -> QuerySet[Conge]:
+    """Congés approuvés qui commencent dans les ``jours`` prochains jours."""
+    jour = jour or timezone.localdate()
+    return conges_queryset().filter(
+        statut=StatutConge.APPROUVE,
+        date_debut__gt=jour,
+        date_debut__lte=jour + timedelta(days=jours),
+    ).order_by("date_debut")
+
+
+def conges_en_attente() -> dict[str, int]:
+    """Demandes en attente : ``n1`` (supérieur) et ``n2`` (RH)."""
+    return {
+        "n1": Conge.objects.filter(statut=StatutConge.DEMANDE).count(),
+        "n2": Conge.objects.filter(statut=StatutConge.VALIDATION_N1).count(),
+    }
+
+
+def conges_en_retard(maintenant: datetime | None = None) -> QuerySet[Conge]:
+    """Demandes dont le délai de validation (48 h en N1, 24 h en N2) est dépassé."""
+    maintenant = maintenant or timezone.now()
+    return conges_queryset().filter(
+        Q(statut=StatutConge.DEMANDE, date_limite_n1__lt=maintenant)
+        | Q(statut=StatutConge.VALIDATION_N1, date_limite_n2__lt=maintenant)
+    )
+
+
 def valider_conge(conge: Conge, acteur, *, commentaire: str = "") -> Conge:
     """Validation du niveau en cours : N1 sur une demande, N2 sur un congé validé N1."""
     if conge.statut == StatutConge.DEMANDE:
@@ -398,7 +463,7 @@ def demander_conge(
     _exiger_solde(_verrouiller_employe(employe), date_debut.year, jours)
 
     maintenant = maintenant or timezone.now()
-    return Conge.objects.create(
+    conge = Conge.objects.create(
         employe=employe,
         date_debut=date_debut,
         date_fin=date_fin,
@@ -406,6 +471,8 @@ def demander_conge(
         motif=motif,
         date_limite_n1=maintenant + DELAI_VALIDATION_N1,
     )
+    signals.emettre(signals.conge_soumis, conge=conge)
+    return conge
 
 
 @transaction.atomic
@@ -431,6 +498,7 @@ def valider_n1(
     conge.statut = StatutConge.VALIDATION_N1
     conge.date_limite_n2 = (maintenant or timezone.now()) + DELAI_VALIDATION_N2
     conge.save(update_fields=["statut", "date_limite_n2", "updated_at"])
+    signals.emettre(signals.conge_valide_n1, conge=conge)
     return conge
 
 
@@ -455,6 +523,9 @@ def valider_n2(conge: Conge, acteur, *, commentaire: str = "") -> Conge:
     )
     conge.statut = StatutConge.APPROUVE
     conge.save(update_fields=["statut", "updated_at"])
+    signals.emettre(
+        signals.conge_decide, conge=conge, decision=signals.DECISION_APPROUVE, acteur=acteur
+    )
     return conge
 
 
@@ -481,6 +552,9 @@ def refuser(conge: Conge, acteur, *, commentaire: str = "") -> Conge:
     conge.statut = StatutConge.REFUSE
     conge.motif_decision = commentaire
     conge.save(update_fields=["statut", "motif_decision", "updated_at"])
+    signals.emettre(
+        signals.conge_decide, conge=conge, decision=signals.DECISION_REFUSE, acteur=acteur
+    )
     return conge
 
 
@@ -501,6 +575,9 @@ def annuler_conge_approuve(conge: Conge, acteur, *, motif: str = "") -> Conge:
     conge.statut = StatutConge.REFUSE
     conge.motif_decision = motif
     conge.save(update_fields=["statut", "motif_decision", "updated_at"])
+    signals.emettre(
+        signals.conge_decide, conge=conge, decision=signals.DECISION_ANNULE, acteur=acteur
+    )
     return conge
 
 

@@ -22,5 +22,5 @@ création et planification). Les codes ne s'affichent que tant qu'ils servent.
 Reste à faire :
 - Contrôle des rôles (chargé clientèle, direction, chauffeur) : permissions DRF, étape 6.
 - Image QR des deux codes (bibliothèque `qrcode` + Pillow) : étape 6 / mobile.
-- Notification « en cours de route (départ) » : `notifications`, étape 5.
+- Notification « en cours de route (départ) » : signal `mission_demarree`, abonné par `notifications` (fait, étape 5).
 - Alerte N1 des congés « chauffeur avec mission sur la période » (via `date_depart_prevue`).

@@ -44,3 +44,9 @@ Interface (`views.py`, `templates/hr/`, montée sous `/rh/`) :
 
 Pas encore d'écran : licenciement (sortie du personnel), jours fériés (à saisir dans
 l'admin, notamment les fêtes musulmanes), notifications (étape 5).
+
+Événements (`signals.py`) : `conge_soumis`, `conge_valide_n1`, `conge_decide` (approuvé, refusé
+ou annulé) sont émis par les services ; `notifications` s'y abonne. Lectures du tableau de bord :
+`effectif_par_departement`, `absents_du_jour`, `prochains_conges`, `conges_en_attente`,
+`conges_en_retard`. `synchroniser_statuts_conges` est lancée chaque jour par
+`manage.py taches_quotidiennes`.

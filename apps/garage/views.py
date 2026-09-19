@@ -10,6 +10,7 @@ from django.views import View
 from django.views.generic import DetailView, FormView, ListView
 
 from apps.accounts.mixins import RoleRequiredMixin
+from apps.core.views import PaginationTolerante
 from apps.fleet import services as fleet_services
 
 from . import permissions, sections, services
@@ -18,7 +19,7 @@ from .forms import ClotureForm, OrForm
 from .models import LieuReparation, StatutOr, TypeOr
 
 
-class OrListView(RoleRequiredMixin, ListView):
+class OrListView(PaginationTolerante, RoleRequiredMixin, ListView):
     roles = permissions.CONSULTATION
     template_name = "garage/or_list.html"
     context_object_name = "ordres"

@@ -532,3 +532,25 @@ def test_l_analyse_sans_donnee_affiche_un_message(client):
 
     assert contenu.count("Aucune consommation calculée") == 2
     assert "Pas encore de donnée" in contenu
+
+
+def test_une_periode_a_l_envers_est_signalee_et_ignoree(client):
+    _connecte(client, Role.PARCAUTO)
+    _plein(VehiculeFactory(), ChauffeurFactory(), km=1000, litres=100, decalage=-5)
+
+    reponse = client.get(
+        reverse("fuel:liste"), {"date_debut": "2026-12-31", "date_fin": "2026-01-01"}
+    )
+
+    assert reponse.status_code == 200
+    assert "période ignorée" in reponse.content.decode()
+    assert len(reponse.context["pleins"]) == 1  # aucun filtre de date appliqué
+
+
+def test_une_date_illisible_est_signalee_sans_erreur(client):
+    _connecte(client, Role.PARCAUTO)
+
+    reponse = client.get(reverse("fuel:liste"), {"date_debut": "pas-une-date"})
+
+    assert reponse.status_code == 200
+    assert "Saisissez une date valide" in reponse.content.decode()

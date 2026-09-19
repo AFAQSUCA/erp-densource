@@ -11,6 +11,7 @@ from django.views.generic import DetailView, FormView, ListView
 
 from apps.accounts.mixins import RoleRequiredMixin
 from apps.accounts.models import Role
+from apps.core.views import PaginationTolerante
 
 from . import permissions, sections, services
 from .exceptions import ClientError
@@ -18,7 +19,7 @@ from .forms import ClientForm, FiltreClientsForm, InteractionForm
 from .models import Client
 
 
-class ClientListView(RoleRequiredMixin, ListView):
+class ClientListView(PaginationTolerante, RoleRequiredMixin, ListView):
     roles = permissions.CONSULTATION
     template_name = "customers/client_list.html"
     context_object_name = "clients"

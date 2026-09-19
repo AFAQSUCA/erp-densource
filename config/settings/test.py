@@ -21,3 +21,7 @@ CACHES = {
 }
 
 EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+
+# Pas de cache dans les tests (indicateurs toujours recalculés) ; e-mails activés par test.
+DASHBOARD_CACHE_SECONDS = 0
+NOTIFICATIONS_EMAIL = False

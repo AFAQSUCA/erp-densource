@@ -14,6 +14,7 @@ from django.views.generic import DetailView, FormView, ListView
 
 from apps.accounts.mixins import RoleRequiredMixin
 from apps.core.formats import nombre
+from apps.core.views import PaginationTolerante
 
 from . import permissions, sections, services
 from .exceptions import CongeError, PersonnelError
@@ -32,7 +33,7 @@ def _erreurs_en_messages(request, form):
 # --- congés ---
 
 
-class CongeListView(RoleRequiredMixin, ListView):
+class CongeListView(PaginationTolerante, RoleRequiredMixin, ListView):
     roles = permissions.CONGES_ACCES
     template_name = "hr/conge_list.html"
     context_object_name = "conges"
@@ -228,7 +229,7 @@ class CongeDecisionView(RoleRequiredMixin, View):
 # --- personnel ---
 
 
-class PersonnelListView(RoleRequiredMixin, ListView):
+class PersonnelListView(PaginationTolerante, RoleRequiredMixin, ListView):
     roles = permissions.PERSONNEL_CONSULTATION
     template_name = "hr/personnel_list.html"
     context_object_name = "personnel"

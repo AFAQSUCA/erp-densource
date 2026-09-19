@@ -11,8 +11,9 @@ from __future__ import annotations
 from decimal import ROUND_HALF_UP, Decimal
 
 from django.db import transaction
-from django.db.models import F, Q, QuerySet
+from django.db.models import F, QuerySet
 
+from apps.core.search import filtrer_par_texte
 from apps.garage.models import OrdreReparation, StatutOr
 
 from .exceptions import (
@@ -260,14 +261,9 @@ def rechercher_articles(
     """Articles filtrés par texte (référence, désignation, catégorie, emplacement),
     catégorie exacte et/ou stock au seuil ou en dessous."""
     articles = Article.objects.order_by("reference")
-    recherche = recherche.strip()
-    if recherche:
-        articles = articles.filter(
-            Q(reference__icontains=recherche)
-            | Q(designation__icontains=recherche)
-            | Q(categorie__icontains=recherche)
-            | Q(emplacement__icontains=recherche)
-        )
+    articles = filtrer_par_texte(
+        articles, recherche, "reference", "designation", "categorie", "emplacement"
+    )
     if categorie:
         articles = articles.filter(categorie=categorie)
     if sous_seuil:
@@ -302,14 +298,14 @@ def rechercher_mouvements(
     mouvements = mouvements_queryset()
     if type_mouvement in TypeMouvement.values:
         mouvements = mouvements.filter(type_mouvement=type_mouvement)
-    recherche = recherche.strip()
-    if recherche:
-        mouvements = mouvements.filter(
-            Q(article__reference__icontains=recherche)
-            | Q(article__designation__icontains=recherche)
-            | Q(ordre_reparation__numero__icontains=recherche)
-            | Q(motif__icontains=recherche)
-        )
+    mouvements = filtrer_par_texte(
+        mouvements,
+        recherche,
+        "article__reference",
+        "article__designation",
+        "ordre_reparation__numero",
+        "motif",
+    )
     return mouvements
 
 

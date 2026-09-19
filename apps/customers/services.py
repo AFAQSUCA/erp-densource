@@ -5,7 +5,7 @@ Réf. cahier-des-charges.md:119-124, 185-188.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 from django.db import transaction
@@ -13,6 +13,7 @@ from django.db.models import Count, Max, Q, QuerySet
 from django.utils import timezone
 
 from apps.accounts.models import Role, User
+from apps.core.search import filtrer_par_texte
 
 from .exceptions import ClientError
 from .models import TVA_DEFAUT, Client, Interaction, TypeInteraction
@@ -55,14 +56,9 @@ def rechercher_clients(
 ) -> QuerySet[Client]:
     """Clients filtrés par texte, chargé clientèle attitré et exonération de TVA."""
     resultat = clients_queryset()
-    recherche = recherche.strip()
-    if recherche:
-        resultat = resultat.filter(
-            Q(raison_sociale__icontains=recherche)
-            | Q(ncc_nif__icontains=recherche)
-            | Q(contact_principal__icontains=recherche)
-            | Q(telephone__icontains=recherche)
-        )
+    resultat = filtrer_par_texte(
+        resultat, recherche, "raison_sociale", "ncc_nif", "contact_principal", "telephone"
+    )
     if charge_clientele is not None:
         resultat = resultat.filter(charge_clientele=charge_clientele)
     if exonere:
@@ -147,3 +143,11 @@ def enregistrer_interaction(
         date_interaction=date_interaction,
         auteur=auteur,
     )
+
+
+def reclamations_recentes(*, jours: int = 30, maintenant: datetime | None = None) -> int:
+    """Nombre de réclamations enregistrées sur les ``jours`` derniers jours."""
+    depuis = (maintenant or timezone.now()) - timedelta(days=jours)
+    return Interaction.objects.filter(
+        type_interaction=TypeInteraction.RECLAMATION, date_interaction__gte=depuis
+    ).count()

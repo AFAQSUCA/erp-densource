@@ -54,6 +54,10 @@ COULEURS_STATUT = {
     "ENTREE": "vert",
     "SORTIE": "bleu",
     "AJUSTEMENT": "ambre",
+    # notifications
+    "INFO": "bleu",
+    "ATTENTION": "ambre",
+    "URGENT": "rouge",
     # congés
     "DEMANDE": "ambre",
     "VALIDATION_N1": "bleu",

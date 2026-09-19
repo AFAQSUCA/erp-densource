@@ -11,6 +11,7 @@ from django.views.generic import DetailView, FormView, ListView
 
 from apps.accounts.mixins import RoleRequiredMixin
 from apps.core.formats import nombre
+from apps.core.views import PaginationTolerante
 from apps.garage import services as garage_services
 
 from . import permissions, services
@@ -41,7 +42,7 @@ def _erreurs_du_formulaire(request, form) -> None:
             messages.error(request, erreur)
 
 
-class ArticleListView(RoleRequiredMixin, ListView):
+class ArticleListView(PaginationTolerante, RoleRequiredMixin, ListView):
     roles = permissions.CONSULTATION
     template_name = "inventory/article_list.html"
     context_object_name = "articles"
@@ -199,7 +200,7 @@ class AjustementView(RoleRequiredMixin, View):
         return redirect("inventory:article_detail", pk=article.pk)
 
 
-class MouvementListView(RoleRequiredMixin, ListView):
+class MouvementListView(PaginationTolerante, RoleRequiredMixin, ListView):
     roles = permissions.CONSULTATION
     template_name = "inventory/mouvement_list.html"
     context_object_name = "mouvements"

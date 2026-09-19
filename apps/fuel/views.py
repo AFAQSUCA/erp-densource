@@ -11,6 +11,7 @@ from django.views.generic import FormView, ListView, TemplateView
 
 from apps.accounts.mixins import RoleRequiredMixin
 from apps.core.formats import nombre, pourcentage_signe
+from apps.core.views import PaginationTolerante
 
 from . import permissions, services
 from .exceptions import CarburantError, SaisieSuspecte
@@ -18,7 +19,7 @@ from .forms import FiltrePleinsForm, PleinForm
 from .models import NiveauAlerte
 
 
-class PleinListView(RoleRequiredMixin, ListView):
+class PleinListView(PaginationTolerante, RoleRequiredMixin, ListView):
     roles = permissions.CONSULTATION
     template_name = "fuel/plein_list.html"
     context_object_name = "pleins"

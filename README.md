@@ -63,6 +63,20 @@ Identité visuelle : couleurs du logo DEN Source Group (bordeaux `#8B0319`, oran
 - [x] Interface web : clients (portefeuille, fiche, interactions)
 - [x] Interface web : personnel, recrutement et congés (workflow 3 niveaux)
 - [ ] Étape 4 — Finance (billing, finance)
-- [ ] Étape 5 — Pilotage (dashboard, notifications)
+- [x] Étape 5 — Pilotage (tableau de bord par rôle, notifications) : sans les indicateurs financiers (étape 4) ni Celery / SMS / push (voir apps/notifications/README.md)
 - [ ] Étape 6 — API (api/v1, mobile_api)
 - [ ] Étape 7 — Tests & déploiement
+
+## Tableau de bord et notifications
+
+La page d'accueil est le **tableau de bord** de chaque rôle (exploitation, centre d'alertes,
+RH, clientèle). La **cloche** de l'en-tête compte les notifications non lues. Pour lancer les
+alertes du jour (documents et permis à 30 jours, rappels de validation, statuts des congés) :
+
+```bash
+python manage.py taches_quotidiennes   # rejouable : aucune alerte en double
+```
+
+Les e-mails de notification s'affichent dans la console en développement ; en production,
+réglez `NOTIFICATIONS_EMAIL=True`, `NOTIFICATIONS_URL_BASE` et l'envoi d'e-mails de Django.
+Comptes d'essai : `python manage.py creer_comptes_demo`.

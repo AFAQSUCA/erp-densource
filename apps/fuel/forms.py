@@ -80,6 +80,14 @@ class FiltrePleinsForm(StyleTailwindMixin, forms.Form):
         self.fields["chauffeur"].queryset = drivers_services.chauffeurs_actifs()
         self.fields["chauffeur"].label_from_instance = _libelle_chauffeur
 
+    def clean(self):
+        donnees = super().clean()
+        debut, fin = donnees.get("date_debut"), donnees.get("date_fin")
+        if debut and fin and debut > fin:
+            self.add_error("date_fin", "La date de fin précède la date de début : période ignorée.")
+            donnees.pop("date_debut", None)
+        return donnees
+
     def criteres(self) -> dict:
         """Critères prêts pour ``services.rechercher_pleins``.
 

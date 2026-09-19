@@ -21,3 +21,6 @@ CACHES = {
 }
 
 EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+
+# Les e-mails de notification s'affichent dans la console du serveur.
+NOTIFICATIONS_EMAIL = True
