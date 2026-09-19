@@ -24,7 +24,8 @@ python manage.py runserver
 
 - [x] Étape 0 — Squelette Django (settings, apps vides core/accounts/audit)
 - [x] Étape 1 — Fondations (BaseModel, User + rôles, AuditLog)
-- [ ] Étape 2 — Référentiels (hr, drivers, customers, fleet)
+- [x] Étape 2a — Référentiels (hr, drivers, customers, fleet)
+- [ ] Étape 2b — Congés et recrutements (hr)
 - [ ] Étape 3 — Exploitation (missions, fuel, garage, inventory)
 - [ ] Étape 4 — Finance (billing, finance)
 - [ ] Étape 5 — Pilotage (dashboard, notifications)
