@@ -81,12 +81,29 @@ def _fiche_de(acteur) -> Personnel | None:
     return getattr(acteur, "personnel", None)
 
 
+def _est_sommet_hierarchie(employe: Personnel) -> bool:
+    """Directeur : sans supérieur et titulaire d'un compte de rôle DIRECTION.
+
+    Il valide lui-même son N1. Sans supérieur ni compte DIRECTION, l'absence de
+    supérieur reste une erreur de saisie et non une autorisation d'auto-validation.
+    """
+    compte = employe.utilisateur
+    return employe.superieur_id is None and compte is not None and compte.role == Role.DIRECTION
+
+
 def _est_superieur_de(acteur, employe: Personnel) -> bool:
-    """Vrai si ``acteur`` est le compte du supérieur hiérarchique direct de l'employé."""
+    """Vrai si ``acteur`` peut faire la validation N1 de la demande de l'employé.
+
+    C'est le compte de son supérieur hiérarchique direct ; pour le directeur
+    (:func:`_est_sommet_hierarchie`), c'est lui-même.
+    """
+    if acteur is None:
+        return False
+    if _est_sommet_hierarchie(employe):
+        return employe.utilisateur_id == acteur.pk
     superieur = employe.superieur
     return bool(
-        acteur is not None
-        and superieur is not None
+        superieur is not None
         and superieur.pk != employe.pk
         and superieur.utilisateur_id == acteur.pk
     )
@@ -201,12 +218,13 @@ def demander_conge(
 ) -> Conge:
     """Étape 1 : demande de l'employé (dates + motif), bloquée si solde insuffisant.
 
-    Chacun adresse sa demande à son supérieur hiérarchique : un employé sans
-    supérieur renseigné ne peut pas encore faire de demande.
+    Chacun adresse sa demande à son supérieur hiérarchique ; le directeur, qui
+    n'en a pas, valide lui-même. Tout autre employé sans supérieur renseigné
+    ne peut pas faire de demande.
     """
     if date_fin < date_debut:
         raise CongeError("La date de fin précède la date de début.")
-    if employe.superieur_id is None:
+    if employe.superieur_id is None and not _est_sommet_hierarchie(employe):
         raise CongeError("Aucun supérieur hiérarchique renseigné pour cet employé.")
     jours = calculer_jours(date_debut, date_fin)
     if jours == 0:

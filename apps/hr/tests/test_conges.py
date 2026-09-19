@@ -393,3 +393,76 @@ def test_les_transitions_de_statut_sont_auditees():
     modif = entrees.filter(action=ActionChoices.UPDATE).latest("date_heure")
     assert modif.ancienne_valeur["statut"] == "DEMANDE"
     assert modif.nouvelle_valeur["statut"] == "VALIDATION_N1"
+
+
+# --- le directeur (sans supérieur) valide lui-même son N1 ---
+
+
+def _directeur():
+    compte = UserFactory(role=Role.DIRECTION)
+    fiche = PersonnelFactory(
+        poste="Directeur", departement=Departement.DIRECTION, utilisateur=compte
+    )
+    return fiche, compte
+
+
+def test_le_directeur_valide_lui_meme_son_n1_puis_la_rh_valide_en_n2():
+    fiche, compte = _directeur()
+    conge, _ = _demande((fiche, compte))
+
+    services.valider_n1(conge, compte)
+    services.valider_n2(conge, _rh())
+
+    conge.refresh_from_db()
+    assert conge.statut == StatutConge.APPROUVE
+    assert conge.validations.get(niveau=1).validateur == compte
+
+
+def test_le_directeur_ne_peut_pas_sauter_la_validation_n2_de_la_rh():
+    fiche, compte = _directeur()
+    conge, _ = _demande((fiche, compte))
+    services.valider_n1(conge, compte)
+
+    with pytest.raises(ActionNonAutorisee):
+        services.valider_n2(conge, compte)
+
+
+def test_un_employe_sans_superieur_et_sans_compte_direction_ne_peut_pas_demander():
+    compte = UserFactory(role=Role.PARCAUTO)
+    fiche = PersonnelFactory(superieur=None, utilisateur=compte)
+
+    with pytest.raises(CongeError, match="supérieur"):
+        services.demander_conge(fiche, date_debut=DEBUT, date_fin=FIN, motif="x")
+
+
+def test_un_directeur_sans_compte_utilisateur_ne_peut_pas_demander():
+    fiche = PersonnelFactory(poste="Directeur", superieur=None, utilisateur=None)
+
+    with pytest.raises(CongeError, match="supérieur"):
+        services.demander_conge(fiche, date_debut=DEBUT, date_fin=FIN, motif="x")
+
+
+def test_un_autre_utilisateur_direction_ne_valide_pas_le_n1_du_directeur():
+    fiche, compte = _directeur()
+    conge, _ = _demande((fiche, compte))
+
+    with pytest.raises(ActionNonAutorisee):
+        services.valider_n1(conge, UserFactory(role=Role.DIRECTION))
+
+
+def test_le_directeur_valide_le_n1_d_un_subordonne_seulement_s_il_est_son_superieur():
+    fiche, compte = _directeur()
+    employe = PersonnelFactory(superieur=fiche, poste="Comptable")
+    conge, _ = _demande((employe, compte))
+
+    services.valider_n1(conge, compte)
+
+    conge.refresh_from_db()
+    assert conge.statut == StatutConge.VALIDATION_N1
+
+
+def test_valider_n1_sans_acteur_est_refuse():
+    conge, _ = _demande()
+
+    with pytest.raises(ActionNonAutorisee):
+        services.valider_n1(conge, None)

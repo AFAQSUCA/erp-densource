@@ -210,7 +210,7 @@ Tableau de bord & KPIs · Tableaux de bord par utilisateur.
   contrat, date d'embauche, salaire de base.
 - **Workflow congés 3 niveaux** :
   1. Demande employé (dates + motif)
-  2. Validation N1 par le supérieur hiérarchique direct de l'employé (délai 48 h)
+  2. Validation N1 par le supérieur hiérarchique direct de l'employé ; le directeur valide lui-même (délai 48 h)
   3. Validation N2 RH (délai 24 h)
   4. Notification automatique employé
   5. Si chauffeur → statut `En congé`

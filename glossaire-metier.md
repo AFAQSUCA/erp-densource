@@ -133,7 +133,7 @@ Exonérations : Export, ONG, Convention (motif obligatoire si 0 %).
 ## Workflow congés (3 niveaux)
 
 1. **Demande** employé (dates + motif)
-2. **Validation N1** supérieur hiérarchique direct de l'employé (délai 48 h)
+2. **Validation N1** supérieur hiérarchique direct (le directeur valide lui-même) (délai 48 h)
 3. **Validation N2** RH (délai 24 h)
 4. **Notification** automatique employé
 5. Si chauffeur → statut `En congé`

@@ -7,7 +7,8 @@ Entités : `Personnel` (avec `superieur` hiérarchique), `Conge`, `ValidationCon
 `AttributionConge` (jours exceptionnels), `JourFerie`.
 
 Règles de congés :
-- N1 = supérieur hiérarchique direct (`Personnel.superieur`), N2 = RH.
+- N1 = supérieur hiérarchique direct (`Personnel.superieur`) ; le directeur (sans
+  supérieur, compte de rôle DIRECTION) valide lui-même. N2 = RH.
 - Droit annuel 2 semaines = 12 jours ouvrables (`DROIT_ANNUEL_JOURS`), calculé
   par `droits_conges` (jamais stocké) : droit + exceptions RH - congés approuvés,
   en cours ou terminés de l'année de début.
