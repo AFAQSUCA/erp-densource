@@ -13,14 +13,17 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from django.db import transaction
+from django.db.models import Sum
 from django.utils import timezone
 
 from apps.accounts.models import Role
 
 from .exceptions import ActionNonAutorisee, CongeError, SoldeInsuffisant, TransitionInterdite
 from .models import (
+    AttributionConge,
     Conge,
     DecisionConge,
+    JourFerie,
     NiveauValidation,
     Personnel,
     StatutConge,
@@ -29,6 +32,12 @@ from .models import (
 
 DELAI_VALIDATION_N1 = timedelta(hours=48)  # cahier-des-charges.md:213
 DELAI_VALIDATION_N2 = timedelta(hours=24)  # cahier-des-charges.md:214
+
+# Droit annuel : 2 semaines, comptées en jours ouvrables (lundi-samedi) selon
+# le droit ivoirien, soit 2 x 6 = 12 jours (cahier-des-charges.md:219-221).
+DROIT_ANNUEL_JOURS = 12
+STATUTS_DECOMPTES = (StatutConge.APPROUVE, StatutConge.EN_COURS, StatutConge.TERMINE)
+DIMANCHE = 6
 
 
 # --- recrutement ---
@@ -45,7 +54,7 @@ def recruter(
     type_contrat: str,
     date_embauche: date,
     salaire_base: Decimal,
-    solde_conges_jours: int = 0,
+    superieur: Personnel | None = None,
 ) -> Personnel:
     """Enregistre un recrutement (cahier-des-charges.md:209-210).
 
@@ -61,7 +70,7 @@ def recruter(
         type_contrat=type_contrat,
         date_embauche=date_embauche,
         salaire_base=salaire_base,
-        solde_conges_jours=solde_conges_jours,
+        superieur=superieur,
     )
 
 
@@ -72,14 +81,14 @@ def _fiche_de(acteur) -> Personnel | None:
     return getattr(acteur, "personnel", None)
 
 
-def _est_chef_de(acteur, employe: Personnel) -> bool:
-    """Chef du département de l'employé, jamais pour sa propre demande."""
-    fiche = _fiche_de(acteur)
+def _est_superieur_de(acteur, employe: Personnel) -> bool:
+    """Vrai si ``acteur`` est le compte du supérieur hiérarchique direct de l'employé."""
+    superieur = employe.superieur
     return bool(
-        fiche
-        and fiche.est_chef_departement
-        and fiche.departement == employe.departement
-        and fiche.pk != employe.pk
+        acteur is not None
+        and superieur is not None
+        and superieur.pk != employe.pk
+        and superieur.utilisateur_id == acteur.pk
     )
 
 
@@ -104,20 +113,81 @@ def _verrouiller_employe(employe: Personnel) -> Personnel:
     return employe
 
 
-def _exiger_solde(employe: Personnel, jours: int) -> None:
-    if jours > employe.solde_conges_jours:
+def droits_conges(employe: Personnel, annee: int) -> dict[str, int]:
+    """Droits de congé d'un employé pour une année (en jours ouvrables).
+
+    ``disponible`` = droit annuel + jours exceptionnels - jours déjà décomptés
+    (congés approuvés, en cours ou terminés commençant cette année-là). Les
+    demandes en attente ne sont pas décomptées avant la validation N2.
+    """
+    exceptionnels = (
+        AttributionConge.objects.filter(employe=employe, annee=annee).aggregate(
+            total=Sum("jours")
+        )["total"]
+        or 0
+    )
+    consommes = (
+        Conge.objects.filter(
+            employe=employe, statut__in=STATUTS_DECOMPTES, date_debut__year=annee
+        ).aggregate(total=Sum("jours"))["total"]
+        or 0
+    )
+    return {
+        "droit_annuel": DROIT_ANNUEL_JOURS,
+        "exceptionnels": exceptionnels,
+        "consommes": consommes,
+        "disponible": DROIT_ANNUEL_JOURS + exceptionnels - consommes,
+    }
+
+
+def _exiger_solde(employe: Personnel, annee: int, jours: int) -> None:
+    disponible = droits_conges(employe, annee)["disponible"]
+    if jours > disponible:
         raise SoldeInsuffisant(
-            f"Solde insuffisant : {jours} jour(s) demandé(s), "
-            f"{employe.solde_conges_jours} disponible(s)."
+            f"Solde insuffisant en {annee} : {jours} jour(s) ouvrable(s) demandé(s), "
+            f"{disponible} disponible(s)."
         )
+
+
+@transaction.atomic
+def accorder_jours_exceptionnels(
+    employe: Personnel, acteur, *, annee: int, jours: int, motif: str
+) -> AttributionConge:
+    """Exception au droit annuel : la RH accorde des jours supplémentaires.
+
+    Motif obligatoire ; la RH ne peut pas s'en accorder à elle-même.
+    """
+    if not _est_rh_pour(acteur, employe):
+        raise ActionNonAutorisee("Attribution exceptionnelle réservée à la RH.")
+    if jours < 1:
+        raise CongeError("Le nombre de jours accordés doit être positif.")
+    if not motif.strip():
+        raise CongeError("Un motif est obligatoire pour une attribution exceptionnelle.")
+    return AttributionConge.objects.create(
+        employe=employe, annee=annee, jours=jours, motif=motif, accorde_par=acteur
+    )
 
 
 # --- workflow ---
 
 
 def calculer_jours(date_debut: date, date_fin: date) -> int:
-    """Jours calendaires, bornes incluses."""
-    return (date_fin - date_debut).days + 1
+    """Jours ouvrables entre deux dates, bornes incluses.
+
+    Droit ivoirien : tous les jours sauf le dimanche (repos hebdomadaire) et
+    les jours fériés légaux enregistrés dans ``JourFerie``.
+    """
+    feries = set(
+        JourFerie.objects.filter(date__range=(date_debut, date_fin)).values_list(
+            "date", flat=True
+        )
+    )
+    total, jour = 0, date_debut
+    while jour <= date_fin:
+        if jour.weekday() != DIMANCHE and jour not in feries:
+            total += 1
+        jour += timedelta(days=1)
+    return total
 
 
 @transaction.atomic
@@ -129,11 +199,19 @@ def demander_conge(
     motif: str,
     maintenant: datetime | None = None,
 ) -> Conge:
-    """Étape 1 : demande de l'employé (dates + motif), bloquée si solde insuffisant."""
+    """Étape 1 : demande de l'employé (dates + motif), bloquée si solde insuffisant.
+
+    Chacun adresse sa demande à son supérieur hiérarchique : un employé sans
+    supérieur renseigné ne peut pas encore faire de demande.
+    """
     if date_fin < date_debut:
         raise CongeError("La date de fin précède la date de début.")
+    if employe.superieur_id is None:
+        raise CongeError("Aucun supérieur hiérarchique renseigné pour cet employé.")
     jours = calculer_jours(date_debut, date_fin)
-    _exiger_solde(_verrouiller_employe(employe), jours)
+    if jours == 0:
+        raise CongeError("Aucun jour ouvrable dans la période demandée.")
+    _exiger_solde(_verrouiller_employe(employe), date_debut.year, jours)
 
     maintenant = maintenant or timezone.now()
     return Conge.objects.create(
@@ -150,13 +228,13 @@ def demander_conge(
 def valider_n1(
     conge: Conge, acteur, *, commentaire: str = "", maintenant: datetime | None = None
 ) -> Conge:
-    """Étape 2 : validation N1 par le chef du département de l'employé (48 h)."""
+    """Étape 2 : validation N1 par le supérieur hiérarchique de l'employé (48 h)."""
     _recharger(conge)
     if conge.statut != StatutConge.DEMANDE:
         raise TransitionInterdite("Seule une demande peut être validée en N1.")
-    if not _est_chef_de(acteur, conge.employe):
+    if not _est_superieur_de(acteur, conge.employe):
         raise ActionNonAutorisee(
-            "Validation N1 réservée au chef du département de l'employé."
+            "Validation N1 réservée au supérieur hiérarchique de l'employé."
         )
 
     ValidationConge.objects.create(
@@ -174,17 +252,15 @@ def valider_n1(
 
 @transaction.atomic
 def valider_n2(conge: Conge, acteur, *, commentaire: str = "") -> Conge:
-    """Étape 3 : validation N2 par la RH (24 h). Décompte le solde de congés."""
+    """Étape 3 : validation N2 par la RH (24 h). Le solde est recontrôlé, puis
+    le congé approuvé est décompté du droit de l'année."""
     _recharger(conge)
     if conge.statut != StatutConge.VALIDATION_N1:
         raise TransitionInterdite("Seul un congé validé N1 peut être validé en N2.")
     if not _est_rh_pour(acteur, conge.employe):
         raise ActionNonAutorisee("Validation N2 réservée à la RH.")
 
-    employe = _verrouiller_employe(conge.employe)
-    _exiger_solde(employe, conge.jours)
-    employe.solde_conges_jours -= conge.jours
-    employe.save(update_fields=["solde_conges_jours", "updated_at"])
+    _exiger_solde(_verrouiller_employe(conge.employe), conge.date_debut.year, conge.jours)
 
     ValidationConge.objects.create(
         conge=conge,
@@ -203,7 +279,7 @@ def refuser(conge: Conge, acteur, *, commentaire: str = "") -> Conge:
     """Refus par le validateur du niveau en cours (N1 sur DEMANDE, N2 sur VALIDATION_N1)."""
     _recharger(conge)
     if conge.statut == StatutConge.DEMANDE:
-        niveau, autorise = NiveauValidation.N1, _est_chef_de(acteur, conge.employe)
+        niveau, autorise = NiveauValidation.N1, _est_superieur_de(acteur, conge.employe)
     elif conge.statut == StatutConge.VALIDATION_N1:
         niveau, autorise = NiveauValidation.N2, _est_rh_pour(acteur, conge.employe)
     else:
@@ -229,17 +305,14 @@ def annuler_conge_approuve(conge: Conge, acteur, *, motif: str = "") -> Conge:
     """Annulation d'un congé approuvé : RH uniquement (cahier-des-charges.md:220-221).
 
     Le CDC ne prévoit pas de statut « annulé » : le congé passe à REFUSE avec
-    le motif, et les jours décomptés sont restitués au solde.
+    le motif. Les jours sont restitués automatiquement : un congé REFUSE
+    n'est plus décompté par :func:`droits_conges`.
     """
     _recharger(conge)
     if conge.statut != StatutConge.APPROUVE:
         raise TransitionInterdite("Seul un congé approuvé peut être annulé.")
     if not _est_rh_pour(acteur, conge.employe):
         raise ActionNonAutorisee("Annulation d'un congé approuvé réservée à la RH.")
-
-    employe = _verrouiller_employe(conge.employe)
-    employe.solde_conges_jours += conge.jours
-    employe.save(update_fields=["solde_conges_jours", "updated_at"])
 
     conge.statut = StatutConge.REFUSE
     conge.motif_decision = motif
@@ -270,3 +343,61 @@ def synchroniser_statuts_conges(*, aujourd_hui: date | None = None) -> dict[str,
             continue
         conge.save(update_fields=["statut", "updated_at"])
     return resultat
+
+
+# --- jours fériés (droit ivoirien) ---
+
+
+def date_paques(annee: int) -> date:
+    """Dimanche de Pâques (algorithme grégorien de Meeus/Jones/Butcher)."""
+    a, b, c = annee % 19, annee // 100, annee % 100
+    d, e = b // 4, b % 4
+    f = (b + 8) // 25
+    g = (b - f + 1) // 3
+    h = (19 * a + b - d - g + 15) % 30
+    i, k = c // 4, c % 4
+    m = (32 + 2 * e + 2 * i - h - k) % 7
+    n = (a + 11 * h + 22 * m) // 451
+    mois = (h + m - 7 * n + 114) // 31
+    jour = (h + m - 7 * n + 114) % 31 + 1
+    return date(annee, mois, jour)
+
+
+def jours_feries_legaux(annee: int) -> dict[date, str]:
+    """Fêtes fixes et chrétiennes mobiles de l'année.
+
+    Les fêtes musulmanes (fin du Ramadan, Tabaski, Maouloud) dépendent d'un
+    décret annuel : elles ne sont pas calculées ici mais saisies par la RH.
+    """
+    paques = date_paques(annee)
+    return {
+        date(annee, 1, 1): "Jour de l'An",
+        paques + timedelta(days=1): "Lundi de Pâques",
+        date(annee, 5, 1): "Fête du Travail",
+        paques + timedelta(days=39): "Ascension",
+        paques + timedelta(days=50): "Lundi de Pentecôte",
+        date(annee, 8, 7): "Fête de l'Indépendance",
+        date(annee, 8, 15): "Assomption",
+        date(annee, 11, 1): "Toussaint",
+        date(annee, 11, 15): "Journée nationale de la Paix",
+        date(annee, 12, 25): "Noël",
+    }
+
+
+@transaction.atomic
+def initialiser_jours_feries(annee: int) -> int:
+    """Crée les jours fériés fixes et chrétiens manquants ; retourne le nombre créé.
+
+    Idempotent : ne recrée pas un jour déjà présent (et ne touche pas aux fêtes
+    musulmanes saisies à la main).
+    """
+    existants = set(
+        JourFerie.objects.filter(date__year=annee).values_list("date", flat=True)
+    )
+    a_creer = [
+        JourFerie(date=jour, libelle=libelle)
+        for jour, libelle in jours_feries_legaux(annee).items()
+        if jour not in existants
+    ]
+    JourFerie.objects.bulk_create(a_creer)
+    return len(a_creer)

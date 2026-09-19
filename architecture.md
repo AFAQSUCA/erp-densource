@@ -316,7 +316,7 @@ sequenceDiagram
 sequenceDiagram
     autonumber
     participant E as Employé
-    participant N1 as Chef département
+    participant N1 as Supérieur hiérarchique
     participant RH as RH
     participant S as HRService
     participant D as DriverService

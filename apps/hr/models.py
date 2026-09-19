@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import models
 from django.db.models import F, Q
@@ -43,13 +44,14 @@ class Personnel(BaseModel):
         validators=[MinValueValidator(0)],
     )
     type_contrat = models.CharField(_("type de contrat"), max_length=30, blank=True)
-    solde_conges_jours = models.PositiveIntegerField(
-        _("solde de congés (jours)"), default=0
-    )
-    est_chef_departement = models.BooleanField(
-        _("chef de département"),
-        default=False,
-        help_text=_("Valide en N1 les congés des employés de son département."),
+    superieur = models.ForeignKey(
+        "self",
+        verbose_name=_("supérieur hiérarchique"),
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="subordonnes",
+        help_text=_("Valide en N1 les demandes de congé de cet employé."),
     )
     utilisateur = models.OneToOneField(
         settings.AUTH_USER_MODEL,
@@ -68,6 +70,12 @@ class Personnel(BaseModel):
 
     def __str__(self):
         return f"{self.matricule} - {self.prenom} {self.nom}"
+
+    def clean(self):
+        if self.pk and self.superieur_id == self.pk:
+            raise ValidationError(
+                {"superieur": _("Un employé ne peut pas être son propre supérieur.")}
+            )
 
     @property
     def est_chauffeur(self) -> bool:
@@ -166,3 +174,69 @@ class ValidationConge(BaseModel):
 
     def __str__(self):
         return f"N{self.niveau} {self.decision} - {self.conge}"
+
+
+class JourFerie(BaseModel):
+    """Jour férié légal, exclu du décompte des congés (jours ouvrables).
+
+    Les fêtes fixes et chrétiennes se génèrent avec
+    ``services.initialiser_jours_feries`` ; les fêtes musulmanes (fin du
+    Ramadan, Tabaski, Maouloud) sont fixées chaque année par décret et
+    saisies par la RH.
+    """
+
+    date = models.DateField(_("date"))
+    libelle = models.CharField(_("libellé"), max_length=100)
+
+    class Meta:
+        verbose_name = _("jour férié")
+        verbose_name_plural = _("jours fériés")
+        ordering = ["date"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["date"],
+                condition=Q(is_deleted=False),
+                name="jour_ferie_date_unique",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.date} - {self.libelle}"
+
+
+class AttributionConge(BaseModel):
+    """Jours de congé exceptionnels accordés par la RH pour une année.
+
+    Cas d'exception au droit annuel (2 semaines) : s'ajoutent au droit de
+    base de l'employé pour l'année concernée. Le motif est obligatoire.
+    """
+
+    employe = models.ForeignKey(
+        Personnel,
+        verbose_name=_("employé"),
+        on_delete=models.PROTECT,
+        related_name="attributions_conges",
+    )
+    annee = models.PositiveSmallIntegerField(_("année"))
+    jours = models.PositiveIntegerField(_("jours accordés"))
+    motif = models.TextField(_("motif"))
+    accorde_par = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name=_("accordé par"),
+        null=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+
+    class Meta:
+        verbose_name = _("attribution exceptionnelle de congé")
+        verbose_name_plural = _("attributions exceptionnelles de congé")
+        ordering = ["-annee", "-created_at"]
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(jours__gt=0), name="attribution_conge_jours_positifs"
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.employe} : +{self.jours} j ({self.annee})"

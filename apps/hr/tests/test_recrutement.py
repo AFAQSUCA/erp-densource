@@ -30,7 +30,16 @@ def test_recruter_cree_la_fiche_personnel_avec_le_contrat():
 
     assert Personnel.objects.get(matricule="MAT-9001") == personnel
     assert personnel.type_contrat == "CDI"
-    assert personnel.solde_conges_jours == 0
+    assert personnel.superieur is None
+
+
+def test_recruter_rattache_l_employe_a_son_superieur_hierarchique():
+    chef = services.recruter(**_donnees(matricule="MAT-9000", poste="Chef d'atelier"))
+
+    employe = services.recruter(**_donnees(matricule="MAT-9003", superieur=chef))
+
+    assert employe.superieur == chef
+    assert list(chef.subordonnes.all()) == [employe]
 
 
 def test_recruter_un_chauffeur_cree_automatiquement_sa_fiche_chauffeur():

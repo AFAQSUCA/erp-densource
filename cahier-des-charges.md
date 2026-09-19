@@ -210,15 +210,15 @@ Tableau de bord & KPIs · Tableaux de bord par utilisateur.
   contrat, date d'embauche, salaire de base.
 - **Workflow congés 3 niveaux** :
   1. Demande employé (dates + motif)
-  2. Validation N1 chef de département (délai 48 h)
+  2. Validation N1 par le supérieur hiérarchique direct de l'employé (délai 48 h)
   3. Validation N2 RH (délai 24 h)
   4. Notification automatique employé
   5. Si chauffeur → statut `En congé`
 - **Statuts congé** : `DEMANDE` → `VALIDATION_N1` → `APPROUVE` →
   `EN_COURS` → `TERMINE` (ou `REFUSE`).
-- **Règles** : blocage si solde insuffisant ; alerte N1 si chauffeur a une
-  mission sur la période ; annulation d'un congé approuvé uniquement par RH
-  avec notification.
+- **Règles** : droit annuel de 2 semaines (12 jours ouvrables), plus jours exceptionnels accordés par la RH (motif obligatoire) ;
+  décompte en jours ouvrables du droit ivoirien (hors dimanches et jours fériés) ; blocage si solde insuffisant ; alerte N1 si
+  chauffeur a une mission sur la période ; annulation d'un congé approuvé uniquement par RH avec notification.
 
 ---
 

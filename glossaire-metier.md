@@ -133,12 +133,12 @@ Exonérations : Export, ONG, Convention (motif obligatoire si 0 %).
 ## Workflow congés (3 niveaux)
 
 1. **Demande** employé (dates + motif)
-2. **Validation N1** chef de département (délai 48 h)
+2. **Validation N1** supérieur hiérarchique direct de l'employé (délai 48 h)
 3. **Validation N2** RH (délai 24 h)
 4. **Notification** automatique employé
 5. Si chauffeur → statut `En congé`
 
 Règles :
-- Blocage si solde insuffisant.
+- Blocage si solde insuffisant : droit de 2 semaines/an = 12 jours ouvrables (hors dimanches et jours fériés), + jours exceptionnels RH.
 - Alerte N1 si chauffeur a une mission sur la période.
 - Annulation d'un congé approuvé : RH uniquement + notification.

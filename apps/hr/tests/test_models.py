@@ -40,3 +40,11 @@ def test_personnel_supprime_logiquement_absent_du_manager_par_defaut():
 
     assert not Personnel.objects.filter(pk=personnel.pk).exists()
     assert Personnel.all_objects.filter(pk=personnel.pk).exists()
+
+
+def test_un_employe_ne_peut_pas_etre_son_propre_superieur():
+    personnel = PersonnelFactory()
+    personnel.superieur = personnel
+
+    with pytest.raises(ValidationError):
+        personnel.clean()

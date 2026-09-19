@@ -9,7 +9,8 @@ class HrConfig(AppConfig):
     def ready(self):
         from apps.audit.registry import audit_model
 
-        from .models import Conge, Personnel
+        from .models import AttributionConge, Conge, Personnel
 
         audit_model(Personnel, module="RH")
         audit_model(Conge, module="RH")
+        audit_model(AttributionConge, module="RH")
