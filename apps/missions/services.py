@@ -180,7 +180,11 @@ def demarrer_mission(mission: Mission) -> Mission:
     vehicule = _recharger(mission.vehicule)
     chauffeur = _recharger(mission.chauffeur)
 
-    if vehicule.statut != StatutVehicule.DISPONIBLE:
+    # « En mission » est admis : après une réparation, la règle 2 du CDC
+    # (cahier-des-charges.md:98) remet « En mission » un camion réservé par
+    # une mission affectée. Aucune autre mission active ne peut le détenir
+    # (contrôlé à l'affectation).
+    if vehicule.statut not in (StatutVehicule.DISPONIBLE, StatutVehicule.EN_MISSION):
         raise DemarrageImpossible(
             f"Le camion {vehicule.immatriculation} n'est plus disponible "
             f"({vehicule.get_statut_display()})."
