@@ -71,6 +71,13 @@
               <p class="text-sm font-medium text-slate-900">{{ user.get_full_name|default:user.username }}</p>
               <p class="text-xs text-slate-600">{{ user.get_role_display|default:"Administrateur" }}</p>
             </div>
+            {% if mfa_requise %}
+              <a href="{% url 'accounts:mfa_codes' %}" title="Codes de secours de la double authentification"
+                 class="rounded-lg p-2 text-slate-600 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+                <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
+                <span class="sr-only">Codes de secours (double authentification)</span>
+              </a>
+            {% endif %}
             <form method="post" action="{% url 'accounts:logout' %}">
               {% csrf_token %}
               <button type="submit"

@@ -43,6 +43,7 @@ THIRD_PARTY_APPS = [
     "rest_framework_simplejwt.token_blacklist",  # révocation des refresh tokens (déconnexion)
     "django_filters",
     "drf_spectacular",
+    "drf_spectacular_sidecar",  # fichiers de Swagger UI servis par l'application
     "corsheaders",
 ]
 
@@ -82,11 +83,13 @@ SESSION_SAVE_EVERY_REQUEST = True
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "apps.core.middleware.SecurityHeadersMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "apps.accounts.middleware.MFARequiseMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "apps.core.middleware.CurrentRequestMiddleware",
@@ -114,12 +117,20 @@ TEMPLATES = [
 WSGI_APPLICATION = "config.wsgi.application"
 ASGI_APPLICATION = "config.asgi.application"
 
+# Mots de passe : Argon2 (recommandé, cahier-des-charges.md:273). PBKDF2 reste accepté : un ancien
+# hachage est converti en Argon2 à la prochaine connexion de la personne.
+PASSWORD_HASHERS = [
+    "django.contrib.auth.hashers.Argon2PasswordHasher",
+    "django.contrib.auth.hashers.PBKDF2PasswordHasher",
+]
+
 AUTH_PASSWORD_VALIDATORS = [
     {
         "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
     },
     {
         "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
+        "OPTIONS": {"min_length": 10},
     },
     {
         "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
@@ -184,6 +195,9 @@ SPECTACULAR_SETTINGS = {
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
     "COMPONENT_SPLIT_REQUEST": True,
+    "SWAGGER_UI_DIST": "SIDECAR",
+    "SWAGGER_UI_FAVICON_HREF": "SIDECAR",
+    "REDOC_DIST": "SIDECAR",
 }
 
 # CORS restreint aux domaines connus (cahier-des-charges.md:277), et seulement pour l'API.
@@ -209,3 +223,64 @@ DASHBOARD_CACHE_SECONDS = env.int("DASHBOARD_CACHE_SECONDS", default=60)
 ENTREPRISE_NOM = env("ENTREPRISE_NOM", default="DEN Source Group")
 ENTREPRISE_ADRESSE = env("ENTREPRISE_ADRESSE", default="")
 ENTREPRISE_NCC = env("ENTREPRISE_NCC", default="")
+
+
+# --- Sécurité applicative (étape 7) ---
+
+# Nombre de proxys de confiance devant l'application (0 = aucun : l'adresse vue est celle du
+# client). Derrière Nginx, mettre 1 : on lit alors l'adresse ajoutée par ce proxy dans
+# X-Forwarded-For, jamais une valeur écrite par le client (anti-usurpation, cf. core.middleware).
+TRUSTED_PROXY_COUNT = env.int("TRUSTED_PROXY_COUNT", default=0)
+REST_FRAMEWORK["NUM_PROXIES"] = TRUSTED_PROXY_COUNT
+
+# Double authentification obligatoire pour l'ADMIN et la DIRECTION (cahier-des-charges.md:276).
+MFA_ENFORCED = True
+MFA_ROLES = ("ADMIN", "DIRECTION")
+MFA_ISSUER = "DEN Source ERP"
+MFA_MAX_ECHECS = 5  # codes faux tolérés ...
+MFA_FENETRE = 10 * 60  # ... par fenêtre de 10 minutes, puis blocage jusqu'à la fin de la fenêtre
+
+# Anti force brute sur la connexion : par couple (adresse, identifiant) puis par adresse.
+LOGIN_MAX_ECHECS_COMPTE = 5
+LOGIN_MAX_ECHECS_ADRESSE = 20
+LOGIN_FENETRE = 15 * 60
+
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_SAMESITE = "Lax"
+
+# Politique de sécurité du contenu (CSP) : le navigateur n'exécute que les scripts et ne charge que les
+# ressources venant de l'application elle-même (cahier-des-charges.md:280). Les styles, icônes et Alpine.js
+# sont locaux (frontend/), aucune page ne contient de script écrit en ligne.
+# Deux réserves assumées : « 'unsafe-eval' » pour Alpine.js (il évalue les expressions des attributs x-… ;
+# sa variante sans eval demanderait de réécrire les écrans) et « 'unsafe-inline' » pour les styles (attributs style).
+CSP_REPORT_ONLY = env.bool("CSP_REPORT_ONLY", default=False)  # true : signale sans bloquer (mise au point)
+CSP = "; ".join([
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-eval'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data:",
+    "font-src 'self'",
+    "connect-src 'self'",
+    "media-src 'self'",
+    "manifest-src 'self'",
+    "worker-src 'self'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+])
+# Documentation Swagger (ADMIN et DIRECTION) : la page contient un petit script d'initialisation.
+CSP_DOCS = "; ".join([
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data:",
+    "font-src 'self' data:",
+    "connect-src 'self'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "frame-ancestors 'none'",
+])
+# La caméra reste permise pour l'application elle-même : le chauffeur scanne les codes QR.
+PERMISSIONS_POLICY = "camera=(self), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()"

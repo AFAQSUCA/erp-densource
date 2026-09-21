@@ -29,10 +29,8 @@ class User(AbstractUser):
     role = models.CharField(_("rôle"), max_length=20, choices=Role.choices)
     telephone = models.CharField(_("téléphone"), max_length=20, blank=True)
 
-    # MFA obligatoire ADMIN/DIRECTION — cahier-des-charges.md:276.
-    # Le flag ci-dessous ne fait qu'exposer l'état ; le flux TOTP complet
-    # (django-otp ou équivalent) sera ajouté à la phase durcissement
-    # sécurité (étape 7) — voir README.md de l'app.
+    # MFA obligatoire ADMIN/DIRECTION — cahier-des-charges.md:276. Ce drapeau reflète l'état de
+    # l'appareil TOTP (voir ``AppareilMFA``) : il est tenu à jour par ``accounts.mfa``, jamais à la main.
     mfa_enabled = models.BooleanField(_("MFA activé"), default=False)
 
     class Meta:
@@ -59,3 +57,47 @@ class User(AbstractUser):
     @property
     def is_direction(self):
         return self.role == Role.DIRECTION
+
+
+class AppareilMFA(models.Model):
+    """Application d'authentification (TOTP) d'un utilisateur : un seul appareil par compte.
+
+    Le secret sert à recalculer les codes à 6 chiffres ; tant que la personne n'a pas saisi un
+    premier code valable (``confirme``), l'appareil n'est pas actif. ``dernier_pas`` mémorise le
+    dernier intervalle de 30 secondes accepté : un même code ne sert qu'une fois (anti-rejeu).
+    """
+
+    utilisateur = models.OneToOneField(
+        User, verbose_name=_("utilisateur"), on_delete=models.CASCADE, related_name="appareil_mfa"
+    )
+    secret = models.CharField(_("secret TOTP"), max_length=64)
+    confirme = models.BooleanField(_("confirmé"), default=False)
+    dernier_pas = models.BigIntegerField(_("dernier intervalle accepté"), default=0)
+    cree_le = models.DateTimeField(_("créé le"), auto_now_add=True)
+    confirme_le = models.DateTimeField(_("confirmé le"), null=True, blank=True)
+
+    class Meta:
+        db_table = "accounts_appareil_mfa"
+        verbose_name = _("appareil MFA")
+        verbose_name_plural = _("appareils MFA")
+
+    def __str__(self):
+        return f"MFA de {self.utilisateur}"
+
+
+class CodeSecours(models.Model):
+    """Code de secours à usage unique (téléphone perdu). Seule l'empreinte est conservée."""
+
+    utilisateur = models.ForeignKey(
+        User, verbose_name=_("utilisateur"), on_delete=models.CASCADE, related_name="codes_secours"
+    )
+    empreinte = models.CharField(_("empreinte SHA-256"), max_length=64, db_index=True)
+    utilise_le = models.DateTimeField(_("utilisé le"), null=True, blank=True)
+
+    class Meta:
+        db_table = "accounts_code_secours"
+        verbose_name = _("code de secours")
+        verbose_name_plural = _("codes de secours")
+
+    def __str__(self):
+        return f"Code de secours de {self.utilisateur}"

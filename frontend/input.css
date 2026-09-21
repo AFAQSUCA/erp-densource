@@ -1,0 +1,6 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Éléments Alpine.js masqués tant que le script n'a pas démarré (évite un flash à l'affichage). */
+[x-cloak] { display: none !important; }

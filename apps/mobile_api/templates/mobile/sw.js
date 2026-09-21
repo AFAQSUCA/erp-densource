@@ -2,7 +2,7 @@
 // Il ne met en cache que la page « hors connexion » et l'icône : les pages du chauffeur
 // (missions, codes) sont privées et ne sont jamais conservées. Sans réseau, une navigation
 // affiche la page « hors connexion ». La saisie hors ligne n'est pas prise en charge.
-const CACHE = "den-chauffeur-v1";
+const CACHE = "den-chauffeur-v2"; // v2 : page hors connexion sans code en ligne (CSP)
 const HORS_LIGNE = "{{ hors_ligne }}";
 const FICHIERS = [HORS_LIGNE, "{{ icone }}"];
 

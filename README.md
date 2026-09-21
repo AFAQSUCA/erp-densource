@@ -65,7 +65,10 @@ Identité visuelle : couleurs du logo DEN Source Group (bordeaux `#8B0319`, oran
 - [x] Étape 4 — Finance (facturation, règlements, dépenses, trésorerie) : sans écritures comptables ni rapprochement bancaire (voir apps/billing/README.md)
 - [x] Étape 5 — Pilotage (tableau de bord par rôle, notifications) : sans les indicateurs financiers (étape 4) ni Celery / SMS / push (voir apps/notifications/README.md)
 - [x] Étape 6 — API (api/v1 en lecture seule, API et espace mobile du chauffeur, codes QR) : sans mode hors ligne (voir apps/mobile_api/README.md)
-- [ ] Étape 7 — Tests & déploiement
+- [ ] Étape 7 — Tests & déploiement, en 3 lots :
+  - [x] Lot 1 — sécurité de l'application : Argon2, double authentification (TOTP), anti force brute, CSP, ressources locales (voir apps/accounts/README.md, frontend/README.md)
+  - [ ] Lot 2 — PostgreSQL, Redis, tâches planifiées (Celery)
+  - [ ] Lot 3 — Docker, Nginx, Gunicorn, sauvegardes, supervision, guide de déploiement
 
 ## Tableau de bord et notifications
 
@@ -97,3 +100,12 @@ factures échues apparaissent au tableau de bord. Mentions de l'émetteur sur la
   Un compte de rôle CHAUFFEUR arrive directement dessus après sa connexion.
 - **Codes QR** : sur la fiche d'une mission, l'expéditeur et le destinataire disposent de leur code et
   de son QR ; le chauffeur le scanne pour confirmer la récupération puis la livraison.
+
+## Sécurité de la connexion
+
+- **Double authentification** obligatoire pour l'ADMIN et la DIRECTION : à la première connexion, scanner le
+  QR code avec une application d'authentification et noter les 10 codes de secours. Téléphone perdu :
+  `python manage.py reinitialiser_mfa <identifiant>`.
+- **Interface sans CDN** : styles, icônes et Alpine.js sont servis par l'application (`static/`). Après un
+  changement de classes Tailwind : `cd frontend && npm install && npm run build`.
+- Variables : `TRUSTED_PROXY_COUNT` (1 derrière Nginx), `CSP_REPORT_ONLY` (mise au point de la CSP).

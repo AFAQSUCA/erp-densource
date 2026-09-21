@@ -13,7 +13,10 @@ from django.contrib.auth.signals import (
 )
 from django.dispatch import receiver
 
+from apps.accounts.signals import mfa_evenement
+
 from . import services
+from .models import ActionChoices, StatutChoices
 
 
 @receiver(user_logged_in)
@@ -29,3 +32,18 @@ def on_user_logged_out(sender, request, user, **kwargs):
 @receiver(user_login_failed)
 def on_user_login_failed(sender, credentials, request=None, **kwargs):
     services.log_login_failed(credentials.get("username", ""), request)
+
+
+@receiver(mfa_evenement)
+def on_mfa_evenement(sender, request, utilisateur, evenement, succes, **kwargs):
+    """Activation, code accepté ou refusé, codes régénérés : tout est tracé (rien n'expose de secret)."""
+    services.log_action(
+        action=ActionChoices.UPDATE,
+        module="AUTH",
+        entite="MFA",
+        entite_id=utilisateur.pk if utilisateur else None,
+        utilisateur=utilisateur,
+        nouvelle_valeur={"evenement": evenement},
+        request=request,
+        statut=StatutChoices.SUCCESS if succes else StatutChoices.FAILED,
+    )

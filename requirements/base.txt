@@ -9,3 +9,6 @@ drf-spectacular>=0.27                # documentation OpenAPI
 django-cors-headers>=4.3             # CORS restreint aux domaines connus
 qrcode>=7.4                          # codes QR des missions
 Pillow>=10                           # images PNG des codes QR et icônes de l'application
+argon2-cffi>=23                      # hachage Argon2 des mots de passe (recommandé par le CDC)
+pyotp>=2.9                           # codes TOTP de la double authentification
+drf-spectacular-sidecar>=2024.1       # Swagger UI servi localement (pas de script tiers sur une session ADMIN)

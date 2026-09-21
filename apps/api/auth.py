@@ -8,21 +8,65 @@ sont inscrites au journal d'audit, comme celles de l'interface web.
 
 from django.contrib.auth.signals import user_logged_in, user_logged_out
 from drf_spectacular.utils import extend_schema
-from rest_framework import serializers, status
+from rest_framework import exceptions, serializers, status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
+from apps.accounts import mfa, throttle
+from apps.accounts.signals import mfa_evenement
 from apps.drivers import services as drivers_services
 
 
-class ConnexionView(TokenObtainPairView):
-    """Identifiant et mot de passe → jeton d'accès et jeton de renouvellement."""
+class ConnexionSerializer(TokenObtainPairSerializer):
+    """Identifiant, mot de passe et, pour l'ADMIN et la DIRECTION, code de la double authentification.
 
+    Le code (``otp``) est celui de l'application d'authentification, ou un code de secours. Un
+    compte soumis à la MFA qui ne l'a pas encore activée doit d'abord le faire sur le site.
+    """
+
+    otp = serializers.CharField(required=False, allow_blank=True, write_only=True)
+
+    def validate(self, attrs):
+        otp = attrs.pop("otp", "")
+        donnees = super().validate(attrs)  # vérifie le mot de passe, renseigne self.user
+        utilisateur = self.user
+        if not mfa.mfa_requise(utilisateur):
+            return donnees
+        requete = self.context.get("request")
+        if mfa.appareil_actif(utilisateur) is None:
+            raise exceptions.AuthenticationFailed(
+                "Ce compte doit d'abord activer la double authentification sur le site.",
+                code="mfa_non_activee",
+            )
+        if throttle.mfa_secondes_restantes(utilisateur):
+            raise exceptions.Throttled(throttle.mfa_secondes_restantes(utilisateur))
+        if not otp:
+            raise exceptions.AuthenticationFailed(
+                "Code de double authentification requis (champ « otp »).", code="mfa_requise"
+            )
+        if not mfa.verifier_code(utilisateur, otp):
+            throttle.mfa_enregistrer_echec(utilisateur)
+            mfa_evenement.send(
+                sender=type(self), request=requete, utilisateur=utilisateur,
+                evenement="api_code_refuse", succes=False,
+            )
+            raise exceptions.AuthenticationFailed(
+                "Code de double authentification incorrect ou déjà utilisé.", code="mfa_invalide"
+            )
+        throttle.mfa_reinitialiser(utilisateur)
+        return donnees
+
+
+class ConnexionView(TokenObtainPairView):
+    """Identifiant et mot de passe (+ code MFA pour ADMIN et DIRECTION) → jeton d'accès et de renouvellement."""
+
+    serializer_class = ConnexionSerializer
     authentication_classes = []
     permission_classes = [AllowAny]
     throttle_classes = [ScopedRateThrottle]

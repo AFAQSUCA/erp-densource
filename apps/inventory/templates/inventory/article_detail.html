@@ -102,7 +102,7 @@
           <h2 id="titre-ajustement" class="text-base font-semibold text-slate-900">Ajustement d'inventaire</h2>
           <p class="mt-1 text-xs text-slate-600">Corrige le stock après comptage. Le PUMP ne change pas.</p>
           <form method="post" action="{% url 'inventory:ajustement' article.pk %}" class="mt-4 space-y-4"
-                onsubmit="return confirm('Enregistrer cet ajustement de stock ? Il sera tracé dans le journal.');">
+                data-confirm="Enregistrer cet ajustement de stock ? Il sera tracé dans le journal.">
             {% csrf_token %}
             {% include "components/_champ.html" with champ=form_ajustement.variation %}
             {% include "components/_champ.html" with champ=form_ajustement.motif %}

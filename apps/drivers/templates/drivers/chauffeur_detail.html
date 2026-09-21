@@ -80,7 +80,7 @@
           {% else %}
             <p class="mt-1 text-xs text-slate-600">Suspendre ou désactiver un chauffeur le rend indisponible pour toute nouvelle mission.</p>
             <form method="post" action="{% url 'drivers:statut' chauffeur.pk %}" class="mt-4 flex flex-wrap items-end gap-3"
-                  onsubmit="return confirm('Changer le statut de ce chauffeur ?');">
+                  data-confirm="Changer le statut de ce chauffeur ?">
               {% csrf_token %}
               <div class="min-w-[12rem]">{% include "components/_champ.html" with champ=form_statut.statut %}</div>
               <button type="submit" class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2">Appliquer</button>

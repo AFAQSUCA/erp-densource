@@ -14,7 +14,7 @@ mobile peut s'en servir pour réagir sans lire le message.
 
 import re
 
-from rest_framework import status
+from rest_framework import exceptions, status
 from rest_framework.response import Response
 from rest_framework.views import exception_handler as gestionnaire_drf
 
@@ -34,6 +34,9 @@ ERREURS_METIER = (
     CongeError, PersonnelError, StockError, MissionError, MobileError,
 )
 ERREURS_DE_DROIT = (ChauffeurNonAutorise, ActionFactureNonAutorisee, ActionNonAutorisee)
+
+
+CODES_MFA = frozenset({"mfa_requise", "mfa_non_activee", "mfa_invalide"})
 
 
 def _code(exc: Exception) -> str:
@@ -59,4 +62,10 @@ def gestionnaire_erreurs(exc, context):
         return Response({"code": _code(exc), "detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
     if isinstance(exc, ERREURS_METIER):
         return Response({"code": _code(exc), "detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
-    return gestionnaire_drf(exc, context)
+    reponse = gestionnaire_drf(exc, context)
+    # Erreurs de double authentification : le code lisible par une machine accompagne le message.
+    if isinstance(exc, exceptions.AuthenticationFailed) and reponse is not None:
+        code = getattr(exc.detail, "code", "")
+        if code in CODES_MFA:
+            reponse.data["code"] = code
+    return reponse

@@ -95,7 +95,7 @@
 
         {% if actions.demarrer %}
           <form method="post" action="{% url 'missions:demarrer' mission.pk %}" class="mt-4"
-                onsubmit="return confirm('Démarrer la mission ? Le camion et le chauffeur passeront « En mission ».');">
+                data-confirm="Démarrer la mission ? Le camion et le chauffeur passeront « En mission ».">
             {% csrf_token %}
             <button type="submit" class="w-full rounded-lg bg-accent-500 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-accent-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-600 focus-visible:ring-offset-2">Démarrer la mission</button>
           </form>
@@ -122,7 +122,7 @@
 
         {% if actions.cloturer %}
           <form method="post" action="{% url 'missions:cloturer' mission.pk %}" class="mt-4"
-                onsubmit="return confirm('Clôturer et valider définitivement cette mission ?');">
+                data-confirm="Clôturer et valider définitivement cette mission ?">
             {% csrf_token %}
             <button type="submit" class="w-full rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2">Clôturer et valider</button>
           </form>

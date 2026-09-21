@@ -87,7 +87,7 @@
           {% endif %}
           {% if "refuser" in actions or "annuler" in actions %}
             <form method="post" action="{% url 'hr:conges_decision' conge.pk %}" class="mt-5 border-t border-slate-100 pt-4"
-                  onsubmit="return confirm('{% if "annuler" in actions %}Annuler ce congé approuvé ?{% else %}Refuser cette demande ?{% endif %}');">
+                  data-confirm="{% if "annuler" in actions %}Annuler ce congé approuvé ?{% else %}Refuser cette demande ?{% endif %}">
               {% csrf_token %}
               <input type="hidden" name="action" value="{% if 'annuler' in actions %}annuler{% else %}refuser{% endif %}">
               <label for="commentaire-refus" class="block text-sm font-medium text-slate-800">Motif <span class="text-red-700" aria-hidden="true">*</span></label>

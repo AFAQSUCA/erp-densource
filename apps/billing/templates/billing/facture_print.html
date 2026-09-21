@@ -1,4 +1,4 @@
-{% load humanize %}<!DOCTYPE html>
+{% load humanize static %}<!DOCTYPE html>
 <html lang="fr">
 <head>
   <meta charset="utf-8">
@@ -22,7 +22,7 @@
   </style>
 </head>
 <body>
-  <div class="actions"><button type="button" onclick="window.print()">Imprimer ou enregistrer en PDF</button></div>
+  <div class="actions"><button type="button" data-imprimer>Imprimer ou enregistrer en PDF</button></div>
 
   <div class="entete">
     <div>
@@ -67,5 +67,6 @@
       {% for r in reglements %}{{ r.date_reglement|date:"d/m/Y" }} — {{ r.montant|floatformat:0|intcomma }} FCFA ({{ r.get_mode_display }}){% if not forloop.last %} ; {% endif %}{% endfor %}
     </p>
   {% endif %}
+  <script src="{% static 'js/app.js' %}" defer></script>
 </body>
 </html>

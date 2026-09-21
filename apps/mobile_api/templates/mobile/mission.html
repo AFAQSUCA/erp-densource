@@ -31,7 +31,7 @@
     {% elif checklist_faite %}
       <p class="rounded-2xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900"><i class="fa-solid fa-circle-check mr-2" aria-hidden="true"></i>Check-list du camion faite.</p>
     {% endif %}
-    <form method="post" action="{% url 'chauffeur:demarrer' mission.pk %}" onsubmit="return confirm('Démarrer la mission maintenant ?');">{% csrf_token %}
+    <form method="post" action="{% url 'chauffeur:demarrer' mission.pk %}" data-confirm="Démarrer la mission maintenant ?">{% csrf_token %}
       <button type="submit" class="flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-700 px-4 py-4 text-lg font-bold text-white shadow active:bg-emerald-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-800"><i class="fa-solid fa-truck-fast" aria-hidden="true"></i> Démarrer la mission</button>
     </form>
   </section>

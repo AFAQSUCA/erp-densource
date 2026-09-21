@@ -30,7 +30,21 @@ def test_log_action_captures_ip_and_user_agent_from_request():
     assert entry.utilisateur_nom == user.get_full_name()
 
 
-def test_log_action_prefers_x_forwarded_for_header():
+def test_log_action_ignore_x_forwarded_for_sans_proxy_de_confiance():
+    """Sans proxy déclaré, l'en-tête écrit par le client ne doit jamais servir d'adresse."""
+    request = RequestFactory().get(
+        "/x", REMOTE_ADDR="10.0.0.5", HTTP_X_FORWARDED_FOR="1.2.3.4"
+    )
+
+    entry = services.log_action(
+        action=ActionChoices.LOGIN, module="AUTH", entite="User", request=request
+    )
+
+    assert entry.adresse_ip == "10.0.0.5"
+
+
+def test_log_action_lit_l_adresse_ajoutee_par_les_proxys_de_confiance(settings):
+    settings.TRUSTED_PROXY_COUNT = 2
     request = RequestFactory().get(
         "/x",
         REMOTE_ADDR="10.0.0.5",

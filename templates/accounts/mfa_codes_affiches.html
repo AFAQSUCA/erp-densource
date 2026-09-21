@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% load static %}
+{% block titre %}Vos codes de secours{% endblock %}
+
+{% block layout %}
+<div class="flex min-h-full items-center justify-center bg-gradient-to-b from-marque-50 via-white to-white px-4 py-12">
+  <div class="w-full max-w-md">
+    <div class="mb-6 text-center">
+      <span class="mx-auto inline-block rounded-2xl bg-white p-3 shadow-md ring-1 ring-marque-100"><img src="{% static 'img/logo-emblem.jpg' %}" alt="DEN Source Group" class="h-16 w-auto"></span>
+      <h1 class="mt-3 text-xl font-bold text-slate-900">Conservez vos codes de secours</h1>
+      <p class="mt-2 text-sm text-slate-600">{% if apres_activation %}La double authentification est activée. {% endif %}Chaque code ne sert <strong>qu'une seule fois</strong> si vous perdez votre téléphone. Ils ne seront plus jamais affichés : notez-les dans un endroit sûr (coffre, gestionnaire de mots de passe).</p>
+    </div>
+
+    <div class="space-y-5 rounded-2xl border border-slate-200 border-t-4 border-t-accent-500 bg-white p-6 shadow-sm">
+      <ul class="grid grid-cols-2 gap-2 font-mono text-sm font-semibold tracking-wider text-slate-900">
+        {% for code in codes %}<li class="rounded-lg bg-slate-100 px-3 py-2 text-center">{{ code }}</li>{% endfor %}
+      </ul>
+      <a href="{{ suite }}"
+         class="block w-full rounded-lg bg-marque-600 px-4 py-2.5 text-center text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">
+        J'ai noté mes codes, continuer
+      </a>
+    </div>
+  </div>
+</div>
+{% endblock %}

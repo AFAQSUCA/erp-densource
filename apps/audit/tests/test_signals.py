@@ -34,7 +34,7 @@ def test_logout_signal_creates_audit_entry():
 def test_failed_login_creates_audit_entry_with_failed_status():
     client = Client()
 
-    client.post("/admin/login/", {"username": "ghost", "password": "wrong"})
+    client.post("/connexion/", {"username": "ghost", "password": "wrong"})
 
     assert AuditLog.objects.filter(
         action=ActionChoices.LOGIN, statut=StatutChoices.FAILED

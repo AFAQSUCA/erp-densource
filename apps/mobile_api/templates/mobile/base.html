@@ -43,10 +43,6 @@
     </ul>
   </nav>
 
-  <script>
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("{% url 'chauffeur:sw' %}").catch(function () {});
-    }
-  </script>
+  <script src="{% static 'js/sw-register.js' %}" data-sw="{% url 'chauffeur:sw' %}" defer></script>
 </body>
 </html>

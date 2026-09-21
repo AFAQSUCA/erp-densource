@@ -52,7 +52,7 @@
             Le statut du camion sera recalculé : d'autres OR ouverts, une mission, puis un éventuel statut Immobilisé / Hors service.
           </p>
           <form method="post" action="{% url 'garage:cloturer' ordre.pk %}" class="mt-4 space-y-4"
-                onsubmit="return confirm('Clôturer cet ordre de réparation ? Les sorties de pièces ne seront plus possibles.');">
+                data-confirm="Clôturer cet ordre de réparation ? Les sorties de pièces ne seront plus possibles.">
             {% csrf_token %}
             {% include "components/_champ.html" with champ=form_cloture.cout_main_oeuvre %}
             <button type="submit" class="w-full rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2">Clôturer l'OR</button>

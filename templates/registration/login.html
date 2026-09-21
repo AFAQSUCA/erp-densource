@@ -16,6 +16,10 @@
       {% csrf_token %}
       <input type="hidden" name="next" value="{{ next }}">
 
+      {% if blocage %}
+        <div role="alert" class="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900"><p>{{ blocage }}</p></div>
+      {% endif %}
+
       {% if form.non_field_errors %}
         <div role="alert" class="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">
           {% for erreur in form.non_field_errors %}<p>{{ erreur }}</p>{% endfor %}

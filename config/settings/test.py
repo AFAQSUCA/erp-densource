@@ -32,3 +32,7 @@ REST_FRAMEWORK = {
     **REST_FRAMEWORK,  # noqa: F405
     "DEFAULT_THROTTLE_RATES": {"user": "100000/min", "connexion": "100000/min"},
 }
+
+# Les milliers de tests qui connectent un ADMIN ou une DIRECTION avec force_login n'ont pas à passer
+# la double authentification ; les tests de la MFA la réactivent explicitement.
+MFA_ENFORCED = False

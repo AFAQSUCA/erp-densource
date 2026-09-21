@@ -4,13 +4,17 @@ Chaque app expose ses écrans dans son propre ``urls.py`` (espace de noms =
 nom de l'app) ; ce fichier ne fait que les monter.
 """
 
+from django.conf import settings
 from django.contrib import admin
 from django.urls import include, path
+from django.views.generic import RedirectView
 
 from apps.dashboard.views import DashboardView
 
 urlpatterns = [
     path("", DashboardView.as_view(), name="home"),
+    # Les navigateurs (et l'administration Django) réclament /favicon.ico : on renvoie vers l'icône du site.
+    path("favicon.ico", RedirectView.as_view(url=settings.STATIC_URL + "img/favicon.png", permanent=True)),
     path("", include("apps.accounts.urls")),
     path("missions/", include("apps.missions.urls")),
     path("clients/", include("apps.customers.urls")),

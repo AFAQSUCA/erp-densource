@@ -11,7 +11,7 @@
     img { width: 96px; height: 96px; border-radius: 1rem; }
     h1 { font-size: 1.4rem; margin: 1rem 0 .5rem; }
     p { color: #334155; line-height: 1.5; }
-    button { margin-top: 1rem; width: 100%; padding: 1rem; font-size: 1.1rem; font-weight: 700; border: 0; border-radius: 1rem; background: #a80c26; color: #fff; }
+    .bouton { display: block; box-sizing: border-box; text-decoration: none; margin-top: 1rem; width: 100%; padding: 1rem; font-size: 1.1rem; font-weight: 700; border: 0; border-radius: 1rem; background: #a80c26; color: #fff; }
   </style>
 </head>
 <body>
@@ -20,7 +20,7 @@
     <h1>Vous êtes hors connexion</h1>
     <p>Le réseau est indisponible. Vos missions et vos saisies demandent une connexion : rien n'est enregistré tant que vous n'êtes pas reconnecté.</p>
     <p>Si vous êtes en panne, appelez directement le Parc Auto.</p>
-    <button type="button" onclick="location.reload()">Réessayer</button>
+    <a class="bouton" href="{% url 'chauffeur:accueil' %}">Réessayer</a>
   </main>
 </body>
 </html>
