@@ -105,13 +105,13 @@ services:
     restart: unless-stopped
     ports:
       - "80:80"
-      # - "443:443"   # à ouvrir en activant HTTPS (GUIDE-DEPLOIEMENT.md)
+      - "443:443"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - static_data:/app/staticfiles:ro
       - media_data:/app/media:ro
       - certbot_www:/var/www/certbot
-      # - ./certs:/etc/nginx/certs:ro   # certificats Let's Encrypt (GUIDE-DEPLOIEMENT.md)
+      - ./certs:/etc/nginx/certs:ro
     depends_on:
       web:
         condition: service_healthy
