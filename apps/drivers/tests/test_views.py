@@ -152,11 +152,13 @@ def test_la_liste_n_effectue_pas_une_requete_par_chauffeur(client, django_assert
 
 def test_les_donnees_saisies_sont_echappees_contre_le_xss(client):
     _connecte(client, Role.DIRECTION)
-    ChauffeurFactory(telephone="<script>alert(1)</script>")
+    # Charge utile courte : `telephone` fait max_length=20 (apps/drivers/models.py), une contrainte
+    # que PostgreSQL applique réellement (SQLite l'aurait acceptée sans erreur).
+    ChauffeurFactory(telephone="<script>x</script>")
 
     contenu = client.get(reverse("drivers:liste")).content.decode()
 
-    assert "<script>alert(1)</script>" not in contenu
+    assert "<script>x</script>" not in contenu
     assert "&lt;script&gt;" in contenu
 
 

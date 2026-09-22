@@ -9,6 +9,7 @@ from datetime import timedelta
 from pathlib import Path
 
 import environ
+from celery.schedules import crontab
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
@@ -223,6 +224,25 @@ DASHBOARD_CACHE_SECONDS = env.int("DASHBOARD_CACHE_SECONDS", default=60)
 ENTREPRISE_NOM = env("ENTREPRISE_NOM", default="DEN Source Group")
 ENTREPRISE_ADRESSE = env("ENTREPRISE_ADRESSE", default="")
 ENTREPRISE_NCC = env("ENTREPRISE_NCC", default="")
+
+
+# --- Tâches asynchrones (étape 7 lot 2, ADR-004 architecture.md:493-497) ---
+
+# Par défaut (dev, test) : chaque tâche s'exécute immédiatement, dans le même processus, sans
+# courtier — même comportement qu'un appel de fonction. La production (config/settings/prod.py)
+# désactive ce mode : un vrai courtier Redis et un processus « celery worker » deviennent nécessaires.
+CELERY_TASK_ALWAYS_EAGER = env.bool("CELERY_TASK_ALWAYS_EAGER", default=True)
+CELERY_TASK_EAGER_PROPAGATES = True
+CELERY_BROKER_URL = env("REDIS_URL", default="redis://localhost:6379/0")
+CELERY_TIMEZONE = TIME_ZONE
+# Planification (celery beat, prod uniquement) : reprend la même tâche que la commande manuelle
+# `taches_quotidiennes` (cron de secours) — les deux appellent la fonction idempotente sous-jacente.
+CELERY_BEAT_SCHEDULE = {
+    "taches-quotidiennes": {
+        "task": "apps.notifications.tasks.executer_taches_quotidiennes",
+        "schedule": crontab(hour=5, minute=0),
+    },
+}
 
 
 # --- Sécurité applicative (étape 7) ---

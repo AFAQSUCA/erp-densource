@@ -28,7 +28,7 @@ def utilisateurs_du_role(*roles: str) -> QuerySet[User]:
     return User.objects.filter(role__in=roles, is_active=True)
 
 
-def _envoyer_email(notification_id: int) -> None:
+def envoyer_email(notification_id: int) -> None:
     notification = Notification.objects.select_related("destinataire").get(pk=notification_id)
     adresse = notification.destinataire.email
     if not adresse:
@@ -81,7 +81,10 @@ def notifier(
         )
         creees.append(notification)
         if settings.NOTIFICATIONS_EMAIL and utilisateur.email:
-            transaction.on_commit(lambda pk=notification.pk: _envoyer_email(pk))
+            # Import différé : évite un cycle avec tasks.py, qui appelle `envoyer_email` ci-dessus.
+            from .tasks import envoyer_email_notification
+
+            transaction.on_commit(lambda pk=notification.pk: envoyer_email_notification.delay(pk))
     return creees
 
 

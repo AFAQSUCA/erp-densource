@@ -1,0 +1,45 @@
+## Infrastructure locale pour tester en conditions proches de la production (étape 7 lot 2).
+##
+## Ne lance que la base et le cache : l'application continue de tourner directement sur la
+## machine (`python manage.py runserver`), pointée vers ces deux services via `.env`
+## (DATABASE_URL, REDIS_URL — voir .env.example). L'étape 7 lot 3 ajoutera les services
+## `web`, `nginx`, etc. par-dessus ce même fichier.
+##
+##     docker compose up -d      # démarrer
+##     docker compose down       # arrêter (les données restent dans les volumes)
+##     docker compose down -v    # arrêter et effacer les données
+
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: erp_densource
+      POSTGRES_USER: erp_densource
+      POSTGRES_PASSWORD: erp_densource
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U erp_densource"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  db_data:
+  redis_data:

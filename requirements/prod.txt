@@ -1,5 +1,7 @@
 -r base.txt
 
-# Ajoutés lors de la phase Déploiement (ADR-002, architecture.md §10) :
-# psycopg[binary]>=3.2
+# psycopg, redis et celery sont dans base.txt (étape 7 lot 2) : dev et test s'en servent aussi
+# (DATABASE_URL, tests rejoués sur PostgreSQL, Celery en exécution immédiate).
+
+# Ajouté à l'étape 7 lot 3 (serveur applicatif, architecture.md §10 ADR-002) :
 # gunicorn>=23

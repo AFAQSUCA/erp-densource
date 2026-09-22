@@ -14,15 +14,20 @@ DATABASES = {
     "default": env.db("DATABASE_URL"),
 }
 
-# NB: django-redis + django-cors-headers seront ajoutés au requirements
-# lors des phases Notifications (Celery/Redis) et API — non installés
-# tant que ces phases ne sont pas atteintes (pas de dépendance inutilisée).
+# Cache Redis partagé entre les processus (compteurs anti force brute, indicateurs du tableau de
+# bord — cahier-des-charges.md:291). Backend natif de Django (depuis la 4.0) : seul le client
+# `redis` est nécessaire, pas de dépendance `django-redis` supplémentaire.
 CACHES = {
     "default": {
-        "BACKEND": "django_redis.cache.RedisCache",
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
         "LOCATION": env("REDIS_URL"),
     }
 }
+
+# Tâches asynchrones réelles (étape 7 lot 2) : un processus `celery worker` (et `celery beat` pour
+# la planification) doit tourner à côté de l'application — voir README « Lancer en production ».
+CELERY_TASK_ALWAYS_EAGER = False
+CELERY_BROKER_URL = env("REDIS_URL")
 
 # HTTPS/TLS obligatoire + en-têtes de sécurité — cahier-des-charges.md:270-281.
 SECURE_SSL_REDIRECT = True

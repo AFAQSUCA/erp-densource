@@ -12,3 +12,8 @@ Pillow>=10                           # images PNG des codes QR et icônes de l'a
 argon2-cffi>=23                      # hachage Argon2 des mots de passe (recommandé par le CDC)
 pyotp>=2.9                           # codes TOTP de la double authentification
 drf-spectacular-sidecar>=2024.1       # Swagger UI servi localement (pas de script tiers sur une session ADMIN)
+
+# Étape 7 lot 2 — PostgreSQL, cache et tâches asynchrones (cahier-des-charges.md:247-251, ADR-002, ADR-004)
+psycopg[binary]>=3.2                 # pilote PostgreSQL (dev : optionnel, activé via DATABASE_URL ; prod : requis)
+redis>=5                             # client Redis, utilisé par le cache natif de Django et par Celery
+celery>=5.4                          # tâches planifiées (taches_quotidiennes) et envoi d'e-mail en arrière-plan

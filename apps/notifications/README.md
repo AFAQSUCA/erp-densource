@@ -26,10 +26,14 @@ Canaux : toujours dans l'application (cloche + page `/notifications/`) ; en plus
 l'opération métier, et un récepteur en erreur n'empêche pas non plus une validation de congé,
 un plein ou un départ de mission (`send_robust`).
 
+Tâches asynchrones (`tasks.py`, étape 7 lot 2, ADR-004) : `envoyer_email_notification` (l'envoi
+d'un e-mail, déclenché après le commit par `notifier`) et `executer_taches_quotidiennes` (relais
+Celery de `taches.py`, planifiée chaque jour par `CELERY_BEAT_SCHEDULE`). En développement et en
+test, `CELERY_TASK_ALWAYS_EAGER` les exécute immédiatement, dans le même processus, sans courtier :
+rien à installer pour développer ou tester. En production, un `celery worker` (et `celery beat`
+pour la planification) doivent tourner à côté de l'application, contre le Redis de `REDIS_URL`.
+
 Reste à faire :
-- **Celery + Redis** (architecture.md, ADR-004) : non installé (pas de Redis ici, rien à
-  vérifier). `taches.executer_taches_quotidiennes` est prévue pour être appelée telle quelle
-  par Celery Beat au déploiement (étape 7) ; les e-mails partiront alors en tâche asynchrone.
 - **SMS (Twilio) et notifications push (Firebase)** : demandent des comptes externes.
 - Notification du client à l'expédition (« en cours de route ») : le CDC ne dit pas à qui ;
   seul le chargé clientèle est prévenu pour l'instant.

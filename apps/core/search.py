@@ -37,9 +37,14 @@ class Normalise(Func):
         return super().as_sql(compiler, connection, function="NORMALISER", **contexte)
 
     def as_sql(self, compiler, connection, **contexte):
+        # Minuscules d'abord, puis suppression des accents : la table ACCENTS/SANS_ACCENT n'a que
+        # des lettres minuscules, donc « TRANSLATE » avant « LOWER » laisserait passer un accent
+        # majuscule (« É » → toujours « É » après TRANSLATE, puis « é » après LOWER : l'accent
+        # reste). Même ordre que `normaliser()` ci-dessus (``.lower().translate(...)``).
         (expression,) = self.get_source_expressions()
-        traduit = Func(expression, Value(ACCENTS), Value(SANS_ACCENT), function="TRANSLATE")
-        return Lower(traduit).as_sql(compiler, connection)
+        minuscule = Lower(expression)
+        traduit = Func(minuscule, Value(ACCENTS), Value(SANS_ACCENT), function="TRANSLATE")
+        return traduit.as_sql(compiler, connection)
 
 
 def enregistrer_fonction_sqlite(sender, connection, **kwargs):

@@ -6,7 +6,9 @@ from apps.notifications import taches
 class Command(BaseCommand):
     help = (
         "Tâches du jour : alertes de documents et d'échéances, rappels de validation de "
-        "congés, statuts des congés. Sans danger si relancée : aucune alerte en double."
+        "congés, statuts des congés. Sans danger si relancée : aucune alerte en double. "
+        "En production, celery beat lance la même fonction chaque jour (voir CELERY_BEAT_SCHEDULE) ; "
+        "cette commande reste utilisable manuellement ou par un cron de secours sans Celery."
     )
 
     def handle(self, *args, **options):

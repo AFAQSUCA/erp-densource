@@ -67,7 +67,7 @@ Identité visuelle : couleurs du logo DEN Source Group (bordeaux `#8B0319`, oran
 - [x] Étape 6 — API (api/v1 en lecture seule, API et espace mobile du chauffeur, codes QR) : sans mode hors ligne (voir apps/mobile_api/README.md)
 - [ ] Étape 7 — Tests & déploiement, en 3 lots :
   - [x] Lot 1 — sécurité de l'application : Argon2, double authentification (TOTP), anti force brute, CSP, ressources locales (voir apps/accounts/README.md, frontend/README.md)
-  - [ ] Lot 2 — PostgreSQL, Redis, tâches planifiées (Celery)
+  - [x] Lot 2 — PostgreSQL, Redis, tâches planifiées (Celery) (voir apps/notifications/README.md)
   - [ ] Lot 3 — Docker, Nginx, Gunicorn, sauvegardes, supervision, guide de déploiement
 
 ## Tableau de bord et notifications
@@ -100,6 +100,26 @@ factures échues apparaissent au tableau de bord. Mentions de l'émetteur sur la
   Un compte de rôle CHAUFFEUR arrive directement dessus après sa connexion.
 - **Codes QR** : sur la fiche d'une mission, l'expéditeur et le destinataire disposent de leur code et
   de son QR ; le chauffeur le scanne pour confirmer la récupération puis la livraison.
+
+## PostgreSQL, Redis et tâches planifiées
+
+- **Base et cache en développement** : SQLite et un cache en mémoire (`LocMemCache`), sans rien à
+  installer. La production (`config/settings/prod.py`) utilise PostgreSQL (`DATABASE_URL`) et un
+  cache Redis natif (`REDIS_URL`, backend `django.core.cache.backends.redis.RedisCache` — aucune
+  dépendance `django-redis`).
+- **Tester en local contre de vrais services** : `docker-compose.yml` démarre un PostgreSQL et un
+  Redis (`docker compose up -d`). Pointez `.env` dessus (voir `.env.example`) puis rejouez les
+  tests : `python -m pytest -q --no-cov` — cela exerce aussi la recherche sans accents spécifique à
+  PostgreSQL (`apps/core/search.py`), jamais testée sur SQLite.
+- **Tâches planifiées (Celery)** : `taches_quotidiennes` et l'envoi d'e-mail de notification
+  passent par Celery (`apps/notifications/tasks.py`). En développement et en test,
+  `CELERY_TASK_ALWAYS_EAGER=True` (par défaut) les exécute immédiatement, sans courtier. En
+  production, lancez un `celery worker` et un `celery beat` à côté de l'application :
+
+  ```bash
+  celery -A config worker -l info
+  celery -A config beat -l info
+  ```
 
 ## Sécurité de la connexion
 
