@@ -65,10 +65,10 @@ Identité visuelle : couleurs du logo DEN Source Group (bordeaux `#8B0319`, oran
 - [x] Étape 4 — Finance (facturation, règlements, dépenses, trésorerie) : sans écritures comptables ni rapprochement bancaire (voir apps/billing/README.md)
 - [x] Étape 5 — Pilotage (tableau de bord par rôle, notifications) : sans les indicateurs financiers (étape 4) ni Celery / SMS / push (voir apps/notifications/README.md)
 - [x] Étape 6 — API (api/v1 en lecture seule, API et espace mobile du chauffeur, codes QR) : sans mode hors ligne (voir apps/mobile_api/README.md)
-- [ ] Étape 7 — Tests & déploiement, en 3 lots :
+- [x] Étape 7 — Tests & déploiement, en 3 lots :
   - [x] Lot 1 — sécurité de l'application : Argon2, double authentification (TOTP), anti force brute, CSP, ressources locales (voir apps/accounts/README.md, frontend/README.md)
   - [x] Lot 2 — PostgreSQL, Redis, tâches planifiées (Celery) (voir apps/notifications/README.md)
-  - [ ] Lot 3 — Docker, Nginx, Gunicorn, sauvegardes, supervision, guide de déploiement
+  - [x] Lot 3 — Docker, Nginx, Gunicorn, sauvegardes chiffrées, Sentry (voir GUIDE-DEPLOIEMENT.md) : sans Prometheus/Grafana (décision : Sentry suffit à ce volume)
 
 ## Tableau de bord et notifications
 
