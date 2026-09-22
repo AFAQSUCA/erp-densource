@@ -1,13 +1,19 @@
-## Infrastructure locale pour tester en conditions proches de la production (étape 7 lot 2).
+## Étape 7, lots 2 et 3 (architecture.md §6 « Vue déploiement ») — même fichier pour les deux :
 ##
-## Ne lance que la base et le cache : l'application continue de tourner directement sur la
-## machine (`python manage.py runserver`), pointée vers ces deux services via `.env`
-## (DATABASE_URL, REDIS_URL — voir .env.example). L'étape 7 lot 3 ajoutera les services
-## `web`, `nginx`, etc. par-dessus ce même fichier.
+## - `db`, `redis` (lot 2) : peuvent tourner seuls pour tester `python manage.py runserver` sur la
+##   machine contre de vrais PostgreSQL/Redis (voir .env.example, valeurs `localhost`).
+## - `web`, `celery_worker`, `celery_beat`, `nginx` (lot 3) : l'application complète, dans les mêmes
+##   conteneurs qu'en production. Nginx est le seul point d'entrée public (port 80) ; `db` et
+##   `redis` ne publient leur port que sur 127.0.0.1, pour un débogage local, jamais sur Internet.
 ##
-##     docker compose up -d      # démarrer
-##     docker compose down       # arrêter (les données restent dans les volumes)
-##     docker compose down -v    # arrêter et effacer les données
+##     docker compose up -d --build   # démarrer (construit l'image applicative la 1re fois)
+##     docker compose logs -f web     # suivre les journaux d'un service
+##     docker compose down            # arrêter (les données restent dans les volumes)
+##     docker compose down -v         # arrêter et tout effacer (base, cache, statiques, media)
+##
+## Variables lues dans `.env` (voir .env.example) : SECRET_KEY, ALLOWED_HOSTS, DATABASE_URL (mettre
+## `@db` comme hôte, pas `@localhost`, quand `web`/`celery_*` tournent aussi dans docker-compose ;
+## `environment:` ci-dessous l'impose déjà, `.env` n'a donc besoin que du mot de passe), etc.
 
 services:
   db:
@@ -16,9 +22,9 @@ services:
     environment:
       POSTGRES_DB: erp_densource
       POSTGRES_USER: erp_densource
-      POSTGRES_PASSWORD: erp_densource
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-erp_densource}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
     healthcheck:
@@ -31,7 +37,7 @@ services:
     image: redis:7
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -40,6 +46,76 @@ services:
       timeout: 5s
       retries: 10
 
+  web:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.prod
+      DATABASE_URL: postgres://erp_densource:${POSTGRES_PASSWORD:-erp_densource}@db:5432/erp_densource
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - static_data:/app/staticfiles
+      - media_data:/app/media
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/connexion/"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  celery_worker:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.prod
+      DATABASE_URL: postgres://erp_densource:${POSTGRES_PASSWORD:-erp_densource}@db:5432/erp_densource
+      REDIS_URL: redis://redis:6379/0
+    command: ["celery", "-A", "config", "worker", "-l", "info"]
+    depends_on:
+      # Attend `web` en bonne santé, pas seulement démarré : ses migrations (ops/entrypoint.sh)
+      # doivent être appliquées avant qu'un worker n'interroge la base.
+      web:
+        condition: service_healthy
+
+  celery_beat:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.prod
+      DATABASE_URL: postgres://erp_densource:${POSTGRES_PASSWORD:-erp_densource}@db:5432/erp_densource
+      REDIS_URL: redis://redis:6379/0
+    command: ["celery", "-A", "config", "beat", "-l", "info"]
+    depends_on:
+      web:
+        condition: service_healthy
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      # - "443:443"   # à ouvrir en activant HTTPS (GUIDE-DEPLOIEMENT.md)
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - static_data:/app/staticfiles:ro
+      - media_data:/app/media:ro
+      - certbot_www:/var/www/certbot
+      # - ./certs:/etc/nginx/certs:ro   # certificats Let's Encrypt (GUIDE-DEPLOIEMENT.md)
+    depends_on:
+      web:
+        condition: service_healthy
+
 volumes:
   db_data:
   redis_data:
+  static_data:
+  media_data:
+  certbot_www:

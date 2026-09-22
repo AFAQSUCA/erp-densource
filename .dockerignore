@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.pyc
+db.sqlite3
+test_db.sqlite3
+.env
+.git/
+.pytest_cache/
+htmlcov/
+.coverage
+node_modules/
+staticfiles/
+media/
+tutoriel/
+outils/
+GUIDE-*.md
+Presentation-ERP-DEN-Source.*
