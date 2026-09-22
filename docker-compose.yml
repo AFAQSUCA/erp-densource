@@ -63,7 +63,10 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8000/connexion/"]
+      # Un en-tête Host explicite : sans lui, Django rejette la requête (400) dès que ALLOWED_HOSTS
+      # ne contient pas « localhost » (c'est le cas dès qu'un vrai domaine est configuré, en
+      # production). ${ALLOWED_HOSTS%%,*} prend le premier domaine de la liste.
+      test: ["CMD-SHELL", "curl -fsS -H \"Host: $${ALLOWED_HOSTS%%,*}\" http://localhost:8000/connexion/ || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 10
