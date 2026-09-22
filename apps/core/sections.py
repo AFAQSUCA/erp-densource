@@ -14,6 +14,9 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
+from django.template import TemplateDoesNotExist
+from django.template.loader import get_template
+
 Fournisseur = Callable[..., "dict[str, Any] | None"]
 
 
@@ -27,6 +30,19 @@ class RegistreSections:
             self._fournisseurs.append(fournisseur)
 
     def sections(self, *args: Any, **kwargs: Any) -> list[dict[str, Any]]:
-        """Blocs à afficher, dans l'ordre d'enregistrement."""
-        blocs = (fournisseur(*args, **kwargs) for fournisseur in self._fournisseurs)
-        return [bloc for bloc in blocs if bloc]
+        """Blocs à afficher, dans l'ordre d'enregistrement.
+
+        Un bloc dont le gabarit n'existe pas est ignoré : la fiche reste affichable même si l'écran de
+        l'app qui fournit ce bloc n'est pas (encore) installé.
+        """
+        blocs = []
+        for fournisseur in self._fournisseurs:
+            bloc = fournisseur(*args, **kwargs)
+            if not bloc:
+                continue
+            try:
+                get_template(bloc["template"])
+            except TemplateDoesNotExist:
+                continue
+            blocs.append(bloc)
+        return blocs

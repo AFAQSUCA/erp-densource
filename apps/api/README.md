@@ -9,6 +9,9 @@ Couche haute : elle lit les mêmes services et applique les mêmes rôles que le
 - `POST /api/v1/auth/logout/` : révoque le renouvellement ; `GET /api/v1/moi/` : profil et rôle.
 La connexion est limitée à 10 essais par minute et par adresse (anti force brute). Connexions et
 déconnexions sont inscrites au journal d'audit comme celles du site.
+**Double authentification** (étape 7) : pour l'ADMIN et la DIRECTION, `POST /api/v1/auth/token/` exige aussi le
+champ `otp` (code de l'application ou code de secours) ; un compte qui n'a pas encore activé la MFA sur le site
+reçoit une erreur `401` avec `code` = `mfa_non_activee` (`mfa_requise` ou `mfa_invalide` sinon).
 
 **Ressources en lecture seule** (`v1/`) : `missions`, `camions`, `chauffeurs`, `clients`, `factures`
 (liste paginée par 20, détail, filtres). Chaque ressource réutilise le queryset du service de l'écran
@@ -23,5 +26,5 @@ Les écritures restent sur les écrans web.
 **Documentation** : `/api/v1/docs/` (Swagger) et `/api/v1/schema/` (OpenAPI), réservées à l'ADMIN
 et à la DIRECTION connectés. CORS limité à `/api/` et aux domaines de `CORS_ALLOWED_ORIGINS`.
 
-Pas encore fait : écriture depuis l'API bureau, MFA à la connexion (étape 7), limitation de débit au
-niveau du serveur web (étape 7), pagination par curseur.
+Pas encore fait : écriture depuis l'API bureau, limitation de débit au niveau du serveur web (étape 7,
+lot 3), pagination par curseur.

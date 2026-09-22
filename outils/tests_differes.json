@@ -1,0 +1,22 @@
+{
+  "apps/accounts/tests/test_web.py::test_deconnexion_par_post_ferme_la_session_et_est_tracee": {
+    "presente_au": 21,
+    "vert_au": 26
+  },
+  "apps/accounts/tests/test_web.py::test_l_accueil_exige_une_connexion_et_conserve_la_destination": {
+    "presente_au": 21,
+    "vert_au": 26
+  },
+  "apps/accounts/tests/test_web.py::test_l_accueil_salue_l_utilisateur": {
+    "presente_au": 21,
+    "vert_au": 26
+  },
+  "apps/accounts/tests/test_web.py::test_le_menu_depend_du_role": {
+    "presente_au": 21,
+    "vert_au": 26
+  },
+  "apps/accounts/tests/test_web.py::test_un_chauffeur_est_renvoye_vers_l_espace_mobile": {
+    "presente_au": 21,
+    "vert_au": 26
+  }
+}

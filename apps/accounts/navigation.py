@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from django.urls import reverse
+from django.urls import NoReverseMatch, reverse
 
 
 @dataclass(frozen=True)
@@ -38,7 +38,10 @@ def entrees_pour(role: str, chemin: str) -> list[dict]:
     )
     resultat = []
     for entree in visibles:
-        url = reverse(entree.url_name)
+        try:
+            url = reverse(entree.url_name)
+        except NoReverseMatch:
+            continue  # « une entrée n'existe que si son écran existe » : jamais d'erreur 500 pour un menu
         actif = chemin == url if url == "/" else chemin.startswith(url)
         resultat.append(
             {

@@ -201,6 +201,14 @@ def test_l_accueil_n_est_actif_que_sur_la_racine(monkeypatch):
     assert navigation.entrees_pour(Role.RH, "/missions/")[0]["actif"] is False
 
 
+def test_une_entree_dont_l_ecran_n_existe_pas_est_ignoree_sans_erreur(monkeypatch):
+    accueil = navigation.EntreeMenu("Accueil", "home", "fa-house", None, ordre=0)
+    fantome = navigation.EntreeMenu("Fantôme", "ecran:inexistant", "fa-ghost", None, ordre=1)
+    monkeypatch.setattr(navigation, "_ENTREES", {"home": accueil, "ecran:inexistant": fantome})
+
+    assert [e["libelle"] for e in navigation.entrees_pour(Role.RH, "/")] == ["Accueil"]
+
+
 def test_aucun_commentaire_de_template_ne_fuit_dans_les_pages(client):
     """`{# ... #}` multi-lignes s'afficherait en texte brut : régression déjà vue."""
     pages = [reverse("accounts:login")]

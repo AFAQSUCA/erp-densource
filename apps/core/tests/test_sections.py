@@ -1,4 +1,14 @@
+import pytest
+
+from apps.core import sections as module_sections
 from apps.core.sections import RegistreSections
+
+
+@pytest.fixture(autouse=True)
+def gabarits_presents(request, monkeypatch):
+    """Ces tests décrivent l'ordre et les arguments ; l'existence des gabarits a ses propres tests."""
+    if "gabarit_reel" not in request.keywords:
+        monkeypatch.setattr(module_sections, "get_template", lambda nom: None)
 
 
 def _bloc(nom):
@@ -43,3 +53,12 @@ def test_enregistrer_deux_fois_le_meme_fournisseur_est_sans_effet():
     registre.enregistrer(fournisseur)
 
     assert len(registre.sections()) == 1
+
+
+@pytest.mark.gabarit_reel
+def test_un_bloc_dont_le_gabarit_n_existe_pas_est_ignore():
+    registre = RegistreSections()
+    registre.enregistrer(_bloc("gabarit-qui-n-existe-pas"))
+    registre.enregistrer(lambda *a, **k: {"template": "admin/base.html", "contexte": {}})
+
+    assert [b["template"] for b in registre.sections()] == ["admin/base.html"]
