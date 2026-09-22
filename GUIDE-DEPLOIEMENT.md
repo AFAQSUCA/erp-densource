@@ -27,16 +27,48 @@ Internet ──► Nginx (80/443) ──► Gunicorn (web, 3 workers) ──► 
 partagent la même, définie par `Dockerfile`) ; `db`, `redis` et `nginx` sont des images officielles
 telles quelles.
 
-## 2. Prérequis sur le serveur
+## 2. Choisir un serveur, à moindre coût
+
+Pas besoin d'un gros serveur : `docker-compose.yml` fait tourner nginx, l'application, Celery,
+PostgreSQL et Redis confortablement sur **2 Go de RAM**. Les niveaux « toujours gratuits » des
+grands fournisseurs cloud (Oracle Cloud notamment) ne sont pas ouverts à l'inscription depuis tous
+les pays ; plutôt que de perdre du temps à contourner ça, un petit VPS payant revient à
+2 000-4 000 FCFA/mois (3-5 €) — à comparer aux 200 000 FCFA/mois prévus au cahier des charges pour
+l'exploitation réelle, c'est un coût marginal pour un pilote ou une démo, et **rien dans ce dépôt
+n'a besoin de changer** pour en profiter : ce sont les mêmes commandes, plus bas, sur n'importe quel
+Linux avec Docker.
+
+Quelques fournisseurs qui acceptent les paiements internationaux (carte, parfois PayPal) et ont des
+centres en Europe — plus proches d'Abidjan qu'un serveur américain, donc une meilleure latence :
+
+| Fournisseur | Offre indicative | Note |
+|---|---|---|
+| **Contabo** | ~4-5 €/mois, 8 Go de RAM | Très généreux pour le prix |
+| **OVH** (VPS) | ~4-6 €/mois, 2 Go de RAM | Société française, présente en Afrique |
+| **DigitalOcean** | ~6 $/mois, 1 Go de RAM | Documentation abondante, simple à prendre en main |
+| **Hetzner** | ~4-5 €/mois, 4 Go de RAM | Très bon rapport prix/performance (Europe uniquement) |
+
+Prendre l'offre la plus petite (1-2 Go de RAM) avec **Ubuntu 22.04 ou 24.04 LTS** suffit.
+
+## 3. Prérequis sur le serveur
 
 - Un serveur Linux (Debian/Ubuntu conviennent) avec **Docker** et le plugin **Docker Compose**
-  installés (`docker compose version`).
+  installés (`docker compose version`) — une fois le VPS créé :
+
+  ```bash
+  curl -fsSL https://get.docker.com | sh   # script officiel Docker, installe aussi le plugin Compose
+  ```
+
 - Un **nom de domaine** pointé (DNS, enregistrement A) vers l'adresse IP du serveur — nécessaire
-  pour obtenir un certificat HTTPS (étape 6).
-- Les ports **80** et **443** ouverts (pare-feu du serveur / du fournisseur cloud).
+  pour obtenir un certificat HTTPS (étape 7). Pas besoin d'en acheter un pour démarrer :
+  [DuckDNS](https://www.duckdns.org) donne gratuitement un sous-domaine (`mon-erp.duckdns.org`)
+  qui fonctionne tout aussi bien avec Let's Encrypt qu'un domaine payant.
+- Les ports **80** et **443** ouverts (pare-feu du serveur / du fournisseur cloud — souvent une
+  « security list » ou un « firewall » à configurer dans le tableau de bord du fournisseur, en plus
+  du pare-feu du système : `ufw allow 80,443/tcp` sous Ubuntu).
 - Git, pour récupérer le dépôt.
 
-## 3. Préparer le serveur
+## 4. Préparer le serveur
 
 ```bash
 git clone <url-du-dépôt> erp-densource
@@ -54,13 +86,13 @@ cp .env.example .env
 | `CSRF_TRUSTED_ORIGINS` | `https://` + le même domaine |
 | `POSTGRES_PASSWORD` | un mot de passe long, différent de celui de `.env.example` |
 | `TRUSTED_PROXY_COUNT` | `1` (Nginx est l'unique proxy devant l'application) |
-| `SAUVEGARDE_PASSPHRASE` | une phrase de passe longue, **à conserver ailleurs que sur ce serveur** (étape 7) |
+| `SAUVEGARDE_PASSPHRASE` | une phrase de passe longue, **à conserver ailleurs que sur ce serveur** (étape 8) |
 
 `DATABASE_URL` et `REDIS_URL` n'ont **pas** à être renseignées dans `.env` pour ces quatre services :
 `docker-compose.yml` les fixe lui-même vers `db` et `redis` (les noms des conteneurs). Elles ne
 servent, en valeur `localhost`, que pour un test depuis la machine hors conteneur (étape 7 lot 2).
 
-## 4. Démarrer
+## 5. Démarrer
 
 ```bash
 docker compose up -d --build
@@ -82,13 +114,13 @@ Créer le premier compte administrateur :
 docker compose exec web python manage.py createsuperuser
 ```
 
-## 5. Comptes de démonstration
+## 6. Comptes de démonstration
 
 **Ne jamais lancer `creer_comptes_demo` en production** (la commande refuse de tourner si
 `DEBUG=False` — apps/hr/management/commands/creer_comptes_demo.py) : ces comptes sont réservés au
 développement.
 
-## 6. Activer HTTPS (Let's Encrypt, certbot)
+## 7. Activer HTTPS (Let's Encrypt, certbot)
 
 Tant que ce qui suit n'est pas fait, Nginx répond en HTTP (port 80) et `SECURE_SSL_REDIRECT`
 (config/settings/prod.py) redirige chaque page vers `https://…`, qui n'existe pas encore : c'est
@@ -154,7 +186,7 @@ attendu, à corriger maintenant.
    0 3 1 * * cd /chemin/vers/erp-densource && docker run --rm -v "$(pwd)/certs:/etc/letsencrypt" -v erp-densource_certbot_www:/var/www/certbot certbot/certbot renew --webroot -w /var/www/certbot && docker compose restart nginx
    ```
 
-## 7. Sauvegardes chiffrées (`ops/sauvegarde.sh`)
+## 8. Sauvegardes chiffrées (`ops/sauvegarde.sh`)
 
 Sauvegarde quotidienne, chiffrée avec `SAUVEGARDE_PASSPHRASE` (GPG, symétrique), à copier vers un
 stockage **hors de ce serveur** (cahier-des-charges.md « sauvegardes chiffrées et testées »,
@@ -181,7 +213,7 @@ docker compose exec db dropdb -U erp_densource erp_densource_essai_restauration 
 Une restauration qui échoue silencieusement est pire qu'une absence de sauvegarde : ce test mensuel
 est ce qui distingue les deux.
 
-## 8. Supervision (Sentry)
+## 9. Supervision (Sentry)
 
 Facultatif, mais recommandé (cahier-des-charges.md « Monitoring Sentry »). Créer un projet Django
 sur [sentry.io](https://sentry.io) (ou une instance auto-hébergée), copier son DSN dans `.env` :
@@ -197,7 +229,7 @@ config/settings/prod.py). Sans `SENTRY_DSN`, rien ne change : Sentry reste inact
 un serveur unique, deux conteneurs de plus pour un tableau de bord de métriques n'apportent pas
 encore assez, face à Sentry qui couvre déjà les erreurs. À ajouter si le volume le justifie.
 
-## 9. Mettre à jour l'application
+## 10. Mettre à jour l'application
 
 ```bash
 git pull
@@ -208,7 +240,7 @@ Les migrations et `collectstatic` se rejouent automatiquement au démarrage de `
 (`ops/entrypoint.sh`) ; `celery_worker`/`celery_beat` attendent que `web` soit de nouveau en bonne
 santé avant de redémarrer.
 
-## 10. Dépannage
+## 11. Dépannage
 
 | Symptôme | Piste |
 |---|---|
@@ -232,6 +264,6 @@ Testé en local avec `docker compose up -d --build` (domaine `localhost`, sans c
 - une sauvegarde chiffrée (`ops/sauvegarde.sh`) puis sa restauration (`ops/restauration.sh`) dans
   une base à part ont réellement été jouées contre le PostgreSQL du `docker-compose.yml`.
 
-Non testés ici faute de domaine réel : l'obtention d'un certificat Let's Encrypt (étape 6.1) et son
-renouvellement automatique (étape 6.4) — les commandes sont standard (image officielle
+Non testés ici faute de domaine réel : l'obtention d'un certificat Let's Encrypt (étape 7.1) et son
+renouvellement automatique (étape 7.4) — les commandes sont standard (image officielle
 `certbot/certbot`, mode webroot) mais n'ont pas pu être rejouées sans nom de domaine public.
