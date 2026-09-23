@@ -60,7 +60,7 @@ Prendre l'offre la plus petite (1-2 Go de RAM) avec **Ubuntu 22.04 ou 24.04 LTS*
   ```
 
 - Un **nom de domaine** pointé (DNS, enregistrement A) vers l'adresse IP du serveur — nécessaire
-  pour obtenir un certificat HTTPS (étape 7). Pas besoin d'en acheter un pour démarrer :
+  pour obtenir un certificat HTTPS (étape 8). Pas besoin d'en acheter un pour démarrer :
   [DuckDNS](https://www.duckdns.org) donne gratuitement un sous-domaine (`mon-erp.duckdns.org`)
   qui fonctionne tout aussi bien avec Let's Encrypt qu'un domaine payant.
 - Les ports **80** et **443** ouverts (pare-feu du serveur / du fournisseur cloud — souvent une
@@ -86,7 +86,7 @@ cp .env.example .env
 | `CSRF_TRUSTED_ORIGINS` | `https://` + le même domaine |
 | `POSTGRES_PASSWORD` | un mot de passe long, différent de celui de `.env.example` |
 | `TRUSTED_PROXY_COUNT` | `1` (Nginx est l'unique proxy devant l'application) |
-| `SAUVEGARDE_PASSPHRASE` | une phrase de passe longue, **à conserver ailleurs que sur ce serveur** (étape 8) |
+| `SAUVEGARDE_PASSPHRASE` | une phrase de passe longue, **à conserver ailleurs que sur ce serveur** (étape 9) |
 
 `DATABASE_URL` et `REDIS_URL` n'ont **pas** à être renseignées dans `.env` pour ces quatre services :
 `docker-compose.yml` les fixe lui-même vers `db` et `redis` (les noms des conteneurs). Elles ne
@@ -120,7 +120,32 @@ docker compose exec web python manage.py createsuperuser
 `DEBUG=False` — apps/hr/management/commands/creer_comptes_demo.py) : ces comptes sont réservés au
 développement.
 
-## 7. Activer HTTPS (Let's Encrypt, certbot)
+## 7. Vérifier avant la mise en service réelle
+
+Avant que les vrais utilisateurs n'arrivent, il est légitime de saisir quelques fiches réalistes
+(personnel, un client, une mission…) pour parcourir les écrans une dernière fois sur ce serveur.
+
+1. Créez le premier compte administrateur si ce n'est pas déjà fait (étape 5), activez sa MFA.
+2. Saisissez quelques fiches à la main (recrutement, import Excel du personnel, un client, une
+   mission…) et vérifiez les écrans qui comptent pour vous.
+3. **Avant la mise en service réelle, repartez d'une base vide** plutôt que de supprimer les
+   fiches une par une : la suppression est *logique* (`BaseModel.delete`, cahier-des-charges.md
+   « jamais de suppression physique ») — les lignes resteraient en base, et les numéros déjà
+   attribués (matricule, missions…) ne redescendraient pas à 1. Le plus sûr est d'effacer le
+   volume de la base et de repartir d'une migration propre :
+
+   ```bash
+   docker compose down
+   docker volume rm erp-densource_db_data
+   docker compose up -d --build
+   docker compose exec web python manage.py createsuperuser
+   ```
+
+   (Adapter le nom du volume si le dossier du projet ne s'appelle pas `erp-densource` —
+   `docker volume ls | grep db_data` l'affiche.) Le compte administrateur doit être recréé après
+   ce nettoyage : lui aussi a été effacé.
+
+## 8. Activer HTTPS (Let's Encrypt, certbot)
 
 Tant que ce qui suit n'est pas fait, Nginx répond en HTTP (port 80) et `SECURE_SSL_REDIRECT`
 (config/settings/prod.py) redirige chaque page vers `https://…`, qui n'existe pas encore : c'est
@@ -186,7 +211,7 @@ attendu, à corriger maintenant.
    0 3 1 * * cd /chemin/vers/erp-densource && docker run --rm -v "$(pwd)/certs:/etc/letsencrypt" -v erp-densource_certbot_www:/var/www/certbot certbot/certbot renew --webroot -w /var/www/certbot && docker compose restart nginx
    ```
 
-## 8. Sauvegardes chiffrées (`ops/sauvegarde.sh`)
+## 9. Sauvegardes chiffrées (`ops/sauvegarde.sh`)
 
 Sauvegarde quotidienne, chiffrée avec `SAUVEGARDE_PASSPHRASE` (GPG, symétrique), à copier vers un
 stockage **hors de ce serveur** (cahier-des-charges.md « sauvegardes chiffrées et testées »,
@@ -213,7 +238,7 @@ docker compose exec db dropdb -U erp_densource erp_densource_essai_restauration 
 Une restauration qui échoue silencieusement est pire qu'une absence de sauvegarde : ce test mensuel
 est ce qui distingue les deux.
 
-## 9. Supervision (Sentry)
+## 10. Supervision (Sentry)
 
 Facultatif, mais recommandé (cahier-des-charges.md « Monitoring Sentry »). Créer un projet Django
 sur [sentry.io](https://sentry.io) (ou une instance auto-hébergée), copier son DSN dans `.env` :
@@ -229,7 +254,7 @@ config/settings/prod.py). Sans `SENTRY_DSN`, rien ne change : Sentry reste inact
 un serveur unique, deux conteneurs de plus pour un tableau de bord de métriques n'apportent pas
 encore assez, face à Sentry qui couvre déjà les erreurs. À ajouter si le volume le justifie.
 
-## 10. Mettre à jour l'application
+## 11. Mettre à jour l'application
 
 ```bash
 git pull
@@ -240,7 +265,7 @@ Les migrations et `collectstatic` se rejouent automatiquement au démarrage de `
 (`ops/entrypoint.sh`) ; `celery_worker`/`celery_beat` attendent que `web` soit de nouveau en bonne
 santé avant de redémarrer.
 
-## 11. Dépannage
+## 12. Dépannage
 
 | Symptôme | Piste |
 |---|---|
@@ -264,6 +289,6 @@ Testé en local avec `docker compose up -d --build` (domaine `localhost`, sans c
 - une sauvegarde chiffrée (`ops/sauvegarde.sh`) puis sa restauration (`ops/restauration.sh`) dans
   une base à part ont réellement été jouées contre le PostgreSQL du `docker-compose.yml`.
 
-Non testés ici faute de domaine réel : l'obtention d'un certificat Let's Encrypt (étape 7.1) et son
-renouvellement automatique (étape 7.4) — les commandes sont standard (image officielle
+Non testés ici faute de domaine réel : l'obtention d'un certificat Let's Encrypt (étape 8.1) et son
+renouvellement automatique (étape 8.4) — les commandes sont standard (image officielle
 `certbot/certbot`, mode webroot) mais n'ont pas pu être rejouées sans nom de domaine public.

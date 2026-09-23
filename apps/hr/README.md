@@ -44,6 +44,13 @@ Interface (`views.py`, `templates/hr/`, montée sous `/rh/`) :
   correspondre exactement pour déclencher la fiche chauffeur automatique. Une option « Autre »
   garde un champ libre pour un intitulé imprévu ; un poste antérieur hors liste (saisi avant
   l'existence de cette liste) se réaffiche correctement en « Autre » prérempli à la modification.
+- **Import Excel** (`/rh/personnel/importer/`, `services.importer_personnel`, `openpyxl`) :
+  recrutement en masse depuis un classeur (colonnes : `services.COLONNES_IMPORT` — un modèle est
+  téléchargeable depuis l'écran). Poste et département doivent correspondre à une valeur existante
+  (mêmes règles que le formulaire, casse ignorée) ; le matricule est généré comme pour un
+  recrutement individuel. **Tout ou rien** : la moindre ligne invalide fait échouer tout le fichier
+  (`ImportPersonnelError`, un message par ligne) — aucune fiche créée tant qu'il n'est pas
+  entièrement correct. Le supérieur et le compte utilisateur ne se règlent pas depuis le fichier.
 - Alerte N1 « chauffeur avec mission sur la période » : fournie par `missions`
   (`hr.sections.DETAIL_CONGE`), sur les missions planifiées, affectées ou en cours qui ont
   une date de départ prévue.

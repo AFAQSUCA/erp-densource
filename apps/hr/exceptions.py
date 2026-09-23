@@ -16,3 +16,15 @@ class ActionNonAutorisee(CongeError):
 
 class PersonnelError(Exception):
     """Erreur métier sur la fiche du personnel (matricule, hiérarchie, compte)."""
+
+
+class ImportPersonnelError(Exception):
+    """Fichier Excel de recrutement en masse invalide : tout ou rien, aucune fiche créée.
+
+    ``erreurs`` : un message par ligne fautive (``"Ligne 4 : …"``), pour un rapport complet en
+    un seul passage plutôt qu'un aller-retour par erreur.
+    """
+
+    def __init__(self, erreurs: list[str]):
+        self.erreurs = erreurs
+        super().__init__(f"{len(erreurs)} ligne(s) invalide(s)")

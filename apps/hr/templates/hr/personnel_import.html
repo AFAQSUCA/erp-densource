@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block titre %}Importer le personnel{% endblock %}
+{% block entete %}Personnel{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-3xl">
+  <nav aria-label="Fil d'Ariane" class="text-sm text-slate-600">
+    <a href="{% url 'hr:personnel_liste' %}" class="underline-offset-2 hover:underline">Personnel</a>
+    <span aria-hidden="true">/</span> Importer depuis Excel
+  </nav>
+  <h1 class="mt-2 text-2xl font-bold text-slate-900">Importer depuis Excel</h1>
+  <p class="mt-1 text-sm text-slate-600">
+    Recrute plusieurs employés en une fois. Le matricule est attribué automatiquement, comme pour
+    un recrutement individuel ; le supérieur hiérarchique et le compte utilisateur se règlent
+    ensuite, fiche par fiche.
+  </p>
+
+  <div class="mt-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+    <h2 class="text-sm font-semibold text-slate-900">1. Préparer le fichier</h2>
+    <p class="mt-2 text-sm text-slate-600">
+      Colonnes attendues, dans cet ordre : <strong>{{ colonnes|join:", " }}</strong>.
+      Poste et Département doivent correspondre à une valeur existante dans l'application.
+    </p>
+    <a href="{% url 'hr:personnel_import_modele' %}"
+       class="mt-3 inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50">
+      <i class="fa-solid fa-download" aria-hidden="true"></i> Télécharger le modèle
+    </a>
+  </div>
+
+  <form method="post" enctype="multipart/form-data" novalidate
+        class="mt-6 space-y-5 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+    {% csrf_token %}
+    <h2 class="text-sm font-semibold text-slate-900">2. Déposer le fichier rempli</h2>
+
+    {% if form.non_field_errors %}
+      <div role="alert" class="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">
+        {% for erreur in form.non_field_errors %}<p>{{ erreur }}</p>{% endfor %}
+      </div>
+    {% endif %}
+
+    {% if erreurs %}
+      <div role="alert" class="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">
+        <p class="font-semibold">Rien n'a été importé : corrigez ces lignes, puis déposez le fichier à nouveau.</p>
+        <ul class="mt-2 list-disc space-y-1 pl-5">
+          {% for erreur in erreurs %}<li>{{ erreur }}</li>{% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+
+    {% include "components/_champ.html" with champ=form.fichier %}
+
+    <div class="flex items-center justify-end gap-3 border-t border-slate-100 pt-5">
+      <a href="{% url 'hr:personnel_liste' %}" class="rounded-lg px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Annuler</a>
+      <button type="submit" class="rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">Importer</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

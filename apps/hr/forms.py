@@ -146,3 +146,18 @@ class PersonnelForm(StyleTailwindMixin, forms.Form):
                 cleaned["poste"] = autre
         cleaned.pop("poste_autre", None)  # jamais transmis à services.recruter/modifier_personnel
         return cleaned
+
+
+class ImportPersonnelForm(StyleTailwindMixin, forms.Form):
+    """Recrutement en masse : un classeur Excel (.xlsx), colonnes voir services.COLONNES_IMPORT."""
+
+    fichier = forms.FileField(
+        label="Fichier Excel (.xlsx)",
+        help_text="Téléchargez le modèle ci-dessous, remplissez-le, puis déposez-le ici.",
+    )
+
+    def clean_fichier(self):
+        fichier = self.cleaned_data["fichier"]
+        if not fichier.name.lower().endswith(".xlsx"):
+            raise forms.ValidationError("Le fichier doit être un classeur Excel (.xlsx).")
+        return fichier

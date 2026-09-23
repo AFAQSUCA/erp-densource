@@ -10,8 +10,9 @@ Statuts : DEMANDE → VALIDATION_N1 → APPROUVE → EN_COURS → TERMINE
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
+import openpyxl
 from django.db import transaction
 from django.db.models import Count, F, Q, QuerySet, Sum
 from django.utils import timezone
@@ -24,6 +25,7 @@ from . import signals
 from .exceptions import (
     ActionNonAutorisee,
     CongeError,
+    ImportPersonnelError,
     PersonnelError,
     SoldeInsuffisant,
     TransitionInterdite,
@@ -36,6 +38,7 @@ from .models import (
     JourFerie,
     NiveauValidation,
     Personnel,
+    POSTES_COURANTS,
     StatutConge,
     ValidationConge,
 )
@@ -165,6 +168,125 @@ def modifier_personnel(
     personnel.utilisateur = utilisateur
     personnel.save()
     return personnel
+
+
+# --- recrutement en masse (Excel) ---
+
+# Ordre et intitulés attendus dans le fichier (ligne 1) — voir modele_import_personnel (views.py) et
+# templates/hr/personnel_import.html. Le matricule (généré), le supérieur et le compte utilisateur
+# ne se règlent pas depuis le fichier : à compléter ensuite fiche par fiche si besoin.
+COLONNES_IMPORT = [
+    "Nom", "Prénom", "Poste", "Département", "Type de contrat", "Date d'embauche", "Salaire de base",
+]
+
+
+def _poste_importe(brut) -> str | None:
+    brut = str(brut or "").strip()
+    for poste in POSTES_COURANTS:
+        if poste.casefold() == brut.casefold():
+            return poste
+    return None
+
+
+def _departement_importe(brut) -> str | None:
+    brut = str(brut or "").strip()
+    for code, libelle in Departement.choices:
+        if brut.casefold() in (code.casefold(), str(libelle).casefold()):
+            return code
+    return None
+
+
+def _date_importee(brut) -> date | None:
+    if isinstance(brut, datetime):
+        return brut.date()
+    if isinstance(brut, date):
+        return brut
+    brut = str(brut or "").strip()
+    for format_ in ("%Y-%m-%d", "%d/%m/%Y"):
+        try:
+            return datetime.strptime(brut, format_).date()
+        except ValueError:
+            continue
+    return None
+
+
+@transaction.atomic
+def importer_personnel(fichier) -> list[Personnel]:
+    """Recrutement en masse depuis un classeur Excel (colonnes : voir ``COLONNES_IMPORT``).
+
+    Tout ou rien (aucune saisie individuelle du poste ou du département à corriger dans
+    l'urgence après coup) : la moindre ligne invalide fait échouer tout l'import
+    (``ImportPersonnelError``, un message par ligne fautive) — aucune fiche n'est créée tant
+    que le fichier entier n'est pas correct.
+    """
+    classeur = openpyxl.load_workbook(fichier, data_only=True)
+    feuille = classeur.active
+
+    en_tete = next(feuille.iter_rows(min_row=1, max_row=1, values_only=True), None)
+    recu = tuple(str(cellule or "").strip() for cellule in (en_tete or ()))
+    if recu[: len(COLONNES_IMPORT)] != tuple(COLONNES_IMPORT):
+        raise ImportPersonnelError([
+            "En-têtes de colonnes inattendus. Téléchargez le modèle et gardez son ordre de "
+            "colonnes : " + ", ".join(COLONNES_IMPORT) + "."
+        ])
+
+    erreurs: list[str] = []
+    a_creer: list[dict] = []
+    for numero, ligne in enumerate(feuille.iter_rows(min_row=2, values_only=True), start=2):
+        if not ligne or all(cellule in (None, "") for cellule in ligne):
+            continue  # ligne vide (fin de tableau…) : ignorée, ce n'est pas une erreur
+
+        cellules = (list(ligne) + [None] * len(COLONNES_IMPORT))[: len(COLONNES_IMPORT)]
+        nom_brut, prenom_brut, poste_brut, departement_brut, type_contrat_brut, date_brut, salaire_brut = cellules
+
+        nom, prenom = str(nom_brut or "").strip(), str(prenom_brut or "").strip()
+        if not nom:
+            erreurs.append(f"Ligne {numero} : le nom est obligatoire.")
+        if not prenom:
+            erreurs.append(f"Ligne {numero} : le prénom est obligatoire.")
+
+        poste = _poste_importe(poste_brut)
+        if poste is None:
+            erreurs.append(
+                f"Ligne {numero} : poste « {poste_brut} » inconnu. Postes acceptés : "
+                + ", ".join(POSTES_COURANTS) + "."
+            )
+
+        departement = _departement_importe(departement_brut)
+        if departement is None:
+            erreurs.append(
+                f"Ligne {numero} : département « {departement_brut} » inconnu. Départements "
+                "acceptés : " + ", ".join(str(libelle) for _, libelle in Departement.choices) + "."
+            )
+
+        date_embauche = _date_importee(date_brut)
+        if date_embauche is None:
+            erreurs.append(
+                f"Ligne {numero} : date d'embauche « {date_brut} » invalide (attendu JJ/MM/AAAA)."
+            )
+
+        try:
+            salaire_base = Decimal(str(salaire_brut))
+            if salaire_base < 0:
+                raise InvalidOperation
+        except (TypeError, InvalidOperation):
+            salaire_base = None
+            erreurs.append(f"Ligne {numero} : salaire de base « {salaire_brut} » invalide.")
+
+        a_creer.append(dict(
+            nom=nom,
+            prenom=prenom,
+            poste=poste,
+            departement=departement,
+            type_contrat=str(type_contrat_brut or "").strip(),
+            date_embauche=date_embauche,
+            salaire_base=salaire_base,
+        ))
+
+    if erreurs:
+        raise ImportPersonnelError(erreurs)
+
+    return [recruter(**champs) for champs in a_creer]
 
 
 # --- droits des validateurs ---
