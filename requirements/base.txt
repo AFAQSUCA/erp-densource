@@ -17,3 +17,5 @@ drf-spectacular-sidecar>=2024.1       # Swagger UI servi localement (pas de scri
 psycopg[binary]>=3.2                 # pilote PostgreSQL (dev : optionnel, activé via DATABASE_URL ; prod : requis)
 redis>=5                             # client Redis, utilisé par le cache natif de Django et par Celery
 celery>=5.4                          # tâches planifiées (taches_quotidiennes) et envoi d'e-mail en arrière-plan
+
+openpyxl>=3.1                        # import/export Excel (.xlsx) — apps/hr : recrutement en masse du personnel

@@ -80,6 +80,7 @@ def test_la_direction_lit_le_personnel_sans_pouvoir_le_modifier(client):
     assert client.get(reverse("hr:personnel_nouveau")).status_code == 403
     assert client.get(reverse("hr:personnel_modifier", args=[employe.pk])).status_code == 403
     assert client.post(reverse("hr:personnel_attribution", args=[employe.pk]), {}).status_code == 403
+    assert client.get(reverse("hr:personnel_importer")).status_code == 403
     texte = client.get(reverse("hr:personnel_detail", args=[employe.pk])).content.decode()
     assert "Modifier" not in texte and "Accorder" not in texte
 

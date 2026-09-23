@@ -10,10 +10,16 @@
       <p class="mt-1 text-sm text-slate-600">{{ paginator.count|default:0 }} employé{{ paginator.count|pluralize }}</p>
     </div>
     {% if peut_modifier %}
-      <a href="{% url 'hr:personnel_nouveau' %}"
-         class="inline-flex items-center gap-2 rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">
-        <i class="fa-solid fa-user-plus" aria-hidden="true"></i> Nouveau recrutement
-      </a>
+      <div class="flex flex-wrap gap-2">
+        <a href="{% url 'hr:personnel_importer' %}"
+           class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">
+          <i class="fa-solid fa-file-excel" aria-hidden="true"></i> Importer depuis Excel
+        </a>
+        <a href="{% url 'hr:personnel_nouveau' %}"
+           class="inline-flex items-center gap-2 rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">
+          <i class="fa-solid fa-user-plus" aria-hidden="true"></i> Nouveau recrutement
+        </a>
+      </div>
     {% endif %}
   </div>
 

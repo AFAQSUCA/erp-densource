@@ -5,8 +5,10 @@ délèguent à ``services.py`` (conventions.md:19-23). Le droit de valider dépe
 hiérarchie et non du seul rôle : c'est ``services.py`` qui le tranche.
 """
 
+import openpyxl
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.utils import timezone
 from django.views import View
@@ -17,8 +19,8 @@ from apps.core.formats import nombre
 from apps.core.views import PaginationTolerante
 
 from . import permissions, sections, services
-from .exceptions import CongeError, PersonnelError
-from .forms import AttributionForm, CongeForm, DecisionForm, PersonnelForm
+from .exceptions import CongeError, ImportPersonnelError, PersonnelError
+from .forms import AttributionForm, CongeForm, DecisionForm, ImportPersonnelForm, PersonnelForm
 from .models import AttributionConge, Departement, StatutConge
 
 VUE_MES, VUE_A_VALIDER, VUE_TOUS = "mes", "a_valider", "tous"
@@ -300,6 +302,48 @@ class PersonnelCreateView(RoleRequiredMixin, FormView):
             f"{personnel.matricule}.{suite}",
         )
         return redirect("hr:personnel_detail", pk=personnel.pk)
+
+
+class PersonnelImportView(RoleRequiredMixin, FormView):
+    """Recrutement en masse depuis un classeur Excel — voir services.importer_personnel."""
+
+    roles = permissions.PERSONNEL_MODIFICATION
+    form_class = ImportPersonnelForm
+    template_name = "hr/personnel_import.html"
+
+    def get_context_data(self, **kwargs):
+        return super().get_context_data(colonnes=services.COLONNES_IMPORT, **kwargs)
+
+    def form_valid(self, form):
+        try:
+            crees = services.importer_personnel(form.cleaned_data["fichier"])
+        except ImportPersonnelError as erreur:
+            return self.render_to_response(self.get_context_data(form=form, erreurs=erreur.erreurs))
+        messages.success(
+            self.request,
+            f"{len(crees)} employé(s) importé(s) : "
+            + ", ".join(f"{p.prenom} {p.nom} ({p.matricule})" for p in crees) + ".",
+        )
+        return redirect("hr:personnel_liste")
+
+
+class PersonnelModeleImportView(RoleRequiredMixin, View):
+    """Modèle de fichier à télécharger avant l'import en masse (colonnes attendues, un exemple)."""
+
+    roles = permissions.PERSONNEL_MODIFICATION
+
+    def get(self, request):
+        classeur = openpyxl.Workbook()
+        feuille = classeur.active
+        feuille.title = "Personnel"
+        feuille.append(services.COLONNES_IMPORT)
+        feuille.append(["Traoré", "Awa", "Comptable", "Comptabilité", "CDI", "01/09/2026", "250000"])
+        reponse = HttpResponse(
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+        reponse["Content-Disposition"] = "attachment; filename=modele-import-personnel.xlsx"
+        classeur.save(reponse)
+        return reponse
 
 
 class PersonnelUpdateView(RoleRequiredMixin, FormView):

@@ -11,6 +11,12 @@ urlpatterns = [
     path("conges/<int:pk>/decision/", views.CongeDecisionView.as_view(), name="conges_decision"),
     path("personnel/", views.PersonnelListView.as_view(), name="personnel_liste"),
     path("personnel/nouveau/", views.PersonnelCreateView.as_view(), name="personnel_nouveau"),
+    path("personnel/importer/", views.PersonnelImportView.as_view(), name="personnel_importer"),
+    path(
+        "personnel/importer/modele.xlsx",
+        views.PersonnelModeleImportView.as_view(),
+        name="personnel_import_modele",
+    ),
     path("personnel/<int:pk>/", views.PersonnelDetailView.as_view(), name="personnel_detail"),
     path(
         "personnel/<int:pk>/modifier/",
