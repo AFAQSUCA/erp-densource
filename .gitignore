@@ -16,6 +16,7 @@ htmlcov/
 .claude/
 
 COMPTES-ESSAI.md
+donnees_locales*.json
 
 # Fichiers verrou temporaires d'Office (Word, PowerPoint ouverts)
 ~$*
