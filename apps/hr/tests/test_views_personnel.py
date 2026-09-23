@@ -29,7 +29,6 @@ def _messages(reponse):
 
 def _donnees(**surcharges):
     donnees = {
-        "matricule": "MAT-5001",
         "nom": "Bamba",
         "prenom": "Issa",
         "poste": "Mécanicien",
@@ -46,7 +45,7 @@ def _donnees(**surcharges):
 
 def _donnees_modification(**surcharges):
     donnees = _donnees(**surcharges)
-    del donnees["matricule"], donnees["date_embauche"]
+    del donnees["date_embauche"]
     return donnees
 
 
@@ -160,10 +159,11 @@ def test_la_rh_recrute_un_employe(client):
 
     reponse = client.post(reverse("hr:personnel_nouveau"), _donnees(superieur=chef.pk), follow=True)
 
-    employe = Personnel.objects.get(matricule="MAT-5001")
+    employe = Personnel.objects.get(nom="Bamba", prenom="Issa")
     assert employe.superieur == chef and employe.type_contrat == "CDI"
+    assert employe.matricule.startswith("PERS-")
     assert reponse.redirect_chain[-1][0] == reverse("hr:personnel_detail", args=[employe.pk])
-    assert any("Issa Bamba" in m for m in _messages(reponse))
+    assert any("Issa Bamba" in m and employe.matricule in m for m in _messages(reponse))
 
 
 def test_recruter_un_chauffeur_cree_sa_fiche_et_le_dit(client):
@@ -171,18 +171,8 @@ def test_recruter_un_chauffeur_cree_sa_fiche_et_le_dit(client):
 
     reponse = client.post(reverse("hr:personnel_nouveau"), _donnees(poste="Chauffeur"), follow=True)
 
-    assert Chauffeur.objects.filter(personnel__matricule="MAT-5001").exists()
+    assert Chauffeur.objects.filter(personnel__nom="Bamba").exists()
     assert any("fiche chauffeur" in m for m in _messages(reponse))
-
-
-def test_un_matricule_deja_pris_est_refuse(client):
-    _connecte(client, Role.RH)
-    PersonnelFactory(matricule="MAT-5001")
-
-    reponse = client.post(reverse("hr:personnel_nouveau"), _donnees())
-
-    assert "MAT-5001 est déjà attribué" in reponse.content.decode()
-    assert Personnel.objects.filter(matricule="MAT-5001").count() == 1
 
 
 def test_un_recrutement_incomplet_reste_sur_le_formulaire(client):
@@ -214,7 +204,7 @@ def test_recruter_avec_un_compte_deja_rattache_est_refuse(client):
     reponse = client.post(reverse("hr:personnel_nouveau"), _donnees(utilisateur=pris.pk))
 
     assert reponse.status_code == 200
-    assert not Personnel.objects.filter(matricule="MAT-5001").exists()
+    assert not Personnel.objects.filter(nom="Bamba").exists()
 
 
 def test_le_recrutement_exige_le_csrf():

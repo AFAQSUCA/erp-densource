@@ -1,9 +1,18 @@
 from django.conf import settings
 from django.contrib.auth.forms import AuthenticationForm
-from django.contrib.auth.views import LoginView, LogoutView
+from django.contrib.auth.views import (
+    LoginView,
+    LogoutView,
+    PasswordResetCompleteView,
+    PasswordResetConfirmView,
+    PasswordResetDoneView,
+    PasswordResetView,
+)
+from django.urls import reverse_lazy
 
 from . import throttle
 from .models import Role
+from .signals import mot_de_passe_reinitialise
 
 
 class ConnexionView(LoginView):
@@ -38,3 +47,37 @@ class ConnexionView(LoginView):
 
 class DeconnexionView(LogoutView):
     """Déconnexion (POST uniquement, protégée par CSRF)."""
+
+
+# --- mot de passe oublié ---
+#
+# Les 4 étapes standard de Django, avec nos gabarits (français, mise en page du site) : demande de
+# l'adresse -> confirmation d'envoi -> lien reçu par e-mail -> nouveau mot de passe -> terminé.
+# Ne dit jamais si l'adresse correspond à un compte (mêmes pages dans les deux cas) : un tiers ne
+# peut pas s'en servir pour savoir qui a un compte ici. Le mot de passe choisi passe par les mêmes
+# règles qu'à l'inscription (AUTH_PASSWORD_VALIDATORS, longueur 10, Argon2).
+
+
+class ReinitialiserMotDePasseView(PasswordResetView):
+    template_name = "registration/password_reset_form.html"
+    email_template_name = "registration/password_reset_email.txt"
+    subject_template_name = "registration/password_reset_subject.txt"
+    success_url = reverse_lazy("accounts:password_reset_done")
+
+
+class ReinitialiserMotDePasseEnvoyeView(PasswordResetDoneView):
+    template_name = "registration/password_reset_done.html"
+
+
+class ReinitialiserMotDePasseConfirmerView(PasswordResetConfirmView):
+    template_name = "registration/password_reset_confirm.html"
+    success_url = reverse_lazy("accounts:password_reset_complete")
+
+    def form_valid(self, form):
+        reponse = super().form_valid(form)
+        mot_de_passe_reinitialise.send(sender=self.__class__, request=self.request, utilisateur=self.user)
+        return reponse
+
+
+class ReinitialiserMotDePasseTermineeView(PasswordResetCompleteView):
+    template_name = "registration/password_reset_complete.html"

@@ -295,7 +295,9 @@ class PersonnelCreateView(RoleRequiredMixin, FormView):
             " Sa fiche chauffeur a été créée automatiquement." if personnel.est_chauffeur else ""
         )
         messages.success(
-            self.request, f"{personnel.prenom} {personnel.nom} est enregistré(e).{suite}"
+            self.request,
+            f"{personnel.prenom} {personnel.nom} est enregistré(e) sous le matricule "
+            f"{personnel.matricule}.{suite}",
         )
         return redirect("hr:personnel_detail", pk=personnel.pk)
 

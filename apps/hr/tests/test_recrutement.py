@@ -52,3 +52,24 @@ def test_recruter_un_autre_poste_ne_cree_pas_de_fiche_chauffeur():
     personnel = services.recruter(**_donnees())
 
     assert not Chauffeur.objects.filter(personnel=personnel).exists()
+
+
+def test_recruter_sans_matricule_en_genere_un_automatiquement():
+    donnees = _donnees()
+    del donnees["matricule"]
+
+    personnel = services.recruter(**donnees)
+
+    annee = date.today().year
+    assert personnel.matricule == f"PERS-{annee}-0001"
+
+
+def test_recruter_sans_matricule_incremente_a_chaque_recrutement():
+    donnees = _donnees()
+    del donnees["matricule"]
+
+    premier = services.recruter(**donnees)
+    second = services.recruter(**{**donnees, "nom": "Koné"})
+
+    annee = date.today().year
+    assert (premier.matricule, second.matricule) == (f"PERS-{annee}-0001", f"PERS-{annee}-0002")

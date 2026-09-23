@@ -75,10 +75,11 @@ def _libelle_compte(u) -> str:
 class PersonnelForm(StyleTailwindMixin, forms.Form):
     """Recrutement ou modification d'une fiche (cahier-des-charges.md:206-210).
 
-    À la modification, le matricule et la date d'embauche ne se changent pas.
+    Le matricule n'est jamais un champ du formulaire : ``services.recruter`` le génère
+    automatiquement (``PERS-AAAA-XXXX``). À la modification, la date d'embauche ne change pas non
+    plus (champ retiré ci-dessous).
     """
 
-    matricule = forms.CharField(label="Matricule", max_length=20)
     nom = forms.CharField(label="Nom", max_length=100)
     prenom = forms.CharField(label="Prénom", max_length=100)
     poste = forms.CharField(label="Poste", max_length=100)
@@ -111,7 +112,6 @@ class PersonnelForm(StyleTailwindMixin, forms.Form):
         superieurs = services.personnel_queryset().order_by("nom", "prenom")
         if personnel is not None:
             superieurs = superieurs.exclude(pk=personnel.pk)
-            del self.fields["matricule"]
             del self.fields["date_embauche"]
         self.fields["superieur"].queryset = superieurs
         self.fields["superieur"].label_from_instance = _libelle_employe
