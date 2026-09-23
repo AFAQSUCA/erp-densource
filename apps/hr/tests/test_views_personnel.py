@@ -184,6 +184,49 @@ def test_un_recrutement_incomplet_reste_sur_le_formulaire(client):
     assert not Personnel.objects.exists()
 
 
+# --- poste : liste déroulante + « Autre » ---
+
+
+def test_le_poste_est_une_liste_deroulante(client):
+    _connecte(client, Role.RH)
+
+    reponse = client.get(reverse("hr:personnel_nouveau"))
+
+    valeurs = dict(reponse.context["form"].fields["poste"].choices)
+    assert "Chauffeur" in valeurs and "AUTRE" in valeurs
+
+
+def test_choisir_autre_sans_le_preciser_est_refuse(client):
+    _connecte(client, Role.RH)
+
+    reponse = client.post(reverse("hr:personnel_nouveau"), _donnees(poste="AUTRE", poste_autre=""))
+
+    assert reponse.status_code == 200
+    assert not Personnel.objects.exists()
+    assert "Précisez le poste" in reponse.content.decode()
+
+
+def test_choisir_autre_avec_un_intitule_l_enregistre_tel_quel(client):
+    _connecte(client, Role.RH)
+
+    client.post(
+        reverse("hr:personnel_nouveau"), _donnees(poste="AUTRE", poste_autre="Dispatcheur logistique")
+    )
+
+    employe = Personnel.objects.get(nom="Bamba")
+    assert employe.poste == "Dispatcheur logistique"
+
+
+def test_un_poste_hors_liste_est_prerempli_en_autre_a_la_modification(client):
+    _connecte(client, Role.RH)
+    employe = PersonnelFactory(poste="Chef d'atelier")
+
+    reponse = client.get(reverse("hr:personnel_modifier", args=[employe.pk]))
+
+    initial = reponse.context["form"].initial
+    assert (initial["poste"], initial["poste_autre"]) == ("AUTRE", "Chef d'atelier")
+
+
 def test_le_formulaire_ne_propose_que_les_comptes_libres(client):
     _connecte(client, Role.RH)
     libre = UserFactory(role=Role.FINANCES, username="libre")
@@ -225,7 +268,9 @@ def test_la_rh_modifie_la_fiche(client):
 
     reponse = client.post(
         reverse("hr:personnel_modifier", args=[employe.pk]),
-        _donnees_modification(poste="Chef comptable", superieur=chef.pk, utilisateur=compte.pk),
+        _donnees_modification(
+            poste="AUTRE", poste_autre="Chef comptable", superieur=chef.pk, utilisateur=compte.pk
+        ),
         follow=True,
     )
 

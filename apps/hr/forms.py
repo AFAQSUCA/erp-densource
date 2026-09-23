@@ -4,7 +4,9 @@ from django.utils import timezone
 from apps.core.forms import StyleTailwindMixin
 
 from . import services
-from .models import Departement, Personnel
+from .models import Departement, Personnel, POSTES_COURANTS
+
+POSTE_AUTRE = "AUTRE"
 
 
 class CongeForm(StyleTailwindMixin, forms.Form):
@@ -82,7 +84,17 @@ class PersonnelForm(StyleTailwindMixin, forms.Form):
 
     nom = forms.CharField(label="Nom", max_length=100)
     prenom = forms.CharField(label="Prénom", max_length=100)
-    poste = forms.CharField(label="Poste", max_length=100)
+    poste = forms.ChoiceField(
+        label="Poste",
+        choices=[(p, p) for p in POSTES_COURANTS] + [(POSTE_AUTRE, "Autre…")],
+        widget=forms.Select(attrs={"x-ref": "poste", "x-model": "poste", "@change": "poste = $event.target.value"}),
+    )
+    poste_autre = forms.CharField(
+        label="Préciser le poste",
+        max_length=100,
+        required=False,
+        help_text="Le poste n'apparaît pas dans la liste ci-dessus.",
+    )
     departement = forms.ChoiceField(label="Département", choices=Departement.choices)
     type_contrat = forms.CharField(
         label="Type de contrat", max_length=30, required=False, help_text="Ex. : CDI, CDD, stage."
@@ -113,7 +125,24 @@ class PersonnelForm(StyleTailwindMixin, forms.Form):
         if personnel is not None:
             superieurs = superieurs.exclude(pk=personnel.pk)
             del self.fields["date_embauche"]
+            if personnel.poste not in POSTES_COURANTS:
+                # Poste antérieur hors liste (saisi avant l'existence de la liste, ou via « Autre ») :
+                # préremplir « Autre » + son intitulé, plutôt que de perdre la valeur ou de refuser
+                # la fiche à la prochaine modification qui ne touche pas ce champ.
+                self.initial["poste"] = POSTE_AUTRE
+                self.initial["poste_autre"] = personnel.poste
         self.fields["superieur"].queryset = superieurs
         self.fields["superieur"].label_from_instance = _libelle_employe
         self.fields["utilisateur"].queryset = services.comptes_disponibles(garder=personnel)
         self.fields["utilisateur"].label_from_instance = _libelle_compte
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned.get("poste") == POSTE_AUTRE:
+            autre = cleaned.get("poste_autre", "").strip()
+            if not autre:
+                self.add_error("poste_autre", "Précisez le poste.")
+            else:
+                cleaned["poste"] = autre
+        cleaned.pop("poste_autre", None)  # jamais transmis à services.recruter/modifier_personnel
+        return cleaned
