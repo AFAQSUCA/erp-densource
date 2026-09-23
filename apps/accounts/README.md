@@ -19,6 +19,13 @@ Entités : `User` (`AUTH_USER_MODEL`), `Role`, `AppareilMFA` (application TOTP d
   `TRUSTED_PROXY_COUNT` (proxys de confiance) est renseigné, et seule l'adresse ajoutée par eux compte.
   Sinon un client pourrait forger son adresse et échapper à la limitation. Derrière Nginx : `1`.
 - L'administration Django n'a plus son propre formulaire : `/admin/login/` renvoie vers `/connexion/`.
+- **Mot de passe oublié** (`/mot-de-passe/`) : les 4 vues standard de Django (demande de l'adresse,
+  confirmation d'envoi, lien reçu par e-mail, nouveau mot de passe), gabarits français assortis au
+  reste du site. Ne révèle jamais si l'adresse correspond à un compte (même page dans les deux cas).
+  Le nouveau mot de passe passe par les mêmes règles qu'à la création (Argon2, longueur 10,
+  validateurs). Nécessite un serveur SMTP réel en production (`EMAIL_HOST` et consorts,
+  `.env.example`) ; sans lui, sans autre canal, cette fonctionnalité ne peut pas envoyer de lien.
+  Tracé au journal d'audit (module AUTH, entité User), sans jamais inscrire le mot de passe.
 
 ## Double authentification (MFA)
 

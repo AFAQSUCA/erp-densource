@@ -13,7 +13,7 @@ from django.contrib.auth.signals import (
 )
 from django.dispatch import receiver
 
-from apps.accounts.signals import mfa_evenement
+from apps.accounts.signals import mfa_evenement, mot_de_passe_reinitialise
 
 from . import services
 from .models import ActionChoices, StatutChoices
@@ -46,4 +46,18 @@ def on_mfa_evenement(sender, request, utilisateur, evenement, succes, **kwargs):
         nouvelle_valeur={"evenement": evenement},
         request=request,
         statut=StatutChoices.SUCCESS if succes else StatutChoices.FAILED,
+    )
+
+
+@receiver(mot_de_passe_reinitialise)
+def on_mot_de_passe_reinitialise(sender, request, utilisateur, **kwargs):
+    """« Mot de passe oublié » mené à son terme : tracé, sans jamais inscrire le mot de passe."""
+    services.log_action(
+        action=ActionChoices.UPDATE,
+        module="AUTH",
+        entite="User",
+        entite_id=utilisateur.pk,
+        utilisateur=utilisateur,
+        nouvelle_valeur={"evenement": "mot_de_passe_reinitialise"},
+        request=request,
     )

@@ -35,9 +35,10 @@ Interface (`views.py`, `templates/hr/`, montée sous `/rh/`) :
   hiérarchie, pas du rôle : `services.actions_disponibles` le tranche et l'écran n'affiche
   que ces boutons. Un refus ou une annulation exige un motif.
 - **Personnel** (`/rh/personnel/`) : ADMIN, DIRECTION (lecture) et RH ; recrutement et
-  modification par ADMIN et RH. Le matricule et la date d'embauche ne se modifient pas ;
-  le compte utilisateur et le supérieur se règlent ici (sans compte rattaché, l'employé
-  ne peut ni demander ni valider de congé). Jours exceptionnels : RH seulement.
+  modification par ADMIN et RH. Le matricule (`PERS-AAAA-XXXX`, `services.recruter`) est
+  attribué automatiquement au recrutement, jamais saisi ; comme la date d'embauche, il ne se
+  modifie plus ensuite. Le compte utilisateur et le supérieur se règlent ici (sans compte
+  rattaché, l'employé ne peut ni demander ni valider de congé). Jours exceptionnels : RH seulement.
 - Alerte N1 « chauffeur avec mission sur la période » : fournie par `missions`
   (`hr.sections.DETAIL_CONGE`), sur les missions planifiées, affectées ou en cours qui ont
   une date de départ prévue.

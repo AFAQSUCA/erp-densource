@@ -1,8 +1,10 @@
 """Signaux de l'app ``accounts``.
 
 ``mfa_evenement`` : émis à chaque étape de la double authentification (activation, code vérifié ou
-refusé, codes régénérés, réinitialisation). L'app ``audit`` s'y abonne pour l'inscrire au journal :
-``accounts`` n'importe pas ``audit`` (sens des dépendances, architecture.md:134).
+refusé, codes régénérés, réinitialisation). ``mot_de_passe_reinitialise`` : émis quand un compte
+choisit un nouveau mot de passe via « mot de passe oublié » (``views.ReinitialiserMotDePasseConfirmerView``).
+L'app ``audit`` s'y abonne pour inscrire ces deux au journal : ``accounts`` n'importe pas ``audit``
+(sens des dépendances, architecture.md:134).
 
 Les récepteurs ci-dessous branchent aussi la limitation d'essais et l'oubli de la vérification MFA
 sur les signaux d'authentification de Django.
@@ -15,6 +17,9 @@ from . import mfa, throttle
 
 # providing_args : request, utilisateur, evenement (str), succes (bool)
 mfa_evenement = Signal()
+
+# providing_args : request, utilisateur
+mot_de_passe_reinitialise = Signal()
 
 
 @receiver(user_login_failed)

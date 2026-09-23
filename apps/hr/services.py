@@ -18,6 +18,7 @@ from django.utils import timezone
 
 from apps.accounts.models import Role, User
 from apps.core.search import filtrer_par_texte
+from apps.core.services import prochain_numero
 
 from . import signals
 from .exceptions import (
@@ -41,6 +42,8 @@ from .models import (
 
 DELAI_VALIDATION_N1 = timedelta(hours=48)  # cahier-des-charges.md:213
 DELAI_VALIDATION_N2 = timedelta(hours=24)  # cahier-des-charges.md:214
+
+PREFIXE_MATRICULE = "PERS"  # matricule auto-généré : PERS-AAAA-XXXX (voir recruter)
 
 # Droit annuel : 2 semaines, comptées en jours ouvrables (lundi-samedi) selon
 # le droit ivoirien, soit 2 x 6 = 12 jours (cahier-des-charges.md:219-221).
@@ -98,7 +101,6 @@ def _verifier_rattachements(personnel: Personnel | None, superieur, utilisateur)
 @transaction.atomic
 def recruter(
     *,
-    matricule: str,
     nom: str,
     prenom: str,
     poste: str,
@@ -108,14 +110,22 @@ def recruter(
     salaire_base: Decimal,
     superieur: Personnel | None = None,
     utilisateur: User | None = None,
+    matricule: str | None = None,
 ) -> Personnel:
     """Enregistre un recrutement (cahier-des-charges.md:209-210).
+
+    Le matricule est généré automatiquement (``PERS-AAAA-XXXX``, :func:`apps.core.services.
+    prochain_numero` — même mécanisme que les numéros de mission, d'OR et de facture) et n'est
+    jamais ressaisi par l'utilisateur (formulaire de recrutement : voir ``forms.PersonnelForm``).
+    En préciser un explicitement ne sert qu'aux données de démonstration et aux tests.
 
     Si le poste est « Chauffeur », la fiche chauffeur est créée par le signal
     de ``drivers`` (cahier-des-charges.md:108). Le matricule reste réservé même
     après suppression logique (cahier-des-charges.md:107).
     """
-    if Personnel.all_objects.filter(matricule=matricule).exists():
+    if matricule is None:
+        matricule = prochain_numero(PREFIXE_MATRICULE)
+    elif Personnel.all_objects.filter(matricule=matricule).exists():
         raise PersonnelError(f"Le matricule {matricule} est déjà attribué.")
     _verifier_rattachements(None, superieur, utilisateur)
     return Personnel.objects.create(

@@ -58,6 +58,17 @@ CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])
 
 CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=[])
 
+# Envoi d'e-mails réel (notifications si NOTIFICATIONS_EMAIL=true, et surtout « mot de passe
+# oublié » — étape 7, qui n'a pas d'autre canal). Sans ces variables, Django essaierait un serveur
+# SMTP local inexistant et l'envoi échouerait silencieusement en production. Un hébergeur de
+# domaine (dont Hostinger) fournit généralement un compte e-mail SMTP prêt à l'emploi.
+EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+EMAIL_HOST = env("EMAIL_HOST", default="")
+EMAIL_PORT = env.int("EMAIL_PORT", default=587)
+EMAIL_HOST_USER = env("EMAIL_HOST_USER", default="")
+EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="")
+EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=True)
+
 # Supervision des erreurs (cahier-des-charges.md:297, architecture.md §8 « Observabilité »). Inactif
 # tant que SENTRY_DSN n'est pas défini : un environnement de démonstration n'a pas besoin de compte
 # Sentry pour démarrer. Prometheus/Grafana (mentionné au même endroit) n'est volontairement pas
