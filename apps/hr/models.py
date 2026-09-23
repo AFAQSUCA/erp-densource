@@ -10,6 +10,25 @@ from apps.core.models import BaseModel
 
 POSTE_CHAUFFEUR = "Chauffeur"
 
+# Postes proposés au recrutement (forms.PersonnelForm) : une liste déroulante plutôt qu'une saisie
+# libre, pour écarter les fautes de frappe — en particulier sur « Chauffeur », qui doit correspondre
+# exactement pour déclencher la fiche chauffeur automatique (cahier-des-charges.md:108). Tirée de
+# l'effectif type du cahier des charges (:14-16) et des 7 rôles applicatifs. Le formulaire garde une
+# option « Autre » à saisie libre : cette liste n'a pas vocation à être exhaustive.
+POSTES_COURANTS = [
+    "Direction générale",
+    "Administrateur système",
+    "Responsable RH",
+    "Responsable parc auto",
+    "Chargé clientèle",
+    "Comptable",
+    "Dispatcheur",
+    "Gestionnaire de flotte",
+    "Mécanicien",
+    "Magasinier",
+    POSTE_CHAUFFEUR,
+]
+
 
 class Departement(models.TextChoices):
     """5 départements — cahier-des-charges.md:207-208."""

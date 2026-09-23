@@ -3,7 +3,7 @@
 {% block entete %}Personnel{% endblock %}
 
 {% block contenu %}
-<div class="mx-auto max-w-3xl">
+<div class="mx-auto max-w-3xl" x-data="{ poste: '' }" x-init="poste = $refs.poste.value">
   <nav aria-label="Fil d'Ariane" class="text-sm text-slate-600">
     <a href="{% url 'hr:personnel_liste' %}" class="underline-offset-2 hover:underline">Personnel</a>
     <span aria-hidden="true">/</span>
@@ -38,6 +38,9 @@
       <legend class="text-sm font-semibold text-slate-900">Poste et contrat</legend>
       <div class="mt-3 grid gap-5 sm:grid-cols-2">
         {% include "components/_champ.html" with champ=form.poste %}
+        <div x-show="poste === 'AUTRE'" x-cloak>
+          {% include "components/_champ.html" with champ=form.poste_autre %}
+        </div>
         {% include "components/_champ.html" with champ=form.departement %}
         {% include "components/_champ.html" with champ=form.type_contrat %}
         {% if not employe %}{% include "components/_champ.html" with champ=form.date_embauche %}{% endif %}

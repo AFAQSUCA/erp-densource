@@ -39,6 +39,11 @@ Interface (`views.py`, `templates/hr/`, montée sous `/rh/`) :
   attribué automatiquement au recrutement, jamais saisi ; comme la date d'embauche, il ne se
   modifie plus ensuite. Le compte utilisateur et le supérieur se règlent ici (sans compte
   rattaché, l'employé ne peut ni demander ni valider de congé). Jours exceptionnels : RH seulement.
+- **Poste** : liste déroulante (`models.POSTES_COURANTS`, `forms.PersonnelForm`) plutôt qu'une
+  saisie libre, pour écarter les fautes de frappe — en particulier sur « Chauffeur », qui doit
+  correspondre exactement pour déclencher la fiche chauffeur automatique. Une option « Autre »
+  garde un champ libre pour un intitulé imprévu ; un poste antérieur hors liste (saisi avant
+  l'existence de cette liste) se réaffiche correctement en « Autre » prérempli à la modification.
 - Alerte N1 « chauffeur avec mission sur la période » : fournie par `missions`
   (`hr.sections.DETAIL_CONGE`), sur les missions planifiées, affectées ou en cours qui ont
   une date de départ prévue.
