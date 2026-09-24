@@ -277,6 +277,7 @@ santé avant de redémarrer.
 | Boucle de redirection HTTPS | `X-Forwarded-Proto` n'arrive pas jusqu'à Django : vérifier que la requête passe bien par Nginx (pas directement sur le port 8000 de `web`) |
 | `celery_worker` ne traite rien | `docker compose logs celery_worker` : le plus souvent `REDIS_URL` injoignable |
 | Fiche mission sans voyant « En direct » (« Suivi en direct indisponible ») | `docker compose logs realtime` : conteneur arrêté ? Vérifier aussi que le bloc `location /ws/` est bien dans le serveur 443 de `nginx/nginx.conf`, et que `ALLOWED_HOSTS` contient le domaine (l'origine de la page est contrôlée) |
+| Le voyant « En direct » clignote (Reconnexion…) et `docker compose logs realtime` affiche `Timeout reading from redis` | Le délai de lecture Redis est inférieur à l'attente bloquante de `channels-redis` (5 s) : vérifier `socket_timeout` dans `CHANNEL_LAYERS` (config/settings/prod.py, 15 s) — `redis-py` >= 8 impose sinon 5 s par défaut |
 | Page de connexion sans styles | `collectstatic` n'a pas tourné, ou le volume `static_data` n'est pas monté dans `nginx` |
 
 ---
