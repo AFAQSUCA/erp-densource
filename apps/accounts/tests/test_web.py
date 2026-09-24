@@ -219,3 +219,17 @@ def test_aucun_commentaire_de_template_ne_fuit_dans_les_pages(client):
         contenu = client.get(url).content.decode()
         assert "{#" not in contenu and "#}" not in contenu, url
         assert "{%" not in contenu and "%}" not in contenu, url
+
+
+def test_un_seul_onglet_est_actif_meme_quand_deux_adresses_se_ressemblent():
+    """« Dépenses » (/facturation/depenses/) est sous « Facturation » (/facturation/) : seul le plus précis
+    s'allume, le clic sur un onglet ne doit pas en activer un autre."""
+    actifs = lambda chemin: [e["libelle"] for e in navigation.entrees_pour(Role.ADMIN, chemin) if e["actif"]]
+
+    assert actifs("/facturation/depenses/") == ["Dépenses"]
+    assert actifs("/facturation/") == ["Facturation"]
+    assert actifs("/facturation/12/") == ["Facturation"]
+    assert actifs("/garage/incidents/3/") == ["Incidents"]
+    assert actifs("/garage/") == ["Garage"]
+    assert actifs("/") == ["Accueil"]
+    assert actifs("/page-inconnue/") == []

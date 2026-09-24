@@ -42,15 +42,22 @@ def entrees_pour(role: str, chemin: str) -> list[dict]:
             url = reverse(entree.url_name)
         except NoReverseMatch:
             continue  # « une entrée n'existe que si son écran existe » : jamais d'erreur 500 pour un menu
-        actif = chemin == url if url == "/" else chemin.startswith(url)
         resultat.append(
             {
                 "libelle": entree.libelle,
                 "url": url,
                 "icone": entree.icone,
-                "actif": actif,
+                "actif": False,
             }
         )
+    # Un seul onglet actif : le plus précis. Sans cela, sur /facturation/depenses/ « Facturation »
+    # (préfixe /facturation/) et « Dépenses » s'allumaient ensemble, comme « Garage » et « Incidents » :
+    # un clic sur un onglet semblait en activer un autre. L'accueil (« / ») ne correspond qu'à lui-même.
+    correspondants = [
+        e for e in resultat if (chemin == e["url"] if e["url"] == "/" else chemin.startswith(e["url"]))
+    ]
+    if correspondants:
+        max(correspondants, key=lambda e: len(e["url"]))["actif"] = True
     return resultat
 
 

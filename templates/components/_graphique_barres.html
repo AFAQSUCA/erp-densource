@@ -1,0 +1,17 @@
+{# Barres horizontales (apps.core.graphiques.barres_horizontales). Valeur au bout de la barre : rien ne dépend de la souris. #}
+{% if g.vide %}
+  <p class="text-sm text-slate-600">{{ vide }}</p>
+{% else %}
+  <ul class="viz-barres">
+    {% for l in g.lignes %}
+      <li class="viz-barre-ligne">
+        <span class="viz-barre-libelle">
+          {% if l.url %}<a href="{{ l.url }}" class="font-medium text-marque-700 underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">{{ l.libelle }}</a>{% else %}{{ l.libelle }}{% endif %}
+          {% if l.detail %}<span class="text-xs text-slate-600">· {{ l.detail }}</span>{% endif %}
+        </span>
+        <span class="viz-piste" aria-hidden="true"><span class="viz-barre viz-s1" style="width: {{ l.largeur }}%"></span></span>
+        <span class="viz-barre-valeur">{{ l.valeur_texte }}{% if g.unite %} <span class="text-xs font-normal text-slate-600">{{ g.unite }}</span>{% endif %}</span>
+      </li>
+    {% endfor %}
+  </ul>
+{% endif %}

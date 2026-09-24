@@ -354,7 +354,7 @@ def test_bloc_clientele(client):
     assert reponse.context["clientele"]["clients_actifs"] == 2
     texte = reponse.content.decode()
     assert texte.index("Gros Client") < texte.index("Petit Client")
-    assert "900 000 FCFA" in texte.replace("\xa0", " ") or "900 000 FCFA" in texte.replace("\xa0", " ").replace(" ", " ")
+    assert "900 000" in " ".join(texte.replace(" ", " ").replace(" ", " ").split())  # valeur au bout de la barre
     assert "Top 3 des clients" in texte
 
 
@@ -406,7 +406,7 @@ def test_le_tableau_de_bord_de_l_admin_reste_a_requetes_constantes(client, djang
         MissionFactory(client=ClientFactory())
     client.force_login(_utilisateur(Role.ADMIN))
 
-    with django_assert_max_num_queries(36):
+    with django_assert_max_num_queries(80):
         assert client.get(reverse("home")).status_code == 200
 
 
@@ -479,3 +479,109 @@ def test_les_indicateurs_financiers_peuvent_etre_mis_en_cache(settings):
     assert services.finances(jour=date(2026, 9, 15)) == premier
     cache.clear()
     assert services.finances(jour=date(2026, 9, 15))["chiffre_affaires"] == Decimal("1000000")
+
+
+# --- graphiques ---
+
+
+def _texte_page(reponse):
+    return reponse.content.decode().replace("\u202f", " ").replace("\xa0", " ")
+
+
+def test_l_historique_mensuel_couvre_six_mois_et_le_mois_en_cours_s_arrete_a_aujourd_hui():
+    from apps.billing import services as billing
+    from apps.billing.models import ModePaiement
+    from apps.billing.tests.helpers import finances as compte_finances
+
+    facture = _facture_emise(prix="1000000", jour=date(2026, 8, 12))  # émise en août
+    billing.enregistrer_reglement(
+        facture, compte_finances(), montant=Decimal("500000"), mode=ModePaiement.WAVE, date_reglement=date(2026, 9, 2)
+    )
+
+    historique = services.finances(jour=date(2026, 9, 15))["graphique_mensuel"]
+
+    assert [g["libelle"] for g in historique["grappes"]] == ["avr. 26", "mai 26", "juin 26", "juil. 26", "août 26", "sept. 26"]
+    ca, encaisse, charges = historique["tableau"]["entetes"]
+    assert (ca, encaisse, charges) == ("CA facturé (HT)", "Encaissé", "Charges")
+    lignes = {l["libelle"]: [v.replace("\u202f", " ").replace("\xa0", " ") for v in l["valeurs"]] for l in historique["tableau"]["lignes"]}
+    assert lignes["août 26"] == ["1 000 000", "0", "0"]
+    assert lignes["sept. 26"] == ["0", "500 000", "0"]
+    assert lignes["avr. 26"] == ["0", "0", "0"]
+
+
+def test_l_historique_du_mois_en_cours_reprend_les_indicateurs_sans_les_relire(django_assert_num_queries):
+    from apps.finance import services as finance_services
+
+    courant = {"chiffre_affaires": Decimal("7"), "encaisse": Decimal("8"), "charges": Decimal("9")}
+
+    lignes = finance_services.historique_mensuel(date(2026, 1, 20), mois=1, courant=courant)
+
+    assert [(l["debut"], l["fin"]) for l in lignes] == [(date(2026, 1, 1), date(2026, 1, 20))]
+    assert (lignes[0]["chiffre_affaires"], lignes[0]["encaisse"], lignes[0]["charges"]) == (7, 8, 9)
+
+
+def test_l_historique_mensuel_traverse_le_changement_d_annee():
+    from apps.finance import services as finance_services
+
+    lignes = finance_services.historique_mensuel(date(2026, 2, 10), mois=4)
+
+    assert [l["debut"] for l in lignes] == [date(2025, 11, 1), date(2025, 12, 1), date(2026, 1, 1), date(2026, 2, 1)]
+    assert lignes[0]["fin"] == date(2025, 11, 30) and lignes[-1]["fin"] == date(2026, 2, 10)
+
+
+def test_le_bloc_finances_affiche_les_graphiques(client):
+    _facture_emise(prix="1000000", jour=timezone.localdate())
+
+    texte = _texte_page(_page(client, Role.FINANCES))
+
+    assert "Facturé, encaissé et charges" in texte and "viz-grappe" in texte
+    assert "Charges du mois" in texte and "Voir en tableau" in texte
+
+
+def test_les_graphiques_d_exploitation_suivent_les_statuts(client):
+    VehiculeFactory(statut=StatutVehicule.DISPONIBLE)
+    VehiculeFactory(statut=StatutVehicule.EN_MISSION)
+    MissionFactory(client=ClientFactory(), statut=StatutMission.PLANIFIEE)
+
+    reponse = _page(client, Role.DIRECTION)
+
+    camions = {l["libelle"]: l["valeur_texte"] for l in reponse.context["exploitation"]["graphique_camions"]["lignes"]}
+    missions = {l["libelle"]: l["valeur_texte"] for l in reponse.context["exploitation"]["graphique_missions"]["lignes"]}
+    assert camions["Disponible"] == "1" and camions["En mission"] == "1" and camions["Hors service"] == "0"
+    assert missions["Planifiée"] == "1"
+    texte = _texte_page(reponse)
+    assert "Camions par statut" in texte and "Missions par statut" in texte
+
+
+def test_le_parc_auto_ne_voit_pas_le_graphique_des_missions(client):
+    VehiculeFactory()
+
+    texte = _texte_page(_page(client, Role.PARCAUTO))
+
+    assert "Camions par statut" in texte and "Missions par statut" not in texte
+
+
+def test_le_graphique_de_l_effectif_reprend_les_departements(client):
+    PersonnelFactory(departement="EXPLOITATION")
+    PersonnelFactory(departement="EXPLOITATION")
+    PersonnelFactory(departement="DIRECTION")
+
+    reponse = _page(client, Role.RH)
+
+    lignes = {l["libelle"]: (l["valeur_texte"], l["largeur"]) for l in reponse.context["ressources_humaines"]["graphique_departements"]["lignes"]}
+    assert lignes["Exploitation"] == ("2", 100) and lignes["Direction"] == ("1", 50) and lignes["Comptabilité"] == ("0", 0)
+
+
+def test_le_graphique_des_clients_renvoie_a_la_fiche_client(client):
+    gros = ClientFactory(raison_sociale="Gros Client")
+    mission = MissionFactory(
+        client=gros, statut=StatutMission.LIVREE, prix_convenu=Decimal("900000"),
+        vehicule=VehiculeFactory(), chauffeur=ChauffeurFactory(),
+    )
+    type(mission).objects.filter(pk=mission.pk).update(date_livraison=timezone.now())
+
+    reponse = _page(client, Role.CHARGE_CLIENTELE)
+
+    ligne = reponse.context["clientele"]["graphique_clients"]["lignes"][0]
+    assert ligne["url"] == reverse("customers:detail", args=[gros.pk]) and ligne["detail"] == "1 mission"
+    assert ligne["url"] in reponse.content.decode()

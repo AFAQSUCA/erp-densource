@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% load humanize %}
+{% block titre %}Confirmer le versement · {{ facture.numero }}{% endblock %}
+{% block entete %}Trésorerie{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-3xl">
+  <nav aria-label="Fil d'Ariane" class="text-sm text-slate-600">
+    <a href="{% url 'finance:tresorerie' %}" class="underline-offset-2 hover:underline">Trésorerie</a>
+    <span aria-hidden="true">/</span> Confirmer un versement
+  </nav>
+  <h1 class="mt-2 text-2xl font-bold text-slate-900">Confirmer le versement</h1>
+  <p class="mt-1 text-sm text-slate-600">
+    Vérifiez que l'argent est bien arrivé (relevé bancaire, caisse, mobile money) avant de confirmer.
+    La confirmation ajoute une <strong>entrée</strong> à la trésorerie, sur le compte du mode de paiement choisi.
+  </p>
+
+  <section class="mt-6 rounded-xl border {% if echue %}border-red-300{% else %}border-slate-200{% endif %} bg-white p-5 shadow-sm" aria-labelledby="titre-facture">
+    <h2 id="titre-facture" class="text-base font-semibold text-slate-900">
+      <a href="{% url 'billing:facture' facture.pk %}" class="text-marque-700 underline-offset-2 hover:underline">Facture {{ facture.numero }}</a>
+    </h2>
+    <dl class="mt-4 grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
+      <div><dt class="text-slate-600">Client</dt><dd class="mt-0.5 font-medium text-slate-900">{{ facture.client.raison_sociale }}</dd></div>
+      <div><dt class="text-slate-600">Mission</dt><dd class="mt-0.5 font-medium text-slate-900">{{ facture.mission.numero }}</dd></div>
+      <div><dt class="text-slate-600">Total TTC</dt><dd class="mt-0.5 font-medium text-slate-900">{{ facture.montant_ttc|floatformat:0|intcomma }} FCFA</dd></div>
+      <div><dt class="text-slate-600">Déjà réglé</dt><dd class="mt-0.5 font-medium text-slate-900">{{ regle|floatformat:0|intcomma }} FCFA</dd></div>
+      <div><dt class="text-slate-600">Reste à recouvrer</dt><dd class="mt-0.5 text-lg font-bold text-slate-900">{{ facture.reste|floatformat:0|intcomma }} FCFA</dd></div>
+      <div><dt class="text-slate-600">Échéance</dt><dd class="mt-0.5 font-medium {% if echue %}text-red-800{% else %}text-slate-900{% endif %}">{{ facture.date_echeance|date:"d/m/Y"|default:"—" }}{% if echue %} (échue){% endif %}</dd></div>
+    </dl>
+  </section>
+
+  <form method="post" novalidate class="mt-6 space-y-5 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+      <div role="alert" class="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">
+        {% for erreur in form.non_field_errors %}<p>{{ erreur }}</p>{% endfor %}
+      </div>
+    {% endif %}
+    <div class="grid gap-5 sm:grid-cols-2">
+      {% include "components/_champ.html" with champ=form.montant %}
+      {% include "components/_champ.html" with champ=form.date_reglement %}
+      {% include "components/_champ.html" with champ=form.mode %}
+      {% include "components/_champ.html" with champ=form.reference %}
+    </div>
+    <p class="text-xs text-slate-600">Un versement partiel (acompte) est possible : la facture reste à recouvrer pour le solde.</p>
+    <div class="flex items-center justify-end gap-3 border-t border-slate-100 pt-5">
+      <a href="{% url 'finance:tresorerie' %}" class="rounded-lg px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Annuler</a>
+      <button type="submit" class="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:ring-offset-2">
+        <i class="fa-solid fa-circle-check mr-1" aria-hidden="true"></i> Confirmer le versement
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}

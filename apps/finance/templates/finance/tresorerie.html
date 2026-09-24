@@ -29,6 +29,44 @@
   </dl>
   <p class="mt-3 text-sm text-slate-700">Ce mois-ci : <strong class="text-emerald-800">+{{ mois.entrees|floatformat:0|intcomma }}</strong> d'entrées, <strong class="text-red-800">−{{ mois.sorties|floatformat:0|intcomma }}</strong> de sorties, variation <strong>{{ mois.variation|floatformat:0|intcomma }} FCFA</strong>.</p>
 
+  {# Factures émises dont le versement n'est pas encore confirmé : pas de l'argent en caisse, une attente #}
+  <section class="mt-6 rounded-xl border {% if versements.echu %}border-red-300{% else %}border-amber-300{% endif %} bg-white p-5 shadow-sm" aria-labelledby="titre-versements">
+    <div class="flex flex-wrap items-baseline justify-between gap-2">
+      <h2 id="titre-versements" class="text-base font-semibold text-slate-900"><i class="fa-solid fa-hourglass-half mr-2 text-amber-700" aria-hidden="true"></i>Versements à confirmer</h2>
+      {% if versements.nombre %}
+        <p class="text-sm text-slate-700"><strong>{{ versements.total|floatformat:0|intcomma }} FCFA</strong> attendus{% if versements.echu %}, dont <strong class="text-red-800">{{ versements.echu|floatformat:0|intcomma }} échus</strong>{% endif %}</p>
+      {% endif %}
+    </div>
+    {% if versements.nombre %}
+      <p class="mt-1 text-xs text-slate-600">Factures émises, en attente de règlement. Quand l'argent est reçu, confirmez-le : il devient une entrée ci-dessous. Solde prévisionnel si tout est encaissé : <strong>{{ solde_previsionnel|floatformat:0|intcomma }} FCFA</strong>.</p>
+      <div class="mt-3 overflow-x-auto">
+        <table class="min-w-full divide-y divide-slate-200 text-sm">
+          <caption class="sr-only">Versements attendus</caption>
+          <thead class="text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+            <tr><th scope="col" class="py-2 pr-4">Facture</th><th scope="col" class="px-4 py-2">Client</th><th scope="col" class="px-4 py-2">Échéance</th><th scope="col" class="px-4 py-2 text-right">Reste à recouvrer</th>{% if peut_saisir %}<th scope="col" class="py-2 pl-4"><span class="sr-only">Action</span></th>{% endif %}</tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            {% for v in versements.lignes %}
+              <tr>
+                <td class="whitespace-nowrap py-2 pr-4 font-semibold"><a href="{% url 'billing:facture' v.facture.pk %}" class="text-marque-700 underline-offset-2 hover:underline">{{ v.facture.numero }}</a></td>
+                <td class="px-4 py-2 text-slate-800">{{ v.facture.client.raison_sociale }}<span class="block text-xs text-slate-600">{{ v.facture.mission.numero }}</span></td>
+                <td class="whitespace-nowrap px-4 py-2 {% if v.echue %}font-semibold text-red-800{% else %}text-slate-700{% endif %}">{{ v.facture.date_echeance|date:"d/m/Y"|default:"—" }}{% if v.echue %} · échue depuis {{ v.jours }} j{% elif v.jours is not None %} · dans {{ v.jours }} j{% endif %}</td>
+                <td class="whitespace-nowrap px-4 py-2 text-right font-medium text-slate-900">{{ v.reste|floatformat:0|intcomma }} FCFA</td>
+                {% if peut_saisir %}
+                  <td class="whitespace-nowrap py-2 pl-4 text-right">
+                    <a href="{% url 'finance:versement_confirmer' v.facture.pk %}" class="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:ring-offset-2"><i class="fa-solid fa-circle-check" aria-hidden="true"></i> Confirmer le versement</a>
+                  </td>
+                {% endif %}
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="mt-2 text-sm text-slate-600">Aucun versement en attente : toutes les factures émises sont soldées.</p>
+    {% endif %}
+  </section>
+
   {% if peut_saisir %}
     <form method="post" action="{% url 'finance:mouvement_creer' %}" x-show="saisie" x-cloak class="mt-5 space-y-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
       {% csrf_token %}
