@@ -45,6 +45,12 @@ class Notification(BaseModel):
     titre = models.CharField(_("titre"), max_length=200)
     message = models.TextField(_("message"), blank=True)
     url = models.CharField(_("lien"), max_length=300, blank=True)
+    action = models.CharField(
+        _("bouton d'action"),
+        max_length=60,
+        blank=True,
+        help_text=_("Intitulé du bouton qui mène au lien (ex. « Confirmer le versement ») ; « Ouvrir » si vide."),
+    )
     lue_le = models.DateTimeField(_("lue le"), null=True, blank=True)
     cle_unicite = models.CharField(_("clé d'unicité"), max_length=150, blank=True)
     email_envoye = models.BooleanField(_("e-mail envoyé"), default=False)

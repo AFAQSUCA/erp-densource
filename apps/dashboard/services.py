@@ -22,6 +22,7 @@ from django.utils import timezone
 from apps.accounts.models import Role
 from apps.billing import permissions as billing_permissions
 from apps.billing import services as billing_services
+from apps.core import graphiques
 from apps.core.formats import nombre
 from apps.core.services import etat_echeance
 from apps.customers import permissions as customers_permissions
@@ -47,6 +48,8 @@ from apps.missions.models import StatutMission
 
 LIGNES_PAR_ALERTE = 5
 JOURS_ALERTES_CARBURANT = 30
+MOIS_HISTORIQUE = 6
+MOIS_ABREGES = ("janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc.")
 
 ROLES_EXPLOITATION = fleet_permissions.CONSULTATION
 ROLES_RH = hr_permissions.PERSONNEL_CONSULTATION
@@ -84,6 +87,12 @@ def exploitation() -> dict:
             + missions[StatutMission.EN_COURS_COLIS_RECUPERE],
             "missions_a_affecter": missions[StatutMission.PLANIFIEE],
             "missions_a_cloturer": missions[StatutMission.LIVREE],
+            "graphique_camions": graphiques.barres_horizontales(
+                {"libelle": libelle, "valeur": camions[code]} for code, libelle in StatutVehicule.choices
+            ),
+            "graphique_missions": graphiques.barres_horizontales(
+                {"libelle": libelle, "valeur": missions[code]} for code, libelle in StatutMission.choices
+            ),
         }
 
     return _en_cache("exploitation", calculer)
@@ -99,6 +108,9 @@ def ressources_humaines(*, jour: date | None = None) -> dict:
     return {
         "effectif": sum(d["nombre"] for d in par_departement),
         "par_departement": par_departement,
+        "graphique_departements": graphiques.barres_horizontales(
+            {"libelle": d["libelle"], "valeur": d["nombre"]} for d in par_departement
+        ),
         "absents": list(hr_services.absents_du_jour(jour)[:LIGNES_PAR_ALERTE * 2]),
         "nombre_absents": hr_services.absents_du_jour(jour).count(),
         "prochains": list(hr_services.prochains_conges(jour)[:LIGNES_PAR_ALERTE]),
@@ -117,10 +129,20 @@ def clientele() -> dict:
     """
 
     def calculer():
+        meilleurs = missions_services.meilleurs_clients()
         return {
             "clients_actifs": missions_services.clients_actifs(),
             "reclamations": customers_services.reclamations_recentes(),
-            "meilleurs": missions_services.meilleurs_clients(),
+            "meilleurs": meilleurs,
+            "graphique_clients": graphiques.barres_horizontales(
+                {
+                    "libelle": c["client"],
+                    "valeur": c["montant"],
+                    "url": reverse("customers:detail", args=[c["client_id"]]),
+                    "detail": f"{c['missions']} mission{'s' if c['missions'] > 1 else ''}",
+                }
+                for c in meilleurs
+            ),
         }
 
     return _en_cache("clientele", calculer)
@@ -139,7 +161,34 @@ def finances(*, jour: date | None = None) -> dict:
     debut = jour.replace(day=1)
 
     def calculer():
-        return finance_services.indicateurs(debut, jour, aujourd_hui=jour)
+        resultat = finance_services.indicateurs(debut, jour, aujourd_hui=jour)
+        historique = finance_services.historique_mensuel(
+            jour,
+            mois=MOIS_HISTORIQUE,
+            courant={
+                "chiffre_affaires": resultat["chiffre_affaires"],
+                "encaisse": resultat["encaisse"],
+                "charges": resultat["charges"]["total"],
+            },
+        )
+        resultat["graphique_mensuel"] = graphiques.colonnes_groupees(
+            [f"{MOIS_ABREGES[ligne['debut'].month - 1]} {ligne['debut'].year % 100:02d}" for ligne in historique],
+            [
+                {"nom": "CA facturé (HT)", "valeurs": [ligne["chiffre_affaires"] for ligne in historique]},
+                {"nom": "Encaissé", "valeurs": [ligne["encaisse"] for ligne in historique]},
+                {"nom": "Charges", "valeurs": [ligne["charges"] for ligne in historique]},
+            ],
+            unite="FCFA",
+        )
+        resultat["graphique_charges"] = graphiques.barres_horizontales(
+            [
+                {"libelle": "Dépenses saisies", "valeur": resultat["charges"]["depenses"]},
+                {"libelle": "Carburant", "valeur": resultat["charges"]["carburant"]},
+                {"libelle": "Maintenance", "valeur": resultat["charges"]["maintenance"]},
+            ],
+            unite="FCFA",
+        )
+        return resultat
 
     return _en_cache(f"finances:{jour.isoformat()}", calculer)
 

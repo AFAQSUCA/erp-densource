@@ -48,12 +48,32 @@ def test_finances_et_l_auteur_sont_prevenus_de_la_validation():
 
     services.valider(facture, chef, aujourd_hui=date(2026, 9, 1))
 
-    for compte in (preparateur, autre_finances):
-        notification = _de(compte)[-1]
-        assert notification.titre == f"Facture {facture.numero} validée"
-        assert notification.niveau == NiveauNotification.INFO
-        assert "échéance le 01/10/2026" in notification.message
+    # La FINANCES reçoit le bouton « Confirmer le versement » (écran de confirmation, pas la facture) ...
+    notification = _de(autre_finances)[-1]
+    assert notification.titre == f"Facture {facture.numero} validée : versement à confirmer"
+    assert notification.niveau == NiveauNotification.INFO
+    assert "échéance le 01/10/2026" in notification.message
+    assert "ajouté en entrée de trésorerie" in notification.message
+    assert notification.action == "Confirmer le versement"
+    assert notification.url == reverse("finance:versement_confirmer", args=[facture.pk])
+    # ... l'auteur qui n'est pas de la FINANCES est seulement prévenu, avec le lien de la facture.
+    notification = _de(preparateur)[-1]
+    assert notification.titre == f"Facture {facture.numero} validée"
+    assert "échéance le 01/10/2026" in notification.message
+    assert notification.action == "" and notification.url == reverse("billing:facture", args=[facture.pk])
     assert all("validée" not in n.titre for n in _de(chef))
+
+
+def test_un_auteur_de_la_finances_ne_recoit_qu_une_notification_de_validation():
+    chef = UserFactory(role=Role.DIRECTION)
+    preparateur = UserFactory(role=Role.FINANCES)
+    facture = brouillon(acteur=preparateur)
+    services.soumettre(facture, preparateur)
+
+    services.valider(facture, chef, aujourd_hui=date(2026, 9, 1))
+
+    validations = [n for n in _de(preparateur) if "validée" in n.titre]
+    assert len(validations) == 1 and validations[0].action == "Confirmer le versement"
 
 
 def test_l_auteur_est_prevenu_du_refus_avec_le_motif():
@@ -94,7 +114,13 @@ def test_les_factures_echues_previennent_finances_et_direction_une_seule_fois():
         assert alerte.titre == f"Facture {facture.numero} échue : {facture.client.raison_sociale}"
         assert "1 000 000 FCFA" in alerte.message.replace("\xa0", " ").replace(" ", " ")
         assert "échue depuis 10 jours" in alerte.message
-        assert alerte.url == reverse("billing:facture", args=[facture.pk])
+    # La FINANCES peut confirmer le versement d'un clic ; la DIRECTION, qui ne saisit pas, consulte la facture.
+    alerte_finance = [n for n in _de(finance) if "échue" in n.titre][0]
+    assert alerte_finance.action == "Confirmer le versement"
+    assert alerte_finance.url == reverse("finance:versement_confirmer", args=[facture.pk])
+    alerte_direction = [n for n in _de(chef) if "échue" in n.titre][0]
+    assert alerte_direction.action == ""
+    assert alerte_direction.url == reverse("billing:facture", args=[facture.pk])
     assert _de(rh) == []
 
 

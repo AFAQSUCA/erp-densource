@@ -53,12 +53,13 @@ def notifier(
     url: str = "",
     niveau: str = NiveauNotification.INFO,
     cle: str = "",
+    action: str = "",
 ) -> list[Notification]:
     """Crée une notification par destinataire actif et retourne celles qui ont été créées.
 
     ``cle`` : si ce destinataire a déjà reçu une notification avec cette clé, rien n'est
     créé (le rappel n'est envoyé qu'une fois). Les doublons dans ``destinataires`` et les
-    valeurs vides sont ignorés.
+    valeurs vides sont ignorés. ``action`` : intitulé du bouton qui mène à ``url`` (« Ouvrir » sinon).
     """
     creees: list[Notification] = []
     vus: set[int] = set()
@@ -77,6 +78,7 @@ def notifier(
             titre=titre[:200],
             message=message,
             url=url,
+            action=action[:60],
             cle_unicite=cle,
         )
         creees.append(notification)

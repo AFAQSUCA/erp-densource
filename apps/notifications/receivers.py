@@ -209,6 +209,9 @@ def prevenir_du_depart(sender, mission, **kwargs):
 # --- facturation ---
 
 
+ACTION_CONFIRMER_VERSEMENT = "Confirmer le versement"
+
+
 def _lien_facture(facture) -> str:
     return reverse("billing:facture", args=[facture.pk])
 
@@ -230,19 +233,35 @@ def prevenir_la_direction_d_une_facture(sender, facture, **kwargs):
 
 @receiver(billing_signals.facture_validee)
 def prevenir_de_la_validation_d_une_facture(sender, facture, **kwargs):
-    destinataires = list(utilisateurs_du_role(Role.FINANCES))
-    destinataires.append(facture.cree_par)
+    """Facture émise : la FINANCES reçoit un bouton pour **confirmer le versement** quand il arrive (il
+    devient alors une entrée de trésorerie) ; son auteur, s'il n'est pas de la FINANCES, est simplement
+    prévenu."""
+    finances = list(utilisateurs_du_role(Role.FINANCES))
+    resume = (
+        f"{facture.client.raison_sociale} : {nombre(facture.montant_ttc)} FCFA TTC, "
+        f"échéance le {_jour(facture.date_echeance)}."
+    )
     notifier(
-        destinataires,
+        finances,
         categorie=CategorieNotification.FACTURE,
         niveau=NiveauNotification.INFO,
-        titre=f"Facture {facture.numero} validée",
+        titre=f"Facture {facture.numero} validée : versement à confirmer",
         message=(
-            f"{facture.client.raison_sociale} : {nombre(facture.montant_ttc)} FCFA TTC, "
-            f"échéance le {_jour(facture.date_echeance)}."
+            f"{resume} Dès que le versement est reçu, confirmez-le : il sera ajouté en entrée "
+            "de trésorerie."
         ),
-        url=_lien_facture(facture),
+        url=reverse("finance:versement_confirmer", args=[facture.pk]),
+        action=ACTION_CONFIRMER_VERSEMENT,
     )
+    if facture.cree_par is not None and facture.cree_par.pk not in {u.pk for u in finances}:
+        notifier(
+            [facture.cree_par],
+            categorie=CategorieNotification.FACTURE,
+            niveau=NiveauNotification.INFO,
+            titre=f"Facture {facture.numero} validée",
+            message=resume,
+            url=_lien_facture(facture),
+        )
 
 
 @receiver(billing_signals.facture_refusee)

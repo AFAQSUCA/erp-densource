@@ -19,8 +19,19 @@ Blocs (selon les droits déjà définis dans chaque app) :
 - **Clientèle** (ADMIN, DIRECTION, CHARGE_CLIENTELE) : clients actifs (mission sur 90 jours),
   réclamations (30 jours), top 3 des clients (missions livrées ou clôturées sur 12 mois).
 
-Performance : 34 requêtes SQL au plus pour l'ADMIN, quel que soit le volume de données (testé). Les blocs
-exploitation et clientèle sont mis en cache `DASHBOARD_CACHE_SECONDS` (60 s par défaut, 0 en
+Graphiques (`apps/core/graphiques.py`, balises `graphique_barres` / `graphique_colonnes`, styles `viz-*` de
+`frontend/input.css`) : camions et missions par statut, effectif par département, top des clients, charges du
+mois, et facturé / encaissé / charges sur 6 mois. HTML et CSS seulement (aucun script, donc compatible avec la
+CSP stricte). Règles suivies : palette bleu, orange, aqua validée avec `validate_palette.js` ; barres
+horizontales pour comparer des catégories, colonnes groupées pour suivre 3 séries dans le temps ; valeur
+écrite au bout de chaque barre ; infobulle au survol et au focus clavier ; tableau équivalent sous le
+graphique des mois ; un seul axe ; pas de camembert. L'interface n'a pas de thème sombre, donc un seul jeu de
+couleurs. Ajouter un graphique : préparer les données avec `graphiques.barres_horizontales` ou
+`colonnes_groupees` dans le service, puis `{% graphique_barres ... %}` dans le gabarit.
+
+Performance : 80 requêtes SQL au plus pour l'ADMIN (dont ~30 pour l'historique de 6 mois, mis en cache),
+quel que soit le volume de données (testé). Les blocs
+exploitation, clientèle et finances sont mis en cache `DASHBOARD_CACHE_SECONDS` (60 s par défaut, 0 en
 test) via le cache Django, donc partagé entre processus dès que Redis est configuré ; le
 centre d'alertes est toujours recalculé.
 

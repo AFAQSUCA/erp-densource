@@ -43,10 +43,17 @@
           </div>
           <form method="post" action="{% url 'notifications:lire' n.pk %}" class="shrink-0">
             {% csrf_token %}
-            <button type="submit"
-                    class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
-              {% if n.url %}Ouvrir{% elif n.est_lue %}Lue{% else %}Marquer comme lue{% endif %}
-            </button>
+            {% if n.action and n.url %}
+              <button type="submit"
+                      class="rounded-lg bg-emerald-700 px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:ring-offset-2">
+                {{ n.action }}
+              </button>
+            {% else %}
+              <button type="submit"
+                      class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+                {% if n.url %}Ouvrir{% elif n.est_lue %}Lue{% else %}Marquer comme lue{% endif %}
+              </button>
+            {% endif %}
           </form>
         </li>
       {% endfor %}

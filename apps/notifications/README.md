@@ -4,8 +4,9 @@ Rôle : prévenir les bons utilisateurs au bon moment — cahier-des-charges.md:
 231-232, 253 ; architecture.md:269-338. Couche haute : elle s'abonne aux événements des apps
 métier, qui ne la connaissent pas.
 
-Entité : `Notification` (destinataire, catégorie, niveau, titre, message, lien, lue le,
-`cle_unicite`). `services.notifier(destinataires, ...)` crée une notification par compte actif ;
+Entité : `Notification` (destinataire, catégorie, niveau, titre, message, lien, `action`, lue le,
+`cle_unicite`). `action` est le libellé d'un bouton facultatif (« Confirmer le versement ») : la liste
+affiche un bouton vert qui marque la notification lue puis mène au lien. `services.notifier(destinataires, ...)` crée une notification par compte actif ;
 avec `cle`, un destinataire ne reçoit qu'une fois le même message (rappels quotidiens).
 
 Qui est prévenu de quoi (`receivers.py`) :
@@ -13,7 +14,8 @@ Qui est prévenu de quoi (`receivers.py`) :
   prévue sur la période ; validé en N1 → RH ; approuvé, refusé ou annulé → l'employé ;
 - stock au seuil → PARCAUTO ; surconsommation, anomalie ou saisie suspecte → PARCAUTO et DIRECTION ;
 - mission partie → chargé clientèle attitré du client (à défaut, tous les chargés clientèle) ;
-- facture soumise → DIRECTION ; validée → FINANCES et son auteur ; renvoyée → son auteur ;
+- facture soumise → DIRECTION ; validée → FINANCES (avec le bouton « Confirmer le versement », voir
+  `finance`) et son auteur (simple information) ; renvoyée → son auteur ;
   facture échue (tâche du jour) → FINANCES et DIRECTION, une fois par facture.
 
 Tâches du jour (`taches.py`, commande `taches_quotidiennes`) : documents des camions et

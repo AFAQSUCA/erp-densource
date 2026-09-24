@@ -11,6 +11,7 @@ de l'utilisateur) ; les écritures comptables non plus.
 
 from __future__ import annotations
 
+import calendar
 from datetime import date
 from decimal import Decimal
 
@@ -21,7 +22,14 @@ from django.utils import timezone
 from apps.billing import permissions as billing_permissions
 from apps.billing import services as billing_services
 from apps.billing.exceptions import ActionFactureNonAutorisee, MontantInvalide
-from apps.billing.models import COMPTE_DU_MODE, CompteTresorerie, Depense, ModePaiement, Reglement
+from apps.billing.models import (
+    COMPTE_DU_MODE,
+    STATUTS_A_RECOUVRER,
+    CompteTresorerie,
+    Depense,
+    ModePaiement,
+    Reglement,
+)
 from apps.fuel import services as fuel_services
 from apps.inventory import services as inventory_services
 
@@ -185,6 +193,48 @@ def soldes_par_compte() -> dict:
     return soldes
 
 
+def versements_attendus(aujourd_hui: date | None = None) -> dict:
+    """Factures émises et pas soldées : les versements que la Finance doit confirmer à leur arrivée.
+
+    Ce n'est **pas** de l'argent en caisse : le solde par compte reste celui des règlements réellement
+    enregistrés. Tant que la Finance n'a pas confirmé le versement (``billing.enregistrer_reglement``,
+    depuis l'écran de confirmation), la facture attend ici ; une fois confirmé, il devient une entrée du
+    journal. Les plus en retard d'abord, puis par échéance.
+
+    ``lignes`` : ``facture``, ``reste`` (à recouvrer), ``echue``, ``jours`` (de retard si échue, avant
+    l'échéance sinon ; ``None`` sans échéance). ``total``, ``echu`` et ``a_venir`` en FCFA.
+    """
+    aujourd_hui = aujourd_hui or timezone.localdate()
+    lignes = []
+    total = echu = ZERO
+    factures = billing_services.factures_queryset().filter(statut__in=STATUTS_A_RECOUVRER)
+    for facture in sorted(factures, key=lambda f: (f.date_echeance is None, f.date_echeance or aujourd_hui, f.pk)):
+        est_echue = billing_services.est_echue(facture, aujourd_hui)
+        lignes.append({
+            "facture": facture,
+            "reste": facture.reste,
+            "echue": est_echue,
+            "jours": abs((aujourd_hui - facture.date_echeance).days) if facture.date_echeance else None,
+        })
+        total += facture.reste
+        if est_echue:
+            echu += facture.reste
+    return {"lignes": lignes, "nombre": len(lignes), "total": total, "echu": echu, "a_venir": total - echu}
+
+
+def confirmer_versement(facture, acteur, *, montant: Decimal, mode: str, date_reglement: date, reference: str = ""):
+    """Confirme qu'un versement attendu a bien été reçu : l'enregistre comme règlement de la facture,
+    donc comme **entrée** de trésorerie sur le compte du mode de paiement.
+
+    Retourne ``(règlement, compte)``. Mêmes contrôles et mêmes droits que tout règlement
+    (``billing.enregistrer_reglement`` : facture émise, montant ≤ reste à recouvrer, date valable).
+    """
+    reglement = billing_services.enregistrer_reglement(
+        facture, acteur, montant=montant, mode=mode, date_reglement=date_reglement, reference=reference
+    )
+    return reglement, CompteTresorerie(_compte(mode))
+
+
 def synthese_periode(debut: date, fin: date) -> dict:
     """Entrées, sorties et variation de la trésorerie sur la période (bornes incluses)."""
     entrees = billing_services.encaissements(debut, fin) + _somme(
@@ -211,6 +261,33 @@ def charges(debut: date, fin: date) -> dict:
         "maintenance": maintenance,
         "total": depenses + carburant + maintenance,
     }
+
+
+def historique_mensuel(jour: date | None = None, *, mois: int = 6, courant: dict | None = None) -> list[dict]:
+    """CA HT facturé, encaissé et charges des ``mois`` derniers mois, du plus ancien au mois de ``jour``.
+
+    Le mois de ``jour`` s'arrête à ``jour`` (comme les indicateurs du mois) ; ``courant`` (les valeurs
+    ``chiffre_affaires``, ``encaisse`` et ``charges`` déjà calculées pour ce mois) évite de les relire.
+    Chaque ligne : ``debut``, ``fin``, ``chiffre_affaires``, ``encaisse``, ``charges``.
+    """
+    jour = jour or timezone.localdate()
+    lignes = []
+    annee, numero = jour.year, jour.month
+    for decalage in range(mois - 1, -1, -1):
+        indice = annee * 12 + (numero - 1) - decalage
+        an, mo = divmod(indice, 12)
+        debut = date(an, mo + 1, 1)
+        fin = jour if decalage == 0 else debut.replace(day=calendar.monthrange(an, mo + 1)[1])
+        if decalage == 0 and courant is not None:
+            valeurs = courant
+        else:
+            valeurs = {
+                "chiffre_affaires": billing_services.chiffre_affaires(debut, fin),
+                "encaisse": billing_services.encaissements(debut, fin),
+                "charges": charges(debut, fin)["total"],
+            }
+        lignes.append({"debut": debut, "fin": fin, **valeurs})
+    return lignes
 
 
 def indicateurs(debut: date, fin: date, *, aujourd_hui: date | None = None) -> dict:

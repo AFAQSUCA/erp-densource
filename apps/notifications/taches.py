@@ -133,24 +133,31 @@ def alerter_factures_echues(*, aujourd_hui: date | None = None) -> int:
     Une seule alerte par facture et par date d'échéance (le montant restant peut évoluer).
     """
     aujourd_hui = aujourd_hui or timezone.localdate()
-    destinataires = list(utilisateurs_du_role(Role.FINANCES, Role.DIRECTION))
+    finances = list(utilisateurs_du_role(Role.FINANCES))
+    direction = list(utilisateurs_du_role(Role.DIRECTION))
     crees = 0
     for facture in billing_services.factures_echues(aujourd_hui):
         retard = (aujourd_hui - facture.date_echeance).days
+        commun = dict(
+            categorie=CategorieNotification.FACTURE,
+            niveau=NiveauNotification.URGENT,
+            titre=f"Facture {facture.numero} échue : {facture.client.raison_sociale}",
+            message=(
+                f"Reste à recouvrer : {nombre(facture.reste)} FCFA, "
+                f"échue depuis {retard} jour{'s' if retard > 1 else ''}."
+            ),
+            cle=f"facture-echue:{facture.pk}:{facture.date_echeance.isoformat()}",
+        )
+        # La FINANCES peut confirmer le versement d'un clic ; la DIRECTION consulte la facture.
         crees += len(
             notifier(
-                destinataires,
-                categorie=CategorieNotification.FACTURE,
-                niveau=NiveauNotification.URGENT,
-                titre=f"Facture {facture.numero} échue : {facture.client.raison_sociale}",
-                message=(
-                    f"Reste à recouvrer : {nombre(facture.reste)} FCFA, "
-                    f"échue depuis {retard} jour{'s' if retard > 1 else ''}."
-                ),
-                url=reverse("billing:facture", args=[facture.pk]),
-                cle=f"facture-echue:{facture.pk}:{facture.date_echeance.isoformat()}",
+                finances,
+                url=reverse("finance:versement_confirmer", args=[facture.pk]),
+                action="Confirmer le versement",
+                **commun,
             )
         )
+        crees += len(notifier(direction, url=reverse("billing:facture", args=[facture.pk]), **commun))
     return crees
 
 
