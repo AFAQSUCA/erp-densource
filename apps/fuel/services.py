@@ -336,6 +336,18 @@ def consommation_par_chauffeur() -> list[dict]:
     )
 
 
+def cout_carburant_par_mois(debut: date, fin: date) -> dict[tuple[int, int], Decimal]:
+    """Valeur des pleins par mois (``(année, mois)``) : une requête, somme faite en Python (comme ``cout_carburant``)."""
+    totaux: dict[tuple[int, int], Decimal] = {}
+    lignes = Plein.objects.filter(date_plein__range=(debut, fin)).values_list(
+        "date_plein", "quantite_litres", "prix_unitaire"
+    )
+    for jour, litres, prix in lignes:
+        cle = (jour.year, jour.month)
+        totaux[cle] = totaux.get(cle, Decimal("0")) + litres * prix
+    return totaux
+
+
 def cout_carburant(debut: date, fin: date) -> Decimal:
     """Valeur des pleins de la période (litres x prix unitaire), en FCFA.
 

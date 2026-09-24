@@ -11,6 +11,17 @@
     · {% now "l j F Y" %}
   </p>
 
+  {% if graphiques_dans_le_temps %}
+    <nav class="mt-4 flex flex-wrap items-center gap-2 text-sm" aria-label="Période des graphiques">
+      <span class="text-slate-600">Graphiques dans le temps :</span>
+      {% for p in periodes %}
+        <a href="?periode={{ p }}"
+           class="rounded-lg border px-3 py-1.5 font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 {% if p == periode %}border-slate-900 bg-slate-900 text-white{% else %}border-slate-300 bg-white text-slate-800 hover:bg-slate-50{% endif %}"
+           {% if p == periode %}aria-current="true"{% endif %}>{{ p }} mois</a>
+      {% endfor %}
+    </nav>
+  {% endif %}
+
   {% if espace_mobile %}
     <div class="mt-8 rounded-xl border border-dashed border-slate-300 bg-white p-6 text-sm text-slate-700">
       <p class="font-medium text-slate-900">Aucun écran n'est encore disponible pour votre rôle.</p>
@@ -25,7 +36,7 @@
         {% if nombre_alertes %}<span class="text-sm text-slate-600">{{ nombre_alertes }} alerte{{ nombre_alertes|pluralize }}</span>{% endif %}
       </div>
       {% if alertes %}
-        <div class="mt-3 grid gap-4 lg:grid-cols-2">
+        <div class="mt-3 grid grid-cols-1 gap-4 lg:grid-cols-2">
           {% for groupe in alertes %}
             <article class="rounded-xl border bg-white p-5 shadow-sm {% if groupe.niveau == 'URGENT' %}border-red-300{% else %}border-amber-300{% endif %}" aria-labelledby="alerte-{{ groupe.code }}">
               <div class="flex items-start justify-between gap-3">
@@ -61,7 +72,7 @@
   {% if exploitation %}
     <section class="mt-8" aria-labelledby="titre-exploitation">
       <h2 id="titre-exploitation" class="text-lg font-semibold text-slate-900">Exploitation</h2>
-      <dl class="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <dl class="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Camions disponibles</dt><dd class="mt-1 text-2xl font-bold text-emerald-800">{{ exploitation.camions.disponibles }} <span class="text-sm font-medium text-slate-600">/ {{ exploitation.camions.total }}</span></dd></div>
         <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">En mission</dt><dd class="mt-1 text-2xl font-bold text-slate-900">{{ exploitation.camions.en_mission }}</dd></div>
         <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Au garage</dt><dd class="mt-1 text-2xl font-bold text-slate-900">{{ exploitation.camions.au_garage }}</dd>{% if exploitation.camions.immobilises or exploitation.camions.hors_service %}<dd class="mt-1 text-xs text-slate-600">+ {{ exploitation.camions.immobilises }} immobilisé{{ exploitation.camions.immobilises|pluralize }}, {{ exploitation.camions.hors_service }} hors service</dd>{% endif %}</div>
@@ -82,7 +93,14 @@
         {% endif %}
       </div>
       {% if user.role_effectif != "PARCAUTO" %}
-        <dl class="mt-4 grid gap-4 sm:grid-cols-3">
+        <div class="mt-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h3 class="text-base font-semibold text-slate-900">Missions créées et livrées</h3>
+          <p class="mt-1 mb-3 text-xs text-slate-600">Par mois, sur les {{ periode }} derniers mois (« livrées » : livrées ou clôturées).</p>
+          {% graphique_colonnes exploitation.graphique_missions_mois "missions-mois" "Aucune mission sur la période." %}
+        </div>
+      {% endif %}
+      {% if user.role_effectif != "PARCAUTO" %}
+        <dl class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Missions en cours</dt><dd class="mt-1 text-2xl font-bold text-slate-900">{{ exploitation.missions_en_cours }}</dd></div>
           <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Planifiées, à affecter</dt><dd class="mt-1 text-2xl font-bold text-slate-900">{{ exploitation.missions_a_affecter }}</dd></div>
           <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Livrées, à clôturer</dt><dd class="mt-1 text-2xl font-bold text-slate-900">{{ exploitation.missions_a_cloturer }}</dd></div>
@@ -94,13 +112,13 @@
   {% if ressources_humaines %}
     <section class="mt-8" aria-labelledby="titre-rh">
       <h2 id="titre-rh" class="text-lg font-semibold text-slate-900">Ressources humaines</h2>
-      <dl class="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <dl class="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Effectif</dt><dd class="mt-1 text-2xl font-bold text-slate-900">{{ ressources_humaines.effectif }}</dd></div>
         <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Absents aujourd'hui</dt><dd class="mt-1 text-2xl font-bold text-slate-900">{{ ressources_humaines.nombre_absents }}</dd></div>
         <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Demandes à valider (N1)</dt><dd class="mt-1 text-2xl font-bold text-slate-900">{{ ressources_humaines.en_attente.n1 }}</dd></div>
         <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Demandes à valider (RH, N2)</dt><dd class="mt-1 text-2xl font-bold text-slate-900">{{ ressources_humaines.en_attente.n2 }}</dd></div>
       </dl>
-      <div class="mt-4 grid gap-4 lg:grid-cols-3">
+      <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <h3 class="text-base font-semibold text-slate-900">Effectif par département</h3>
           <div class="mt-3">{% graphique_barres ressources_humaines.graphique_departements "Aucun employé enregistré." %}</div>
@@ -128,7 +146,7 @@
   {% if clientele %}
     <section class="mt-8" aria-labelledby="titre-clientele">
       <h2 id="titre-clientele" class="text-lg font-semibold text-slate-900">Clientèle</h2>
-      <dl class="mt-3 grid gap-4 sm:grid-cols-2">
+      <dl class="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Clients actifs</dt><dd class="mt-1 text-2xl font-bold text-slate-900">{{ clientele.clients_actifs }}</dd><dd class="mt-1 text-xs text-slate-600">au moins une mission sur les 90 derniers jours</dd></div>
         <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Réclamations</dt><dd class="mt-1 text-2xl font-bold {% if clientele.reclamations %}text-red-800{% else %}text-slate-900{% endif %}">{{ clientele.reclamations }}</dd><dd class="mt-1 text-xs text-slate-600">sur les 30 derniers jours</dd></div>
       </dl>
@@ -148,21 +166,21 @@
         <h2 id="titre-finances" class="text-lg font-semibold text-slate-900">Finances du mois</h2>
         <a href="{% url 'finance:tresorerie' %}" class="text-sm font-medium text-marque-700 underline-offset-2 hover:underline">Voir la trésorerie</a>
       </div>
-      <dl class="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <dl class="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">CA facturé (HT)</dt><dd class="mt-1 text-2xl font-bold text-slate-900">{{ finances.chiffre_affaires|floatformat:0|intcomma }} <span class="text-sm font-medium text-slate-600">FCFA</span></dd></div>
         <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Total encaissé</dt><dd class="mt-1 text-2xl font-bold text-slate-900">{{ finances.encaisse|floatformat:0|intcomma }} <span class="text-sm font-medium text-slate-600">FCFA</span></dd></div>
         <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Charges du mois</dt><dd class="mt-1 text-2xl font-bold text-slate-900">{{ finances.charges.total|floatformat:0|intcomma }} <span class="text-sm font-medium text-slate-600">FCFA</span></dd><dd class="mt-1 text-xs text-slate-600">dépenses {{ finances.charges.depenses|floatformat:0|intcomma }} · carburant {{ finances.charges.carburant|floatformat:0|intcomma }} · maintenance {{ finances.charges.maintenance|floatformat:0|intcomma }}</dd></div>
         <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Marge nette</dt><dd class="mt-1 text-2xl font-bold {% if finances.marge_nette < 0 %}text-red-800{% else %}text-emerald-800{% endif %}">{{ finances.marge_nette|floatformat:0|intcomma }} <span class="text-sm font-medium text-slate-600">FCFA</span></dd><dd class="mt-1 text-xs text-slate-600">CA HT − charges</dd></div>
       </dl>
-      <dl class="mt-4 grid gap-4 sm:grid-cols-3">
+      <dl class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Créances clients</dt><dd class="mt-1 text-2xl font-bold text-slate-900">{{ finances.creances.total|floatformat:0|intcomma }} <span class="text-sm font-medium text-slate-600">FCFA</span></dd><dd class="mt-1 text-xs text-slate-600">{{ finances.creances.nombre }} facture{{ finances.creances.nombre|pluralize }} à recouvrer</dd></div>
         <div class="rounded-xl border {% if finances.creances.nombre_echues %}border-red-300{% else %}border-slate-200{% endif %} bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Dont échues</dt><dd class="mt-1 text-2xl font-bold {% if finances.creances.nombre_echues %}text-red-800{% else %}text-slate-900{% endif %}">{{ finances.creances.echu|floatformat:0|intcomma }} <span class="text-sm font-medium text-slate-600">FCFA</span></dd><dd class="mt-1 text-xs text-slate-600">{{ finances.creances.nombre_echues }} facture{{ finances.creances.nombre_echues|pluralize }}</dd></div>
         <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Trésorerie</dt><dd class="mt-1 text-2xl font-bold {% if finances.tresorerie < 0 %}text-red-800{% else %}text-slate-900{% endif %}">{{ finances.tresorerie|floatformat:0|intcomma }} <span class="text-sm font-medium text-slate-600">FCFA</span></dd><dd class="mt-1 text-xs text-slate-600">solde en temps réel</dd></div>
       </dl>
-      <div class="mt-4 grid gap-4 lg:grid-cols-3">
+      <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm lg:col-span-2">
           <h3 class="text-base font-semibold text-slate-900">Facturé, encaissé et charges</h3>
-          <p class="mt-1 mb-3 text-xs text-slate-600">Les 6 derniers mois, en FCFA. Le mois en cours s'arrête à aujourd'hui.</p>
+          <p class="mt-1 mb-3 text-xs text-slate-600">Les {{ periode }} derniers mois, en FCFA. Le mois en cours s'arrête à aujourd'hui.</p>
           {% graphique_colonnes finances.graphique_mensuel "historique-mensuel" %}
         </div>
         <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -171,13 +189,18 @@
           {% graphique_barres finances.graphique_charges "Aucune charge ce mois-ci." %}
         </div>
       </div>
+      <div class="mt-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h3 class="text-base font-semibold text-slate-900">Créances par ancienneté</h3>
+        <p class="mt-1 mb-3 text-xs text-slate-600">Reste à recouvrer selon le retard de paiement. Cliquez sur une tranche en retard pour voir les factures.</p>
+        {% graphique_barres finances.graphique_creances "Aucune créance à recouvrer." %}
+      </div>
     </section>
   {% endif %}
 
   {% if menu|length > 1 %}
     <section class="mt-8" aria-labelledby="titre-acces">
       <h2 id="titre-acces" class="text-lg font-semibold text-slate-900">Accès rapides</h2>
-      <div class="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div class="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {% for entree in menu %}
           {% if entree.url != "/" %}
             <a href="{{ entree.url }}"

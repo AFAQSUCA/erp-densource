@@ -19,7 +19,7 @@
     <h2 id="titre-facture" class="text-base font-semibold text-slate-900">
       <a href="{% url 'billing:facture' facture.pk %}" class="text-marque-700 underline-offset-2 hover:underline">Facture {{ facture.numero }}</a>
     </h2>
-    <dl class="mt-4 grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
+    <dl class="mt-4 grid grid-cols-1 gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
       <div><dt class="text-slate-600">Client</dt><dd class="mt-0.5 font-medium text-slate-900">{{ facture.client.raison_sociale }}</dd></div>
       <div><dt class="text-slate-600">Mission</dt><dd class="mt-0.5 font-medium text-slate-900">{{ facture.mission.numero }}</dd></div>
       <div><dt class="text-slate-600">Total TTC</dt><dd class="mt-0.5 font-medium text-slate-900">{{ facture.montant_ttc|floatformat:0|intcomma }} FCFA</dd></div>
@@ -36,7 +36,7 @@
         {% for erreur in form.non_field_errors %}<p>{{ erreur }}</p>{% endfor %}
       </div>
     {% endif %}
-    <div class="grid gap-5 sm:grid-cols-2">
+    <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
       {% include "components/_champ.html" with champ=form.montant %}
       {% include "components/_champ.html" with champ=form.date_reglement %}
       {% include "components/_champ.html" with champ=form.mode %}

@@ -19,7 +19,7 @@
     {% endif %}
   </div>
 
-  <dl class="mt-5 grid gap-4 sm:grid-cols-3">
+  <dl class="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
     <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Créances à recouvrer</dt><dd class="mt-1 text-2xl font-bold text-slate-900">{{ creances.total|floatformat:0|intcomma }} <span class="text-sm font-medium text-slate-600">FCFA</span></dd><dd class="mt-1 text-xs text-slate-600">{{ creances.nombre }} facture{{ creances.nombre|pluralize }} en attente de paiement</dd></div>
     <div class="rounded-xl border {% if creances.nombre_echues %}border-red-300{% else %}border-slate-200{% endif %} bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Dont échues</dt><dd class="mt-1 text-2xl font-bold {% if creances.nombre_echues %}text-red-800{% else %}text-slate-900{% endif %}">{{ creances.echu|floatformat:0|intcomma }} <span class="text-sm font-medium text-slate-600">FCFA</span></dd><dd class="mt-1 text-xs text-slate-600">{{ creances.nombre_echues }} facture{{ creances.nombre_echues|pluralize }}</dd></div>
     <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Dépenses</dt><dd class="mt-1"><a href="{% url 'billing:depenses' %}" class="text-sm font-medium text-marque-700 underline-offset-2 hover:underline">Voir les dépenses par catégorie</a></dd></div>

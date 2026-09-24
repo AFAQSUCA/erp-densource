@@ -23,14 +23,15 @@ MAX_SERIES = 3
 GRADUATIONS = 4  # nombre d'intervalles de l'axe vertical
 
 _PAS = (1, 2, 2.5, 5, 10)
+_PAS_ENTIERS = (1, 2, 5, 10)  # des comptes (missions...) : pas de graduation à virgule
 
 
-def _pas_lisible(brut: float) -> float:
+def _pas_lisible(brut: float, pas=_PAS) -> float:
     """Plus petit pas « rond » (1, 2, 2,5, 5 × 10^n) supérieur ou égal à ``brut``."""
     if brut <= 0:
         return 1
     puissance = 10 ** (len(str(int(brut))) - 1) if brut >= 1 else 1
-    for facteur in _PAS:
+    for facteur in pas:
         if facteur * puissance >= brut:
             return facteur * puissance
     return 10 * puissance
@@ -72,12 +73,13 @@ def barres_horizontales(lignes, *, unite: str = "", maximum=None) -> dict:
     }
 
 
-def colonnes_groupees(categories, series, *, unite: str = "") -> dict:
+def colonnes_groupees(categories, series, *, unite: str = "", entier: bool = False) -> dict:
     """Colonnes groupées : une grappe par catégorie (un mois), une colonne par série.
 
     ``categories`` : libellés de l'axe horizontal. ``series`` : suite de dicts ``nom`` et ``valeurs``
     (une par catégorie, ≥ 0), 3 au plus (au-delà, regrouper ou faire deux graphiques : la palette
     validée ne garantit pas davantage). La couleur suit la série (rang 1, 2, 3), jamais sa valeur.
+    ``entier`` : des comptes, l'axe ne graduera qu'en nombres entiers.
 
     Retourne :
     - ``graduations`` : de haut en bas, ``etiquette`` et ``position`` (% depuis le bas) ;
@@ -90,7 +92,7 @@ def colonnes_groupees(categories, series, *, unite: str = "") -> dict:
         raise ValueError(f"{MAX_SERIES} séries au plus par graphique")
     valeurs = [[Decimal(v) for v in s["valeurs"]] for s in series]
     plus_grand = max((v for serie in valeurs for v in serie), default=Decimal(0))
-    pas = _pas_lisible(float(plus_grand) / GRADUATIONS) if plus_grand > 0 else 1
+    pas = _pas_lisible(float(plus_grand) / GRADUATIONS, _PAS_ENTIERS if entier else _PAS) if plus_grand > 0 else 1
     haut = Decimal(str(pas)) * GRADUATIONS
 
     graduations = [

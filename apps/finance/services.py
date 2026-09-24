@@ -11,7 +11,6 @@ de l'utilisateur) ; les écritures comptables non plus.
 
 from __future__ import annotations
 
-import calendar
 from datetime import date
 from decimal import Decimal
 
@@ -30,6 +29,7 @@ from apps.billing.models import (
     ModePaiement,
     Reglement,
 )
+from apps.core.services import debuts_de_mois, fin_de_mois
 from apps.fuel import services as fuel_services
 from apps.inventory import services as inventory_services
 
@@ -268,23 +268,30 @@ def historique_mensuel(jour: date | None = None, *, mois: int = 6, courant: dict
 
     Le mois de ``jour`` s'arrête à ``jour`` (comme les indicateurs du mois) ; ``courant`` (les valeurs
     ``chiffre_affaires``, ``encaisse`` et ``charges`` déjà calculées pour ce mois) évite de les relire.
-    Chaque ligne : ``debut``, ``fin``, ``chiffre_affaires``, ``encaisse``, ``charges``.
+    Chaque ligne : ``debut``, ``fin``, ``chiffre_affaires``, ``encaisse``, ``charges``. Le CA, les
+    encaissements, les dépenses et le carburant sont lus par mois en une requête chacun ; seul le coût
+    de la maintenance (OR clôturés, pièces au PUMP) se calcule mois par mois.
     """
     jour = jour or timezone.localdate()
+    debuts = debuts_de_mois(jour, mois)
+    premier = debuts[0]
+    ca = billing_services.chiffre_affaires_par_mois(premier, jour)
+    encaisse = billing_services.encaissements_par_mois(premier, jour)
+    depenses = billing_services.depenses_par_mois(premier, jour)
+    carburant = fuel_services.cout_carburant_par_mois(premier, jour)
     lignes = []
-    annee, numero = jour.year, jour.month
-    for decalage in range(mois - 1, -1, -1):
-        indice = annee * 12 + (numero - 1) - decalage
-        an, mo = divmod(indice, 12)
-        debut = date(an, mo + 1, 1)
-        fin = jour if decalage == 0 else debut.replace(day=calendar.monthrange(an, mo + 1)[1])
-        if decalage == 0 and courant is not None:
+    for debut in debuts:
+        est_courant = debut == debuts[-1]
+        fin = jour if est_courant else fin_de_mois(debut)
+        if est_courant and courant is not None:
             valeurs = courant
         else:
+            cle = (debut.year, debut.month)
+            maintenance = inventory_services.cout_des_or_clotures(debut, fin)
             valeurs = {
-                "chiffre_affaires": billing_services.chiffre_affaires(debut, fin),
-                "encaisse": billing_services.encaissements(debut, fin),
-                "charges": charges(debut, fin)["total"],
+                "chiffre_affaires": ca.get(cle, ZERO),
+                "encaisse": encaisse.get(cle, ZERO),
+                "charges": depenses.get(cle, ZERO) + carburant.get(cle, ZERO) + maintenance,
             }
         lignes.append({"debut": debut, "fin": fin, **valeurs})
     return lignes

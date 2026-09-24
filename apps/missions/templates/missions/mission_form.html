@@ -24,7 +24,7 @@
       </div>
     {% endif %}
 
-    <div class="grid gap-5 sm:grid-cols-2">
+    <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
       <div class="sm:col-span-2">{% include "components/_champ.html" with champ=form.client %}</div>
       {% include "components/_champ.html" with champ=form.lieu_chargement %}
       {% include "components/_champ.html" with champ=form.lieu_livraison %}

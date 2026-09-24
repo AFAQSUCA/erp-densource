@@ -38,7 +38,7 @@
   </dl>
 
   {% if section.contexte.form_sortie %}
-    <form method="post" action="{% url 'inventory:sortie_or' ordre.pk %}" class="mt-5 grid gap-4 border-t border-slate-100 pt-4 sm:grid-cols-3">
+    <form method="post" action="{% url 'inventory:sortie_or' ordre.pk %}" class="mt-5 grid grid-cols-1 gap-4 border-t border-slate-100 pt-4 sm:grid-cols-3">
       {% csrf_token %}
       <div class="sm:col-span-2">{% include "components/_champ.html" with champ=section.contexte.form_sortie.article %}</div>
       {% include "components/_champ.html" with champ=section.contexte.form_sortie.quantite %}

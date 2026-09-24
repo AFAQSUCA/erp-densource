@@ -22,7 +22,7 @@
         {% for erreur in form.non_field_errors %}<p>{{ erreur }}</p>{% endfor %}
       </div>
     {% endif %}
-    <div class="grid gap-5 sm:grid-cols-2">
+    <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
       {% if form.reference %}{% include "components/_champ.html" with champ=form.reference %}{% endif %}
       <div class="{% if not form.reference %}sm:col-span-2{% endif %}">{% include "components/_champ.html" with champ=form.designation %}</div>
       {% include "components/_champ.html" with champ=form.categorie %}

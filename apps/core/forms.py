@@ -7,6 +7,16 @@ CHAMP = (
 )
 
 
+def corriger_format_date(widget) -> None:
+    """Un ``<input type="date">`` n'accepte que ``AAAA-MM-JJ``.
+
+    En français, Django écrit la valeur initiale en ``JJ/MM/AAAA`` : le navigateur la refuse et le champ
+    s'affiche vide (date du jour non préremplie, date existante perdue à la modification).
+    """
+    if isinstance(widget, forms.DateInput) and widget.input_type == "date":
+        widget.format = "%Y-%m-%d"
+
+
 class StyleTailwindMixin:
     """Applique le style Tailwind commun à tous les champs d'un formulaire."""
 
@@ -14,3 +24,4 @@ class StyleTailwindMixin:
         super().__init__(*args, **kwargs)
         for champ in self.fields.values():
             champ.widget.attrs.setdefault("class", CHAMP)
+            corriger_format_date(champ.widget)

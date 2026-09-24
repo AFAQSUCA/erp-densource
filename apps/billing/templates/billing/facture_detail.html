@@ -52,7 +52,7 @@
     </section>
   {% endif %}
 
-  <div class="mt-6 grid gap-6 xl:grid-cols-3">
+  <div class="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-3">
     <div class="space-y-6 xl:col-span-2">
       <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-lignes">
         <h2 id="titre-lignes" class="text-base font-semibold text-slate-900">Lignes</h2>
@@ -90,7 +90,7 @@
         {% if form_ligne %}
           <form method="post" action="{% url 'billing:ligne_ajouter' facture.pk %}" class="mt-5 space-y-3 rounded-lg bg-slate-50 p-4">{% csrf_token %}
             <h3 class="text-sm font-semibold text-slate-900">Ajouter une ligne</h3>
-            <div class="grid gap-3 sm:grid-cols-3">
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div class="sm:col-span-3">{% include "components/_champ.html" with champ=form_ligne.designation %}</div>
               {% include "components/_champ.html" with champ=form_ligne.quantite %}
               {% include "components/_champ.html" with champ=form_ligne.prix_unitaire_ht %}
@@ -135,7 +135,7 @@
           {% if form_reglement %}
             <form method="post" action="{% url 'billing:reglement_ajouter' facture.pk %}" class="mt-5 space-y-3 rounded-lg bg-slate-50 p-4">{% csrf_token %}
               <h3 class="text-sm font-semibold text-slate-900">Enregistrer un règlement (acompte ou solde)</h3>
-              <div class="grid gap-3 sm:grid-cols-2">
+              <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {% include "components/_champ.html" with champ=form_reglement.date_reglement %}
                 {% include "components/_champ.html" with champ=form_reglement.montant %}
                 {% include "components/_champ.html" with champ=form_reglement.mode %}

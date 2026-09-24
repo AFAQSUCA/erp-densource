@@ -27,7 +27,7 @@
     </p>
   {% endif %}
 
-  <div class="mt-6 grid gap-6 xl:grid-cols-3">
+  <div class="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-3">
     <div class="space-y-6 xl:col-span-2">
       <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-demande">
         <h2 id="titre-demande" class="text-base font-semibold text-slate-900">Demande</h2>
@@ -74,6 +74,9 @@
       {% if actions %}
         <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-decision">
           <h2 id="titre-decision" class="text-base font-semibold text-slate-900">Votre décision</h2>
+          {% if en_remplacement %}
+            <p class="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">Le délai de décision est dépassé : en tant que Direction, vous pouvez décider à la place du validateur habituel.</p>
+          {% endif %}
           {% if "valider" in actions %}
             <form method="post" action="{% url 'hr:conges_decision' conge.pk %}" class="mt-4">
               {% csrf_token %}

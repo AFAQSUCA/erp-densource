@@ -176,6 +176,7 @@ class CongeDetailView(RoleRequiredMixin, DetailView):
             droits=services.droits_conges(conge.employe, conge.date_debut.year),
             echeance=services.echeance_en_attente(conge),
             actions=services.actions_disponibles(conge, utilisateur),
+            en_remplacement=services.decide_en_remplacement(conge, utilisateur),
             sections=sections.DETAIL_CONGE.sections(conge, utilisateur),
             peut_voir_employe=utilisateur.role_effectif in permissions.PERSONNEL_CONSULTATION,
         )

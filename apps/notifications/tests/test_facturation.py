@@ -36,6 +36,7 @@ def test_la_direction_est_prevenue_d_une_facture_a_valider():
         assert "1 180 000 FCFA TTC" in notification.message.replace("\xa0", " ").replace(" ", " ")
         assert facture.mission.numero in notification.message
         assert notification.url == reverse("billing:facture", args=[facture.pk])
+        assert notification.action == "Examiner et valider"  # bouton d'accès direct à la validation
     assert _de(finance) == []
 
 

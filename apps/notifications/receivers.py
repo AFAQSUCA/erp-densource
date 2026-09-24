@@ -210,6 +210,7 @@ def prevenir_du_depart(sender, mission, **kwargs):
 
 
 ACTION_CONFIRMER_VERSEMENT = "Confirmer le versement"
+ACTION_VALIDER_FACTURE = "Examiner et valider"
 
 
 def _lien_facture(facture) -> str:
@@ -228,6 +229,7 @@ def prevenir_la_direction_d_une_facture(sender, facture, **kwargs):
             f"préparée par {facture.cree_par or 'un compte supprimé'}."
         ),
         url=_lien_facture(facture),
+        action=ACTION_VALIDER_FACTURE,
     )
 
 

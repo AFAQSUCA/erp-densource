@@ -24,7 +24,7 @@
   </div>
   <p class="mt-1 text-sm text-slate-600">Matricule {{ chauffeur.personnel.matricule }}</p>
 
-  <div class="mt-6 grid gap-6 xl:grid-cols-3">
+  <div class="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-3">
     <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm xl:col-span-1" aria-labelledby="titre-contact">
       <h2 id="titre-contact" class="text-base font-semibold text-slate-900">Contact</h2>
       <dl class="mt-4 space-y-3 text-sm">
@@ -37,7 +37,7 @@
       <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-permis">
         <h2 id="titre-permis" class="text-base font-semibold text-slate-900">Permis et visite médicale</h2>
         <p class="mt-1 text-xs text-slate-600">Une alerte apparaît 30 jours avant l'expiration.</p>
-        <dl class="mt-4 grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
+        <dl class="mt-4 grid grid-cols-1 gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
           <div><dt class="text-slate-600">N° de permis</dt><dd class="mt-0.5 font-medium text-slate-900">{{ chauffeur.numero_permis|default:"Non renseigné" }}</dd></div>
           <div><dt class="text-slate-600">Catégories</dt><dd class="mt-0.5 font-medium text-slate-900">{% if chauffeur.categories_permis %}{{ chauffeur.categories_permis|join:", " }}{% else %}Non renseignées{% endif %}</dd></div>
         </dl>

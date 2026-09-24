@@ -3,6 +3,7 @@
 from django import forms
 from django.utils import timezone
 
+from apps.core.forms import corriger_format_date
 from apps.garage.models import POINTS_CHECKLIST, GraviteIncident, TypeIncident
 
 CHAMP_TACTILE = (
@@ -17,6 +18,7 @@ class StyleTactileMixin:
         super().__init__(*args, **kwargs)
         for champ in self.fields.values():
             champ.widget.attrs.setdefault("class", CHAMP_TACTILE)
+            corriger_format_date(champ.widget)
 
 
 class CodeForm(StyleTactileMixin, forms.Form):

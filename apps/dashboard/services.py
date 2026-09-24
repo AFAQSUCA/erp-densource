@@ -24,6 +24,7 @@ from apps.billing import permissions as billing_permissions
 from apps.billing import services as billing_services
 from apps.core import graphiques
 from apps.core.formats import nombre
+from apps.core.services import debuts_de_mois
 from apps.core.services import etat_echeance
 from apps.customers import permissions as customers_permissions
 from apps.customers import services as customers_services
@@ -49,6 +50,7 @@ from apps.missions.models import StatutMission
 LIGNES_PAR_ALERTE = 5
 JOURS_ALERTES_CARBURANT = 30
 MOIS_HISTORIQUE = 6
+PERIODES = (3, 6, 12)  # mois affichables sur les graphiques dans le temps
 MOIS_ABREGES = ("janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc.")
 
 ROLES_EXPLOITATION = fleet_permissions.CONSULTATION
@@ -64,15 +66,32 @@ def _en_cache(cle: str, calcul):
     return cache.get_or_set(f"dashboard:{cle}", calcul, secondes)
 
 
+def _libelle_mois(debut: date) -> str:
+    return f"{MOIS_ABREGES[debut.month - 1]} {debut.year % 100:02d}"
+
+
+def periode_valide(valeur) -> int:
+    """Nombre de mois demandé (``?periode=``) : 3, 6 ou 12 ; 6 par défaut."""
+    try:
+        mois = int(valeur)
+    except (TypeError, ValueError):
+        return MOIS_HISTORIQUE
+    return mois if mois in PERIODES else MOIS_HISTORIQUE
+
+
 # --- exploitation ---
 
 
-def exploitation() -> dict:
-    """Camions par statut, consommation moyenne globale et missions à suivre."""
+def exploitation(*, jour: date | None = None, mois: int = MOIS_HISTORIQUE) -> dict:
+    """Camions par statut, consommation moyenne globale, missions à suivre et missions par mois."""
+    jour = jour or timezone.localdate()
 
     def calculer():
         camions = fleet_services.repartition_statuts()
         missions = missions_services.repartition_par_statut()
+        debuts = debuts_de_mois(jour, mois)
+        par_mois = missions_services.missions_par_mois(debuts[0], jour)
+        cles = [(d.year, d.month) for d in debuts]
         return {
             "camions": {
                 "total": camions["total"],
@@ -87,15 +106,35 @@ def exploitation() -> dict:
             + missions[StatutMission.EN_COURS_COLIS_RECUPERE],
             "missions_a_affecter": missions[StatutMission.PLANIFIEE],
             "missions_a_cloturer": missions[StatutMission.LIVREE],
+            # Chaque barre mène à la liste filtrée sur ce statut (drill-down).
             "graphique_camions": graphiques.barres_horizontales(
-                {"libelle": libelle, "valeur": camions[code]} for code, libelle in StatutVehicule.choices
+                {
+                    "libelle": libelle,
+                    "valeur": camions[code],
+                    "url": f"{reverse('fleet:liste')}?statut={code}",
+                }
+                for code, libelle in StatutVehicule.choices
             ),
             "graphique_missions": graphiques.barres_horizontales(
-                {"libelle": libelle, "valeur": missions[code]} for code, libelle in StatutMission.choices
+                {
+                    "libelle": libelle,
+                    "valeur": missions[code],
+                    "url": f"{reverse('missions:liste')}?statut={code}",
+                }
+                for code, libelle in StatutMission.choices
+            ),
+            "graphique_missions_mois": graphiques.colonnes_groupees(
+                [_libelle_mois(d) for d in debuts],
+                [
+                    {"nom": "Créées", "valeurs": [par_mois["creees"].get(c, 0) for c in cles]},
+                    {"nom": "Livrées", "valeurs": [par_mois["livrees"].get(c, 0) for c in cles]},
+                ],
+                unite="missions",
+                entier=True,
             ),
         }
 
-    return _en_cache("exploitation", calculer)
+    return _en_cache(f"exploitation:{jour.isoformat()}:{mois}", calculer)
 
 
 # --- ressources humaines ---
@@ -109,7 +148,12 @@ def ressources_humaines(*, jour: date | None = None) -> dict:
         "effectif": sum(d["nombre"] for d in par_departement),
         "par_departement": par_departement,
         "graphique_departements": graphiques.barres_horizontales(
-            {"libelle": d["libelle"], "valeur": d["nombre"]} for d in par_departement
+            {
+                "libelle": d["libelle"],
+                "valeur": d["nombre"],
+                "url": f"{reverse('hr:personnel_liste')}?departement={d['code']}",
+            }
+            for d in par_departement
         ),
         "absents": list(hr_services.absents_du_jour(jour)[:LIGNES_PAR_ALERTE * 2]),
         "nombre_absents": hr_services.absents_du_jour(jour).count(),
@@ -151,7 +195,7 @@ def clientele() -> dict:
 # --- finances ---
 
 
-def finances(*, jour: date | None = None) -> dict:
+def finances(*, jour: date | None = None, mois: int = MOIS_HISTORIQUE) -> dict:
     """Indicateurs du mois en cours : CA HT facturé, encaissé, charges, marge, créances, trésorerie.
 
     Les charges se décomposent en dépenses saisies, carburant et coût des OR clôturés
@@ -164,7 +208,7 @@ def finances(*, jour: date | None = None) -> dict:
         resultat = finance_services.indicateurs(debut, jour, aujourd_hui=jour)
         historique = finance_services.historique_mensuel(
             jour,
-            mois=MOIS_HISTORIQUE,
+            mois=mois,
             courant={
                 "chiffre_affaires": resultat["chiffre_affaires"],
                 "encaisse": resultat["encaisse"],
@@ -172,7 +216,7 @@ def finances(*, jour: date | None = None) -> dict:
             },
         )
         resultat["graphique_mensuel"] = graphiques.colonnes_groupees(
-            [f"{MOIS_ABREGES[ligne['debut'].month - 1]} {ligne['debut'].year % 100:02d}" for ligne in historique],
+            [_libelle_mois(ligne["debut"]) for ligne in historique],
             [
                 {"nom": "CA facturé (HT)", "valeurs": [ligne["chiffre_affaires"] for ligne in historique]},
                 {"nom": "Encaissé", "valeurs": [ligne["encaisse"] for ligne in historique]},
@@ -182,15 +226,31 @@ def finances(*, jour: date | None = None) -> dict:
         )
         resultat["graphique_charges"] = graphiques.barres_horizontales(
             [
-                {"libelle": "Dépenses saisies", "valeur": resultat["charges"]["depenses"]},
+                {
+                    "libelle": "Dépenses saisies",
+                    "valeur": resultat["charges"]["depenses"],
+                    "url": reverse("billing:depenses"),
+                },
                 {"libelle": "Carburant", "valeur": resultat["charges"]["carburant"]},
                 {"libelle": "Maintenance", "valeur": resultat["charges"]["maintenance"]},
             ],
             unite="FCFA",
         )
+        resultat["graphique_creances"] = graphiques.barres_horizontales(
+            [
+                {
+                    "libelle": tranche["libelle"],
+                    "valeur": tranche["montant"],
+                    "detail": f"{tranche['nombre']} facture{'s' if tranche['nombre'] > 1 else ''}",
+                    "url": f"{reverse('billing:factures')}?echues=on" if tranche["echu"] and tranche["nombre"] else "",
+                }
+                for tranche in billing_services.creances_par_anciennete(jour)
+            ],
+            unite="FCFA",
+        )
         return resultat
 
-    return _en_cache(f"finances:{jour.isoformat()}", calculer)
+    return _en_cache(f"finances:{jour.isoformat()}:{mois}", calculer)
 
 
 # --- centre d'alertes ---
@@ -408,20 +468,26 @@ def centre_alertes(role: str, *, aujourd_hui: date | None = None) -> list[dict] 
 # --- assemblage ---
 
 
-def tableau_de_bord(utilisateur, *, aujourd_hui: date | None = None) -> dict:
-    """Blocs à afficher pour cet utilisateur (``None`` = bloc non accessible à son rôle)."""
+def tableau_de_bord(utilisateur, *, aujourd_hui: date | None = None, mois: int = MOIS_HISTORIQUE) -> dict:
+    """Blocs à afficher pour cet utilisateur (``None`` = bloc non accessible à son rôle).
+
+    ``mois`` : étendue des graphiques dans le temps (3, 6 ou 12 mois).
+    """
     role = utilisateur.role_effectif
     aujourd_hui = aujourd_hui or timezone.localdate()
     alertes = centre_alertes(role, aujourd_hui=aujourd_hui)
     return {
         "role": role,
-        "exploitation": exploitation() if role in ROLES_EXPLOITATION else None,
+        "exploitation": exploitation(jour=aujourd_hui, mois=mois) if role in ROLES_EXPLOITATION else None,
         "alertes": alertes,
         "nombre_alertes": sum(g["nombre"] for g in alertes) if alertes else 0,
         "ressources_humaines": (
             ressources_humaines(jour=aujourd_hui) if role in ROLES_RH else None
         ),
         "clientele": clientele() if role in ROLES_CLIENTELE else None,
-        "finances": finances(jour=aujourd_hui) if role in ROLES_FINANCES else None,
+        "finances": finances(jour=aujourd_hui, mois=mois) if role in ROLES_FINANCES else None,
+        "periode": mois,
+        "periodes": PERIODES,
+        "graphiques_dans_le_temps": role in ROLES_FINANCES or (role in ROLES_EXPLOITATION and role != Role.PARCAUTO),
         "espace_mobile": role == Role.CHAUFFEUR,
     }
