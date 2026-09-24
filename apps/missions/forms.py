@@ -10,8 +10,18 @@ class MissionForm(StyleTailwindMixin, forms.Form):
     """Création d'une mission (cahier-des-charges.md:129-131)."""
 
     client = forms.ModelChoiceField(queryset=None, label="Client")
-    lieu_chargement = forms.CharField(label="Lieu de chargement", max_length=200)
-    lieu_livraison = forms.CharField(label="Lieu de livraison", max_length=200)
+    # « list » relie le champ à la liste de suggestions « lieux-missions » (mission_form.html) :
+    # les lieux déjà utilisés s'affichent dès les premières lettres, la saisie libre reste possible.
+    lieu_chargement = forms.CharField(
+        label="Lieu de chargement",
+        max_length=200,
+        widget=forms.TextInput(attrs={"list": "lieux-missions", "autocomplete": "off"}),
+    )
+    lieu_livraison = forms.CharField(
+        label="Lieu de livraison",
+        max_length=200,
+        widget=forms.TextInput(attrs={"list": "lieux-missions", "autocomplete": "off"}),
+    )
     nature_marchandise = forms.CharField(label="Nature de la marchandise", max_length=200)
     poids_t = forms.DecimalField(
         label="Poids (tonnes)", min_value=0, decimal_places=2, max_digits=8

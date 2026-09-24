@@ -1,14 +1,15 @@
 {% extends "base.html" %}
-{% load humanize ui %}
+{% load humanize static ui %}
 {% block titre %}Missions{% endblock %}
 {% block entete %}Missions{% endblock %}
 
 {% block contenu %}
-<div class="mx-auto max-w-7xl">
+<div class="mx-auto max-w-7xl" data-suivi-missions data-ws-chemin="/ws/missions/suivi/">
   <div class="flex flex-wrap items-end justify-between gap-3">
     <div>
       <h1 class="text-2xl font-bold text-slate-900">Missions</h1>
-      <p class="mt-1 text-sm text-slate-600">{{ paginator.count|default:0 }} mission{{ paginator.count|pluralize }}</p>
+      <p class="mt-1 text-sm text-slate-600" data-suivi-zone="compteur">{{ paginator.count|default:0 }} mission{{ paginator.count|pluralize }}</p>
+      <div class="mt-2">{% include "components/_suivi_direct.html" %}</div>
     </div>
     {% if peut_creer %}
       <a href="{% url 'missions:creer' %}"
@@ -40,6 +41,7 @@
     {% endif %}
   </form>
 
+  <div data-suivi-zone="liste">
   {% if missions %}
     <div class="mt-5 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
       <table class="min-w-full divide-y divide-slate-200 text-sm">
@@ -86,5 +88,7 @@
       </p>
     </div>
   {% endif %}
+  </div>{# fin de la zone rafraîchie en direct #}
 </div>
+<script src="{% static 'js/suivi-missions.js' %}" defer></script>
 {% endblock %}

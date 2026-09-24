@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import secrets
+from collections import Counter
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 
@@ -19,7 +20,7 @@ from django.db import transaction
 from django.db.models import Count, QuerySet, Sum
 from django.utils import timezone
 
-from apps.core.search import filtrer_par_texte
+from apps.core.search import filtrer_par_texte, normaliser
 from apps.core.services import prochain_numero
 from apps.customers.models import Client
 from apps.drivers import services as drivers_services
@@ -79,6 +80,25 @@ def missions_queryset() -> QuerySet[Mission]:
     return Mission.objects.select_related(
         "client", "vehicule", "chauffeur__personnel"
     )
+
+
+def lieux_deja_utilises(*, limite: int = 200) -> list[str]:
+    """Lieux de chargement et de livraison déjà saisis, les plus fréquents d'abord.
+
+    Sert de liste de suggestions à la saisie d'une nouvelle mission : un même lieu, écrit avec une
+    autre casse ou sans accent (« Bouake », « bouaké »), ne compte qu'une fois — on garde la graphie
+    la plus employée.
+    """
+    par_lieu: dict[str, Counter[str]] = {}
+    for champ in ("lieu_chargement", "lieu_livraison"):
+        for lieu, nombre in Mission.objects.values_list(champ).annotate(n=Count("pk")):
+            lieu = (lieu or "").strip()
+            if lieu:
+                par_lieu.setdefault(normaliser(lieu), Counter())[lieu] += nombre
+    classes = sorted(
+        par_lieu.values(), key=lambda graphies: (-sum(graphies.values()), graphies.most_common(1)[0][0].casefold())
+    )
+    return [graphies.most_common(1)[0][0] for graphies in classes[:limite]]
 
 
 def rechercher_missions(

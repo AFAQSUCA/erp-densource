@@ -19,13 +19,16 @@ Internet ──► Nginx (80/443) ──► Gunicorn (web, 3 workers) ──► 
                  │                      └──► Celery worker ───────┤
                  ├── /static/, /media/       Celery beat ─────────┘
                  │   (disque, pas Gunicorn)        │
-                 └────────────────────────────► Redis (cache + file Celery)
+                 ├── /ws/ ──► Daphne (realtime) ───┤  suivi des missions en direct
+                 │                                 │
+                 └────────────────────────────► Redis (cache + file Celery + messages WebSocket)
 ```
 
-6 conteneurs (`docker-compose.yml`) : `nginx`, `web` (Gunicorn), `celery_worker`, `celery_beat`,
-`db` (PostgreSQL), `redis`. Un seul construit une image (`web`, `celery_worker`, `celery_beat`
-partagent la même, définie par `Dockerfile`) ; `db`, `redis` et `nginx` sont des images officielles
-telles quelles.
+7 conteneurs (`docker-compose.yml`) : `nginx`, `web` (Gunicorn), `realtime` (Daphne : les WebSocket du suivi
+des missions en direct), `celery_worker`, `celery_beat`, `db` (PostgreSQL), `redis`. Quatre construisent une image
+(`web`, `realtime`, `celery_worker`, `celery_beat` partagent la même, définie par `Dockerfile`) ; `db`, `redis` et
+`nginx` sont des images officielles telles quelles. Gunicorn sert les pages, Daphne ne tient que les WebSocket :
+quand une mission change, `web` le signale dans Redis et `realtime` le pousse aux navigateurs connectés.
 
 ## 2. Choisir un serveur, à moindre coût
 
@@ -103,7 +106,7 @@ lancer Gunicorn (`ops/entrypoint.sh`) ; `celery_worker` et `celery_beat` attende
 bonne santé (les migrations sont donc déjà passées) avant de démarrer.
 
 ```bash
-docker compose ps                 # les 6 services doivent être « healthy » ou « running »
+docker compose ps                 # les 7 services doivent être « healthy » ou « running »
 docker compose logs -f web        # suivre le démarrage
 curl -I http://localhost/connexion/   # doit répondre 301 (redirigé vers https, tant que le 4 n'est pas fait)
 ```
@@ -273,6 +276,7 @@ santé avant de redémarrer.
 | Nginx répond 502 | `web` n'a pas encore fini de démarrer, ou a planté — voir ses journaux |
 | Boucle de redirection HTTPS | `X-Forwarded-Proto` n'arrive pas jusqu'à Django : vérifier que la requête passe bien par Nginx (pas directement sur le port 8000 de `web`) |
 | `celery_worker` ne traite rien | `docker compose logs celery_worker` : le plus souvent `REDIS_URL` injoignable |
+| Fiche mission sans voyant « En direct » (« Suivi en direct indisponible ») | `docker compose logs realtime` : conteneur arrêté ? Vérifier aussi que le bloc `location /ws/` est bien dans le serveur 443 de `nginx/nginx.conf`, et que `ALLOWED_HOSTS` contient le domaine (l'origine de la page est contrôlée) |
 | Page de connexion sans styles | `collectstatic` n'a pas tourné, ou le volume `static_data` n'est pas monté dans `nginx` |
 
 ---
@@ -280,12 +284,15 @@ santé avant de redémarrer.
 ## Ce qui a été vérifié
 
 Testé en local avec `docker compose up -d --build` (domaine `localhost`, sans certificat réel) :
-- les 6 services démarrent et `web` devient « healthy » (migrations + `collectstatic` appliqués) ;
+- les 7 services démarrent et `web` devient « healthy » (migrations + `collectstatic` appliqués) ;
 - la page de connexion est servie par **Nginx**, pas directement par Gunicorn (styles chargés
   depuis `/static/`, non `web:8000`) ;
 - `SECURE_SSL_REDIRECT` redirige correctement en HTTP simple (pas de boucle) et laisse passer une
   requête dont `X-Forwarded-Proto` vaut `https` (simulation du TLS terminé par Nginx) ;
 - `celery_worker` et `celery_beat` démarrent, se connectent à Redis et exécutent une tâche réelle ;
+- le suivi des missions en direct traverse Nginx (TLS) : une WebSocket ouverte par un compte du bureau reçoit
+  le changement d'état d'une mission confirmé par le chauffeur depuis une autre session (`web` → Redis →
+  `realtime` → navigateur) ; sans cookie de session, la connexion est refusée (403) ;
 - une sauvegarde chiffrée (`ops/sauvegarde.sh`) puis sa restauration (`ops/restauration.sh`) dans
   une base à part ont réellement été jouées contre le PostgreSQL du `docker-compose.yml`.
 

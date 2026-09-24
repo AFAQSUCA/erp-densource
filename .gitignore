@@ -20,3 +20,6 @@ donnees_locales*.json
 
 # Fichiers verrou temporaires d'Office (Word, PowerPoint ouverts)
 ~$*
+
+# Certificats TLS (clés privées Let's Encrypt, GUIDE-DEPLOIEMENT.md) : jamais commités
+certs/

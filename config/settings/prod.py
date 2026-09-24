@@ -29,6 +29,12 @@ CACHES = {
     }
 }
 
+# Couche de messages des WebSocket : Redis, partagé entre le conteneur `web` (gunicorn), qui diffuse un
+# changement de mission, et le conteneur `realtime` (daphne), qui le pousse aux navigateurs connectés.
+CHANNEL_LAYERS = {
+    "default": {"BACKEND": "channels_redis.core.RedisChannelLayer", "CONFIG": {"hosts": [env("REDIS_URL")]}}
+}
+
 # Tâches asynchrones réelles (étape 7 lot 2) : un processus `celery worker` (et `celery beat` pour
 # la planification) doit tourner à côté de l'application — voir README « Lancer en production ».
 CELERY_TASK_ALWAYS_EAGER = False

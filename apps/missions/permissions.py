@@ -19,9 +19,13 @@ CONSULTATION = frozenset({Role.ADMIN, Role.DIRECTION, Role.CHARGE_CLIENTELE})
 CREATION = frozenset({Role.ADMIN, Role.DIRECTION, Role.CHARGE_CLIENTELE})
 PLANIFICATION = frozenset({Role.ADMIN, Role.DIRECTION, Role.CHARGE_CLIENTELE})
 AFFECTATION = frozenset({Role.ADMIN, Role.DIRECTION})
-# Départ, récupération et livraison saisis depuis le back-office (suivi) ;
-# le chauffeur les fera lui-même depuis le mobile.
+# Le départ peut être lancé depuis le back-office (suivi) ; le chauffeur le fait lui-même depuis le mobile.
 SUIVI_TERRAIN = frozenset({Role.ADMIN, Role.DIRECTION})
+# Récupération et livraison se confirment par un code secret que seul le chauffeur affecté saisit ou
+# scanne (espace mobile : une mission d'un autre chauffeur y est introuvable). Depuis le back-office,
+# seul l'ADMIN peut le faire à sa place (correction, panne du téléphone) : ni la DIRECTION ni le
+# chargé clientèle, qui voient pourtant les codes pour les communiquer.
+CODES_TERRAIN = frozenset({Role.ADMIN})
 CLOTURE = frozenset({Role.ADMIN, Role.DIRECTION})
 
 # Les codes sont à communiquer à l'expéditeur et au destinataire : ils ne sont
@@ -38,9 +42,9 @@ def actions_disponibles(utilisateur, mission: Mission) -> dict[str, bool]:
         "affecter": statut == StatutMission.PLANIFIEE and role in AFFECTATION,
         "demarrer": statut == StatutMission.AFFECTEE and role in SUIVI_TERRAIN,
         "recuperation": statut == StatutMission.EN_COURS_DEPART
-        and role in SUIVI_TERRAIN,
+        and role in CODES_TERRAIN,
         "livraison": statut == StatutMission.EN_COURS_COLIS_RECUPERE
-        and role in SUIVI_TERRAIN,
+        and role in CODES_TERRAIN,
         "cloturer": statut == StatutMission.LIVREE and role in CLOTURE,
     }
 

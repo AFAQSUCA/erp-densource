@@ -13,6 +13,9 @@
     La mission est créée en brouillon ; elle reçoit son numéro et ses deux codes (expéditeur, destinataire).
   </p>
 
+  {# Lieux déjà utilisés par des missions : suggérés dès les premières lettres (champs « list ») #}
+  <datalist id="lieux-missions">{% for lieu in lieux %}<option value="{{ lieu }}"></option>{% endfor %}</datalist>
+
   <form method="post" novalidate class="mt-6 space-y-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
     {% csrf_token %}
     {% if form.non_field_errors %}

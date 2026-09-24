@@ -17,7 +17,7 @@ from django.views.generic import DetailView, FormView, ListView
 from apps.accounts.mixins import RoleRequiredMixin
 from apps.core.views import PaginationTolerante
 
-from . import permissions, services
+from . import documents, permissions, services
 from .exceptions import MissionError
 from .forms import AffectationForm, CodeForm, LivraisonForm, MissionForm
 from .models import StatutMission
@@ -96,13 +96,20 @@ class MissionCreateView(RoleRequiredMixin, FormView):
     form_class = MissionForm
     template_name = "missions/mission_form.html"
 
+    def get_context_data(self, **kwargs):
+        return super().get_context_data(lieux=services.lieux_deja_utilises(), **kwargs)
+
     def form_valid(self, form):
         try:
             mission = services.creer_mission(**form.cleaned_data)
         except MissionError as erreur:
             form.add_error(None, str(erreur))
             return self.form_invalid(form)
-        messages.success(self.request, f"Mission {mission.numero} créée en brouillon.")
+        messages.success(
+            self.request,
+            f"Mission {mission.numero} créée en brouillon. Le PDF des codes à transmettre à "
+            "l'expéditeur et au destinataire se télécharge ci-dessous.",
+        )
         return redirect("missions:detail", pk=mission.pk)
 
 
@@ -172,7 +179,7 @@ class DemarrerView(ActionMissionView):
 
 
 class RecuperationView(ActionMissionView):
-    roles = permissions.SUIVI_TERRAIN
+    roles = permissions.CODES_TERRAIN
     form_class = CodeForm
 
     def executer(self, mission, donnees):
@@ -183,7 +190,7 @@ class RecuperationView(ActionMissionView):
 
 
 class LivraisonView(ActionMissionView):
-    roles = permissions.SUIVI_TERRAIN
+    roles = permissions.CODES_TERRAIN
     form_class = LivraisonForm
 
     def executer(self, mission, donnees):
@@ -203,6 +210,28 @@ class CloturerView(ActionMissionView):
 
     def message_succes(self, mission):
         return f"Mission {mission.numero} clôturée et validée."
+
+
+class CodesPdfView(RoleRequiredMixin, View):
+    """PDF des codes à transmettre (une page pour l'expéditeur, une pour le destinataire).
+
+    Mêmes règles que l'affichage des codes : rôles qui les voient, et seulement les codes encore
+    utiles (jamais après la récupération / la livraison). Produit à la demande, jamais stocké ni
+    mis en cache : le code est un secret.
+    """
+
+    roles = permissions.CONSULTATION
+    http_method_names = ["get"]
+
+    def get(self, request, pk):
+        mission = get_object_or_404(services.missions_queryset(), pk=pk)
+        codes = permissions.codes_visibles(request.user, mission)
+        if not (codes["expediteur"] or codes["destinataire"]):
+            raise Http404
+        reponse = HttpResponse(documents.generer_pdf_codes(mission, codes), content_type="application/pdf")
+        reponse["Content-Disposition"] = f'attachment; filename="codes-{mission.numero}.pdf"'
+        reponse["Cache-Control"] = "no-store, private"
+        return reponse
 
 
 class CodeQrView(RoleRequiredMixin, View):
