@@ -17,7 +17,8 @@ from apps.customers.tests.factories import ClientFactory
 from apps.dashboard import services
 from apps.finance import services as finance_services
 from apps.fuel import services as fuel_services
-from apps.fuel.tests.factories import PleinFactory
+from apps.drivers.tests.factories import ChauffeurFactory
+from apps.fleet.tests.factories import VehiculeFactory
 from apps.missions import services as missions_services
 from apps.missions.models import Mission, StatutMission
 from apps.missions.tests.factories import MissionFactory
@@ -53,7 +54,10 @@ def test_les_totaux_par_mois_sont_ceux_des_lectures_mois_par_mois():
         billing.enregistrer_depense(
             finance, categorie="PEAGES", date_depense=jour, libelle="Péage", montant=Decimal("30000"), mode=ModePaiement.ESPECES
         )
-    PleinFactory(date_plein=date(2026, 8, 20))
+    fuel_services.enregistrer_plein(  # devient tout seul une dépense « carburant » (finance.receivers)
+        vehicule=VehiculeFactory(), chauffeur=ChauffeurFactory(), date_plein=date(2026, 8, 20), station="T",
+        quantite_litres=Decimal("120"), prix_unitaire=Decimal("655"), km_compteur=1000, numero_ticket="T-1",
+    )
 
     historique = finance_services.historique_mensuel(date(2026, 9, 15), mois=3)
 
@@ -63,17 +67,7 @@ def test_les_totaux_par_mois_sont_ceux_des_lectures_mois_par_mois():
         assert ligne["chiffre_affaires"] == direct["chiffre_affaires"]
         assert ligne["encaisse"] == direct["encaisse"]
         assert ligne["charges"] == direct["charges"]["total"]
-    assert historique[1]["charges"] == Decimal("30000") + Decimal("120.00") * Decimal("655")
-
-
-def test_le_cout_du_carburant_par_mois_somme_litres_fois_prix():
-    PleinFactory(date_plein=date(2026, 8, 3), quantite_litres=Decimal("100"), prix_unitaire=Decimal("600"))
-    PleinFactory(date_plein=date(2026, 8, 25), quantite_litres=Decimal("50"), prix_unitaire=Decimal("700"))
-    PleinFactory(date_plein=date(2026, 9, 2), quantite_litres=Decimal("10"), prix_unitaire=Decimal("650"))
-
-    par_mois = fuel_services.cout_carburant_par_mois(date(2026, 8, 1), date(2026, 9, 30))
-
-    assert par_mois == {(2026, 8): Decimal("95000"), (2026, 9): Decimal("6500")}
+    assert historique[1]["charges"] == Decimal("30000") + Decimal("120") * Decimal("655")
 
 
 def test_les_missions_creees_et_livrees_sont_comptees_par_mois():

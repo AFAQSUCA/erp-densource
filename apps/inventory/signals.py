@@ -8,3 +8,7 @@ from django.dispatch import Signal
 # mouvement : un récepteur qui envoie un message doit utiliser
 # ``transaction.on_commit``.
 seuil_bas_atteint = Signal()
+
+# Une entrée de stock (achat de pièces) vient d'être enregistrée, dans sa transaction. Argument :
+# ``mouvement``. Souscrit par ``finance`` (dépense) ; émis avec ``send`` pour qu'une erreur annule l'achat.
+entree_stock_enregistree = Signal()

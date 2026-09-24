@@ -20,3 +20,7 @@ def emettre(signal: Signal, **arguments) -> None:
     for recepteur, resultat in signal.send_robust(sender=None, **arguments):
         if isinstance(resultat, Exception):
             logger.error("Récepteur %r en erreur", recepteur, exc_info=resultat)
+
+# Un OR vient d'être clôturé, dans sa transaction. Argument : ``ordre``. Souscrit par ``finance`` (dépense de
+# main-d'œuvre) ; émis avec ``send`` (pas ``emettre``) pour qu'une erreur annule la clôture.
+or_cloture = Signal()

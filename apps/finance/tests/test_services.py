@@ -196,18 +196,26 @@ def test_le_cout_des_or_clotures_compte_main_d_oeuvre_et_pieces_de_la_periode():
     assert stock.cout_des_or_clotures(*SEPT) == Decimal("40000")
 
 
-def test_charges_regroupe_depenses_carburant_et_maintenance():
+def test_charges_regroupe_depenses_carburant_pieces_et_main_d_oeuvre():
+    """Le carburant, les pièces achetées et la main-d'œuvre des OR sont des dépenses comme les autres."""
+    from apps.billing.models import Depense, OrigineDepense
+
     _depense("20000", jour=date(2026, 9, 2))
     _plein("100", "655", date(2026, 9, 3))
-    _or_cloture(date(2026, 9, 10), main_oeuvre="30000", pieces=2)
+    _or_cloture(date(2026, 9, 10), main_oeuvre="30000", pieces=2)  # achat de 10 pièces à 5 000 + main-d'œuvre
+    Depense.objects.filter(origine__in=[OrigineDepense.ACHAT_STOCK, OrigineDepense.MAIN_OEUVRE_OR]).update(
+        date_depense=date(2026, 9, 10)
+    )
 
     charges = services.charges(*SEPT)
 
     assert charges == {
         "depenses": Decimal("20000"),
         "carburant": Decimal("65500"),
-        "maintenance": Decimal("40000"),
-        "total": Decimal("125500"),
+        "pieces": Decimal("50000"),  # comptées à l'achat, pas à la sortie vers l'OR
+        "main_oeuvre": Decimal("30000"),
+        "maintenance": Decimal("80000"),
+        "total": Decimal("165500"),
     }
 
 

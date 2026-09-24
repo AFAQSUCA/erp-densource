@@ -24,14 +24,13 @@ from apps.billing.exceptions import ActionFactureNonAutorisee, MontantInvalide
 from apps.billing.models import (
     COMPTE_DU_MODE,
     STATUTS_A_RECOUVRER,
+    CategorieDepense,
     CompteTresorerie,
     Depense,
     ModePaiement,
     Reglement,
 )
 from apps.core.services import debuts_de_mois, fin_de_mois
-from apps.fuel import services as fuel_services
-from apps.inventory import services as inventory_services
 
 from .models import MouvementManuel, SensMouvement
 
@@ -251,15 +250,25 @@ def synthese_periode(debut: date, fin: date) -> dict:
 
 
 def charges(debut: date, fin: date) -> dict:
-    """Charges de la période : dépenses saisies, carburant, coût des OR clôturés."""
-    depenses = billing_services.total_depenses(debut, fin)
-    carburant = fuel_services.cout_carburant(debut, fin)
-    maintenance = inventory_services.cout_des_or_clotures(debut, fin)
+    """Charges de la période = toutes les dépenses, y compris celles du parc auto créées automatiquement.
+
+    Un plein, un achat de pièces et la main-d'œuvre d'un OR clôturé sont des dépenses comme les autres
+    (``finance.receivers``) : la page Dépenses, la trésorerie et ces charges donnent le même total.
+    Ventilation : ``carburant``, ``pieces`` (achetées), ``main_oeuvre`` (des OR), ``maintenance``
+    (pièces + main-d'œuvre) et ``depenses`` (le reste : péages, frais, saisies à la main).
+    """
+    par_categorie = {c["code"]: c["total"] for c in billing_services.depenses_par_categorie(debut, fin)}
+    carburant = par_categorie[CategorieDepense.CARBURANT]
+    pieces = par_categorie[CategorieDepense.PIECES]
+    main_oeuvre = par_categorie[CategorieDepense.MAINTENANCE]
+    total = sum(par_categorie.values(), ZERO)
     return {
-        "depenses": depenses,
+        "depenses": total - carburant - pieces - main_oeuvre,
         "carburant": carburant,
-        "maintenance": maintenance,
-        "total": depenses + carburant + maintenance,
+        "pieces": pieces,
+        "main_oeuvre": main_oeuvre,
+        "maintenance": pieces + main_oeuvre,
+        "total": total,
     }
 
 
@@ -268,9 +277,8 @@ def historique_mensuel(jour: date | None = None, *, mois: int = 6, courant: dict
 
     Le mois de ``jour`` s'arrête à ``jour`` (comme les indicateurs du mois) ; ``courant`` (les valeurs
     ``chiffre_affaires``, ``encaisse`` et ``charges`` déjà calculées pour ce mois) évite de les relire.
-    Chaque ligne : ``debut``, ``fin``, ``chiffre_affaires``, ``encaisse``, ``charges``. Le CA, les
-    encaissements, les dépenses et le carburant sont lus par mois en une requête chacun ; seul le coût
-    de la maintenance (OR clôturés, pièces au PUMP) se calcule mois par mois.
+    Chaque ligne : ``debut``, ``fin``, ``chiffre_affaires``, ``encaisse``, ``charges``. Trois requêtes en
+    tout, quel que soit le nombre de mois.
     """
     jour = jour or timezone.localdate()
     debuts = debuts_de_mois(jour, mois)
@@ -278,21 +286,16 @@ def historique_mensuel(jour: date | None = None, *, mois: int = 6, courant: dict
     ca = billing_services.chiffre_affaires_par_mois(premier, jour)
     encaisse = billing_services.encaissements_par_mois(premier, jour)
     depenses = billing_services.depenses_par_mois(premier, jour)
-    carburant = fuel_services.cout_carburant_par_mois(premier, jour)
     lignes = []
     for debut in debuts:
         est_courant = debut == debuts[-1]
         fin = jour if est_courant else fin_de_mois(debut)
-        if est_courant and courant is not None:
-            valeurs = courant
-        else:
-            cle = (debut.year, debut.month)
-            maintenance = inventory_services.cout_des_or_clotures(debut, fin)
-            valeurs = {
-                "chiffre_affaires": ca.get(cle, ZERO),
-                "encaisse": encaisse.get(cle, ZERO),
-                "charges": depenses.get(cle, ZERO) + carburant.get(cle, ZERO) + maintenance,
-            }
+        cle = (debut.year, debut.month)
+        valeurs = courant if est_courant and courant is not None else {
+            "chiffre_affaires": ca.get(cle, ZERO),
+            "encaisse": encaisse.get(cle, ZERO),
+            "charges": depenses.get(cle, ZERO),
+        }
         lignes.append({"debut": debut, "fin": fin, **valeurs})
     return lignes
 

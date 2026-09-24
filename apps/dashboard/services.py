@@ -66,6 +66,11 @@ def _en_cache(cle: str, calcul):
     return cache.get_or_set(f"dashboard:{cle}", calcul, secondes)
 
 
+def _depenses(categorie: str) -> str:
+    """Lien vers la page Dépenses filtrée sur une catégorie."""
+    return f"{reverse('billing:depenses')}?categorie={categorie}"
+
+
 def _libelle_mois(debut: date) -> str:
     return f"{MOIS_ABREGES[debut.month - 1]} {debut.year % 100:02d}"
 
@@ -226,13 +231,10 @@ def finances(*, jour: date | None = None, mois: int = MOIS_HISTORIQUE) -> dict:
         )
         resultat["graphique_charges"] = graphiques.barres_horizontales(
             [
-                {
-                    "libelle": "Dépenses saisies",
-                    "valeur": resultat["charges"]["depenses"],
-                    "url": reverse("billing:depenses"),
-                },
-                {"libelle": "Carburant", "valeur": resultat["charges"]["carburant"]},
-                {"libelle": "Maintenance", "valeur": resultat["charges"]["maintenance"]},
+                {"libelle": "Carburant", "valeur": resultat["charges"]["carburant"], "url": _depenses("CARBURANT")},
+                {"libelle": "Pièces détachées", "valeur": resultat["charges"]["pieces"], "url": _depenses("PIECES")},
+                {"libelle": "Main-d'œuvre des réparations", "valeur": resultat["charges"]["main_oeuvre"], "url": _depenses("MAINTENANCE")},
+                {"libelle": "Autres dépenses", "valeur": resultat["charges"]["depenses"], "url": reverse("billing:depenses")},
             ],
             unite="FCFA",
         )

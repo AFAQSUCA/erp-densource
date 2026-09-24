@@ -29,7 +29,7 @@ from .exceptions import (
     TicketDejaEnregistre,
 )
 from .models import NiveauAlerte, Plein
-from .signals import alerte_consommation
+from .signals import alerte_consommation, plein_enregistre
 
 CENTIME = Decimal("0.01")
 NB_PLEINS_REFERENCE = 3
@@ -174,6 +174,7 @@ def enregistrer_plein(
     )
     if km_compteur > vehicule.kilometrage:
         fleet_services.enregistrer_kilometrage(vehicule, km_compteur)
+    plein_enregistre.send(sender=Plein, plein=plein)
     if (
         plein.niveau_alerte != NiveauAlerte.AUCUNE
         or plein.anomalie
@@ -334,18 +335,6 @@ def consommation_par_chauffeur() -> list[dict]:
     return _consommation_par_groupe(
         "chauffeur_id", "chauffeur__personnel__prenom", "chauffeur__personnel__nom"
     )
-
-
-def cout_carburant_par_mois(debut: date, fin: date) -> dict[tuple[int, int], Decimal]:
-    """Valeur des pleins par mois (``(année, mois)``) : une requête, somme faite en Python (comme ``cout_carburant``)."""
-    totaux: dict[tuple[int, int], Decimal] = {}
-    lignes = Plein.objects.filter(date_plein__range=(debut, fin)).values_list(
-        "date_plein", "quantite_litres", "prix_unitaire"
-    )
-    for jour, litres, prix in lignes:
-        cle = (jour.year, jour.month)
-        totaux[cle] = totaux.get(cle, Decimal("0")) + litres * prix
-    return totaux
 
 
 def cout_carburant(debut: date, fin: date) -> Decimal:

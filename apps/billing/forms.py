@@ -7,7 +7,7 @@ from apps.customers.models import MotifExoneration
 from apps.missions.models import Mission
 
 from . import services
-from .models import CategorieDepense, ModePaiement, StatutFacture
+from .models import CATEGORIES_AUTOMATIQUES, CategorieDepense, ModePaiement, StatutFacture
 
 
 def _libelle_mission(m: Mission) -> str:
@@ -79,7 +79,10 @@ class ReglementForm(StyleTailwindMixin, forms.Form):
 
 
 class DepenseForm(StyleTailwindMixin, forms.Form):
-    categorie = forms.ChoiceField(label="Catégorie", choices=CategorieDepense.choices)
+    categorie = forms.ChoiceField(
+        label="Catégorie",
+        choices=[c for c in CategorieDepense.choices if c[0] not in CATEGORIES_AUTOMATIQUES],
+    )
     date_depense = forms.DateField(label="Date", widget=forms.DateInput(attrs={"type": "date"}))
     libelle = forms.CharField(label="Libellé", max_length=200)
     montant = forms.DecimalField(label="Montant (FCFA)", min_value=0, decimal_places=2, max_digits=14)

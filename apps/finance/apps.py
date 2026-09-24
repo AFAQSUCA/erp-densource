@@ -10,7 +10,7 @@ class FinanceConfig(AppConfig):
         from apps.accounts.navigation import EntreeMenu, enregistrer
         from apps.audit.registry import audit_model
 
-        from . import permissions
+        from . import permissions, receivers  # noqa: F401  (connecte les récepteurs)
         from .models import MouvementManuel
 
         audit_model(MouvementManuel, module="FINANCES")

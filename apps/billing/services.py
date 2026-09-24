@@ -33,10 +33,12 @@ from .exceptions import (
 from .models import (
     STATUTS_A_RECOUVRER,
     STATUTS_EMIS,
+    CATEGORIES_AUTOMATIQUES,
     CategorieDepense,
     Depense,
     Facture,
     LigneFacture,
+    ModePaiement,
     Reglement,
     StatutFacture,
 )
@@ -525,6 +527,56 @@ def depenses_par_categorie(debut: date, fin: date) -> list[dict]:
 
 
 @transaction.atomic
+def comptabiliser_depense_automatique(
+    *,
+    origine: str,
+    origine_id: int,
+    categorie: str,
+    date_depense: date,
+    libelle: str,
+    montant: Decimal,
+    reference: str = "",
+    mode: str = ModePaiement.ESPECES,
+) -> Depense | None:
+    """Crée la dépense d'un plein, d'un achat de pièces ou d'une main-d'œuvre d'OR (une seule fois par source).
+
+    Appelée par les récepteurs de ``finance`` dans la transaction de l'opération d'origine : si la dépense
+    ne peut pas être écrite, l'opération est annulée plutôt que de laisser une sortie d'argent non comptée.
+    Mode de paiement par défaut : espèces (caisse), que la Finance corrige ensuite si besoin
+    (:func:`changer_mode_depense`). Un montant nul ne crée rien. Idempotent : rejouer la même source
+    renvoie la dépense existante.
+    """
+    montant = Decimal(montant).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    if montant <= 0:
+        return None
+    depense, _ = Depense.objects.get_or_create(
+        origine=origine,
+        origine_id=origine_id,
+        defaults={
+            "categorie": categorie,
+            "date_depense": date_depense,
+            "libelle": libelle[:200],
+            "montant": montant,
+            "mode": mode,
+            "reference": reference[:100],
+        },
+    )
+    return depense
+
+
+def changer_mode_depense(depense: Depense, acteur, *, mode: str) -> Depense:
+    """La Finance corrige le mode de paiement d'une dépense automatique (elle en déduit le compte débité)."""
+    _exiger_role(acteur, permissions.SAISIE, "modifier une dépense")
+    if not depense.est_automatique:
+        raise ActionFactureNonAutorisee("Seules les dépenses créées automatiquement se corrigent ici.")
+    if mode not in ModePaiement.values:
+        raise MontantInvalide("Mode de paiement inconnu.")
+    depense.mode = mode
+    depense.save(update_fields=["mode", "updated_at"])
+    return depense
+
+
+@transaction.atomic
 def enregistrer_depense(
     acteur,
     *,
@@ -538,6 +590,11 @@ def enregistrer_depense(
 ) -> Depense:
     """Saisie d'une dépense (cahier-des-charges.md:192) ; la date ne peut pas être future."""
     _exiger_role(acteur, permissions.SAISIE, "saisir une dépense")
+    if categorie in CATEGORIES_AUTOMATIQUES:
+        raise MontantInvalide(
+            "Le carburant, les pièces et la main-d'œuvre des réparations se comptabilisent tout seuls "
+            "(plein, entrée de stock, clôture d'OR) : ne les saisissez pas ici."
+        )
     libelle = libelle.strip()
     if not libelle:
         raise MontantInvalide("Le libellé est obligatoire.")

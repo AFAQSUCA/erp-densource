@@ -217,6 +217,21 @@ class CategorieDepense(models.TextChoices):
     ENTRETIEN = "ENTRETIEN", _("Entretien")
     FRAIS_ADMIN = "FRAIS_ADMIN", _("Frais administratifs")
     AUTRE = "AUTRE", _("Autre")
+    # Catégories du parc auto : créées automatiquement (voir OrigineDepense), pas proposées à la saisie manuelle.
+    CARBURANT = "CARBURANT", _("Carburant")
+    PIECES = "PIECES", _("Pièces détachées")
+    MAINTENANCE = "MAINTENANCE", _("Main-d'œuvre des réparations")
+
+
+CATEGORIES_AUTOMATIQUES = (CategorieDepense.CARBURANT, CategorieDepense.PIECES, CategorieDepense.MAINTENANCE)
+
+
+class OrigineDepense(models.TextChoices):
+    """D'où vient une dépense créée automatiquement (vide : saisie à la main)."""
+
+    PLEIN = "PLEIN", _("Plein de carburant")
+    ACHAT_STOCK = "ACHAT_STOCK", _("Achat de pièces")
+    MAIN_OEUVRE_OR = "MAIN_OEUVRE_OR", _("Main-d'œuvre d'un OR")
 
 
 class Depense(BaseModel):
@@ -239,6 +254,14 @@ class Depense(BaseModel):
     saisi_par = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="+"
     )
+    origine = models.CharField(
+        _("origine"), max_length=14, choices=OrigineDepense.choices, blank=True,
+        help_text=_("Renseignée pour une dépense créée automatiquement (plein, achat de pièces, OR)."),
+    )
+    origine_id = models.PositiveBigIntegerField(
+        _("identifiant de l'origine"), null=True, blank=True,
+        help_text=_("Numéro du plein, du mouvement de stock ou de l'OR à l'origine de la dépense."),
+    )
 
     class Meta:
         verbose_name = _("dépense")
@@ -246,7 +269,15 @@ class Depense(BaseModel):
         ordering = ["-date_depense", "-pk"]
         constraints = [
             models.CheckConstraint(condition=Q(montant__gt=0), name="depense_montant_positif"),
+            # Une source (un plein, un achat, un OR) ne donne jamais deux dépenses.
+            models.UniqueConstraint(
+                fields=["origine", "origine_id"], condition=~Q(origine=""), name="depense_une_par_origine"
+            ),
         ]
+
+    @property
+    def est_automatique(self) -> bool:
+        return bool(self.origine)
 
     def __str__(self):
         return f"{self.libelle} ({self.montant})"
