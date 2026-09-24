@@ -22,7 +22,7 @@
         <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">{{ c.libelle }}</dt><dd class="mt-1 text-xl font-bold text-slate-900">{{ c.total|floatformat:0|intcomma }} <span class="text-sm font-medium text-slate-600">FCFA</span></dd></div>
       {% endfor %}
     </dl>
-    <p class="mt-2 text-xs text-slate-600">Le carburant et les ordres de réparation clôturés sont comptés à part dans les charges du mois : ne les saisissez pas ici pour éviter un double compte.</p>
+    <p class="mt-2 text-xs text-slate-600">Le carburant (chaque plein), les pièces (chaque achat en stock) et la main-d'œuvre des ordres de réparation clôturés s'ajoutent ici automatiquement, en espèces par défaut : ne les saisissez pas à la main. Si le paiement s'est fait autrement, corrigez le mode sur la ligne.</p>
   </section>
 
   <form method="get" class="mt-5 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -39,16 +39,27 @@
       <table class="min-w-full divide-y divide-slate-200 text-sm">
         <caption class="sr-only">Liste des dépenses</caption>
         <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-          <tr><th scope="col" class="px-4 py-3">Date</th><th scope="col" class="px-4 py-3">Libellé</th><th scope="col" class="px-4 py-3">Catégorie</th><th scope="col" class="hidden px-4 py-3 xl:table-cell">Mission</th><th scope="col" class="hidden px-4 py-3 xl:table-cell">Mode</th><th scope="col" class="px-4 py-3 text-right">Montant</th></tr>
+          <tr><th scope="col" class="px-4 py-3">Date</th><th scope="col" class="px-4 py-3">Libellé</th><th scope="col" class="px-4 py-3">Catégorie</th><th scope="col" class="hidden px-4 py-3 xl:table-cell">Mission</th><th scope="col" class="px-4 py-3">Mode</th><th scope="col" class="px-4 py-3 text-right">Montant</th></tr>
         </thead>
         <tbody class="divide-y divide-slate-100">
           {% for d in depenses %}
             <tr class="hover:bg-slate-50">
               <td class="whitespace-nowrap px-4 py-3 text-slate-700">{{ d.date_depense|date:"d/m/Y" }}</td>
-              <td class="px-4 py-3 text-slate-900">{{ d.libelle }}{% if d.reference %}<span class="block text-xs text-slate-600">Pièce {{ d.reference }}</span>{% endif %}</td>
+              <td class="px-4 py-3 text-slate-900">{{ d.libelle }}{% if d.est_automatique %}<span class="ml-1 inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700 ring-1 ring-inset ring-slate-300">Automatique</span>{% endif %}{% if d.reference %}<span class="block text-xs text-slate-600">Pièce {{ d.reference }}</span>{% endif %}</td>
               <td class="whitespace-nowrap px-4 py-3 text-slate-700">{{ d.get_categorie_display }}</td>
               <td class="hidden whitespace-nowrap px-4 py-3 text-slate-700 xl:table-cell">{{ d.mission.numero|default:"—" }}</td>
-              <td class="hidden whitespace-nowrap px-4 py-3 text-slate-700 xl:table-cell">{{ d.get_mode_display }}</td>
+              <td class="whitespace-nowrap px-4 py-3 text-slate-700">
+                {% if peut_saisir and d.est_automatique %}
+                  <form method="post" action="{% url 'billing:depense_mode' d.pk %}" class="flex items-center gap-1">
+                    {% csrf_token %}
+                    <label class="sr-only" for="mode-{{ d.pk }}">Mode de paiement</label>
+                    <select id="mode-{{ d.pk }}" name="mode" class="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs focus:border-marque-600 focus:outline-none focus:ring-2 focus:ring-marque-600/30">
+                      {% for code, libelle in modes %}<option value="{{ code }}"{% if code == d.mode %} selected{% endif %}>{{ libelle }}</option>{% endfor %}
+                    </select>
+                    <button type="submit" class="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">Changer</button>
+                  </form>
+                {% else %}{{ d.get_mode_display }}{% endif %}
+              </td>
               <td class="whitespace-nowrap px-4 py-3 text-right font-medium text-slate-900">{{ d.montant|floatformat:0|intcomma }}</td>
             </tr>
           {% endfor %}

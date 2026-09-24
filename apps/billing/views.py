@@ -27,7 +27,7 @@ from .forms import (
     MotifForm,
     ReglementForm,
 )
-from .models import Facture, LigneFacture, Reglement, StatutFacture, STATUTS_A_RECOUVRER
+from .models import Depense, Facture, LigneFacture, ModePaiement, Reglement, StatutFacture, STATUTS_A_RECOUVRER
 
 
 def _fcfa(montant) -> str:
@@ -319,6 +319,7 @@ class DepenseListView(PaginationTolerante, RoleRequiredMixin, ListView):
             par_categorie=services.depenses_par_categorie(debut, aujourd_hui),
             total_mois=services.total_depenses(debut, aujourd_hui),
             peut_saisir=self.request.user.role_effectif in permissions.SAISIE,
+            modes=ModePaiement.choices,
         )
         return contexte
 
@@ -339,3 +340,27 @@ class DepenseCreateView(RoleRequiredMixin, FormView):
             return self.form_invalid(form)
         messages.success(self.request, f"Dépense de {_fcfa(depense.montant)} enregistrée.")
         return redirect("billing:depenses")
+
+
+class DepenseModeView(RoleRequiredMixin, View):
+    """La Finance corrige le mode de paiement d'une dépense automatique (plein, achat de pièces, OR).
+
+    Ces dépenses sont créées en espèces par défaut ; le mode décide du compte débité en trésorerie.
+    """
+
+    roles = permissions.SAISIE
+    http_method_names = ["post"]
+
+    def post(self, request, pk):
+        depense = get_object_or_404(Depense, pk=pk)
+        mode = request.POST.get("mode", "")
+        try:
+            services.changer_mode_depense(depense, request.user, mode=mode)
+        except BillingError as erreur:
+            messages.error(request, str(erreur))
+        else:
+            messages.success(
+                request, f"Mode de paiement de « {depense.libelle} » : {ModePaiement(mode).label}."
+            )
+        return redirect("billing:depenses")
+

@@ -21,7 +21,10 @@ Cycle d'une facture (décision : FINANCES prépare, DIRECTION valide) :
   antérieure à l'émission. Un règlement erroné s'annule avec un motif (annulation logique) ; le
   reste à recouvrer et le statut se recalculent.
 - **Échue** = émise, non soldée, échéance dépassée : alerte au tableau de bord et notification.
-- **Dépenses** : Péages, Entretien, Frais administratifs (+ « Autre », ajout à notre initiative).
+- **Dépenses** : Péages, Entretien, Frais administratifs (+ « Autre », ajout à notre initiative), plus Carburant, Pièces
+  détachées et Main-d'œuvre des réparations **créées automatiquement** par `finance` (voir `apps/finance/README.md`) :
+  `Depense.origine` / `origine_id` identifient la source (une dépense par plein, achat ou OR), `changer_mode_depense`
+  corrige le mode de paiement.
 
 Droits (`permissions.py`) : consultation ADMIN, DIRECTION, FINANCES ; préparation, règlements et
 dépenses ADMIN et FINANCES ; validation DIRECTION seulement.

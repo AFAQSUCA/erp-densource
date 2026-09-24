@@ -22,6 +22,7 @@ from apps.missions import services as missions_services
 
 from .exceptions import CoutInvalide, StatutVehiculeInvalide, TransitionOrInterdite
 from .models import OrdreReparation, StatutOr, TypeOr, LieuReparation
+from .signals import or_cloture
 
 PREFIXE_NUMERO = "OR"
 
@@ -89,6 +90,7 @@ def cloturer_or(
         or_ouverts=vehicule_a_or_ouvert(vehicule),
         mission_active=missions_services.vehicule_a_mission_active(vehicule),
     )
+    or_cloture.send(sender=OrdreReparation, ordre=ordre)
     return ordre
 
 

@@ -13,8 +13,8 @@ Blocs (selon les droits déjà définis dans chaque app) :
   consommation moyenne globale, missions en cours, à affecter, à clôturer.
 - **Ressources humaines** (ADMIN, DIRECTION, RH) : effectif par département, absents du jour,
   prochains départs en congé, demandes à valider.
-- **Finances du mois** (ADMIN, DIRECTION, FINANCES) : CA HT facturé, encaissé, charges (dépenses,
-  carburant, maintenance), marge nette, créances dont échues, trésorerie ; groupe d'alertes
+- **Finances du mois** (ADMIN, DIRECTION, FINANCES) : CA HT facturé, encaissé, charges (carburant,
+  pièces, main-d'œuvre, autres dépenses : toutes les dépenses, parc auto compris), marge nette, créances dont échues, trésorerie ; groupe d'alertes
   « factures impayées échues ».
 - **Clientèle** (ADMIN, DIRECTION, CHARGE_CLIENTELE) : clients actifs (mission sur 90 jours),
   réclamations (30 jours), top 3 des clients (missions livrées ou clôturées sur 12 mois).
@@ -31,9 +31,9 @@ graphique des mois ; un seul axe ; pas de camembert. L'interface n'a pas de thè
 couleurs. Ajouter un graphique : préparer les données avec `graphiques.barres_horizontales` ou
 `colonnes_groupees` dans le service, puis `{% graphique_barres ... %}` dans le gabarit.
 
-Performance : 80 requêtes SQL au plus pour l'ADMIN à 6 mois (le CA, les encaissements, les dépenses, le carburant
-et les missions se lisent par mois en une requête chacun ; seule la maintenance se calcule mois par mois),
-quel que soit le volume de données (testé). Les blocs
+Performance : 80 requêtes SQL au plus pour l'ADMIN (le CA, les encaissements, les dépenses et les missions se
+lisent par mois en une requête chacun, quel que soit le nombre de mois), indépendamment du volume de données
+(testé). Les blocs
 exploitation, clientèle et finances sont mis en cache `DASHBOARD_CACHE_SECONDS` (60 s par défaut, 0 en
 test) via le cache Django, donc partagé entre processus dès que Redis est configuré ; le
 centre d'alertes est toujours recalculé.

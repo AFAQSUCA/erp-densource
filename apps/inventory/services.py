@@ -27,7 +27,7 @@ from .exceptions import (
     StockInsuffisant,
 )
 from .models import Article, MouvementStock, TypeMouvement
-from .signals import seuil_bas_atteint
+from .signals import entree_stock_enregistree, seuil_bas_atteint
 
 CENTIME = Decimal("0.01")
 
@@ -152,9 +152,11 @@ def enregistrer_entree(
     article.pump = (valeur / Decimal(article.quantite + quantite)).quantize(
         CENTIME, rounding=ROUND_HALF_UP
     )
-    return _enregistrer(
+    mouvement = _enregistrer(
         article, TypeMouvement.ENTREE, quantite, prix, acteur=acteur
     )
+    entree_stock_enregistree.send(sender=MouvementStock, mouvement=mouvement)
+    return mouvement
 
 
 @transaction.atomic

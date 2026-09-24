@@ -24,4 +24,5 @@ urlpatterns = [
     ),
     path("depenses/", views.DepenseListView.as_view(), name="depenses"),
     path("depenses/nouvelle/", views.DepenseCreateView.as_view(), name="depense_nouvelle"),
+    path("depenses/<int:pk>/mode/", views.DepenseModeView.as_view(), name="depense_mode"),
 ]

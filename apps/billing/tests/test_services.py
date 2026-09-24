@@ -500,7 +500,9 @@ def test_enregistrer_une_depense_et_totaux_par_categorie():
 
     par_categorie = {c["code"]: c["total"] for c in services.depenses_par_categorie(date(2026, 9, 1), date(2026, 9, 30))}
 
-    assert par_categorie == {"PEAGES": 20000, "ENTRETIEN": 80000, "FRAIS_ADMIN": 0, "AUTRE": 0}
+    assert par_categorie == {
+        "PEAGES": 20000, "ENTRETIEN": 80000, "FRAIS_ADMIN": 0, "AUTRE": 0, "CARBURANT": 0, "PIECES": 0, "MAINTENANCE": 0,
+    }
     assert services.total_depenses(date(2026, 9, 1), date(2026, 9, 30)) == Decimal("100000")
     assert services.total_depenses(date(2026, 10, 1), date(2026, 10, 31)) == 0
 
