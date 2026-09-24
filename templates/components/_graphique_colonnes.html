@@ -5,7 +5,7 @@
   <ul class="viz-legende" aria-label="Légende">
     {% for s in g.legende %}<li><span class="viz-cle viz-s{{ s.rang }}" aria-hidden="true"></span>{{ s.nom }}</li>{% endfor %}
   </ul>
-  <div class="viz-colonnes">
+  <div class="viz-colonnes{% if g.grappes|length > 6 %} viz-dense{% endif %}">
     <div class="viz-axe-y" aria-hidden="true">
       {% for t in g.graduations %}<span style="bottom: {{ t.position }}%">{{ t.etiquette }}</span>{% endfor %}
     </div>

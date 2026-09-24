@@ -8,7 +8,10 @@ Entités : `Personnel` (avec `superieur` hiérarchique), `Conge`, `ValidationCon
 
 Règles de congés :
 - N1 = supérieur hiérarchique direct (`Personnel.superieur`) ; le directeur (sans
-  supérieur, compte de rôle DIRECTION) valide lui-même. N2 = RH.
+  supérieur, compte de rôle DIRECTION) valide lui-même. N2 = RH. **Substitution** : quand le délai d'un niveau
+  (48 h en N1, 24 h en N2) est dépassé, la DIRECTION peut valider ou refuser à la place du validateur habituel
+  (`services._direction_remplace`), sauf sur sa propre demande ; sans cela, l'alerte « validation en retard » qui
+  lui est adressée n'aurait aucune suite. Avant l'échéance, la hiérarchie reste seule décideuse.
 - Droit annuel 2 semaines = 12 jours ouvrables (`DROIT_ANNUEL_JOURS`), calculé
   par `droits_conges` (jamais stocké) : droit + exceptions RH - congés approuvés,
   en cours ou terminés de l'année de début.

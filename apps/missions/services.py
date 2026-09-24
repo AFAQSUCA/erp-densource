@@ -21,7 +21,7 @@ from django.db.models import Count, QuerySet, Sum
 from django.utils import timezone
 
 from apps.core.search import filtrer_par_texte, normaliser
-from apps.core.services import prochain_numero
+from apps.core.services import prochain_numero, total_par_mois
 from apps.customers.models import Client
 from apps.drivers import services as drivers_services
 from apps.drivers.models import Chauffeur, StatutChauffeur
@@ -147,6 +147,23 @@ def repartition_par_statut() -> dict[str, int]:
     for statut, nombre in Mission.objects.values_list("statut").annotate(n=Count("pk")):
         comptes[statut] = nombre
     return comptes
+
+
+def missions_par_mois(debut: date, fin: date) -> dict[str, dict[tuple[int, int], int]]:
+    """Missions créées et missions livrées (livrées ou clôturées) par mois, sur la période.
+
+    ``{"creees": {(année, mois): n}, "livrees": {...}}`` : deux requêtes.
+    """
+    return {
+        "creees": total_par_mois(Mission.objects.filter(created_at__date__range=(debut, fin)), "created_at", None),
+        "livrees": total_par_mois(
+            Mission.objects.filter(
+                statut__in=[StatutMission.LIVREE, StatutMission.CLOTUREE], date_livraison__date__range=(debut, fin)
+            ),
+            "date_livraison",
+            None,
+        ),
+    }
 
 
 def clients_actifs(*, jours: int = 90, maintenant: datetime | None = None) -> int:

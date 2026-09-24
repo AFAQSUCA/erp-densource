@@ -24,7 +24,7 @@
     </div>
   </div>
 
-  <dl class="mt-5 grid gap-4 sm:grid-cols-2">
+  <dl class="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
     <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <dt class="text-sm text-slate-600">Consommation moyenne{% if filtre.cleaned_data.vehicule or filtre.cleaned_data.chauffeur %} (selon le filtre){% else %} de la flotte{% endif %}</dt>
       <dd class="mt-1 text-2xl font-bold text-slate-900">
@@ -41,7 +41,7 @@
   </dl>
 
   <form method="get" class="mt-5 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
       {% include "components/_champ.html" with champ=filtre.q %}
       {% include "components/_champ.html" with champ=filtre.vehicule %}
       {% include "components/_champ.html" with champ=filtre.chauffeur %}

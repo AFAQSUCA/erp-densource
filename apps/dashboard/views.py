@@ -26,5 +26,6 @@ class DashboardView(LoginRequiredMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         contexte = super().get_context_data(**kwargs)
-        contexte.update(services.tableau_de_bord(self.request.user))
+        mois = services.periode_valide(self.request.GET.get("periode"))
+        contexte.update(services.tableau_de_bord(self.request.user, mois=mois))
         return contexte

@@ -22,7 +22,7 @@
         {% for erreur in form.non_field_errors %}<p>{{ erreur }}</p>{% endfor %}
       </div>
     {% endif %}
-    <div class="grid gap-5 sm:grid-cols-2">
+    <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
       {% include "components/_champ.html" with champ=form.date_debut %}
       {% include "components/_champ.html" with champ=form.date_fin %}
     </div>

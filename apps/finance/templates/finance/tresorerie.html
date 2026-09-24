@@ -18,7 +18,7 @@
     {% endif %}
   </div>
 
-  <dl class="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+  <dl class="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
     <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Solde total</dt><dd class="mt-1 text-2xl font-bold {% if soldes.total < 0 %}text-red-800{% else %}text-slate-900{% endif %}">{{ soldes.total|floatformat:0|intcomma }} <span class="text-sm font-medium text-slate-600">FCFA</span></dd></div>
     {% for code, libelle in comptes %}
       <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -72,7 +72,7 @@
       {% csrf_token %}
       <h2 class="text-base font-semibold text-slate-900">Autre entrée ou sortie</h2>
       <p class="text-xs text-slate-600">Solde d'ouverture, apport, frais bancaires, retrait… Les règlements et les dépenses se saisissent depuis la facturation.</p>
-      <div class="grid gap-4 sm:grid-cols-3">
+      <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
         {% include "components/_champ.html" with champ=form_mouvement.sens %}
         {% include "components/_champ.html" with champ=form_mouvement.date_mouvement %}
         {% include "components/_champ.html" with champ=form_mouvement.montant %}

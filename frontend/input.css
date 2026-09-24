@@ -49,10 +49,12 @@
 .viz-grappe { position: relative; flex: 1 1 0; height: 100%; display: flex; align-items: flex-end; justify-content: center; border-radius: 4px 4px 0 0; outline: none; }
 .viz-grappe:hover, .viz-grappe:focus { background-color: rgba(15, 23, 42, 0.05); }
 .viz-grappe:focus-visible { box-shadow: inset 0 0 0 2px var(--viz-1); }
-.viz-colonnes-serie { display: flex; align-items: flex-end; gap: 2px; height: 100%; }
-.viz-colonne { display: block; width: clamp(6px, 2.2vw, 20px); border-radius: 4px 4px 0 0; }
+.viz-colonnes-serie { display: flex; align-items: flex-end; justify-content: center; gap: 2px; width: 80%; height: 100%; }
+.viz-colonne { display: block; flex: 1 1 0; min-width: 0; max-width: 24px; border-radius: 4px 4px 0 0; }
 .viz-axe-x { display: flex; margin-top: 0.375rem; font-size: 0.75rem; color: #475569; }
-.viz-axe-x span { flex: 1 1 0; text-align: center; line-height: 1.2; }
+.viz-axe-x span { flex: 1 1 0; min-width: 0; text-align: center; line-height: 1.2; white-space: nowrap; }
+/* Beaucoup de mois sur un petit écran : un libellé sur deux, le dernier mois toujours visible (les valeurs restent dans l'infobulle et le tableau). */
+@media (max-width: 640px) { .viz-dense .viz-axe-x span:nth-child(odd) { visibility: hidden; } }
 .viz-axe-x small { display: block; font-size: 0.6875rem; color: #64748b; }
 
 /* Infobulle : la valeur d'abord (en gras), le nom de la série ensuite ; clé = petit trait de la couleur de la série */
@@ -66,3 +68,7 @@
 .viz-trait { display: inline-block; width: 0.75rem; height: 2px; border-radius: 1px; }
 .viz-info-valeur { font-weight: 600; color: #0f172a; font-variant-numeric: tabular-nums; }
 .viz-info-nom { color: #475569; }
+
+/* Un tableau qui défile horizontalement contient aussi ses libellés cachés (.sr-only est en position absolue) :
+   sans cela, ils sortaient du conteneur et élargissaient toute la page sur téléphone. */
+.overflow-x-auto { position: relative; }

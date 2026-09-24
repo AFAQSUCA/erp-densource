@@ -17,7 +17,7 @@
 
   <section class="mt-5" aria-labelledby="titre-mois">
     <h2 id="titre-mois" class="text-sm font-semibold text-slate-900">Ce mois-ci : {{ total_mois|floatformat:0|intcomma }} FCFA</h2>
-    <dl class="mt-2 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <dl class="mt-2 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
       {% for c in par_categorie %}
         <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">{{ c.libelle }}</dt><dd class="mt-1 text-xl font-bold text-slate-900">{{ c.total|floatformat:0|intcomma }} <span class="text-sm font-medium text-slate-600">FCFA</span></dd></div>
       {% endfor %}

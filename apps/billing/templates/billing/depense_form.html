@@ -16,7 +16,7 @@
     {% if form.non_field_errors %}
       <div role="alert" class="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">{% for erreur in form.non_field_errors %}<p>{{ erreur }}</p>{% endfor %}</div>
     {% endif %}
-    <div class="grid gap-5 sm:grid-cols-2">
+    <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
       {% include "components/_champ.html" with champ=form.categorie %}
       {% include "components/_champ.html" with champ=form.date_depense %}
       <div class="sm:col-span-2">{% include "components/_champ.html" with champ=form.libelle %}</div>

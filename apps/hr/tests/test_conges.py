@@ -8,6 +8,7 @@ from datetime import date, datetime, timedelta
 from datetime import timezone as dt_timezone
 
 import pytest
+from django.utils import timezone
 
 from apps.accounts.models import Role
 from apps.accounts.tests.factories import UserFactory
@@ -57,6 +58,12 @@ def _demande(hierarchie=None, debut=DEBUT, fin=FIN):
         employe, date_debut=debut, date_fin=fin, motif="Repos", maintenant=MAINTENANT
     )
     return conge, superieur
+
+
+def _delai_en_cours(conge):
+    """Le délai de décision n'est pas dépassé (la Direction ne peut donc pas se substituer au validateur)."""
+    Conge.objects.filter(pk=conge.pk).update(date_limite_n1=timezone.now() + timedelta(hours=24))
+    conge.refresh_from_db()
 
 
 def _approuve(hierarchie=None, debut=DEBUT, fin=FIN):
@@ -153,6 +160,7 @@ def test_valider_n1_refuse_pour_le_superieur_du_superieur():
     chef.superieur = PersonnelFactory(utilisateur=directeur)
     chef.save()
     conge, _ = _demande((employe, superieur))
+    _delai_en_cours(conge)
 
     with pytest.raises(ActionNonAutorisee):
         services.valider_n1(conge, directeur)
@@ -445,6 +453,7 @@ def test_un_directeur_sans_compte_utilisateur_ne_peut_pas_demander():
 def test_un_autre_utilisateur_direction_ne_valide_pas_le_n1_du_directeur():
     fiche, compte = _directeur()
     conge, _ = _demande((fiche, compte))
+    _delai_en_cours(conge)
 
     with pytest.raises(ActionNonAutorisee):
         services.valider_n1(conge, UserFactory(role=Role.DIRECTION))

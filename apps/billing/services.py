@@ -18,7 +18,7 @@ from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from apps.core.search import filtrer_par_texte
-from apps.core.services import prochain_numero
+from apps.core.services import prochain_numero, total_par_mois
 from apps.customers.models import Client
 from apps.missions.models import Mission, StatutMission
 
@@ -166,6 +166,44 @@ def chiffre_affaires(debut: date, fin: date) -> Decimal:
     return Facture.objects.filter(
         statut__in=STATUTS_EMIS, date_emission__range=(debut, fin)
     ).aggregate(total=Sum("montant_ht"))["total"] or ZERO
+
+
+def chiffre_affaires_par_mois(debut: date, fin: date) -> dict[tuple[int, int], Decimal]:
+    """CA HT des factures émises, par mois (``(année, mois)``), sur la période, en une requête."""
+    return total_par_mois(
+        Facture.objects.filter(statut__in=STATUTS_EMIS, date_emission__range=(debut, fin)),
+        "date_emission",
+        "montant_ht",
+    )
+
+
+def encaissements_par_mois(debut: date, fin: date) -> dict[tuple[int, int], Decimal]:
+    return total_par_mois(Reglement.objects.filter(date_reglement__range=(debut, fin)), "date_reglement")
+
+
+def depenses_par_mois(debut: date, fin: date) -> dict[tuple[int, int], Decimal]:
+    return total_par_mois(Depense.objects.filter(date_depense__range=(debut, fin)), "date_depense")
+
+
+def creances_par_anciennete(aujourd_hui: date | None = None) -> list[dict]:
+    """Reste à recouvrer réparti selon le retard de paiement : pas encore échu, puis 1-30 j, 31-60 j, plus de 60 j.
+
+    Chaque tranche : ``libelle``, ``montant``, ``nombre``, ``echu`` (bool). Toutes les tranches sont
+    présentes, même à 0.
+    """
+    aujourd_hui = aujourd_hui or timezone.localdate()
+    tranches = [
+        {"libelle": "Pas encore échu", "montant": ZERO, "nombre": 0, "echu": False},
+        {"libelle": "En retard de 1 à 30 jours", "montant": ZERO, "nombre": 0, "echu": True},
+        {"libelle": "En retard de 31 à 60 jours", "montant": ZERO, "nombre": 0, "echu": True},
+        {"libelle": "En retard de plus de 60 jours", "montant": ZERO, "nombre": 0, "echu": True},
+    ]
+    for facture in factures_queryset().filter(statut__in=STATUTS_A_RECOUVRER):
+        retard = (aujourd_hui - facture.date_echeance).days if facture.date_echeance else 0
+        rang = 0 if retard <= 0 else 1 if retard <= 30 else 2 if retard <= 60 else 3
+        tranches[rang]["montant"] += facture.reste
+        tranches[rang]["nombre"] += 1
+    return tranches
 
 
 def encaissements(debut: date, fin: date) -> Decimal:

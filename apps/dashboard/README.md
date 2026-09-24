@@ -21,7 +21,9 @@ Blocs (selon les droits déjà définis dans chaque app) :
 
 Graphiques (`apps/core/graphiques.py`, balises `graphique_barres` / `graphique_colonnes`, styles `viz-*` de
 `frontend/input.css`) : camions et missions par statut, effectif par département, top des clients, charges du
-mois, et facturé / encaissé / charges sur 6 mois. HTML et CSS seulement (aucun script, donc compatible avec la
+mois, créances par ancienneté, missions créées / livrées par mois, et facturé / encaissé / charges par mois.
+Un sélecteur de période (3, 6 ou 12 mois, `?periode=`) au-dessus des blocs règle tous les graphiques dans le temps ;
+chaque barre de statut ou de département mène à la liste filtrée correspondante (drill-down). HTML et CSS seulement (aucun script, donc compatible avec la
 CSP stricte). Règles suivies : palette bleu, orange, aqua validée avec `validate_palette.js` ; barres
 horizontales pour comparer des catégories, colonnes groupées pour suivre 3 séries dans le temps ; valeur
 écrite au bout de chaque barre ; infobulle au survol et au focus clavier ; tableau équivalent sous le
@@ -29,7 +31,8 @@ graphique des mois ; un seul axe ; pas de camembert. L'interface n'a pas de thè
 couleurs. Ajouter un graphique : préparer les données avec `graphiques.barres_horizontales` ou
 `colonnes_groupees` dans le service, puis `{% graphique_barres ... %}` dans le gabarit.
 
-Performance : 80 requêtes SQL au plus pour l'ADMIN (dont ~30 pour l'historique de 6 mois, mis en cache),
+Performance : 80 requêtes SQL au plus pour l'ADMIN à 6 mois (le CA, les encaissements, les dépenses, le carburant
+et les missions se lisent par mois en une requête chacun ; seule la maintenance se calcule mois par mois),
 quel que soit le volume de données (testé). Les blocs
 exploitation, clientèle et finances sont mis en cache `DASHBOARD_CACHE_SECONDS` (60 s par défaut, 0 en
 test) via le cache Django, donc partagé entre processus dès que Redis est configuré ; le

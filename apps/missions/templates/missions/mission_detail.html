@@ -35,11 +35,11 @@
     {% endfor %}
   </ol>
 
-  <div class="mt-6 grid gap-6 lg:grid-cols-3">
+  <div class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
     <div class="space-y-6 lg:col-span-2">
       <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-transport">
         <h2 id="titre-transport" class="text-base font-semibold text-slate-900">Transport</h2>
-        <dl class="mt-4 grid gap-x-6 gap-y-4 text-sm sm:grid-cols-2">
+        <dl class="mt-4 grid grid-cols-1 gap-x-6 gap-y-4 text-sm sm:grid-cols-2">
           <div><dt class="text-slate-600">Chargement</dt><dd class="mt-0.5 font-medium text-slate-900">{{ mission.lieu_chargement }}</dd></div>
           <div><dt class="text-slate-600">Livraison</dt><dd class="mt-0.5 font-medium text-slate-900">{{ mission.lieu_livraison }}</dd></div>
           <div><dt class="text-slate-600">Marchandise</dt><dd class="mt-0.5 font-medium text-slate-900">{{ mission.nature_marchandise }}</dd></div>
@@ -52,7 +52,7 @@
       <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-affectation">
         <h2 id="titre-affectation" class="text-base font-semibold text-slate-900">Camion et chauffeur</h2>
         {% if mission.vehicule %}
-          <dl class="mt-4 grid gap-x-6 gap-y-4 text-sm sm:grid-cols-2">
+          <dl class="mt-4 grid grid-cols-1 gap-x-6 gap-y-4 text-sm sm:grid-cols-2">
             <div><dt class="text-slate-600">Camion</dt><dd class="mt-0.5 font-medium text-slate-900">{{ mission.vehicule.immatriculation }} — {{ mission.vehicule.marque }} {{ mission.vehicule.modele }}</dd></div>
             <div><dt class="text-slate-600">Chauffeur</dt><dd class="mt-0.5 font-medium text-slate-900">{{ mission.chauffeur.personnel.prenom }} {{ mission.chauffeur.personnel.nom }}</dd></div>
             <div><dt class="text-slate-600">Km au départ</dt><dd class="mt-0.5 font-medium text-slate-900">{{ mission.km_depart|default_if_none:"—"|intcomma }}</dd></div>
@@ -65,7 +65,7 @@
 
       <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-dates">
         <h2 id="titre-dates" class="text-base font-semibold text-slate-900">Historique</h2>
-        <dl class="mt-4 grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
+        <dl class="mt-4 grid grid-cols-1 gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
           <div><dt class="text-slate-600">Créée le</dt><dd class="mt-0.5 font-medium text-slate-900">{{ mission.created_at|date:"d/m/Y H:i" }}</dd></div>
           <div><dt class="text-slate-600">Départ effectif</dt><dd class="mt-0.5 font-medium text-slate-900">{{ mission.date_depart|date:"d/m/Y H:i"|default:"—" }}</dd></div>
           <div><dt class="text-slate-600">Colis récupéré le</dt><dd class="mt-0.5 font-medium text-slate-900">{{ mission.date_recuperation|date:"d/m/Y H:i"|default:"—" }}</dd></div>

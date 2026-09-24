@@ -1,8 +1,12 @@
 """Services transverses."""
 
+import calendar
 from datetime import date
+from decimal import Decimal
 
 from django.db import transaction
+from django.db.models import Count, Sum
+from django.db.models.functions import TruncMonth
 from django.utils import timezone
 
 from .constants import DELAI_ALERTE_JOURS
@@ -46,3 +50,34 @@ def etat_echeance(
     if restants < 0:
         return "EXPIRE", restants
     return ("A_RENOUVELER" if restants <= jours else "VALIDE"), restants
+
+
+# --- séries mensuelles (graphiques du tableau de bord) ---
+
+
+def debuts_de_mois(jour: date, nombre: int) -> list[date]:
+    """Premiers jours des ``nombre`` derniers mois, celui de ``jour`` compris, du plus ancien au plus récent."""
+    resultat = []
+    for decalage in range(nombre - 1, -1, -1):
+        annee, mois = divmod(jour.year * 12 + jour.month - 1 - decalage, 12)
+        resultat.append(date(annee, mois + 1, 1))
+    return resultat
+
+
+def fin_de_mois(debut: date) -> date:
+    return debut.replace(day=calendar.monthrange(debut.year, debut.month)[1])
+
+
+def total_par_mois(queryset, champ_date: str, champ_valeur: str | None = "montant") -> dict[tuple[int, int], Decimal | int]:
+    """Somme de ``champ_valeur`` (ou nombre de lignes si ``None``) par mois de ``champ_date``, en une requête.
+
+    Clé : ``(année, mois)``. Les mois sans ligne sont absents : lire avec ``.get(cle, 0)``.
+    """
+    agregat = Sum(champ_valeur) if champ_valeur else Count("pk")
+    lignes = (
+        queryset.annotate(_mois=TruncMonth(champ_date))
+        .values_list("_mois")
+        .annotate(_total=agregat)
+        .order_by()
+    )
+    return {(mois.year, mois.month): total for mois, total in lignes if mois is not None and total is not None}
