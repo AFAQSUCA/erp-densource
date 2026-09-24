@@ -1,15 +1,18 @@
 {% extends "base.html" %}
-{% load humanize ui %}
+{% load humanize static ui %}
 {% block titre %}{{ mission.numero }}{% endblock %}
 {% block entete %}Missions{% endblock %}
 
 {% block contenu %}
-<div class="mx-auto max-w-5xl">
+<div class="mx-auto max-w-5xl" data-suivi-missions data-ws-chemin="/ws/missions/suivi/" data-mission-id="{{ mission.pk }}">
   <nav aria-label="Fil d'Ariane" class="text-sm text-slate-600">
     <a href="{% url 'missions:liste' %}" class="underline-offset-2 hover:underline">Missions</a>
     <span aria-hidden="true">/</span> {{ mission.numero }}
   </nav>
+  <div class="mt-2">{% include "components/_suivi_direct.html" %}</div>
 
+  {# Zone rafraîchie en direct (static/js/suivi-missions.js) : statut, frise, actions et codes #}
+  <div data-suivi-zone="mission">
   <div class="mt-2 flex flex-wrap items-center gap-3">
     <h1 class="text-2xl font-bold text-slate-900">{{ mission.numero }}</h1>
     {% badge mission.statut mission.get_statut_display %}
@@ -128,6 +131,12 @@
           </form>
         {% endif %}
 
+        {% if mission.statut == "EN_COURS_DEPART" and not actions.recuperation %}
+          <p class="mt-4 text-sm text-slate-700"><i class="fa-solid fa-mobile-screen mr-1" aria-hidden="true"></i>La récupération se confirme par le code de l'expéditeur, saisi ou scanné par le chauffeur affecté depuis son téléphone. Cet écran se met à jour dès que c'est fait.</p>
+        {% elif mission.statut == "EN_COURS_COLIS_RECUPERE" and not actions.livraison %}
+          <p class="mt-4 text-sm text-slate-700"><i class="fa-solid fa-mobile-screen mr-1" aria-hidden="true"></i>La livraison se confirme par le code du destinataire, saisi ou scanné par le chauffeur affecté depuis son téléphone. Cet écran se met à jour dès que c'est fait.</p>
+        {% endif %}
+
         {% if not actions.planifier and not actions.affecter and not actions.demarrer and not actions.recuperation and not actions.livraison and not actions.cloturer %}
           <p class="mt-3 text-sm text-slate-700">Aucune action disponible pour votre rôle à cette étape.</p>
         {% endif %}
@@ -137,6 +146,11 @@
         <section class="rounded-xl border border-amber-300 bg-amber-50 p-5 shadow-sm" aria-labelledby="titre-codes">
           <h2 id="titre-codes" class="text-base font-semibold text-amber-900"><i class="fa-solid fa-key mr-2" aria-hidden="true"></i>Codes à communiquer</h2>
           <p class="mt-1 text-xs text-amber-900">Confidentiels : à remettre uniquement à la personne concernée.</p>
+          <a href="{% url 'missions:codes_pdf' mission.pk %}"
+             class="mt-3 flex items-center justify-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-amber-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-700 focus-visible:ring-offset-2">
+            <i class="fa-solid fa-file-pdf" aria-hidden="true"></i> Télécharger le PDF des codes
+          </a>
+          <p class="mt-1 text-center text-xs text-amber-900">Une page pour l'expéditeur, une pour le destinataire : à envoyer à chacun.</p>
           {% if codes.expediteur %}
             <div class="mt-4">
               <p class="text-sm text-amber-900">Expéditeur (récupération du colis)</p>
@@ -156,5 +170,7 @@
       {% endif %}
     </div>
   </div>
+  </div>{# fin de la zone rafraîchie en direct #}
 </div>
+<script src="{% static 'js/suivi-missions.js' %}" defer></script>
 {% endblock %}

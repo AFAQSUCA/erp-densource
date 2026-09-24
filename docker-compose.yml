@@ -72,6 +72,22 @@ services:
       retries: 10
       start_period: 20s
 
+  # Suivi des missions en direct (WebSocket) : même image que `web`, mais servie par Daphne (ASGI).
+  # Nginx lui envoie les connexions /ws/ ; les pages restent servies par Gunicorn. Les changements de
+  # mission sont diffusés par `web` dans Redis (couche de messages) puis poussés d'ici aux navigateurs.
+  realtime:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.prod
+      DATABASE_URL: postgres://erp_densource:${POSTGRES_PASSWORD:-erp_densource}@db:5432/erp_densource
+      REDIS_URL: redis://redis:6379/0
+    command: ["daphne", "-b", "0.0.0.0", "-p", "8001", "config.asgi:application"]
+    depends_on:
+      web:
+        condition: service_healthy
+
   celery_worker:
     build: .
     restart: unless-stopped

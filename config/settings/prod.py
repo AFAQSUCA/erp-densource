@@ -29,6 +29,24 @@ CACHES = {
     }
 }
 
+# Couche de messages des WebSocket : Redis, partagé entre le conteneur `web` (gunicorn), qui diffuse un
+# changement de mission, et le conteneur `realtime` (daphne), qui le pousse aux navigateurs connectés.
+#
+# ATTENTION au délai de lecture : `redis-py` >= 8 en impose un par défaut (5 s), alors que
+# `channels-redis` attend un message en bloquant 5 s (BZPOPMIN). Sans réglage, le délai de lecture expire
+# à chaque attente au repos : le consommateur meurt en « erreur interne » (code 1011) quelques secondes
+# après la connexion et le navigateur se reconnecte en boucle. Le délai de lecture doit donc rester
+# supérieur à l'attente bloquante ; le délai de connexion, lui, reste court (Redis injoignable : on
+# échoue vite, la diffusion étant sans conséquence pour le métier — voir apps/missions/temps_reel.py).
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [{"address": env("REDIS_URL"), "socket_timeout": 15, "socket_connect_timeout": 3}],
+        },
+    }
+}
+
 # Tâches asynchrones réelles (étape 7 lot 2) : un processus `celery worker` (et `celery beat` pour
 # la planification) doit tourner à côté de l'application — voir README « Lancer en production ».
 CELERY_TASK_ALWAYS_EAGER = False

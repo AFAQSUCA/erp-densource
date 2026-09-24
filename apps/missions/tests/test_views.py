@@ -242,8 +242,6 @@ def test_la_direction_voit_le_formulaire_d_affectation_avec_les_seuls_camions_di
     ("etape", "action_attendue"),
     [
         (_affectee, "demarrer"),
-        (_en_cours, "recuperation"),
-        (_recuperee, "livraison"),
         (_livree, "cloturer"),
     ],
 )
@@ -254,6 +252,38 @@ def test_la_direction_voit_l_action_de_l_etape(client, etape, action_attendue):
     contenu = client.get(_url("detail", mission)).content.decode()
 
     assert _url(action_attendue, mission) in contenu
+
+
+@pytest.mark.parametrize(
+    ("etape", "action_attendue"), [(_en_cours, "recuperation"), (_recuperee, "livraison")]
+)
+def test_l_admin_voit_la_saisie_du_code_a_la_place_du_chauffeur(client, etape, action_attendue):
+    _connecte(client, Role.ADMIN)
+    mission = etape()
+
+    contenu = client.get(_url("detail", mission)).content.decode()
+
+    assert _url(action_attendue, mission) in contenu
+
+
+@pytest.mark.parametrize("role", [Role.DIRECTION, Role.CHARGE_CLIENTELE])
+@pytest.mark.parametrize(
+    ("etape", "action"), [(_en_cours, "recuperation"), (_recuperee, "livraison")]
+)
+def test_seul_le_chauffeur_ou_l_admin_saisit_les_codes(client, role, etape, action):
+    """La DIRECTION et le chargé clientèle voient les codes mais ne les saisissent pas."""
+    _connecte(client, role)
+    mission = etape()
+    statut_avant = mission.statut
+    code = mission.code_expediteur if action == "recuperation" else mission.code_destinataire
+
+    contenu = client.get(_url("detail", mission)).content.decode()
+    reponse = client.post(_url(action, mission), {"code": code, "km_arrivee": mission.km_depart + 10})
+
+    assert _url(action, mission) not in contenu
+    assert reponse.status_code == 403
+    mission.refresh_from_db()
+    assert mission.statut == statut_avant
 
 
 def test_une_mission_cloturee_n_a_plus_d_action(client):
@@ -439,7 +469,7 @@ def test_demarrer(client):
 
 
 def test_recuperation_avec_un_mauvais_code_est_refusee(client):
-    _connecte(client, Role.DIRECTION)
+    _connecte(client, Role.ADMIN)
     mission = _en_cours()
 
     reponse = client.post(_url("recuperation", mission), {"code": "AAAAAAAA"}, follow=True)
@@ -450,7 +480,7 @@ def test_recuperation_avec_un_mauvais_code_est_refusee(client):
 
 
 def test_recuperation_avec_le_bon_code_meme_en_minuscules(client):
-    _connecte(client, Role.DIRECTION)
+    _connecte(client, Role.ADMIN)
     mission = _en_cours()
 
     client.post(_url("recuperation", mission), {"code": mission.code_expediteur.lower()})
@@ -460,7 +490,7 @@ def test_recuperation_avec_le_bon_code_meme_en_minuscules(client):
 
 
 def test_livraison(client):
-    _connecte(client, Role.DIRECTION)
+    _connecte(client, Role.ADMIN)
     mission = _recuperee()
 
     client.post(
@@ -476,7 +506,7 @@ def test_livraison(client):
 
 
 def test_livraison_avec_un_km_incoherent_est_refusee(client):
-    _connecte(client, Role.DIRECTION)
+    _connecte(client, Role.ADMIN)
     mission = _recuperee()
 
     reponse = client.post(
@@ -491,7 +521,7 @@ def test_livraison_avec_un_km_incoherent_est_refusee(client):
 
 
 def test_livraison_sans_km_est_refusee_par_le_formulaire(client):
-    _connecte(client, Role.DIRECTION)
+    _connecte(client, Role.ADMIN)
     mission = _recuperee()
 
     client.post(_url("livraison", mission), {"code": mission.code_destinataire})
@@ -536,11 +566,13 @@ def test_les_actions_sont_protegees_par_csrf():
 
 
 def test_un_parcours_complet_par_l_interface(client):
-    """Brouillon → clôturée, uniquement par les écrans, avec les bons rôles."""
+    """Brouillon → clôturée, uniquement par les écrans, avec les bons rôles (les codes : l'ADMIN)."""
     charge = Client()
     _connecte(charge, Role.CHARGE_CLIENTELE)
     direction = Client()
     _connecte(direction, Role.DIRECTION)
+    admin = Client()
+    _connecte(admin, Role.ADMIN)
     societe = ClientFactory()
     camion, chauffeur = VehiculeFactory(kilometrage=50000), ChauffeurFactory()
 
@@ -562,8 +594,8 @@ def test_un_parcours_complet_par_l_interface(client):
     )
     direction.post(_url("demarrer", mission))
     mission.refresh_from_db()
-    direction.post(_url("recuperation", mission), {"code": mission.code_expediteur})
-    direction.post(
+    admin.post(_url("recuperation", mission), {"code": mission.code_expediteur})
+    admin.post(
         _url("livraison", mission),
         {"code": mission.code_destinataire, "km_arrivee": 50240},
     )
@@ -573,3 +605,18 @@ def test_un_parcours_complet_par_l_interface(client):
     camion.refresh_from_db()
     assert mission.statut == StatutMission.CLOTUREE
     assert camion.kilometrage == 50240 and camion.statut == StatutVehicule.DISPONIBLE
+
+
+# --- suggestions de lieux ---
+
+
+def test_le_formulaire_propose_les_lieux_deja_utilises(client):
+    _connecte(client, Role.CHARGE_CLIENTELE)
+    _creer(lieu_chargement="Abidjan", lieu_livraison="Korhogo")
+
+    contenu = client.get(reverse("missions:creer")).content.decode()
+
+    assert '<datalist id="lieux-missions">' in contenu
+    assert '<option value="Korhogo">' in contenu
+    assert '<option value="Abidjan">' in contenu
+    assert contenu.count('list="lieux-missions"') == 2  # chargement et livraison

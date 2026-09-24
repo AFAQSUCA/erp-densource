@@ -30,6 +30,7 @@ ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=[])
 # Ajoutées au fur et à mesure des phases (voir architecture.md §3).
 
 DJANGO_APPS = [
+    "daphne",  # en premier : `runserver` devient ASGI (WebSocket du suivi des missions), comme en production
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -46,6 +47,7 @@ THIRD_PARTY_APPS = [
     "drf_spectacular",
     "drf_spectacular_sidecar",  # fichiers de Swagger UI servis par l'application
     "corsheaders",
+    "channels",
 ]
 
 LOCAL_APPS = [
@@ -76,6 +78,11 @@ AUTH_USER_MODEL = "accounts.User"
 LOGIN_URL = "accounts:login"
 LOGIN_REDIRECT_URL = "home"
 LOGOUT_REDIRECT_URL = "accounts:login"
+
+# WebSocket : suivi des missions en direct (apps/missions/consumers.py). En développement et en test,
+# couche en mémoire (un seul processus) ; la production (prod.py) passe par Redis, partagé entre gunicorn
+# (qui diffuse les changements) et daphne (qui les pousse aux navigateurs).
+CHANNEL_LAYERS = {"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}}
 
 # Sessions desktop : 30 min d'inactivité (cahier-des-charges.md:285). Chaque
 # requête prolonge la session ; l'API mobile (15 min) aura sa propre durée JWT.

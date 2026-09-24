@@ -14,5 +14,6 @@ urlpatterns = [
     path("<int:pk>/recuperation/", views.RecuperationView.as_view(), name="recuperation"),
     path("<int:pk>/livraison/", views.LivraisonView.as_view(), name="livraison"),
     path("<int:pk>/cloturer/", views.CloturerView.as_view(), name="cloturer"),
+    path("<int:pk>/codes.pdf", views.CodesPdfView.as_view(), name="codes_pdf"),
     path("<int:pk>/qr/<str:qui>.png", views.CodeQrView.as_view(), name="qr"),
 ]

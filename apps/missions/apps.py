@@ -13,12 +13,18 @@ class MissionsConfig(AppConfig):
         from apps.customers.sections import DETAIL_CLIENT
         from apps.hr.sections import DETAIL_CONGE
 
-        from . import permissions, sections
+        from django.db.models.signals import post_save
+
+        from . import permissions, sections, temps_reel
         from .models import Mission
 
         # Les codes secrets ne doivent jamais apparaître dans le journal.
         audit_model(
             Mission, module="MISSION", exclure=("code_expediteur", "code_destinataire")
+        )
+        # Suivi en direct : tout changement d'une mission est diffusé aux écrans ouverts.
+        post_save.connect(
+            temps_reel.diffuser_apres_enregistrement, sender=Mission, dispatch_uid="missions.suivi_en_direct"
         )
         DETAIL_CONGE.enregistrer(sections.section_alerte_conge)
         DETAIL_CLIENT.enregistrer(sections.section_missions_client)

@@ -21,6 +21,7 @@ from apps.missions.exceptions import (
     TransitionMissionInterdite,
 )
 from apps.missions.models import Mission, StatutMission
+from apps.missions.tests.factories import MissionFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -475,3 +476,32 @@ def test_rechercher_missions_ignore_un_statut_inconnu_et_les_espaces():
     _creer()
 
     assert services.rechercher_missions(statut="???", recherche="   ").count() == 1
+
+
+# --- lieux déjà utilisés (suggestions à la saisie) ---
+
+
+def test_les_lieux_deja_utilises_sont_classes_par_frequence():
+    MissionFactory(lieu_chargement="Abidjan", lieu_livraison="Bouaké")
+    MissionFactory(lieu_chargement="Abidjan", lieu_livraison="Korhogo")
+    MissionFactory(lieu_chargement="San-Pédro", lieu_livraison="Abidjan")
+
+    assert services.lieux_deja_utilises() == ["Abidjan", "Bouaké", "Korhogo", "San-Pédro"]
+
+
+def test_un_meme_lieu_ecrit_differemment_n_est_propose_qu_une_fois():
+    MissionFactory(lieu_chargement="Bouaké", lieu_livraison="Abidjan")
+    MissionFactory(lieu_chargement="Bouaké", lieu_livraison="Abidjan")
+    MissionFactory(lieu_chargement="bouake ", lieu_livraison="ABIDJAN")
+
+    lieux = services.lieux_deja_utilises()
+
+    assert sorted(lieux) == ["Abidjan", "Bouaké"]  # la graphie la plus employée l'emporte
+
+
+def test_aucun_lieu_sans_mission_et_la_liste_est_bornee():
+    assert services.lieux_deja_utilises() == []
+    for i in range(5):
+        MissionFactory(lieu_chargement=f"Ville {i}", lieu_livraison=f"Ville {i}")
+
+    assert len(services.lieux_deja_utilises(limite=3)) == 3
