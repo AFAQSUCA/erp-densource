@@ -9,10 +9,11 @@ from django.contrib import admin
 from django.urls import include, path
 from django.views.generic import RedirectView
 
-from apps.dashboard.views import DashboardView
+from apps.dashboard.views import DashboardImprimerView, DashboardView
 
 urlpatterns = [
     path("", DashboardView.as_view(), name="home"),
+    path("imprimer/", DashboardImprimerView.as_view(), name="home_imprimer"),
     # Les navigateurs (et l'administration Django) réclament /favicon.ico : on renvoie vers l'icône du site.
     path("favicon.ico", RedirectView.as_view(url=settings.STATIC_URL + "img/favicon.png", permanent=True)),
     path("", include("apps.accounts.urls")),
@@ -26,6 +27,7 @@ urlpatterns = [
     path("stock/", include("apps.inventory.urls")),
     path("facturation/", include("apps.billing.urls")),
     path("finances/", include("apps.finance.urls")),
+    path("audit/", include("apps.audit.urls")),
     path("notifications/", include("apps.notifications.urls")),
     path("api/v1/", include("apps.api.urls")),
     path("chauffeur/", include("apps.mobile_api.urls_web")),

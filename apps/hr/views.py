@@ -16,7 +16,7 @@ from django.views.generic import DetailView, FormView, ListView
 
 from apps.accounts.mixins import RoleRequiredMixin
 from apps.core.formats import nombre
-from apps.core.views import PaginationTolerante
+from apps.core.views import ImpressionListeMixin, PaginationTolerante
 
 from . import permissions, sections, services
 from .exceptions import CongeError, ImportPersonnelError, PersonnelError
@@ -102,6 +102,25 @@ class CongeListView(PaginationTolerante, RoleRequiredMixin, ListView):
             ],
         )
         return contexte
+
+
+class CongeImprimerView(ImpressionListeMixin, CongeListView):
+    """Rapport imprimable des congés (même vue — mes demandes / à valider / tous — et même statut)."""
+
+    titre_impression = "Congés"
+    colonnes = (
+        ("Employé", lambda c: f"{c.employe.prenom} {c.employe.nom}"),
+        ("Du", lambda c: c.date_debut.strftime("%d/%m/%Y")), ("Au", lambda c: c.date_fin.strftime("%d/%m/%Y")),
+        ("Jours", "jours"), ("Motif", "motif"), ("Statut", "get_statut_display"),
+    )
+
+    LIBELLES_VUE = {VUE_MES: "mes demandes", VUE_A_VALIDER: "à valider", VUE_TOUS: "tous les congés"}
+
+    def get_sous_titre_impression(self):
+        morceaux = [self.LIBELLES_VUE.get(self.get_vue(), "")]
+        if self.request.GET.get("statut", "") in StatutConge.values:
+            morceaux.append(f"statut : {StatutConge(self.request.GET['statut']).label}")
+        return " · ".join(m for m in morceaux if m)
 
 
 class CongeCreateView(RoleRequiredMixin, FormView):
@@ -253,6 +272,27 @@ class PersonnelListView(PaginationTolerante, RoleRequiredMixin, ListView):
             peut_modifier=self.request.user.role_effectif in permissions.PERSONNEL_MODIFICATION,
         )
         return contexte
+
+
+class PersonnelImprimerView(ImpressionListeMixin, PersonnelListView):
+    """Rapport imprimable du personnel (mêmes recherche et département que la liste ; sans le salaire,
+    comme la liste elle-même)."""
+
+    titre_impression = "Personnel"
+    colonnes = (
+        ("Matricule", "matricule"), ("Nom", "nom"), ("Prénom", "prenom"), ("Poste", "poste"),
+        ("Département", "get_departement_display"),
+        ("Date d'embauche", lambda p: p.date_embauche.strftime("%d/%m/%Y")),
+        ("Supérieur", lambda p: f"{p.superieur.prenom} {p.superieur.nom}" if p.superieur_id and p.superieur_id != p.pk else "—"),
+    )
+
+    def get_sous_titre_impression(self):
+        morceaux = []
+        if self.request.GET.get("departement", "") in Departement.values:
+            morceaux.append(f"département : {Departement(self.request.GET['departement']).label}")
+        if self.request.GET.get("q", ""):
+            morceaux.append(f"recherche : « {self.request.GET['q']} »")
+        return " · ".join(morceaux)
 
 
 class PersonnelDetailView(RoleRequiredMixin, DetailView):

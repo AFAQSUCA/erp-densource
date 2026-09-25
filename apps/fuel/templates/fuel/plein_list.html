@@ -11,6 +11,10 @@
       <p class="mt-1 text-sm text-slate-600">{{ paginator.count|default:0 }} plein{{ paginator.count|pluralize }}</p>
     </div>
     <div class="flex flex-wrap gap-3">
+      <a href="{% url 'fuel:imprimer' %}?{{ request.GET.urlencode }}" target="_blank" rel="noopener"
+         class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+        <i class="fa-solid fa-print" aria-hidden="true"></i> Imprimer
+      </a>
       <a href="{% url 'fuel:analyse' %}"
          class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
         <i class="fa-solid fa-chart-column" aria-hidden="true"></i> Analyse de la consommation

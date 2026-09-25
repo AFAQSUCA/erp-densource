@@ -1,0 +1,54 @@
+{% load static humanize %}<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Trésorerie · {{ entreprise.nom }}</title>
+  {% include "rapports/_style_impression.html" %}
+</head>
+<body>
+  {% include "rapports/_entete_impression.html" %}
+
+  <div class="cartouche">
+    <div><dt>Solde total</dt><dd>{{ solde_total|floatformat:0|intcomma }} FCFA</dd></div>
+    {% for ligne in soldes_par_compte %}
+      <div><dt>{{ ligne.libelle }}</dt><dd>{{ ligne.montant|floatformat:0|intcomma }} FCFA</dd></div>
+    {% endfor %}
+  </div>
+
+  <h2>Synthèse de la période ({{ periode_debut|date:"d/m/Y" }} au {{ periode_fin|date:"d/m/Y" }})</h2>
+  <div class="cartouche">
+    <div><dt>Entrées</dt><dd>{{ synthese.entrees|floatformat:0|intcomma }} FCFA</dd></div>
+    <div><dt>Sorties</dt><dd>{{ synthese.sorties|floatformat:0|intcomma }} FCFA</dd></div>
+    <div><dt>Variation</dt><dd>{{ synthese.variation|floatformat:0|intcomma }} FCFA</dd></div>
+  </div>
+
+  <h2>Journal</h2>
+  <p class="petit">
+    {{ nombre }} mouvement{{ nombre|pluralize }}{% if tronque %} — limité aux {{ nombre }} plus récents ; affinez les filtres pour voir le reste{% endif %}
+  </p>
+  {% if journal %}
+    <table>
+      <thead><tr><th>Date</th><th>Libellé</th><th>Compte</th><th class="droite">Entrée</th><th class="droite">Sortie</th><th>Mode</th><th>Référence</th></tr></thead>
+      <tbody>
+        {% for m in journal %}
+          <tr>
+            <td>{{ m.date|date:"d/m/Y" }}</td>
+            <td>{{ m.libelle }}</td>
+            <td>{{ m.compte_libelle }}</td>
+            <td class="droite">{% if m.sens == "ENTREE" %}{{ m.montant|floatformat:0|intcomma }}{% endif %}</td>
+            <td class="droite">{% if m.sens == "SORTIE" %}{{ m.montant|floatformat:0|intcomma }}{% endif %}</td>
+            <td>{{ m.mode_libelle }}</td>
+            <td>{{ m.reference|default:"—" }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p>Aucun mouvement pour ces critères.</p>
+  {% endif %}
+
+  {% include "rapports/_pied_impression.html" %}
+  <script src="{% static 'js/app.js' %}" defer></script>
+</body>
+</html>

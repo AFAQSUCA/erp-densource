@@ -5,6 +5,7 @@ from django.shortcuts import redirect
 from django.views.generic import TemplateView
 
 from apps.accounts.models import Role
+from apps.core.rapports import contexte_rapport
 from apps.drivers import services as drivers_services
 
 from . import services
@@ -28,4 +29,20 @@ class DashboardView(LoginRequiredMixin, TemplateView):
         contexte = super().get_context_data(**kwargs)
         mois = services.periode_valide(self.request.GET.get("periode"))
         contexte.update(services.tableau_de_bord(self.request.user, mois=mois))
+        return contexte
+
+
+class DashboardImprimerView(LoginRequiredMixin, TemplateView):
+    """Rapport imprimable du tableau de bord de l'utilisateur connecté (mêmes blocs, mêmes droits)."""
+
+    template_name = "dashboard/index_print.html"
+
+    def get_context_data(self, **kwargs):
+        mois = services.periode_valide(self.request.GET.get("periode"))
+        tableau = services.tableau_de_bord(self.request.user, mois=mois)
+        contexte = contexte_rapport(
+            self.request, titre="Tableau de bord",
+            sous_titre=self.request.user.get_role_display() or "Administrateur",
+        )
+        contexte.update(tableau)
         return contexte

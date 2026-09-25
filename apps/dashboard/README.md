@@ -41,3 +41,5 @@ centre d'alertes est toujours recalculé.
 Reste à faire :
 - Dashboard **chauffeur** (course du jour, km, conso, prochaine mission) : espace mobile, étape 6.
 - Clientèle : **satisfaction** et **contrats à renouveler** (aucune donnée ne les porte encore).
+
+Rapport imprimable (`/imprimer/`, bouton « Imprimer » sur l'écran) : mêmes blocs et mêmes droits que le tableau de bord de l'utilisateur connecté, en tableaux (voir `apps/core/README.md`).

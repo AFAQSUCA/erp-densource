@@ -15,7 +15,8 @@ from django.views import View
 from django.views.generic import DetailView, FormView, ListView
 
 from apps.accounts.mixins import RoleRequiredMixin
-from apps.core.views import PaginationTolerante
+from apps.core.formats import nombre
+from apps.core.views import ImpressionListeMixin, PaginationTolerante
 
 from . import documents, permissions, services
 from .exceptions import MissionError
@@ -66,6 +67,29 @@ class MissionListView(PaginationTolerante, RoleRequiredMixin, ListView):
             peut_creer=self.request.user.role_effectif in permissions.CREATION,
         )
         return contexte
+
+
+class MissionImprimerView(ImpressionListeMixin, MissionListView):
+    """Rapport imprimable des missions (mêmes recherche et filtre statut que la liste)."""
+
+    titre_impression = "Missions"
+    colonnes = (
+        ("N°", "numero"), ("Client", "client.raison_sociale"),
+        ("Chargement", "lieu_chargement"), ("Livraison", "lieu_livraison"),
+        ("Départ prévu", lambda m: m.date_depart_prevue.strftime("%d/%m/%Y") if m.date_depart_prevue else "—"),
+        ("Camion", lambda m: m.vehicule.immatriculation if m.vehicule_id else "—"),
+        ("Chauffeur", lambda m: f"{m.chauffeur.personnel.prenom} {m.chauffeur.personnel.nom}" if m.chauffeur_id else "—"),
+        ("Statut", "get_statut_display"), ("Prix convenu", lambda m: f"{nombre(m.prix_convenu)} FCFA"),
+    )
+
+    def get_sous_titre_impression(self):
+        statut = self.request.GET.get("statut", "")
+        morceaux = []
+        if statut in StatutMission.values:
+            morceaux.append(f"statut : {StatutMission(statut).label}")
+        if self.request.GET.get("q", ""):
+            morceaux.append(f"recherche : « {self.request.GET['q']} »")
+        return " · ".join(morceaux)
 
 
 class MissionDetailView(RoleRequiredMixin, DetailView):

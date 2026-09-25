@@ -34,3 +34,5 @@ Accès : ADMIN, DIRECTION (lecture seule) et PARCAUTO (`permissions.py`) ; seuls
 PARCAUTO créent, modifient, enregistrent des mouvements et font sortir des pièces.
 Services ajoutés : `rechercher_articles`, `categories_articles`, `valeur_totale_stock`,
 `modifier_article`, `rechercher_mouvements`, `mouvements_de_l_article`.
+
+Rapport imprimable du stock (bouton « Imprimer » sur la liste, mêmes filtres) : voir `apps/core/README.md` (`ImpressionListeMixin`).

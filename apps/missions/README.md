@@ -64,3 +64,5 @@ une autre casse ou sans accent ne compte qu'une fois. La saisie libre reste poss
 Reste à faire :
 - Notification « en cours de route (départ) » : signal `mission_demarree`, abonné par `notifications` (fait, étape 5).
 - Alerte N1 des congés « chauffeur avec mission sur la période » (via `date_depart_prevue`).
+
+Rapport imprimable des missions (bouton « Imprimer » sur la liste, mêmes filtres) : voir `apps/core/README.md` (`ImpressionListeMixin`).

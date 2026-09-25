@@ -12,12 +12,18 @@
         Trois étapes : la demande, la validation de votre supérieur hiérarchique (48 h), puis celle de la RH (24 h).
       </p>
     </div>
-    {% if fiche %}
-      <a href="{% url 'hr:conges_nouveau' %}"
-         class="inline-flex items-center gap-2 rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">
-        <i class="fa-solid fa-plus" aria-hidden="true"></i> Demander un congé
+    <div class="flex flex-wrap items-center gap-2">
+      <a href="{% url 'hr:conges_imprimer' %}?{{ request.GET.urlencode }}" target="_blank" rel="noopener"
+         class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+        <i class="fa-solid fa-print" aria-hidden="true"></i> Imprimer
       </a>
-    {% endif %}
+      {% if fiche %}
+        <a href="{% url 'hr:conges_nouveau' %}"
+           class="inline-flex items-center gap-2 rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">
+          <i class="fa-solid fa-plus" aria-hidden="true"></i> Demander un congé
+        </a>
+      {% endif %}
+    </div>
   </div>
 
   {% if droits %}

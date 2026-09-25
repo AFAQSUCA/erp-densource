@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% load ui %}
+{% block titre %}Journal d'audit{% endblock %}
+{% block entete %}Journal d'audit{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-7xl">
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <div>
+      <h1 class="text-2xl font-bold text-slate-900">Journal d'audit</h1>
+      <p class="mt-1 text-sm text-slate-600">
+        {{ paginator.count|default:0 }} entrée{{ paginator.count|pluralize }} · immuable : créations, modifications,
+        suppressions, connexions/déconnexions et validations, conservées au moins 5 ans.
+      </p>
+    </div>
+    <div class="flex flex-wrap items-center gap-2">
+      <a href="{% url 'audit:export_csv' %}?{{ request.GET.urlencode }}"
+         class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+        <i class="fa-solid fa-file-csv" aria-hidden="true"></i> Exporter en CSV
+      </a>
+      <a href="{% url 'audit:imprimer' %}?{{ request.GET.urlencode }}" target="_blank" rel="noopener"
+         class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+        <i class="fa-solid fa-print" aria-hidden="true"></i> Imprimer
+      </a>
+    </div>
+  </div>
+
+  <form method="get" class="mt-5 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div class="min-w-[14rem] flex-1">{% include "components/_champ.html" with champ=filtre.q %}</div>
+    <div class="min-w-[10rem]">{% include "components/_champ.html" with champ=filtre.module %}</div>
+    <div class="min-w-[10rem]">{% include "components/_champ.html" with champ=filtre.action %}</div>
+    <div class="min-w-[10rem]">{% include "components/_champ.html" with champ=filtre.statut %}</div>
+    {% include "components/_champ.html" with champ=filtre.date_debut %}
+    {% include "components/_champ.html" with champ=filtre.date_fin %}
+    <button type="submit" class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2">Filtrer</button>
+    {% if filtres_actifs %}
+      <a href="{% url 'audit:journal' %}" class="px-2 py-2 text-sm font-medium text-slate-700 underline hover:text-slate-900">Réinitialiser</a>
+    {% endif %}
+  </form>
+
+  {% if lignes %}
+    <div class="mt-5 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+      <table class="min-w-full divide-y divide-slate-200 text-sm">
+        <caption class="sr-only">Journal d'audit</caption>
+        <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+          <tr>
+            <th scope="col" class="px-4 py-3">Date/heure</th>
+            <th scope="col" class="px-4 py-3">Utilisateur</th>
+            <th scope="col" class="px-4 py-3">Action</th>
+            <th scope="col" class="px-4 py-3">Module</th>
+            <th scope="col" class="px-4 py-3">Entité</th>
+            <th scope="col" class="hidden px-4 py-3 xl:table-cell">Adresse IP</th>
+            <th scope="col" class="px-4 py-3">Statut</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          {% for e in lignes %}
+            <tr class="hover:bg-slate-50">
+              <td class="whitespace-nowrap px-4 py-3 text-slate-700">{{ e.date_heure|date:"d/m/Y H:i:s" }}</td>
+              <td class="whitespace-nowrap px-4 py-3 text-slate-900">{{ e.utilisateur_nom|default:"—" }}<span class="block text-xs text-slate-600">{{ e.role|default:"—" }}</span></td>
+              <td class="whitespace-nowrap px-4 py-3">{% badge e.action e.get_action_display %}</td>
+              <td class="whitespace-nowrap px-4 py-3 text-slate-700">{{ e.module }}</td>
+              <td class="px-4 py-3 text-slate-700">{{ e.entite }}{% if e.entite_id %} #{{ e.entite_id }}{% endif %}</td>
+              <td class="hidden whitespace-nowrap px-4 py-3 text-slate-700 xl:table-cell">{{ e.adresse_ip|default:"—" }}</td>
+              <td class="whitespace-nowrap px-4 py-3">{% if e.statut == "FAILED" %}{% badge "URGENT" e.get_statut_display %}{% else %}{{ e.get_statut_display }}{% endif %}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% include "components/_pagination.html" %}
+  {% else %}
+    <div class="mt-5 rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center">
+      <span class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-600"><i class="fa-solid fa-clipboard-list" aria-hidden="true"></i></span>
+      <p class="mt-3 font-semibold text-slate-900">Aucune entrée</p>
+      <p class="mt-1 text-sm text-slate-600">{% if filtres_actifs %}Aucun résultat pour ces critères.{% else %}Les actions du journal apparaîtront ici.{% endif %}</p>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

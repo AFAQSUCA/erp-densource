@@ -10,7 +10,8 @@ from django.views import View
 from django.views.generic import DetailView, FormView, ListView
 
 from apps.accounts.mixins import RoleRequiredMixin
-from apps.core.views import PaginationTolerante
+from apps.core.formats import nombre
+from apps.core.views import ImpressionListeMixin, PaginationTolerante
 from apps.fleet import services as fleet_services
 
 from . import permissions, sections, services
@@ -46,6 +47,31 @@ class OrListView(PaginationTolerante, RoleRequiredMixin, ListView):
             peut_modifier=self.request.user.role_effectif in permissions.MODIFICATION,
         )
         return contexte
+
+
+class OrImprimerView(ImpressionListeMixin, OrListView):
+    """Rapport imprimable des ordres de réparation (mêmes filtres que la liste)."""
+
+    titre_impression = "Ordres de réparation"
+    colonnes = (
+        ("N°", "numero"), ("Camion", "vehicule.immatriculation"), ("Type", "get_type_or_display"),
+        ("Lieu", "get_lieu_display"), ("Motif", "motif"),
+        ("Ouvert le", lambda o: o.date_ouverture.strftime("%d/%m/%Y")),
+        ("Clôturé le", lambda o: o.date_cloture.strftime("%d/%m/%Y") if o.date_cloture else "—"),
+        ("Statut", "get_statut_display"), ("Main-d'œuvre", lambda o: f"{nombre(o.cout_main_oeuvre)} FCFA"),
+    )
+
+    def get_sous_titre_impression(self):
+        morceaux = []
+        for cle, choix, param in (
+            ("statut", StatutOr, "statut"), ("type", TypeOr, "type"), ("lieu", LieuReparation, "lieu"),
+        ):
+            valeur = self.request.GET.get(param, "")
+            if valeur in choix.values:
+                morceaux.append(f"{cle} : {choix(valeur).label}")
+        if self.request.GET.get("q", ""):
+            morceaux.append(f"recherche : « {self.request.GET['q']} »")
+        return " · ".join(morceaux)
 
 
 class OrDetailView(RoleRequiredMixin, DetailView):

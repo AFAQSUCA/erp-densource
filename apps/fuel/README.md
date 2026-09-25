@@ -42,3 +42,5 @@ Affichage des nombres : `core/formats.py` (`nombre`, `pourcentage_signe`) et le 
 dans un message avec `f"{valeur}"` (point décimal).
 
 Recherche : `filtrer_par_texte` (core) — insensible aux accents et à la casse.
+
+Rapport imprimable des pleins (bouton « Imprimer » sur la liste, mêmes filtres) : voir `apps/core/README.md` (`ImpressionListeMixin`).

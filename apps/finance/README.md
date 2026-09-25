@@ -42,3 +42,5 @@ pour le graphique du tableau de bord ; le mois en cours reprend les indicateurs 
 
 Pas encore fait : **rapprochement bancaire** (écarté sur décision de l'utilisateur : trésorerie
 seulement), import de relevés, écritures comptables, grand livre.
+
+Rapport imprimable de la trésorerie (`/finances/imprimer/`, bouton « Imprimer ») : soldes par compte, synthèse et journal de la période filtrée, mêmes filtres que l'écran, plafonné à 500 lignes (voir `apps/core/README.md`).

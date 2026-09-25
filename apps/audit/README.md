@@ -10,4 +10,10 @@ Entités principales : `AuditLog`. `registry.audit_model()` branche l'audit auto
 Règles :
 - Immuabilité stricte : aucun `update()`/`delete()` autorisé sur ce modèle.
 - Conservation ≥ 5 ans.
-- Consultation : ADMIN (complet), DIRECTION (lecture seule).
+- Consultation : ADMIN (complet), DIRECTION (lecture seule). En pratique les deux ont le même accès en
+  lecture (`permissions.CONSULTATION`) : il n'y a de toute façon aucune écriture possible depuis l'écran.
+
+Écran (`/audit/`, menu « Journal d'audit ») : liste filtrable (texte sur utilisateur/entité/IP, module,
+action, statut, période), `services.rechercher()`. Export PDF/CSV pour les audits externes
+(cahier-des-charges.md:82) : bouton « Imprimer » (rapport HTML, voir `apps/core/rapports.py`) et bouton
+« Exporter en CSV » (`JournalExporterCsvView`, mêmes filtres, `;` en séparateur pour Excel).

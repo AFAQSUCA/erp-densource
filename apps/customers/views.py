@@ -11,7 +11,7 @@ from django.views.generic import DetailView, FormView, ListView
 
 from apps.accounts.mixins import RoleRequiredMixin
 from apps.accounts.models import Role
-from apps.core.views import PaginationTolerante
+from apps.core.views import ImpressionListeMixin, PaginationTolerante
 
 from . import permissions, sections, services
 from .exceptions import ClientError
@@ -44,6 +44,29 @@ class ClientListView(PaginationTolerante, RoleRequiredMixin, ListView):
             a_un_portefeuille=utilisateur.role == Role.CHARGE_CLIENTELE,
         )
         return contexte
+
+
+class ClientImprimerView(ImpressionListeMixin, ClientListView):
+    """Rapport imprimable du portefeuille clients (mêmes filtres que la liste)."""
+
+    titre_impression = "Clients"
+    colonnes = (
+        ("Raison sociale", "raison_sociale"), ("NCC / NIF", "ncc_nif"), ("Contact", "contact_principal"),
+        ("Téléphone", "telephone"),
+        ("Chargé clientèle", lambda c: f"{c.charge_clientele.first_name} {c.charge_clientele.last_name}".strip() or c.charge_clientele.username if c.charge_clientele_id else "—"),
+        ("TVA", lambda c: f"{c.taux_tva:g} %" if c.taux_tva else "Exonérée"),
+    )
+
+    def get_sous_titre_impression(self):
+        criteres = self.get_filtre().criteres(self.request.user)
+        morceaux = []
+        if criteres.get("charge_clientele"):
+            morceaux.append("mon portefeuille")
+        if criteres.get("exonere"):
+            morceaux.append("exonérés de TVA")
+        if criteres.get("recherche"):
+            morceaux.append(f"recherche : « {criteres['recherche']} »")
+        return " · ".join(morceaux)
 
 
 class ClientDetailView(RoleRequiredMixin, DetailView):

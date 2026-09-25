@@ -4,7 +4,6 @@ Aucune règle métier ici : les vues contrôlent le rôle, lisent le formulaire 
 ``services.py`` (conventions.md:19-23).
 """
 
-from django.conf import settings
 from django.contrib import messages
 from django.shortcuts import get_object_or_404, redirect
 from django.utils import timezone
@@ -13,7 +12,8 @@ from django.views.generic import DetailView, FormView, ListView
 
 from apps.accounts.mixins import RoleRequiredMixin
 from apps.core.formats import nombre
-from apps.core.views import PaginationTolerante
+from apps.core.rapports import contexte_rapport
+from apps.core.views import ImpressionListeMixin, PaginationTolerante
 
 from . import permissions, services
 from .exceptions import BillingError
@@ -27,7 +27,7 @@ from .forms import (
     MotifForm,
     ReglementForm,
 )
-from .models import Depense, Facture, LigneFacture, ModePaiement, Reglement, StatutFacture, STATUTS_A_RECOUVRER
+from .models import CategorieDepense, Depense, Facture, LigneFacture, ModePaiement, Reglement, StatutFacture, STATUTS_A_RECOUVRER
 
 
 def _fcfa(montant) -> str:
@@ -73,6 +73,32 @@ class FactureListView(PaginationTolerante, RoleRequiredMixin, ListView):
             ],
         )
         return contexte
+
+
+class FactureImprimerView(ImpressionListeMixin, FactureListView):
+    """Rapport imprimable des factures (mêmes filtres que la liste)."""
+
+    titre_impression = "Factures"
+    colonnes = (
+        ("N°", lambda f: f.numero or f"Sans numéro ({f.mission.numero})"), ("Client", "client.raison_sociale"),
+        ("Mission", "mission.numero"), ("Statut", "get_statut_display"),
+        ("Émise le", lambda f: f.date_emission.strftime("%d/%m/%Y") if f.date_emission else "—"),
+        ("Échéance", lambda f: f.date_echeance.strftime("%d/%m/%Y") if f.date_echeance else "—"),
+        ("TTC", lambda f: f"{nombre(f.montant_ttc)} FCFA"), ("Reste à recouvrer", lambda f: f"{nombre(f.reste)} FCFA"),
+    )
+
+    def get_sous_titre_impression(self):
+        criteres = self.get_filtre().criteres()
+        morceaux = []
+        if criteres.get("statut") in StatutFacture.values:
+            morceaux.append(f"statut : {StatutFacture(criteres['statut']).label}")
+        if criteres.get("client"):
+            morceaux.append(f"client : {criteres['client'].raison_sociale}")
+        if criteres.get("echues"):
+            morceaux.append("échues seulement")
+        if criteres.get("recherche"):
+            morceaux.append(f"recherche : « {criteres['recherche']} »")
+        return " · ".join(morceaux)
 
 
 class FactureCreateView(RoleRequiredMixin, FormView):
@@ -155,14 +181,11 @@ class FacturePrintView(RoleRequiredMixin, DetailView):
 
     def get_context_data(self, **kwargs):
         contexte = super().get_context_data(**kwargs)
+        titre = f"FACTURE {self.object.numero}" if self.object.est_emise else "PROJET DE FACTURE"
+        contexte.update(contexte_rapport(self.request, titre=titre))
         contexte.update(
             lignes=self.object.lignes.all(),
             reglements=self.object.reglements.all(),
-            entreprise={
-                "nom": settings.ENTREPRISE_NOM,
-                "adresse": settings.ENTREPRISE_ADRESSE,
-                "ncc": settings.ENTREPRISE_NCC,
-            },
         )
         return contexte
 
@@ -322,6 +345,31 @@ class DepenseListView(PaginationTolerante, RoleRequiredMixin, ListView):
             modes=ModePaiement.choices,
         )
         return contexte
+
+
+class DepenseImprimerView(ImpressionListeMixin, DepenseListView):
+    """Rapport imprimable des dépenses (mêmes filtres que la liste, y compris carburant/pièces/OR)."""
+
+    titre_impression = "Dépenses"
+    colonnes = (
+        ("Date", lambda d: d.date_depense.strftime("%d/%m/%Y")), ("Libellé", "libelle"),
+        ("Catégorie", "get_categorie_display"), ("Mode", "get_mode_display"),
+        ("Montant", lambda d: f"{nombre(d.montant)} FCFA"),
+        ("Origine", lambda d: "Automatique" if d.est_automatique else "Saisie"),
+    )
+
+    def get_sous_titre_impression(self):
+        criteres = self.get_filtre().criteres()
+        morceaux = []
+        if criteres.get("categorie") in CategorieDepense.values:
+            morceaux.append(f"catégorie : {CategorieDepense(criteres['categorie']).label}")
+        if criteres.get("date_debut"):
+            morceaux.append(f"du {criteres['date_debut'].strftime('%d/%m/%Y')}")
+        if criteres.get("date_fin"):
+            morceaux.append(f"au {criteres['date_fin'].strftime('%d/%m/%Y')}")
+        if criteres.get("recherche"):
+            morceaux.append(f"recherche : « {criteres['recherche']} »")
+        return " · ".join(morceaux)
 
 
 class DepenseCreateView(RoleRequiredMixin, FormView):

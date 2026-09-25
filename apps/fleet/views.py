@@ -10,7 +10,7 @@ from django.views import View
 from django.views.generic import DetailView, FormView, ListView
 
 from apps.accounts.mixins import RoleRequiredMixin
-from apps.core.views import PaginationTolerante
+from apps.core.views import ImpressionListeMixin, PaginationTolerante
 
 from . import permissions, sections, services
 from .exceptions import FlotteError
@@ -42,6 +42,28 @@ class VehiculeListView(PaginationTolerante, RoleRequiredMixin, ListView):
             peut_modifier=self.request.user.role_effectif in permissions.MODIFICATION,
         )
         return contexte
+
+
+class VehiculeImprimerView(ImpressionListeMixin, VehiculeListView):
+    """Rapport imprimable des camions (mêmes recherche, statut et alerte que la liste)."""
+
+    titre_impression = "Flotte"
+    colonnes = (
+        ("Immatriculation", "immatriculation"), ("Marque", "marque"), ("Modèle", "modele"),
+        ("Année", "annee"), ("Statut", "get_statut_display"), ("Kilométrage", lambda v: f"{v.kilometrage:,} km".replace(",", " ")),
+        ("Chauffeur habituel", lambda v: f"{v.chauffeur_habituel.prenom} {v.chauffeur_habituel.nom}" if v.chauffeur_habituel_id else "—"),
+    )
+
+    def get_sous_titre_impression(self):
+        morceaux = []
+        statut = self.request.GET.get("statut", "")
+        if statut in StatutVehicule.values:
+            morceaux.append(f"statut : {StatutVehicule(statut).label}")
+        if self.request.GET.get("alerte") == "1":
+            morceaux.append("documents à renouveler")
+        if self.request.GET.get("q", ""):
+            morceaux.append(f"recherche : « {self.request.GET['q']} »")
+        return " · ".join(morceaux)
 
 
 class VehiculeDetailView(RoleRequiredMixin, DetailView):

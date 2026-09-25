@@ -1,0 +1,28 @@
+<style>
+  :root { --marque: #8b0319; --accent: #f28a14; } /* couleurs du logo DEN Source Group (frontend/tailwind.config.js) */
+  body { font-family: Arial, Helvetica, sans-serif; color: #111; margin: 2rem auto; max-width: 960px; padding: 0 1rem; font-size: 13px; }
+  h1 { font-size: 1.5rem; margin: 0; color: var(--marque); }
+  h2 { font-size: 1.05rem; margin: 1.75rem 0 .5rem; padding-top: .75rem; border-top: 2px solid var(--accent); color: var(--marque); }
+  table { width: 100%; border-collapse: collapse; margin-top: .75rem; }
+  th, td { padding: .4rem .6rem; border-bottom: 1px solid #ccc; text-align: left; vertical-align: top; }
+  th { background: #fdf2f3; color: var(--marque); font-size: .75rem; text-transform: uppercase; letter-spacing: .03em; }
+  td.droite, th.droite { text-align: right; white-space: nowrap; }
+  .rapport-entete { display: flex; justify-content: space-between; gap: 2rem; align-items: flex-start; padding-bottom: .75rem; border-bottom: 3px solid var(--accent); }
+  .rapport-marque { display: flex; align-items: center; gap: .85rem; }
+  .rapport-logo { height: 48px; width: 48px; object-fit: contain; flex-shrink: 0; }
+  .rapport-nom { color: var(--marque); font-size: 1.15rem; }
+  .petit { color: #555; font-size: .85rem; }
+  .cartouche { display: flex; flex-wrap: wrap; gap: 1.5rem; margin-top: 1rem; }
+  .cartouche > div { min-width: 9rem; }
+  .cartouche dt { color: #555; font-size: .78rem; }
+  .cartouche dd { margin: 0; font-size: 1.15rem; font-weight: bold; color: var(--marque); }
+  .actions { margin-bottom: 1rem; }
+  .actions button { display: inline-flex; align-items: center; gap: .5rem; border: 1px solid var(--marque); background: var(--marque); color: #fff; border-radius: .5rem; padding: .5rem 1rem; font: inherit; font-weight: 600; cursor: pointer; }
+  .rapport-pied { margin-top: 2rem; padding-top: .5rem; border-top: 1px solid #ddd; color: #777; font-size: .78rem; }
+  @media print {
+    .actions { display: none; }
+    body { margin: 0; }
+    h2 { break-after: avoid; }
+    tr { break-inside: avoid; }
+  }
+</style>

@@ -1,0 +1,32 @@
+{% load static %}<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ titre }} · {{ entreprise.nom }}</title>
+  {% include "rapports/_style_impression.html" %}
+</head>
+<body>
+  {% include "rapports/_entete_impression.html" %}
+
+  <p class="petit">
+    {{ nombre }} ligne{{ nombre|pluralize }}{% if tronque %} — limité aux {{ nombre }} premières ; affinez la recherche pour voir le reste{% endif %}
+  </p>
+
+  {% if lignes %}
+    <table>
+      <thead><tr>{% for entete in entetes %}<th>{{ entete }}</th>{% endfor %}</tr></thead>
+      <tbody>
+        {% for ligne in lignes %}
+          <tr>{% for valeur in ligne %}<td>{{ valeur }}</td>{% endfor %}</tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p>Aucune ligne pour ces critères.</p>
+  {% endif %}
+
+  {% include "rapports/_pied_impression.html" %}
+  <script src="{% static 'js/app.js' %}" defer></script>
+</body>
+</html>
