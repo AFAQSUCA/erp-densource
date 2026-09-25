@@ -6,10 +6,12 @@ app_name = "garage"
 
 urlpatterns = [
     path("", views.OrListView.as_view(), name="liste"),
+    path("imprimer/", views.OrImprimerView.as_view(), name="imprimer"),
     path("nouveau/", views.OrCreateView.as_view(), name="creer"),
     path("<int:pk>/", views.OrDetailView.as_view(), name="detail"),
     path("<int:pk>/cloturer/", views.OrCloturerView.as_view(), name="cloturer"),
     path("incidents/", views_terrain.IncidentListView.as_view(), name="incidents"),
+    path("incidents/imprimer/", views_terrain.IncidentImprimerView.as_view(), name="incidents_imprimer"),
     path("incidents/<int:pk>/", views_terrain.IncidentDetailView.as_view(), name="incident"),
     path(
         "incidents/<int:pk>/traiter/",

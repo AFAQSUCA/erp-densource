@@ -7,4 +7,12 @@ class AuditConfig(AppConfig):
     label = 'audit'
 
     def ready(self):
-        from . import signals  # noqa: F401
+        from apps.accounts.navigation import EntreeMenu, enregistrer
+
+        from . import permissions, signals  # noqa: F401
+
+        enregistrer(
+            EntreeMenu(
+                "Journal d'audit", "audit:journal", "fa-clipboard-list", permissions.CONSULTATION, ordre=90
+            )
+        )

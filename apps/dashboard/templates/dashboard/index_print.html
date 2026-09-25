@@ -1,0 +1,119 @@
+{% load static humanize %}<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tableau de bord · {{ entreprise.nom }}</title>
+  {% include "rapports/_style_impression.html" %}
+</head>
+<body>
+  {% include "rapports/_entete_impression.html" %}
+
+  {% if espace_mobile %}
+    <p>Aucun rapport de bureau pour ce rôle.</p>
+  {% endif %}
+
+  {% if alertes is not None %}
+    <h2>Centre d'alertes{% if nombre_alertes %} ({{ nombre_alertes }}){% endif %}</h2>
+    {% if alertes %}
+      {% for groupe in alertes %}
+        <p class="petit" style="margin-top:.75rem"><strong>{{ groupe.titre }}</strong> — {{ groupe.nombre }} élément{{ groupe.nombre|pluralize }}{% if groupe.autres %} (+{{ groupe.autres }} non affiché{{ groupe.autres|pluralize }}){% endif %}</p>
+        <table>
+          <thead><tr><th>Élément</th><th>Détail</th></tr></thead>
+          <tbody>{% for ligne in groupe.lignes %}<tr><td>{{ ligne.libelle }}</td><td>{{ ligne.detail }}</td></tr>{% endfor %}</tbody>
+        </table>
+      {% endfor %}
+    {% else %}
+      <p>Aucune alerte : documents, stock, carburant et congés sont à jour.</p>
+    {% endif %}
+  {% endif %}
+
+  {% if exploitation %}
+    <h2>Exploitation</h2>
+    <div class="cartouche">
+      <div><dt>Camions disponibles</dt><dd>{{ exploitation.camions.disponibles }} / {{ exploitation.camions.total }}</dd></div>
+      <div><dt>En mission</dt><dd>{{ exploitation.camions.en_mission }}</dd></div>
+      <div><dt>Au garage</dt><dd>{{ exploitation.camions.au_garage }}</dd></div>
+      <div><dt>Consommation moyenne</dt><dd>{% if exploitation.consommation %}{{ exploitation.consommation|floatformat:1 }} L/100 km{% else %}—{% endif %}</dd></div>
+      {% if exploitation.missions_en_cours is not None and user.role_effectif != "PARCAUTO" %}
+        <div><dt>Missions en cours</dt><dd>{{ exploitation.missions_en_cours }}</dd></div>
+        <div><dt>Planifiées, à affecter</dt><dd>{{ exploitation.missions_a_affecter }}</dd></div>
+        <div><dt>Livrées, à clôturer</dt><dd>{{ exploitation.missions_a_cloturer }}</dd></div>
+      {% endif %}
+    </div>
+
+    <table>
+      <thead><tr><th>Camions par statut</th><th class="droite">Nombre</th></tr></thead>
+      <tbody>{% for l in exploitation.graphique_camions.lignes %}<tr><td>{{ l.libelle }}</td><td class="droite">{{ l.valeur_texte }}</td></tr>{% endfor %}</tbody>
+    </table>
+
+    {% if user.role_effectif != "PARCAUTO" %}
+      <table>
+        <thead><tr><th>Missions par statut</th><th class="droite">Nombre</th></tr></thead>
+        <tbody>{% for l in exploitation.graphique_missions.lignes %}<tr><td>{{ l.libelle }}</td><td class="droite">{{ l.valeur_texte }}</td></tr>{% endfor %}</tbody>
+      </table>
+
+      <table>
+        <thead><tr><th>Mois</th>{% for e in exploitation.graphique_missions_mois.tableau.entetes %}<th class="droite">{{ e }}</th>{% endfor %}</tr></thead>
+        <tbody>{% for l in exploitation.graphique_missions_mois.tableau.lignes %}<tr><td>{{ l.libelle }}</td>{% for v in l.valeurs %}<td class="droite">{{ v }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+      </table>
+    {% endif %}
+  {% endif %}
+
+  {% if ressources_humaines %}
+    <h2>Ressources humaines</h2>
+    <div class="cartouche">
+      <div><dt>Effectif</dt><dd>{{ ressources_humaines.effectif }}</dd></div>
+      <div><dt>Absents aujourd'hui</dt><dd>{{ ressources_humaines.nombre_absents }}</dd></div>
+      <div><dt>Demandes à valider (N1)</dt><dd>{{ ressources_humaines.en_attente.n1 }}</dd></div>
+      <div><dt>Demandes à valider (RH, N2)</dt><dd>{{ ressources_humaines.en_attente.n2 }}</dd></div>
+    </div>
+    <table>
+      <thead><tr><th>Département</th><th class="droite">Effectif</th></tr></thead>
+      <tbody>{% for l in ressources_humaines.graphique_departements.lignes %}<tr><td>{{ l.libelle }}</td><td class="droite">{{ l.valeur_texte }}</td></tr>{% endfor %}</tbody>
+    </table>
+  {% endif %}
+
+  {% if clientele %}
+    <h2>Clientèle</h2>
+    <div class="cartouche">
+      <div><dt>Clients actifs (90 j)</dt><dd>{{ clientele.clients_actifs }}</dd></div>
+      <div><dt>Réclamations (30 j)</dt><dd>{{ clientele.reclamations }}</dd></div>
+    </div>
+    <table>
+      <thead><tr><th>Top clients (12 mois)</th><th class="droite">Montant</th></tr></thead>
+      <tbody>{% for l in clientele.graphique_clients.lignes %}<tr><td>{{ l.libelle }}</td><td class="droite">{{ l.valeur_texte }} FCFA</td></tr>{% endfor %}</tbody>
+    </table>
+  {% endif %}
+
+  {% if finances %}
+    <h2>Finances du mois</h2>
+    <div class="cartouche">
+      <div><dt>CA facturé (HT)</dt><dd>{{ finances.chiffre_affaires|floatformat:0|intcomma }} FCFA</dd></div>
+      <div><dt>Total encaissé</dt><dd>{{ finances.encaisse|floatformat:0|intcomma }} FCFA</dd></div>
+      <div><dt>Charges du mois</dt><dd>{{ finances.charges.total|floatformat:0|intcomma }} FCFA</dd></div>
+      <div><dt>Marge nette</dt><dd>{{ finances.marge_nette|floatformat:0|intcomma }} FCFA</dd></div>
+      <div><dt>Créances (dont échues)</dt><dd>{{ finances.creances.total|floatformat:0|intcomma }} ({{ finances.creances.echu|floatformat:0|intcomma }}) FCFA</dd></div>
+      <div><dt>Trésorerie</dt><dd>{{ finances.tresorerie|floatformat:0|intcomma }} FCFA</dd></div>
+    </div>
+
+    <table>
+      <thead><tr><th>Mois</th>{% for e in finances.graphique_mensuel.tableau.entetes %}<th class="droite">{{ e }}</th>{% endfor %}</tr></thead>
+      <tbody>{% for l in finances.graphique_mensuel.tableau.lignes %}<tr><td>{{ l.libelle }}</td>{% for v in l.valeurs %}<td class="droite">{{ v }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+    </table>
+
+    <table>
+      <thead><tr><th>Charges du mois</th><th class="droite">Montant</th></tr></thead>
+      <tbody>{% for l in finances.graphique_charges.lignes %}<tr><td>{{ l.libelle }}</td><td class="droite">{{ l.valeur_texte }} FCFA</td></tr>{% endfor %}</tbody>
+    </table>
+
+    <table>
+      <thead><tr><th>Créances par ancienneté</th><th class="droite">Montant</th></tr></thead>
+      <tbody>{% for l in finances.graphique_creances.lignes %}<tr><td>{{ l.libelle }}</td><td class="droite">{{ l.valeur_texte }} FCFA</td></tr>{% endfor %}</tbody>
+    </table>
+  {% endif %}
+
+  {% include "rapports/_pied_impression.html" %}
+  <script src="{% static 'js/app.js' %}" defer></script>
+</body>
+</html>

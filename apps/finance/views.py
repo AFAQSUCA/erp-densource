@@ -13,6 +13,7 @@ from apps.billing.exceptions import BillingError
 from apps.billing.forms import ReglementForm
 from apps.billing.models import STATUTS_A_RECOUVRER, CompteTresorerie
 from apps.core.formats import nombre
+from apps.core.rapports import contexte_rapport
 
 from . import permissions, services
 from .forms import FiltreTresorerieForm, MotifForm, MouvementForm
@@ -53,6 +54,45 @@ class TresorerieView(RoleRequiredMixin, TemplateView):
             peut_saisir=peut_saisir,
             form_mouvement=MouvementForm(initial={"date_mouvement": aujourd_hui}) if peut_saisir else None,
             form_annulation=MotifForm(),
+        )
+        return contexte
+
+
+class TresorerieImprimerView(RoleRequiredMixin, TemplateView):
+    """Rapport imprimable de la trésorerie : mêmes filtres que le journal, sans pagination.
+
+    Le journal peut être long (l'historique complet) : plafonné comme les autres rapports
+    (:class:`apps.core.views.ImpressionListeMixin`, même limite) pour rester imprimable.
+    """
+
+    roles = permissions.CONSULTATION
+    template_name = "finance/tresorerie_print.html"
+    limite = 500
+
+    def get_context_data(self, **kwargs):
+        filtre = FiltreTresorerieForm(self.request.GET)
+        criteres = filtre.criteres()
+        aujourd_hui = timezone.localdate()
+        journal = services.mouvements(**criteres)
+        tronque = len(journal) > self.limite
+        debut = criteres["date_debut"] or aujourd_hui.replace(day=1)
+        fin = criteres["date_fin"] or aujourd_hui
+        morceaux = [f"Période : du {debut:%d/%m/%Y} au {fin:%d/%m/%Y}" if (criteres["date_debut"] or criteres["date_fin"]) else "Depuis le début du mois"]
+        if criteres["compte"] in CompteTresorerie.values:
+            morceaux.append(f"compte : {CompteTresorerie(criteres['compte']).label}")
+        if criteres["sens"]:
+            morceaux.append("entrées seulement" if criteres["sens"] == "ENTREE" else "sorties seulement")
+        soldes = services.soldes_par_compte()
+        contexte = contexte_rapport(self.request, titre="Trésorerie", sous_titre=" · ".join(morceaux))
+        contexte.update(
+            solde_total=soldes["total"],
+            soldes_par_compte=[{"libelle": libelle, "montant": soldes[code]} for code, libelle in CompteTresorerie.choices],
+            synthese=services.synthese_periode(debut, fin),
+            periode_debut=debut,
+            periode_fin=fin,
+            journal=journal[: self.limite],
+            nombre=min(len(journal), self.limite),
+            tronque=tronque,
         )
         return contexte
 

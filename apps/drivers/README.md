@@ -15,3 +15,5 @@ prénom viennent de la fiche du personnel et ne se modifient pas ici ; « En mis
 « En congé » sont posés par les missions et les congés et ne se changent pas à la main.
 Services ajoutés : `rechercher_chauffeurs`, `etat_echeances`, `modifier_chauffeur`,
 `changer_statut_manuel`, `chauffeurs_avec_echeance_proche`.
+
+Rapport imprimable des chauffeurs (bouton « Imprimer » sur la liste, mêmes filtres) : voir `apps/core/README.md` (`ImpressionListeMixin`).

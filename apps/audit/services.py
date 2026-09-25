@@ -9,9 +9,13 @@ ou middleware").
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Any
 
+from django.db.models import QuerySet
+
 from apps.core.middleware import get_client_ip
+from apps.core.search import filtrer_par_texte
 
 from .models import ActionChoices, AuditLog, StatutChoices
 
@@ -87,3 +91,42 @@ def log_login_failed(username: str, request) -> AuditLog:
         request=request,
         statut=StatutChoices.FAILED,
     )
+
+
+# --- consultation (écran du journal, ADMIN et DIRECTION — cahier-des-charges.md:81) ---
+
+
+def journal_queryset() -> QuerySet[AuditLog]:
+    return AuditLog.objects.select_related("utilisateur")
+
+
+def rechercher(
+    *,
+    recherche: str = "",
+    module: str = "",
+    action: str = "",
+    statut: str = "",
+    date_debut: date | None = None,
+    date_fin: date | None = None,
+) -> QuerySet[AuditLog]:
+    """Journal filtré par texte (utilisateur, entité), module, action, statut et période.
+
+    ``date_debut``/``date_fin`` bornent ``date_heure`` (jour local, bornes incluses).
+    """
+    resultat = journal_queryset()
+    if module:
+        resultat = resultat.filter(module=module)
+    if action in ActionChoices.values:
+        resultat = resultat.filter(action=action)
+    if statut in StatutChoices.values:
+        resultat = resultat.filter(statut=statut)
+    if date_debut:
+        resultat = resultat.filter(date_heure__date__gte=date_debut)
+    if date_fin:
+        resultat = resultat.filter(date_heure__date__lte=date_fin)
+    return filtrer_par_texte(resultat, recherche, "utilisateur_nom", "entite", "adresse_ip")
+
+
+def modules_utilises() -> list[str]:
+    """Modules déjà présents dans le journal, pour peupler le filtre (ordre alphabétique)."""
+    return sorted(AuditLog.objects.values_list("module", flat=True).distinct())

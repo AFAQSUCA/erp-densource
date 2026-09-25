@@ -6,6 +6,7 @@ app_name = "billing"
 
 urlpatterns = [
     path("", views.FactureListView.as_view(), name="factures"),
+    path("imprimer/", views.FactureImprimerView.as_view(), name="factures_imprimer"),
     path("nouvelle/", views.FactureCreateView.as_view(), name="nouvelle"),
     path("<int:pk>/", views.FactureDetailView.as_view(), name="facture"),
     path("<int:pk>/imprimer/", views.FacturePrintView.as_view(), name="imprimer"),
@@ -23,6 +24,7 @@ urlpatterns = [
         name="reglement_annuler",
     ),
     path("depenses/", views.DepenseListView.as_view(), name="depenses"),
+    path("depenses/imprimer/", views.DepenseImprimerView.as_view(), name="depenses_imprimer"),
     path("depenses/nouvelle/", views.DepenseCreateView.as_view(), name="depense_nouvelle"),
     path("depenses/<int:pk>/mode/", views.DepenseModeView.as_view(), name="depense_mode"),
 ]

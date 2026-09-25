@@ -11,7 +11,7 @@ from django.views.generic import FormView, ListView, TemplateView
 
 from apps.accounts.mixins import RoleRequiredMixin
 from apps.core.formats import nombre, pourcentage_signe
-from apps.core.views import PaginationTolerante
+from apps.core.views import ImpressionListeMixin, PaginationTolerante
 
 from . import permissions, services
 from .exceptions import CarburantError, SaisieSuspecte
@@ -46,6 +46,33 @@ class PleinListView(PaginationTolerante, RoleRequiredMixin, ListView):
             peut_modifier=self.request.user.role_effectif in permissions.MODIFICATION,
         )
         return contexte
+
+
+class PleinImprimerView(ImpressionListeMixin, PleinListView):
+    """Rapport imprimable des pleins (mêmes filtres que la liste)."""
+
+    titre_impression = "Carburant"
+    colonnes = (
+        ("Date", lambda p: p.date_plein.strftime("%d/%m/%Y")), ("Camion", "vehicule.immatriculation"),
+        ("Chauffeur", lambda p: f"{p.chauffeur.personnel.prenom} {p.chauffeur.personnel.nom}"),
+        ("Station", "station"), ("Litres", lambda p: f"{nombre(p.quantite_litres, 2)} L"),
+        ("Prix unitaire", lambda p: f"{nombre(p.prix_unitaire)} FCFA"),
+        ("Montant", lambda p: f"{nombre(p.quantite_litres * p.prix_unitaire)} FCFA"),
+        ("Consommation", lambda p: f"{nombre(p.consommation, 1)} L/100 km" if p.consommation is not None else "—"),
+    )
+
+    def get_sous_titre_impression(self):
+        criteres = self.get_filtre().criteres()
+        morceaux = []
+        if criteres.get("vehicule"):
+            morceaux.append(f"camion : {criteres['vehicule'].immatriculation}")
+        if criteres.get("chauffeur"):
+            morceaux.append(f"chauffeur : {criteres['chauffeur'].personnel.nom}")
+        if criteres.get("date_debut"):
+            morceaux.append(f"du {criteres['date_debut'].strftime('%d/%m/%Y')}")
+        if criteres.get("date_fin"):
+            morceaux.append(f"au {criteres['date_fin'].strftime('%d/%m/%Y')}")
+        return " · ".join(morceaux)
 
 
 class PleinCreateView(RoleRequiredMixin, FormView):

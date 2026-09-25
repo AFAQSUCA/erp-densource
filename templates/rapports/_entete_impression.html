@@ -1,0 +1,17 @@
+{% load static %}{# En-tête commune des rapports imprimables : logo, entreprise, titre, sous-titre, bouton Imprimer. #}
+<div class="actions"><button type="button" data-imprimer><i class="fa-solid fa-print" aria-hidden="true"></i> Imprimer ou enregistrer en PDF</button></div>
+
+<div class="rapport-entete">
+  <div class="rapport-marque">
+    <img src="{% static 'img/logo-emblem.jpg' %}" alt="" class="rapport-logo">
+    <div>
+      <strong class="rapport-nom">{{ entreprise.nom }}</strong><br>
+      {% if entreprise.adresse %}<span class="petit">{{ entreprise.adresse|linebreaksbr }}</span><br>{% endif %}
+      {% if entreprise.ncc %}<span class="petit">NCC {{ entreprise.ncc }}</span>{% endif %}
+    </div>
+  </div>
+  <div style="text-align:right">
+    <h1>{{ titre }}</h1>
+    {% if sous_titre %}<div class="petit">{{ sous_titre }}</div>{% endif %}
+  </div>
+</div>

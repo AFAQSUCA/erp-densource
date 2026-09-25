@@ -6,6 +6,7 @@ app_name = "fleet"
 
 urlpatterns = [
     path("", views.VehiculeListView.as_view(), name="liste"),
+    path("imprimer/", views.VehiculeImprimerView.as_view(), name="imprimer"),
     path("nouveau/", views.VehiculeCreateView.as_view(), name="creer"),
     path("<int:pk>/", views.VehiculeDetailView.as_view(), name="detail"),
     path("<int:pk>/modifier/", views.VehiculeUpdateView.as_view(), name="modifier"),

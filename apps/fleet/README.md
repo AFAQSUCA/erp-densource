@@ -20,3 +20,5 @@ Reste à faire : marquer un camion Immobilisé / Hors service et le remettre en 
 La fiche d'un camion accueille des blocs enregistrés par d'autres apps
 (`sections.DETAIL_VEHICULE`) : `garage` y ajoute la maintenance et les actions
 d'immobilisation / remise en service.
+
+Rapport imprimable de la flotte (bouton « Imprimer » sur la liste, mêmes filtres) : voir `apps/core/README.md` (`ImpressionListeMixin`).

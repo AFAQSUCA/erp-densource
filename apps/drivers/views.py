@@ -10,7 +10,7 @@ from django.views import View
 from django.views.generic import DetailView, FormView, ListView
 
 from apps.accounts.mixins import RoleRequiredMixin
-from apps.core.views import PaginationTolerante
+from apps.core.views import ImpressionListeMixin, PaginationTolerante
 
 from . import permissions, services
 from .exceptions import ChauffeurError
@@ -44,6 +44,30 @@ class ChauffeurListView(PaginationTolerante, RoleRequiredMixin, ListView):
             ],
         )
         return contexte
+
+
+class ChauffeurImprimerView(ImpressionListeMixin, ChauffeurListView):
+    """Rapport imprimable des chauffeurs (mêmes recherche, statut et alerte que la liste)."""
+
+    titre_impression = "Chauffeurs"
+    colonnes = (
+        ("Nom", "personnel.nom"), ("Prénom", "personnel.prenom"), ("Téléphone", "telephone"),
+        ("N° de permis", "numero_permis"),
+        ("Permis valide jusqu'au", lambda c: c.date_expiration_permis.strftime("%d/%m/%Y") if c.date_expiration_permis else "—"),
+        ("Visite médicale jusqu'au", lambda c: c.date_expiration_visite_medicale.strftime("%d/%m/%Y") if c.date_expiration_visite_medicale else "—"),
+        ("Statut", "get_statut_display"),
+    )
+
+    def get_sous_titre_impression(self):
+        morceaux = []
+        statut = self.request.GET.get("statut", "")
+        if statut in StatutChauffeur.values:
+            morceaux.append(f"statut : {StatutChauffeur(statut).label}")
+        if self.request.GET.get("alerte") == "1":
+            morceaux.append("permis / visite médicale à renouveler")
+        if self.request.GET.get("q", ""):
+            morceaux.append(f"recherche : « {self.request.GET['q']} »")
+        return " · ".join(morceaux)
 
 
 class ChauffeurDetailView(RoleRequiredMixin, DetailView):

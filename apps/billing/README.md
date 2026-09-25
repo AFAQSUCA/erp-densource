@@ -40,3 +40,5 @@ Pas encore fait :
   modifie ni ne se supprime.
 - Génération de PDF côté serveur (Celery, étape 7) ; paiement initié par Mobile Money.
 - Accès du chargé clientèle aux factures de ses clients.
+
+Rapports imprimables des factures et des dépenses (bouton « Imprimer » sur chaque liste, mêmes filtres) : voir `apps/core/README.md` (`ImpressionListeMixin`).

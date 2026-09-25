@@ -10,7 +10,7 @@ from django.views import View
 from django.views.generic import DetailView, ListView
 
 from apps.accounts.mixins import RoleRequiredMixin
-from apps.core.views import PaginationTolerante
+from apps.core.views import ImpressionListeMixin, PaginationTolerante
 
 from . import permissions, terrain
 from .exceptions import GarageError
@@ -20,7 +20,7 @@ from .forms_terrain import (
     FiltreIncidentsForm,
     TraitementIncidentForm,
 )
-from .models import Incident, StatutIncident
+from .models import GraviteIncident, Incident, StatutIncident
 
 
 class IncidentListView(PaginationTolerante, RoleRequiredMixin, ListView):
@@ -45,6 +45,31 @@ class IncidentListView(PaginationTolerante, RoleRequiredMixin, ListView):
             a_traiter=terrain.incidents_a_traiter().count(),
         )
         return contexte
+
+
+class IncidentImprimerView(ImpressionListeMixin, IncidentListView):
+    """Rapport imprimable des incidents signalés (mêmes filtres que la liste)."""
+
+    titre_impression = "Incidents signalés par les chauffeurs"
+    colonnes = (
+        ("Camion", "vehicule.immatriculation"),
+        ("Chauffeur", lambda i: f"{i.chauffeur.personnel.prenom} {i.chauffeur.personnel.nom}" if i.chauffeur_id else "—"),
+        ("Type", "get_type_incident_display"), ("Gravité", "get_gravite_display"), ("Lieu", "lieu"),
+        ("Description", "description"),
+        ("Signalé le", lambda i: i.created_at.strftime("%d/%m/%Y %H:%M")),
+        ("Statut", "get_statut_display"),
+    )
+
+    def get_sous_titre_impression(self):
+        criteres = self.get_filtre().criteres()
+        morceaux = []
+        if criteres.get("statut") in StatutIncident.values:
+            morceaux.append(f"statut : {StatutIncident(criteres['statut']).label}")
+        if criteres.get("gravite") in GraviteIncident.values:
+            morceaux.append(f"gravité : {GraviteIncident(criteres['gravite']).label}")
+        if criteres.get("recherche"):
+            morceaux.append(f"recherche : « {criteres['recherche']} »")
+        return " · ".join(morceaux)
 
 
 class IncidentDetailView(RoleRequiredMixin, DetailView):

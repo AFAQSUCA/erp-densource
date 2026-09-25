@@ -11,7 +11,7 @@ from django.views.generic import DetailView, FormView, ListView
 
 from apps.accounts.mixins import RoleRequiredMixin
 from apps.core.formats import nombre
-from apps.core.views import PaginationTolerante
+from apps.core.views import ImpressionListeMixin, PaginationTolerante
 from apps.garage import services as garage_services
 
 from . import permissions, services
@@ -67,6 +67,28 @@ class ArticleListView(PaginationTolerante, RoleRequiredMixin, ListView):
             peut_modifier=self.request.user.role_effectif in permissions.MODIFICATION,
         )
         return contexte
+
+
+class ArticleImprimerView(ImpressionListeMixin, ArticleListView):
+    """Rapport imprimable du stock (mêmes recherche, catégorie et alerte que la liste)."""
+
+    titre_impression = "Stock de pièces détachées"
+    colonnes = (
+        ("Référence", "reference"), ("Désignation", "designation"), ("Catégorie", "categorie"),
+        ("Emplacement", "emplacement"), ("Quantité", "quantite"), ("Seuil minimal", "seuil_minimal"),
+        ("PUMP", lambda a: f"{nombre(a.pump)} FCFA"),
+        ("Valeur en stock", lambda a: f"{nombre(a.quantite * a.pump)} FCFA"),
+    )
+
+    def get_sous_titre_impression(self):
+        morceaux = []
+        if self.request.GET.get("categorie", ""):
+            morceaux.append(f"catégorie : {self.request.GET['categorie']}")
+        if self.request.GET.get("alerte") == "1":
+            morceaux.append("sous le seuil minimal")
+        if self.request.GET.get("q", ""):
+            morceaux.append(f"recherche : « {self.request.GET['q']} »")
+        return " · ".join(morceaux)
 
 
 class ArticleDetailView(RoleRequiredMixin, DetailView):

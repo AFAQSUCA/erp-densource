@@ -39,3 +39,5 @@ Signalements du chauffeur (`terrain.py`, `views_terrain.py`) :
   et la Direction ; **aucune action automatique** : le Parc Auto le prend en compte, ouvre un OR s'il le
   juge utile, puis le clôt avec la suite donnée (`/garage/incidents/`, `/garage/checklists/`).
 Les signaux `incident_signale` et `checklist_anomalie` sont souscrits par `notifications`.
+
+Rapport imprimable des OR et des incidents (bouton « Imprimer » sur la liste, mêmes filtres) : voir `apps/core/README.md` (`ImpressionListeMixin`).

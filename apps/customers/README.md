@@ -22,3 +22,5 @@ Les missions du client s'affichent dans sa fiche via `customers.sections.DETAIL_
 
 Pas encore de gestion des devis ni des contrats à renouveler (indicateurs du tableau de
 bord chargé clientèle, étape 5) ; les FINANCES ont accès à la facturation, pas à la fiche client.
+
+Rapport imprimable des clients (bouton « Imprimer » sur la liste, mêmes filtres) : voir `apps/core/README.md` (`ImpressionListeMixin`).

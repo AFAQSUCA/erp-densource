@@ -10,9 +10,15 @@
       <h1 class="text-2xl font-bold text-slate-900">Dépenses</h1>
       <p class="mt-1 text-sm text-slate-600">{{ paginator.count|default:0 }} dépense{{ paginator.count|pluralize }}</p>
     </div>
-    {% if peut_saisir %}
-      <a href="{% url 'billing:depense_nouvelle' %}" class="inline-flex items-center gap-2 rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2"><i class="fa-solid fa-plus" aria-hidden="true"></i> Nouvelle dépense</a>
-    {% endif %}
+    <div class="flex flex-wrap items-center gap-2">
+      <a href="{% url 'billing:depenses_imprimer' %}?{{ request.GET.urlencode }}" target="_blank" rel="noopener"
+         class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+        <i class="fa-solid fa-print" aria-hidden="true"></i> Imprimer
+      </a>
+      {% if peut_saisir %}
+        <a href="{% url 'billing:depense_nouvelle' %}" class="inline-flex items-center gap-2 rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2"><i class="fa-solid fa-plus" aria-hidden="true"></i> Nouvelle dépense</a>
+      {% endif %}
+    </div>
   </div>
 
   <section class="mt-5" aria-labelledby="titre-mois">

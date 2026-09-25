@@ -66,3 +66,5 @@ ou annulé) sont émis par les services ; `notifications` s'y abonne. Lectures d
 `effectif_par_departement`, `absents_du_jour`, `prochains_conges`, `conges_en_attente`,
 `conges_en_retard`. `synchroniser_statuts_conges` est lancée chaque jour par
 `manage.py taches_quotidiennes`.
+
+Rapport imprimable du personnel et des congés (bouton « Imprimer » sur la liste, mêmes filtres) : voir `apps/core/README.md` (`ImpressionListeMixin`).

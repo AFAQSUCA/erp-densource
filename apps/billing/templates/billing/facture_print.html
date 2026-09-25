@@ -4,37 +4,19 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ facture.numero|default:"Brouillon" }} · {{ facture.client.raison_sociale }}</title>
+  {% include "rapports/_style_impression.html" %}
   <style>
-    body { font-family: Arial, Helvetica, sans-serif; color: #111; margin: 2rem auto; max-width: 780px; padding: 0 1rem; font-size: 14px; }
-    h1 { font-size: 1.6rem; margin: 0; }
-    table { width: 100%; border-collapse: collapse; margin-top: 1.5rem; }
-    th, td { padding: .5rem .6rem; border-bottom: 1px solid #ccc; text-align: left; vertical-align: top; }
-    th { background: #f3f3f3; font-size: .8rem; text-transform: uppercase; letter-spacing: .03em; }
-    .droite { text-align: right; white-space: nowrap; }
-    .entete { display: flex; justify-content: space-between; gap: 2rem; }
     .totaux { margin-left: auto; width: 320px; margin-top: 1rem; }
     .totaux div { display: flex; justify-content: space-between; padding: .25rem 0; }
     .total { border-top: 2px solid #111; font-weight: bold; font-size: 1.1rem; }
     .filigrane { color: #b91c1c; border: 2px solid #b91c1c; display: inline-block; padding: .2rem .8rem; font-weight: bold; margin-top: .5rem; }
-    .petit { color: #555; font-size: .85rem; }
-    .actions { margin-bottom: 1rem; }
-    @media print { .actions { display: none; } body { margin: 0; } }
   </style>
 </head>
 <body>
-  <div class="actions"><button type="button" data-imprimer>Imprimer ou enregistrer en PDF</button></div>
-
-  <div class="entete">
-    <div>
-      <strong>{{ entreprise.nom }}</strong><br>
-      {% if entreprise.adresse %}<span class="petit">{{ entreprise.adresse|linebreaksbr }}</span><br>{% endif %}
-      {% if entreprise.ncc %}<span class="petit">NCC {{ entreprise.ncc }}</span>{% endif %}
-    </div>
-    <div style="text-align:right">
-      <h1>{% if facture.est_emise %}FACTURE {{ facture.numero }}{% else %}PROJET DE FACTURE{% endif %}</h1>
-      {% if facture.date_emission %}<div>Émise le {{ facture.date_emission|date:"d/m/Y" }}</div><div>Échéance : {{ facture.date_echeance|date:"d/m/Y" }}</div>{% endif %}
-      {% if not facture.est_emise %}<div class="filigrane">NON VALIDÉE</div>{% endif %}
-    </div>
+  {% include "rapports/_entete_impression.html" %}
+  <div style="text-align:right">
+    {% if facture.date_emission %}<div class="petit">Émise le {{ facture.date_emission|date:"d/m/Y" }} — Échéance : {{ facture.date_echeance|date:"d/m/Y" }}</div>{% endif %}
+    {% if not facture.est_emise %}<div class="filigrane">NON VALIDÉE</div>{% endif %}
   </div>
 
   <p style="margin-top:1.5rem">
@@ -67,6 +49,7 @@
       {% for r in reglements %}{{ r.date_reglement|date:"d/m/Y" }} — {{ r.montant|floatformat:0|intcomma }} FCFA ({{ r.get_mode_display }}){% if not forloop.last %} ; {% endif %}{% endfor %}
     </p>
   {% endif %}
+  {% include "rapports/_pied_impression.html" %}
   <script src="{% static 'js/app.js' %}" defer></script>
 </body>
 </html>
