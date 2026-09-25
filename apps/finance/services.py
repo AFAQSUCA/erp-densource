@@ -28,9 +28,13 @@ from apps.billing.models import (
     CompteTresorerie,
     Depense,
     ModePaiement,
+    OrigineDepense,
     Reglement,
 )
 from apps.core.services import debuts_de_mois, fin_de_mois
+from apps.fuel.models import Plein
+from apps.garage.models import OrdreReparation, StatutOr
+from apps.inventory.models import MouvementStock, TypeMouvement
 
 from .models import MouvementManuel, SensMouvement
 
@@ -312,3 +316,68 @@ def indicateurs(debut: date, fin: date, *, aujourd_hui: date | None = None) -> d
         "creances": billing_services.creances(aujourd_hui),
         "tresorerie": soldes_par_compte()["total"],
     }
+
+
+# --- reprise de l'historique du parc auto (commande comptabiliser_historique_parc_auto) ---
+
+
+def reprendre_depenses_parc_auto(*, depuis: date | None = None) -> dict:
+    """Comptabilise après coup les pleins, achats de pièces et main-d'œuvre d'OR déjà enregistrés,
+    exactement comme ``finance.receivers`` le fait pour les nouveaux (dépense automatique en espèces,
+    la Finance corrige ensuite le mode de paiement).
+
+    ``depuis`` : ne reprend que les sources à partir de cette date (bornes incluses). À utiliser si un
+    solde d'ouverture a déjà été saisi en trésorerie pour une date donnée : les mouvements antérieurs sont
+    alors déjà compris dedans, les reprendre les compterait une seconde fois. Sans ``depuis``, tout
+    l'historique est repris. Rejouable sans double compte (une dépense par source, comme le mécanisme
+    normal) : relancer la commande après une reprise partielle ne recrée pas ce qui existe déjà.
+
+    Retourne le nombre de dépenses créées par catégorie et le nombre de sources déjà comptabilisées.
+    """
+    compteurs = {"carburant": 0, "pieces": 0, "main_oeuvre": 0, "deja_comptabilisees": 0}
+
+    def _traiter(*, origine, origine_id, cle, **kwargs):
+        if Depense.objects.filter(origine=origine, origine_id=origine_id).exists():
+            compteurs["deja_comptabilisees"] += 1
+            return
+        if billing_services.comptabiliser_depense_automatique(origine=origine, origine_id=origine_id, **kwargs):
+            compteurs[cle] += 1
+
+    pleins = Plein.objects.select_related("vehicule")
+    if depuis:
+        pleins = pleins.filter(date_plein__gte=depuis)
+    for plein in pleins:
+        _traiter(
+            origine=OrigineDepense.PLEIN, origine_id=plein.pk, cle="carburant",
+            categorie=CategorieDepense.CARBURANT, date_depense=plein.date_plein,
+            libelle=(
+                f"Carburant · {plein.vehicule.immatriculation} · {plein.station} "
+                f"({plein.quantite_litres.normalize():f} L)"
+            ),
+            montant=plein.quantite_litres * plein.prix_unitaire, reference=plein.numero_ticket,
+        )
+
+    entrees = MouvementStock.objects.filter(type_mouvement=TypeMouvement.ENTREE).select_related("article")
+    if depuis:
+        entrees = entrees.filter(date_mouvement__date__gte=depuis)
+    for mouvement in entrees:
+        article = mouvement.article
+        _traiter(
+            origine=OrigineDepense.ACHAT_STOCK, origine_id=mouvement.pk, cle="pieces",
+            categorie=CategorieDepense.PIECES, date_depense=timezone.localtime(mouvement.date_mouvement).date(),
+            libelle=f"Achat de pièces · {article.designation} ({article.reference}) × {mouvement.variation}",
+            montant=mouvement.variation * mouvement.prix_unitaire,
+        )
+
+    ordres = OrdreReparation.objects.filter(statut=StatutOr.CLOTURE).select_related("vehicule")
+    if depuis:
+        ordres = ordres.filter(date_cloture__date__gte=depuis)
+    for ordre in ordres:
+        _traiter(
+            origine=OrigineDepense.MAIN_OEUVRE_OR, origine_id=ordre.pk, cle="main_oeuvre",
+            categorie=CategorieDepense.MAINTENANCE, date_depense=timezone.localtime(ordre.date_cloture).date(),
+            libelle=f"Main-d'œuvre · {ordre.numero} · {ordre.vehicule.immatriculation}",
+            montant=ordre.cout_main_oeuvre, reference=ordre.numero,
+        )
+
+    return compteurs
