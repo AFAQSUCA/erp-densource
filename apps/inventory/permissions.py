@@ -1,8 +1,9 @@
 """Qui peut consulter et faire bouger le stock.
 
 Cahier-des-charges.md:44-55 : le PARCAUTO gère les « mouvements de stock,
-inventaires » ; la DIRECTION est en « lecture seule sur Parc Auto ». L'ADMIN a tous
-les droits.
+inventaires ». L'ADMIN a tous les droits. La DIRECTION, à l'origine en « lecture
+seule sur Parc Auto », agit désormais aussi : retour d'une réunion entreprise, elle a
+la même largeur que l'ADMIN sur la saisie/modification.
 """
 
 from apps.accounts.models import Role

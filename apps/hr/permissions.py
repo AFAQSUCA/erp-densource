@@ -1,8 +1,10 @@
 """Qui peut consulter et gérer le personnel et les congés.
 
 Cahier-des-charges.md:44-55 : la RH a la « gestion complète des employés » et les
-« congés/absences » ; la DIRECTION a une « lecture seule sur RH » ; l'ADMIN a tous les
-droits. Les autres rôles n'accèdent pas à la fiche du personnel.
+« congés/absences » ; l'ADMIN a tous les droits. La DIRECTION, à l'origine en
+« lecture seule sur RH », modifie désormais aussi : retour d'une réunion entreprise,
+elle a la même largeur que l'ADMIN sur la saisie/modification. Les autres rôles
+n'accèdent pas à la fiche du personnel.
 
 Les congés sont ouverts à tout employé qui a un compte (il demande son congé, et son
 supérieur hiérarchique valide en N1) : le droit de décision ne dépend pas du rôle mais de

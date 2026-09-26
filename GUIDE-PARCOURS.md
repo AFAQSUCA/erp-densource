@@ -550,7 +550,8 @@ Ne cherchez pas à tout retenir. Lisez le `README.md` de chaque app, puis seulem
 - `hr/models.py` et `hr/services.py` : le **workflow des congés** en trois niveaux (demande → N1 → N2).
   C'est le meilleur exemple de **machine à états** du projet. `architecture.md:313-342` a le schéma.
 - `drivers/models.py` : `Chauffeur` prolonge `Personnel` (relation un-à-un), fiche créée automatiquement
-  par un signal (`drivers/signals.py`).
+  par un signal (`drivers/signals.py`). `Copilote` suit exactement le même principe (poste « Copilote » →
+  fiche auto-créée) : un bon exercice pour vérifier que vous avez compris le mécanisme.
 - `customers/services.py` : la règle de TVA (0 % exige un motif d'exonération).
 
 ### Étape 7 — Le cœur métier : `missions` (≈ 4 h)
