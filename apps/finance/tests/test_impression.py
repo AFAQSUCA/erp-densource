@@ -75,11 +75,15 @@ def test_seule_l_entree_ou_la_sortie_demandee_apparait(client):
     assert "Péage" in texte_sorties and facture.numero not in texte_sorties
 
 
-def test_accessible_en_lecture_a_la_direction_mais_pas_aux_autres(client):
+def test_accessible_en_lecture_a_la_direction_et_a_la_rh_mais_pas_aux_autres(client):
+    # Retour réunion : la RH fait tout ce que fait la FINANCES, y compris consulter la trésorerie.
     _connecte(client, Role.DIRECTION)
     assert client.get(reverse("finance:imprimer")).status_code == 200
 
     _connecte(client, Role.RH)
+    assert client.get(reverse("finance:imprimer")).status_code == 200
+
+    _connecte(client, Role.PARCAUTO)
     assert client.get(reverse("finance:imprimer")).status_code == 403
 
 

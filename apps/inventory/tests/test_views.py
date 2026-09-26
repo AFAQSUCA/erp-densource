@@ -101,7 +101,8 @@ def test_la_fiche_sans_sortie_le_dit(client):
     assert "Aucune pièce sortie du stock" in _detail(client, ordre).content.decode()
 
 
-def test_le_formulaire_de_sortie_n_est_propose_qu_au_parc_auto_sur_un_or_ouvert(client):
+def test_le_formulaire_de_sortie_est_propose_au_parc_auto_et_a_la_direction_sur_un_or_ouvert(client):
+    """Retour réunion : la DIRECTION a désormais la même largeur que l'ADMIN (MODIFICATION)."""
     ordre = _ordre()
     _article()
     _connecte(client, Role.PARCAUTO)
@@ -110,8 +111,7 @@ def test_le_formulaire_de_sortie_n_est_propose_qu_au_parc_auto_sur_un_or_ouvert(
 
     direction = Client()
     _connecte(direction, Role.DIRECTION)
-    assert url not in _detail(direction, ordre).content.decode()
-    assert "Pièces utilisées" in _detail(direction, ordre).content.decode()  # lecture seule
+    assert url in _detail(direction, ordre).content.decode()
 
     garage_services.cloturer_or(ordre)
     assert url not in _detail(client, ordre).content.decode()
@@ -207,8 +207,8 @@ def test_un_article_epuise_ne_peut_pas_etre_sorti(client):
     assert MouvementStock.objects.count() == 0
 
 
-@pytest.mark.parametrize("role", [Role.DIRECTION, Role.RH, Role.FINANCES, Role.CHARGE_CLIENTELE, Role.CHAUFFEUR])
-def test_la_sortie_est_interdite_hors_parc_auto(client, role):
+@pytest.mark.parametrize("role", [Role.RH, Role.FINANCES, Role.CHARGE_CLIENTELE, Role.CHAUFFEUR])
+def test_la_sortie_est_interdite_hors_parc_auto_et_direction(client, role):
     _connecte(client, role)
     article = _article()
     ordre = _ordre()

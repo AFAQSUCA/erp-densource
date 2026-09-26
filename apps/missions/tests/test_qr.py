@@ -63,12 +63,21 @@ def test_les_roles_qui_voient_les_codes_voient_le_qr(client, role):
     assert client.get(reverse("missions:qr", args=[mission.pk, "expediteur"])).status_code == 200
 
 
-@pytest.mark.parametrize("role", [Role.CHAUFFEUR, Role.PARCAUTO, Role.RH, Role.FINANCES])
+@pytest.mark.parametrize("role", [Role.CHAUFFEUR, Role.RH, Role.FINANCES])
 def test_les_autres_roles_n_obtiennent_pas_le_qr(client, role):
     client.force_login(UserFactory(role=role))
     mission = _mission()
 
     assert client.get(reverse("missions:qr", args=[mission.pk, "expediteur"])).status_code == 403
+
+
+def test_le_parc_auto_consulte_la_mission_mais_pas_le_qr_des_codes(client):
+    """Retour réunion : le Parc Auto affecte les missions (CONSULTATION), mais les codes restent
+    réservés à ceux qui gèrent la relation client (VOIR_CODES, décision indépendante)."""
+    client.force_login(UserFactory(role=Role.PARCAUTO))
+    mission = _mission()
+
+    assert client.get(reverse("missions:qr", args=[mission.pk, "expediteur"])).status_code == 404
 
 
 def test_le_qr_exige_la_connexion(client):

@@ -85,7 +85,8 @@ def test_liste_vide_des_incidents(client):
     assert "Aucun incident" in client.get(reverse("garage:incidents")).content.decode()
 
 
-def test_la_fiche_propose_le_traitement_au_parc_auto_pas_a_la_direction(client):
+def test_la_fiche_propose_le_traitement_au_parc_auto_et_a_la_direction(client):
+    """Retour réunion : la DIRECTION a désormais la même largeur que l'ADMIN (MODIFICATION)."""
     incident = _incident()
     url = reverse("garage:incident", args=[incident.pk])
 
@@ -95,7 +96,7 @@ def test_la_fiche_propose_le_traitement_au_parc_auto_pas_a_la_direction(client):
     assert f"{reverse('garage:creer')}?vehicule={incident.vehicule.pk}" in texte
 
     _connecte(client, Role.DIRECTION)
-    assert "Prendre en compte" not in client.get(url).content.decode()
+    assert "Prendre en compte" in client.get(url).content.decode()
 
 
 def test_prendre_en_compte_puis_clore(client):
@@ -129,14 +130,14 @@ def test_un_incident_clos_ne_se_retraite_pas(client):
     assert any("déjà clos" in m for m in _messages(reponse))
 
 
-def test_la_direction_ne_peut_pas_traiter_meme_en_postant(client):
+def test_la_direction_peut_desormais_traiter_en_postant(client):
+    """Retour réunion : la DIRECTION a désormais la même largeur que l'ADMIN (MODIFICATION)."""
     _connecte(client, Role.DIRECTION)
     incident = _incident()
 
-    assert client.post(reverse("garage:incident_traiter", args=[incident.pk]),
-                       {"action": "clore", "note": "x"}).status_code == 403
+    client.post(reverse("garage:incident_traiter", args=[incident.pk]), {"action": "clore", "note": "x"})
     incident.refresh_from_db()
-    assert incident.statut == StatutIncident.SIGNALE
+    assert incident.statut == StatutIncident.CLOS
 
 
 def test_action_inconnue_ou_incident_inexistant(client):

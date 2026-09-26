@@ -15,10 +15,13 @@ from apps.accounts.models import Role
 
 from .models import Mission, StatutMission
 
-CONSULTATION = frozenset({Role.ADMIN, Role.DIRECTION, Role.CHARGE_CLIENTELE})
+# Retour réunion (avenant) : c'est le Parc Auto qui affecte les missions (camion, chauffeur,
+# copilote) une fois que le chargé clientèle les a créées — il doit donc aussi pouvoir les
+# consulter pour savoir lesquelles affecter.
+CONSULTATION = frozenset({Role.ADMIN, Role.DIRECTION, Role.CHARGE_CLIENTELE, Role.PARCAUTO})
 CREATION = frozenset({Role.ADMIN, Role.DIRECTION, Role.CHARGE_CLIENTELE})
 PLANIFICATION = frozenset({Role.ADMIN, Role.DIRECTION, Role.CHARGE_CLIENTELE})
-AFFECTATION = frozenset({Role.ADMIN, Role.DIRECTION})
+AFFECTATION = frozenset({Role.ADMIN, Role.DIRECTION, Role.PARCAUTO})
 # Séparation des tâches (avenant-separation-des-taches.md § R3) : modifier une mission déjà créée est
 # plus restreint que la créer — le chargé clientèle crée, seules DIRECTION et ADMIN modifient ensuite.
 MODIFICATION = frozenset({Role.ADMIN, Role.DIRECTION})
@@ -26,14 +29,16 @@ MODIFICATION = frozenset({Role.ADMIN, Role.DIRECTION})
 SUIVI_TERRAIN = frozenset({Role.ADMIN, Role.DIRECTION})
 # Récupération et livraison se confirment par un code secret que seul le chauffeur affecté saisit ou
 # scanne (espace mobile : une mission d'un autre chauffeur y est introuvable). Depuis le back-office,
-# seul l'ADMIN peut le faire à sa place (correction, panne du téléphone) : ni la DIRECTION ni le
-# chargé clientèle, qui voient pourtant les codes pour les communiquer.
-CODES_TERRAIN = frozenset({Role.ADMIN})
+# l'ADMIN peut le faire à sa place (correction, panne du téléphone), et la DIRECTION désormais aussi
+# (même largeur que l'ADMIN, retour réunion) : ni le chargé clientèle ni le Parc Auto, qui voient
+# pourtant les codes pour les communiquer (VOIR_CODES) ou organiser le transport.
+CODES_TERRAIN = frozenset({Role.ADMIN, Role.DIRECTION})
 CLOTURE = frozenset({Role.ADMIN, Role.DIRECTION})
 
-# Les codes sont à communiquer à l'expéditeur et au destinataire : ils ne sont
-# visibles que des rôles qui gèrent la relation client.
-VOIR_CODES = CONSULTATION
+# Les codes sont à communiquer à l'expéditeur et au destinataire : ils ne sont visibles que des
+# rôles qui gèrent la relation client — délibérément indépendant de CONSULTATION (qui inclut
+# désormais le Parc Auto pour l'affectation, sans qu'il ait besoin de voir ces codes).
+VOIR_CODES = frozenset({Role.ADMIN, Role.DIRECTION, Role.CHARGE_CLIENTELE})
 
 # Prévision de trésorerie des missions (R4) : le Parc Auto planifie une avance/dépense prévue,
 # la Finance valide toujours, le Parc Auto valide en plus en premier pour un imprévu (double
@@ -41,7 +46,7 @@ VOIR_CODES = CONSULTATION
 # chargé clientèle (qui ne voit déjà pas le prix convenu côté chauffeur) ni la trésorerie n'y
 # figurent sur les mêmes rôles que ``CONSULTATION``.
 FRAIS_CONSULTATION = frozenset({Role.ADMIN, Role.DIRECTION, Role.PARCAUTO, Role.FINANCES})
-FRAIS_SAISIE_PREVISION = frozenset({Role.ADMIN, Role.PARCAUTO})
+FRAIS_SAISIE_PREVISION = frozenset({Role.ADMIN, Role.DIRECTION, Role.PARCAUTO})
 FRAIS_VALIDATION_PARCAUTO = frozenset({Role.PARCAUTO})
 FRAIS_VALIDATION_FINANCES = frozenset({Role.FINANCES})
 

@@ -36,7 +36,9 @@ def _accepte(proforma):
     return proforma
 
 
-@pytest.mark.parametrize("role", [Role.ADMIN, Role.DIRECTION, Role.FINANCES, Role.CHARGE_CLIENTELE])
+@pytest.mark.parametrize(
+    "role", [Role.ADMIN, Role.DIRECTION, Role.FINANCES, Role.RH, Role.CHARGE_CLIENTELE]
+)
 def test_les_devis_sont_accessibles_aux_roles_concernes(client, role):
     _connecte(client, role)
     proforma = proforma_brouillon()
@@ -49,7 +51,7 @@ def test_les_devis_sont_accessibles_aux_roles_concernes(client, role):
         assert client.get(url).status_code == 200, url
 
 
-@pytest.mark.parametrize("role", [Role.RH, Role.PARCAUTO, Role.CHAUFFEUR])
+@pytest.mark.parametrize("role", [Role.PARCAUTO, Role.CHAUFFEUR])
 def test_les_devis_sont_interdits_aux_autres_roles(client, role):
     _connecte(client, role)
     proforma = proforma_brouillon()
@@ -62,11 +64,26 @@ def test_les_devis_sont_interdits_aux_autres_roles(client, role):
         assert client.get(url).status_code == 403, url
 
 
-def test_seul_charge_clientele_voit_le_bouton_nouveau_devis(client):
+def test_la_rh_consulte_les_devis_sans_pouvoir_en_creer(client):
+    """Retour réunion : la RH fait tout ce que fait la FINANCES (consultation), mais la
+    préparation d'un devis reste réservée au chargé clientèle, à la DIRECTION et à l'ADMIN."""
+    _connecte(client, Role.RH)
+    proforma = proforma_brouillon()
+
+    for url in (reverse("billing:proformas"), reverse("billing:proforma", args=[proforma.pk])):
+        assert client.get(url).status_code == 200, url
+    assert client.get(reverse("billing:proforma_nouveau")).status_code == 403
+
+
+def test_seuls_charge_clientele_admin_et_direction_voient_le_bouton_nouveau_devis(client):
     _connecte(client, Role.CHARGE_CLIENTELE)
     assert "Nouveau devis" in client.get(reverse("billing:proformas")).content.decode()
 
+    # Retour réunion : la DIRECTION a la même largeur que l'ADMIN pour la saisie.
     _connecte(client, Role.DIRECTION)
+    assert "Nouveau devis" in client.get(reverse("billing:proformas")).content.decode()
+
+    _connecte(client, Role.FINANCES)
     assert "Nouveau devis" not in client.get(reverse("billing:proformas")).content.decode()
 
 

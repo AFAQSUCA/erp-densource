@@ -60,17 +60,18 @@ def test_le_garage_est_interdit_aux_autres_roles(client, role):
     assert client.get(reverse("garage:creer")).status_code == 403
 
 
-def test_la_direction_est_en_lecture_seule_sur_le_garage(client):
+def test_la_direction_peut_desormais_agir_sur_le_garage(client):
+    """Retour réunion : la DIRECTION a la même largeur que l'ADMIN pour la saisie/modification."""
     _connecte(client, Role.DIRECTION)
     camion = VehiculeFactory()
     ordre = _ouvrir()
 
-    assert client.get(reverse("garage:creer")).status_code == 403
-    assert client.post(reverse("garage:cloturer", args=[ordre.pk]), {"cout_main_oeuvre": "0"}).status_code == 403
-    assert client.post(reverse("garage:immobiliser", args=[camion.pk])).status_code == 403
+    assert client.get(reverse("garage:creer")).status_code == 200
+    assert client.post(reverse("garage:cloturer", args=[ordre.pk]), {"cout_main_oeuvre": "0"}).status_code == 302
+    assert client.post(reverse("garage:immobiliser", args=[camion.pk])).status_code == 302
     ordre.refresh_from_db()
-    assert ordre.statut == StatutOr.OUVERT
-    assert _statut(camion) == StatutVehicule.DISPONIBLE
+    assert ordre.statut == StatutOr.CLOTURE
+    assert _statut(camion) == StatutVehicule.IMMOBILISE
 
 
 def test_un_visiteur_non_connecte_est_renvoye_vers_la_connexion(client):
@@ -172,7 +173,9 @@ def test_la_fiche_d_un_or_inconnu_est_introuvable(client):
     assert client.get(reverse("garage:detail", args=[999999])).status_code == 404
 
 
-def test_la_fiche_propose_la_cloture_au_parc_auto_seulement_tant_que_l_or_est_ouvert(client):
+def test_la_fiche_propose_la_cloture_tant_que_l_or_est_ouvert(client):
+    """Retour réunion : la DIRECTION a désormais la même largeur que l'ADMIN (MODIFICATION),
+    elle voit donc aussi le bouton de clôture tant que l'OR est ouvert."""
     ordre = _ouvrir()
     _connecte(client, Role.PARCAUTO)
     assert reverse("garage:cloturer", args=[ordre.pk]) in client.get(
@@ -181,7 +184,7 @@ def test_la_fiche_propose_la_cloture_au_parc_auto_seulement_tant_que_l_or_est_ou
 
     direction = Client()
     _connecte(direction, Role.DIRECTION)
-    assert reverse("garage:cloturer", args=[ordre.pk]) not in direction.get(
+    assert reverse("garage:cloturer", args=[ordre.pk]) in direction.get(
         reverse("garage:detail", args=[ordre.pk])
     ).content.decode()
 
@@ -395,7 +398,8 @@ def test_le_bloc_propose_la_remise_en_service_d_un_camion_immobilise(client):
     assert reverse("garage:immobiliser", args=[camion.pk]) not in contenu
 
 
-def test_la_direction_voit_l_historique_sans_les_boutons(client):
+def test_la_direction_voit_l_historique_et_desormais_les_boutons(client):
+    """Retour réunion : la DIRECTION a la même largeur que l'ADMIN pour la saisie/modification."""
     _connecte(client, Role.DIRECTION)
     camion = VehiculeFactory()
     ordre = _ouvrir(camion)
@@ -403,8 +407,8 @@ def test_la_direction_voit_l_historique_sans_les_boutons(client):
     contenu = client.get(reverse("fleet:detail", args=[camion.pk])).content.decode()
 
     assert ordre.numero in contenu
-    assert reverse("garage:immobiliser", args=[camion.pk]) not in contenu
-    assert f"{reverse('garage:creer')}?vehicule=" not in contenu
+    assert reverse("garage:immobiliser", args=[camion.pk]) in contenu
+    assert f"{reverse('garage:creer')}?vehicule=" in contenu
 
 
 def test_les_formulaires_du_garage_sont_proteges_par_csrf():

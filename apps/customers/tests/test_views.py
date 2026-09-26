@@ -83,15 +83,16 @@ def test_les_clients_sont_interdits_aux_autres_roles(client, role):
         assert client.get(url).status_code == 403, url
 
 
-def test_la_direction_est_en_lecture_seule(client):
+def test_la_direction_peut_desormais_modifier(client):
+    """Retour réunion : la DIRECTION a la même largeur que l'ADMIN pour la saisie/modification."""
     _connecte(client, Role.DIRECTION)
     fiche = ClientFactory()
 
-    assert client.get(reverse("customers:creer")).status_code == 403
-    assert client.get(reverse("customers:modifier", args=[fiche.pk])).status_code == 403
-    assert client.post(reverse("customers:interaction", args=[fiche.pk]), _interaction()).status_code == 403
+    assert client.get(reverse("customers:creer")).status_code == 200
+    assert client.get(reverse("customers:modifier", args=[fiche.pk])).status_code == 200
+    assert client.post(reverse("customers:interaction", args=[fiche.pk]), _interaction()).status_code != 403
     texte = client.get(reverse("customers:detail", args=[fiche.pk])).content.decode()
-    assert "Modifier" not in texte and "Ajouter une interaction" not in texte
+    assert "Modifier" in texte and "Ajouter une interaction" in texte
 
 
 def test_les_clients_exigent_la_connexion(client):

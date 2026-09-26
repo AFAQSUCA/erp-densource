@@ -74,6 +74,15 @@ class Mission(BaseModel):
         on_delete=models.PROTECT,
         related_name="missions",
     )
+    copilote = models.ForeignKey(
+        "drivers.Copilote",
+        verbose_name=_("copilote"),
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="missions",
+        help_text=_("Facultatif : certains voyages exigent un assistant au chauffeur."),
+    )
     lieu_chargement = models.CharField(_("lieu de chargement"), max_length=200)
     lieu_livraison = models.CharField(_("lieu de livraison"), max_length=200)
     nature_marchandise = models.CharField(_("nature de la marchandise"), max_length=200)

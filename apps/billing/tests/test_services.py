@@ -55,11 +55,15 @@ def test_une_mission_ne_peut_avoir_qu_une_facture():
         services.creer_facture(mission, finances())
 
 
-def test_seuls_finances_et_admin_preparent_une_facture():
-    for role in (Role.DIRECTION, Role.RH, Role.PARCAUTO, Role.CHARGE_CLIENTELE, Role.CHAUFFEUR):
+def test_seuls_finances_admin_direction_et_rh_preparent_une_facture():
+    for role in (Role.PARCAUTO, Role.CHARGE_CLIENTELE, Role.CHAUFFEUR):
         with pytest.raises(ActionFactureNonAutorisee):
             services.creer_facture(mission_livree(), UserFactory(role=role))
     assert services.creer_facture(mission_livree(), UserFactory(role=Role.ADMIN)).pk
+    # Retour réunion : la DIRECTION (même largeur que l'ADMIN) et la RH (tout ce que fait
+    # la FINANCES) peuvent désormais aussi préparer une facture.
+    assert services.creer_facture(mission_livree(), UserFactory(role=Role.DIRECTION)).pk
+    assert services.creer_facture(mission_livree(), UserFactory(role=Role.RH)).pk
     superutilisateur = UserFactory(role="", is_superuser=True)
     assert services.creer_facture(mission_livree(), superutilisateur).pk
 
@@ -189,7 +193,9 @@ def test_seul_un_brouillon_se_modifie():
         services.abandonner_brouillon(facture, acteur)
 
 
-def test_les_modifications_sont_reservees_a_finances_et_admin():
+def test_les_modifications_sont_reservees_a_la_saisie_facturation():
+    """Retour réunion : la DIRECTION et la RH sont désormais dans la SAISIE facturation
+    (même largeur que l'ADMIN / tout ce que fait la FINANCES) ; le Parc Auto reste exclu."""
     facture = brouillon()
     ligne = facture.lignes.first()
 
@@ -201,7 +207,7 @@ def test_les_modifications_sont_reservees_a_finances_et_admin():
         lambda u: services.abandonner_brouillon(facture, u),
     ):
         with pytest.raises(ActionFactureNonAutorisee):
-            action(direction())
+            action(UserFactory(role=Role.PARCAUTO))
 
 
 def test_abandonner_un_brouillon_libere_la_mission_sans_trou_de_numerotation():
@@ -376,11 +382,11 @@ def test_pas_de_reglement_sur_un_brouillon_ni_une_facture_a_valider_ni_soldee():
         _regler(soldee, "1")
 
 
-def test_les_reglements_sont_reserves_a_finances_et_admin():
+def test_les_reglements_sont_reserves_a_la_saisie_facturation():
     facture = emise()
 
     with pytest.raises(ActionFactureNonAutorisee):
-        _regler(facture, "1000", acteur=direction())
+        _regler(facture, "1000", acteur=UserFactory(role=Role.PARCAUTO))
     assert _regler(facture, "1000", acteur=UserFactory(role=Role.ADMIN)).pk
 
 
@@ -416,7 +422,7 @@ def test_annulation_de_reglement_exige_un_motif_et_le_bon_role():
     with pytest.raises(ReglementInvalide, match="motif"):
         services.annuler_reglement(reglement, finances(), motif=" ")
     with pytest.raises(ActionFactureNonAutorisee):
-        services.annuler_reglement(reglement, direction(), motif="Test")
+        services.annuler_reglement(reglement, UserFactory(role=Role.PARCAUTO), motif="Test")
 
 
 # --- lecture et recherche ---
@@ -524,10 +530,10 @@ def test_depenses_invalides(libelle, montant, jour, message):
         )
 
 
-def test_les_depenses_sont_reservees_a_finances_et_admin():
+def test_les_depenses_sont_reservees_a_la_saisie_facturation():
     with pytest.raises(ActionFactureNonAutorisee):
         services.enregistrer_depense(
-            direction(), categorie="PEAGES", date_depense=date(2026, 9, 1), libelle="x",
+            UserFactory(role=Role.PARCAUTO), categorie="PEAGES", date_depense=date(2026, 9, 1), libelle="x",
             montant=Decimal("1"), mode=ModePaiement.ESPECES,
         )
 

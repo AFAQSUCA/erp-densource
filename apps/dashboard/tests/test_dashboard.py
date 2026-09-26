@@ -54,7 +54,8 @@ VISIBLE = {
     #  exploitation, alertes, rh, clientele, finances
     Role.ADMIN: (True, True, True, True, True),
     Role.DIRECTION: (True, True, True, True, True),
-    Role.RH: (False, True, True, False, False),
+    # Retour réunion : la RH fait tout ce que fait la FINANCES, y compris ce bloc.
+    Role.RH: (False, True, True, False, True),
     Role.CHARGE_CLIENTELE: (False, False, False, True, False),
     Role.PARCAUTO: (True, True, False, False, False),
     Role.FINANCES: (False, True, False, False, True),
@@ -101,7 +102,7 @@ def test_les_finances_voient_leurs_indicateurs_du_mois(client):
 
 
 def test_les_autres_roles_ne_voient_pas_les_finances(client):
-    for role in (Role.RH, Role.PARCAUTO, Role.CHARGE_CLIENTELE, Role.CHAUFFEUR):
+    for role in (Role.PARCAUTO, Role.CHARGE_CLIENTELE, Role.CHAUFFEUR):
         assert "Finances du mois" not in _page(client, role).content.decode()
 
 

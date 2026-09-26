@@ -14,9 +14,13 @@ __all__ = [
 
 # Dépenses du parc auto pré-approuvées (R2) : celui qui demande (Parc Auto) ou exécute (Finance)
 # n'est jamais celui qui valide (Direction) — jamais l'ADMIN à sa place (contrôle strict, comme
-# pour la validation d'une facture).
-DEMANDE_CONSULTATION = frozenset({Role.ADMIN, Role.DIRECTION, Role.PARCAUTO, Role.FINANCES})
-DEMANDE_SAISIE = frozenset({Role.ADMIN, Role.PARCAUTO})
+# pour la validation d'une facture). Retour réunion : la RH fait tout ce que fait la FINANCES, y
+# compris exécuter l'ordre de décaissement ; la DIRECTION a la même largeur que l'ADMIN en saisie
+# mais ne remplace jamais la FINANCES/RH sur l'exécution (contrôle strict conservé).
+DEMANDE_CONSULTATION = frozenset(
+    {Role.ADMIN, Role.DIRECTION, Role.PARCAUTO, Role.FINANCES, Role.RH}
+)
+DEMANDE_SAISIE = frozenset({Role.ADMIN, Role.DIRECTION, Role.PARCAUTO})
 DEMANDE_VALIDATION = frozenset({Role.DIRECTION})
-ORDRE_EXECUTION = frozenset({Role.FINANCES})
+ORDRE_EXECUTION = frozenset({Role.FINANCES, Role.RH})
 ENVELOPPE_VALIDATION = frozenset({Role.DIRECTION})

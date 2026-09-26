@@ -45,16 +45,15 @@ def _url(nom, mission):
 # --- accès par rôle ---
 
 
-@pytest.mark.parametrize("role", [Role.ADMIN, Role.DIRECTION, Role.CHARGE_CLIENTELE])
+@pytest.mark.parametrize("role", [Role.ADMIN, Role.DIRECTION, Role.CHARGE_CLIENTELE, Role.PARCAUTO])
 def test_la_liste_est_accessible_aux_roles_de_gestion(client, role):
+    # Retour réunion : le Parc Auto affecte les missions, donc les consulte désormais aussi.
     _connecte(client, role)
 
     assert client.get(reverse("missions:liste")).status_code == 200
 
 
-@pytest.mark.parametrize(
-    "role", [Role.RH, Role.FINANCES, Role.PARCAUTO, Role.CHAUFFEUR]
-)
+@pytest.mark.parametrize("role", [Role.RH, Role.FINANCES, Role.CHAUFFEUR])
 def test_la_liste_est_interdite_aux_autres_roles(client, role):
     _connecte(client, role)
 
@@ -266,13 +265,12 @@ def test_l_admin_voit_la_saisie_du_code_a_la_place_du_chauffeur(client, etape, a
     assert _url(action_attendue, mission) in contenu
 
 
-@pytest.mark.parametrize("role", [Role.DIRECTION, Role.CHARGE_CLIENTELE])
 @pytest.mark.parametrize(
     ("etape", "action"), [(_en_cours, "recuperation"), (_recuperee, "livraison")]
 )
-def test_seul_le_chauffeur_ou_l_admin_saisit_les_codes(client, role, etape, action):
-    """La DIRECTION et le chargé clientèle voient les codes mais ne les saisissent pas."""
-    _connecte(client, role)
+def test_seul_le_chargeur_clientele_voit_les_codes_sans_les_saisir(client, etape, action):
+    """Le chargé clientèle voit les codes mais ne les saisit pas."""
+    _connecte(client, Role.CHARGE_CLIENTELE)
     mission = etape()
     statut_avant = mission.statut
     code = mission.code_expediteur if action == "recuperation" else mission.code_destinataire
@@ -284,6 +282,19 @@ def test_seul_le_chauffeur_ou_l_admin_saisit_les_codes(client, role, etape, acti
     assert reponse.status_code == 403
     mission.refresh_from_db()
     assert mission.statut == statut_avant
+
+
+@pytest.mark.parametrize(
+    ("etape", "action_attendue"), [(_en_cours, "recuperation"), (_recuperee, "livraison")]
+)
+def test_la_direction_saisit_desormais_aussi_les_codes(client, etape, action_attendue):
+    """Retour réunion : la DIRECTION a la même largeur que l'ADMIN (CODES_TERRAIN)."""
+    _connecte(client, Role.DIRECTION)
+    mission = etape()
+
+    contenu = client.get(_url("detail", mission)).content.decode()
+
+    assert _url(action_attendue, mission) in contenu
 
 
 def test_une_mission_cloturee_n_a_plus_d_action(client):

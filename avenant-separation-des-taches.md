@@ -1,4 +1,4 @@
-# Avenant — 7 règles de gestion basées sur la séparation des tâches
+# Avenant — règles de gestion basées sur la séparation des tâches
 
 Complète cahier-des-charges.md : celui qui demande une dépense ou fixe un prix n'est jamais
 celui qui la valide. Chaque règle (R1 à R7) est livrée par lot indépendant, testée (≥ 70 % sur
@@ -10,11 +10,12 @@ les services), documentée dans le README de son app, puis fusionnée séparéme
 | R2 | Dépenses du parc auto (pré-approbation + enveloppe) | ✅ Fusionnée |
 | R3 | Modification d'une mission | ✅ Fusionnée |
 | R4 | Prévision de trésorerie des missions | ✅ Fusionnée |
-| R5 | Facture proforma (devis) | **✅ Ce lot** — voir ci-dessous |
-| R6 | Mission créée depuis une proforma acceptée | **✅ Ce lot** — voir ci-dessous |
+| R5 | Facture proforma (devis) | ✅ Fusionnée |
+| R6 | Mission créée depuis une proforma acceptée | ✅ Fusionnée |
 | R7 | Congés : 26 jours ouvrés + report | ✅ Fusionnée |
+| R8 | Retours de réunion : largeur DIRECTION, RH = FINANCES, affectation Parc Auto, copilote | **✅ Ce lot** — voir ci-dessous |
 
-Les 7 règles sont maintenant toutes fusionnées.
+Les 7 règles historiques sont fusionnées ; R8 (retours de réunion, ci-dessous) les complète.
 
 ## R2 — Dépenses du parc auto pré-approuvées
 
@@ -278,3 +279,54 @@ montant précis sur le devis.
 **Implémentation** : `apps.hr.models.ReportConge`, `apps.hr.services.demander_report` /
 `approuver_report` / `refuser_report`, écran `/rh/conges/<id>/reporter/`, PDF
 `/rh/conges/<id>/autorisation.pdf` (`apps.hr.documents`). Détails : `apps/hr/README.md`.
+
+## R8 — Retours d'une réunion entreprise (largeur DIRECTION, RH = FINANCES, affectation Parc Auto, copilote)
+
+Quatre remarques de la direction, traitées ensemble car elles touchent toutes aux permissions par
+rôle :
+
+1. **La DIRECTION peut faire toutes les tâches** — interprété comme : la DIRECTION gagne la même
+   largeur que l'ADMIN pour les actions de **préparation/saisie** dans toute l'application, mais ne
+   **remplace jamais** un rôle exclusivement chargé d'une validation ou d'une exécution stricte
+   (ex. la FINANCES reste seule à exécuter un ordre de décaissement, le Parc Auto seul à donner la
+   première validation d'un imprévu). Concrètement, `Role.DIRECTION` a été ajouté à chaque ensemble
+   de **saisie/modification** (jamais aux ensembles `*_VALIDATION`/`*_EXECUTION` à rôle unique et
+   contrôle strict) : `billing.SAISIE`/`PROFORMA_SAISIE`, `finance.DEMANDE_SAISIE`,
+   `customers.MODIFICATION`, `hr.PERSONNEL_MODIFICATION`, `fuel.MODIFICATION`,
+   `garage.MODIFICATION`, `inventory.MODIFICATION`, `missions.FRAIS_SAISIE_PREVISION`,
+   `missions.CODES_TERRAIN` (déjà présente dans `drivers.MODIFICATION`/`fleet.MODIFICATION`).
+2. **La RH doit pouvoir faire tout ce que fait la FINANCES** — lu littéralement et sans réserve
+   (contrairement au point 1) : `Role.RH` a été ajouté partout où `Role.FINANCES` apparaît,
+   **y compris** les ensembles stricts à rôle unique (`billing.CONSULTATION`/`SAISIE`/
+   `PROFORMA_CONSULTATION`/`PROFORMA_VALIDATION_FINANCES`, `finance.DEMANDE_CONSULTATION`/
+   `ORDRE_EXECUTION`) et les notifications adressées à la FINANCES
+   (`notifications.receivers`/`taches` : chaque `utilisateurs_du_role(Role.FINANCES)` devient
+   `utilisateurs_du_role(Role.FINANCES, Role.RH)`).
+3. **C'est le Parc Auto qui affecte les missions**, une fois créées par le chargé clientèle —
+   `Role.PARCAUTO` ajouté à `missions.AFFECTATION` (et nécessairement à `missions.CONSULTATION`,
+   pour voir les missions à affecter). Point de vigilance : `VOIR_CODES` (codes secrets
+   expéditeur/destinataire) était défini comme un simple alias de `CONSULTATION`
+   (`VOIR_CODES = CONSULTATION`) — laissé tel quel, le Parc Auto aurait hérité de la visibilité des
+   codes, qui n'a rien à voir avec l'affectation. Corrigé en **décorrélant** `VOIR_CODES` en un
+   ensemble explicite et indépendant (`{ADMIN, DIRECTION, CHARGE_CLIENTELE}`), qui ne bouge plus
+   avec `CONSULTATION`.
+4. **Certains voyages exigent un copilote**, assistant du chauffeur pendant le trajet — nouvelle
+   entité `drivers.Copilote`, fonction/fiche **distincte** du chauffeur (jamais un chauffeur
+   principal), même mécanisme que `Chauffeur` : extension 1-1 de `hr.Personnel` (poste
+   « Copilote »), auto-création par signal, mêmes statuts de disponibilité (`StatutChauffeur`,
+   y compris la synchronisation avec les congés). Aucune règle automatique ne décide qu'une mission
+   exige un copilote : **décision humaine du Parc Auto au moment de l'affectation**, sur le même
+   écran que le camion et le chauffeur (`Mission.copilote`, facultatif). `affecter_mission` vérifie
+   sa disponibilité comme pour le chauffeur ; `demarrer_mission`/`livrer_mission` le mettent
+   « En mission » / le libèrent en parallèle.
+
+**Implémentation** : `apps/drivers/models.py` (`Copilote`), `apps/drivers/services.py` (section
+copilotes), `apps/drivers/signals.py` (auto-création + synchronisation congés), `apps/missions/`
+(`models.Mission.copilote`, `services.py` affectation/démarrage/livraison, `forms.AffectationForm`,
+templates). Permissions détaillées ci-dessus, réparties dans le `permissions.py` de chaque app
+concernée. Pas d'écran dédié pour gérer les fiches copilote (contrairement au chauffeur) : géré via
+l'admin Django pour l'instant.
+
+**Limite connue** : `missions.services.modifier_mission` (R3) ne permet pas encore de changer le
+copilote d'une mission déjà affectée (seuls camion et chauffeur sont réaffectables) — seule
+l'affectation initiale propose ce choix.

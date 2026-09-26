@@ -102,13 +102,14 @@ def test_le_carburant_est_interdit_aux_autres_roles(client, role):
         assert client.get(reverse(nom)).status_code == 403, nom
 
 
-def test_la_direction_ne_peut_pas_saisir_de_plein(client):
+def test_la_direction_peut_desormais_saisir_un_plein(client):
+    """Retour réunion : la DIRECTION a la même largeur que l'ADMIN pour la saisie."""
     _connecte(client, Role.DIRECTION)
     camion, chauffeur = VehiculeFactory(), ChauffeurFactory()
 
-    assert client.get(reverse("fuel:creer")).status_code == 403
-    assert client.post(reverse("fuel:creer"), _donnees(camion, chauffeur)).status_code == 403
-    assert Plein.objects.count() == 0
+    assert client.get(reverse("fuel:creer")).status_code == 200
+    client.post(reverse("fuel:creer"), _donnees(camion, chauffeur))
+    assert Plein.objects.count() == 1
 
 
 def test_un_visiteur_non_connecte_est_renvoye_vers_la_connexion(client):

@@ -82,3 +82,47 @@ class Chauffeur(BaseModel):
             raise ValidationError(
                 {"categories_permis": _("Catégories autorisées : C, E.")}
             )
+
+
+class Copilote(BaseModel):
+    """Assistant du chauffeur pendant le trajet, pour les missions qui l'exigent.
+
+    Fonction distincte du chauffeur (jamais chauffeur principal), extension 1-1 d'une fiche
+    Personnel comme ``Chauffeur`` — retour de réunion entreprise. Pas de permis à suivre (il ne
+    conduit pas) ; mêmes statuts que le chauffeur pour la disponibilité (affectation, congé).
+    """
+
+    personnel = models.OneToOneField(
+        "hr.Personnel",
+        verbose_name=_("personnel"),
+        on_delete=models.PROTECT,
+        related_name="copilote",
+    )
+    telephone = models.CharField(_("téléphone"), max_length=20, blank=True)
+    contact_urgence = models.CharField(_("contact d'urgence"), max_length=150, blank=True)
+    statut = models.CharField(
+        _("statut"),
+        max_length=12,
+        choices=StatutChauffeur.choices,
+        default=StatutChauffeur.DISPONIBLE,
+    )
+
+    class Meta:
+        verbose_name = _("copilote")
+        verbose_name_plural = _("copilotes")
+        ordering = ["personnel__matricule"]
+
+    def __str__(self):
+        return str(self.personnel)
+
+    @property
+    def matricule(self) -> str:
+        return self.personnel.matricule
+
+    @property
+    def nom(self) -> str:
+        return self.personnel.nom
+
+    @property
+    def prenom(self) -> str:
+        return self.personnel.prenom

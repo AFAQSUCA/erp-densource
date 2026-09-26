@@ -7,6 +7,17 @@ Dépend de `hr` (jamais l'inverse).
 Entités : `Chauffeur`. Services : `assurer_fiche_chauffeur`, `changer_statut`,
 `chauffeurs_a_renouveler` (alerte 30 jours permis / visite médicale).
 
+Entité `Copilote` (retour d'une réunion entreprise) : assistant du chauffeur pendant le
+trajet, exigé sur certains voyages — fonction/fiche distincte du chauffeur (jamais chauffeur
+principal), même mécanisme d'auto-création (poste « Copilote » sur `Personnel`) et mêmes
+statuts de disponibilité (`StatutChauffeur`, y compris la synchronisation avec les congés).
+Aucune règle automatique ne décide qu'une mission exige un copilote : c'est une décision
+humaine du Parc Auto au moment de l'affectation (`missions.forms.AffectationForm`).
+Services : `assurer_fiche_copilote`, `changer_statut_copilote`, `copilotes_disponibles`,
+`copilotes_actifs`, `mettre_en_mission_copilote` / `rappeler_copilote_de_mission`,
+`mettre_copilote_en_conge` / `rappeler_copilote_de_conge`. Géré pour l'instant via l'admin
+Django (`CopiloteAdmin`) — pas d'écran dédié, contrairement au chauffeur.
+
 Interface (`views.py`, `templates/drivers/`) : liste filtrée (statut, texte, permis ou
 visite à renouveler), fiche avec l'état du permis et de la visite médicale (alerte à
 30 jours), modification des informations propres au chauffeur, suspension / désactivation

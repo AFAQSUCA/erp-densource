@@ -29,7 +29,9 @@ def _demande_manuelle(**surcharges):
     return services.soumettre_demande(UserFactory(role=Role.PARCAUTO), **donnees)
 
 
-@pytest.mark.parametrize("role", [Role.ADMIN, Role.DIRECTION, Role.PARCAUTO, Role.FINANCES])
+@pytest.mark.parametrize(
+    "role", [Role.ADMIN, Role.DIRECTION, Role.PARCAUTO, Role.FINANCES, Role.RH]
+)
 def test_les_demandes_sont_accessibles_aux_roles_concernes(client, role):
     _connecte(client, role)
     demande = _demande_manuelle()
@@ -38,7 +40,7 @@ def test_les_demandes_sont_accessibles_aux_roles_concernes(client, role):
         assert client.get(url).status_code == 200, url
 
 
-@pytest.mark.parametrize("role", [Role.RH, Role.CHARGE_CLIENTELE, Role.CHAUFFEUR])
+@pytest.mark.parametrize("role", [Role.CHARGE_CLIENTELE, Role.CHAUFFEUR])
 def test_les_demandes_sont_interdites_aux_autres_roles(client, role):
     _connecte(client, role)
     demande = _demande_manuelle()

@@ -73,11 +73,19 @@ def test_les_roles_qui_voient_les_codes_telechargent_le_pdf(client, role):
     assert "no-store" in reponse["Cache-Control"]
 
 
-@pytest.mark.parametrize("role", [Role.CHAUFFEUR, Role.RH, Role.PARCAUTO, Role.FINANCES])
+@pytest.mark.parametrize("role", [Role.CHAUFFEUR, Role.RH, Role.FINANCES])
 def test_les_autres_roles_n_ont_pas_le_pdf(client, role):
     client.force_login(UserFactory(role=role))
 
     assert client.get(reverse("missions:codes_pdf", args=[MissionFactory().pk])).status_code == 403
+
+
+def test_le_parc_auto_consulte_la_mission_mais_pas_le_pdf_des_codes(client):
+    """Retour réunion : le Parc Auto affecte les missions (CONSULTATION), mais les codes restent
+    réservés à ceux qui gèrent la relation client (VOIR_CODES, décision indépendante)."""
+    client.force_login(UserFactory(role=Role.PARCAUTO))
+
+    assert client.get(reverse("missions:codes_pdf", args=[MissionFactory().pk])).status_code == 404
 
 
 def test_le_pdf_ne_contient_plus_le_code_expediteur_apres_la_recuperation(client):

@@ -106,12 +106,13 @@ def test_on_ne_confirme_pas_plus_que_le_reste_a_recouvrer():
     assert services.soldes_par_compte()["total"] == Decimal("0")
 
 
-def test_seule_la_finance_confirme_un_versement():
+def test_seule_la_saisie_facturation_confirme_un_versement():
+    # Retour réunion : la DIRECTION a désormais la même largeur que l'ADMIN en saisie.
     facture = emise(prix="1000000", aujourd_hui=date(2026, 9, 1))
 
     with pytest.raises(ActionFactureNonAutorisee):
         services.confirmer_versement(
-            facture, UserFactory(role=Role.DIRECTION), montant=Decimal("1000"),
+            facture, UserFactory(role=Role.PARCAUTO), montant=Decimal("1000"),
             mode=ModePaiement.VIREMENT, date_reglement=JOUR_PAIEMENT,
         )
 
@@ -134,15 +135,16 @@ def test_la_tresorerie_liste_les_versements_a_confirmer_avec_le_bouton_pour_la_f
     assert _url(facture) in contenu and "Confirmer le versement" in contenu
 
 
-def test_la_direction_voit_les_versements_attendus_sans_pouvoir_les_confirmer(client):
+def test_la_direction_voit_les_versements_attendus_et_peut_desormais_les_confirmer(client):
+    """Retour réunion : la DIRECTION a la même largeur que l'ADMIN pour la saisie."""
     _connecte(client, Role.DIRECTION)
     facture = emise(prix="1000000", aujourd_hui=date(2026, 9, 1))
 
     reponse = client.get(reverse("finance:tresorerie"))
 
     assert facture.numero in reponse.content.decode()
-    assert _url(facture) not in reponse.content.decode()
-    assert client.get(_url(facture)).status_code == 403
+    assert _url(facture) in reponse.content.decode()
+    assert client.get(_url(facture)).status_code == 200
 
 
 def test_le_solde_previsionnel_ajoute_les_versements_attendus_au_solde_reel(client):
