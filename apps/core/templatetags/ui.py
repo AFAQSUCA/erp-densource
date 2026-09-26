@@ -85,6 +85,13 @@ COULEURS_STATUT = {
     "ROUGE": "rouge",
     "ANOMALIE": "rouge",
     "SAISIE_SUSPECTE": "ambre",
+    # demandes de dépense et ordres de décaissement (parc auto, R2)
+    "SOUMISE": "ambre",
+    "VALIDEE": "vert",
+    "REFUSEE": "rouge",
+    "A_EXECUTER": "ambre",
+    "EN_ATTENTE_REVALIDATION": "rouge",
+    "EXECUTE": "vert",
 }
 
 
