@@ -7,6 +7,7 @@ traduites en HTTP par ``apps.api.exceptions.gestionnaire_erreurs``.
 
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
+from rest_framework.parsers import MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -19,6 +20,8 @@ from .serializers import (
     ChecklistEntreeSerializer,
     ChecklistSerializer,
     CodeSerializer,
+    FraisImprevuEntreeSerializer,
+    FraisMissionSerializer,
     IncidentEntreeSerializer,
     IncidentSerializer,
     LivraisonSerializer,
@@ -149,3 +152,29 @@ class IncidentsView(ChauffeurAPIView):
             vehicule_id=valeurs.get("vehicule"),
         )
         return Response(IncidentSerializer(incident).data, status=status.HTTP_201_CREATED)
+
+
+class FraisImprevusView(ChauffeurAPIView):
+    parser_classes = [MultiPartParser]
+
+    @extend_schema(tags=TAG, summary="Mes imprévus déclarés", responses=FraisMissionSerializer(many=True))
+    def get(self, request):
+        return Response(FraisMissionSerializer(services.frais_du_chauffeur(self.chauffeur), many=True).data)
+
+    @extend_schema(
+        tags=TAG, summary="Déclarer un imprévu (panne, incident) avec une preuve",
+        description="Le Parc Auto valide en premier, puis la Finance confirme (double validation).",
+        request=FraisImprevuEntreeSerializer, responses={201: FraisMissionSerializer},
+    )
+    def post(self, request):
+        donnees = FraisImprevuEntreeSerializer(data=request.data)
+        donnees.is_valid(raise_exception=True)
+        valeurs = dict(donnees.validated_data)
+        frais = services.declarer_frais_imprevu(
+            self.chauffeur,
+            mission_id=valeurs["mission"],
+            montant=valeurs["montant"],
+            justificatif=valeurs["justificatif"],
+            description=valeurs.get("description", ""),
+        )
+        return Response(FraisMissionSerializer(frais).data, status=status.HTTP_201_CREATED)

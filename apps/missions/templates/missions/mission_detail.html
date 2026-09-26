@@ -11,6 +11,14 @@
   </nav>
   <div class="mt-2">{% include "components/_suivi_direct.html" %}</div>
 
+  {% if peut_voir_frais %}
+    <div class="mt-2 text-right">
+      <a href="{% url 'missions:frais' mission.pk %}" class="text-sm font-medium text-marque-700 underline-offset-2 hover:underline">
+        <i class="fa-solid fa-money-bill-transfer mr-1" aria-hidden="true"></i>Frais de mission
+      </a>
+    </div>
+  {% endif %}
+
   {# Zone rafraîchie en direct (static/js/suivi-missions.js) : statut, frise, actions et codes #}
   <div data-suivi-zone="mission">
   <div class="mt-2 flex flex-wrap items-center justify-between gap-3">

@@ -73,6 +73,34 @@ Le formulaire de création propose (liste `datalist`) les lieux de chargement et
 les plus fréquents d'abord, dès les premières lettres (`services.lieux_deja_utilises`) ; un lieu écrit avec
 une autre casse ou sans accent ne compte qu'une fois. La saisie libre reste possible.
 
+### Prévision de trésorerie des missions (`terrain.py`, R4 — avenant-separation-des-taches.md)
+
+Séparation des tâches : celui qui déclare ou planifie un frais n'est jamais celui qui le valide. Modèle
+`FraisMission` (`mission`, `type_frais`, `montant`, `justificatif`, `statut`) :
+
+- **Avance de route** / **dépense prévue** : planifiée par le **Parc Auto** (`planifier_frais`,
+  écran `/missions/<id>/frais/`), confirmée par la seule **Finance** (`valider_finances`).
+- **Imprévu** (panne, incident) : déclaré par le **chauffeur** depuis l'espace mobile (photo ou facture
+  obligatoire) puis validé deux fois — le **Parc Auto** d'abord (`valider_parcauto`), la **Finance**
+  ensuite (`valider_finances`) — jamais par celui qui l'a déclaré ni en une seule fois.
+- **Encaissement** : reflet automatique d'un règlement déjà enregistré pour la facture de la mission
+  (`billing.signals.reglement_enregistre`, souscrit par `finance`), créé directement confirmé : aucune
+  double saisie.
+
+Seule une ligne **confirmée** représente un mouvement de trésorerie réel : `finance.receivers` la
+transforme alors en `billing.Depense` (catégorie « Frais de mission »), sauf l'encaissement qui n'en
+crée pas (déjà compté via son règlement). `missions` ignore `billing` et `finance` — c'est `finance` qui
+relie les trois signaux (`frais_mission_confirme`, `reglement_enregistre`), pour respecter le graphe de
+dépendance des apps (architecture.md:95-163).
+
+Signal `mission_affectee` (Affectée = mouvement de caisse probable) prévient la Finance. Écran séparé de
+la fiche mission (`permissions.FRAIS_CONSULTATION` : ADMIN, DIRECTION, PARCAUTO, FINANCES — pas le chargé
+clientèle, qui ne voit déjà pas le prix convenu côté chauffeur). Rapport de mission imprimable
+(`/missions/<id>/frais/imprimer/`) : lignes et totaux (sorties confirmées, encaissé, solde).
+
+**Limite connue** : la modification d'une mission (R3) ne verrouille pas encore son prix une fois des
+frais confirmés dessus.
+
 Reste à faire :
 - Notification « en cours de route (départ) » : signal `mission_demarree`, abonné par `notifications` (fait, étape 5).
 - Alerte N1 des congés « chauffeur avec mission sur la période » (via `date_depart_prevue`).

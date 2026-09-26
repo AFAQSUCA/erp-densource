@@ -234,6 +234,7 @@ def finances(*, jour: date | None = None, mois: int = MOIS_HISTORIQUE) -> dict:
                 {"libelle": "Carburant", "valeur": resultat["charges"]["carburant"], "url": _depenses("CARBURANT")},
                 {"libelle": "Pièces détachées", "valeur": resultat["charges"]["pieces"], "url": _depenses("PIECES")},
                 {"libelle": "Main-d'œuvre des réparations", "valeur": resultat["charges"]["main_oeuvre"], "url": _depenses("MAINTENANCE")},
+                {"libelle": "Frais de mission", "valeur": resultat["charges"]["frais_mission"], "url": _depenses("FRAIS_MISSION")},
                 {"libelle": "Autres dépenses", "valeur": resultat["charges"]["depenses"], "url": reverse("billing:depenses")},
             ],
             unite="FCFA",

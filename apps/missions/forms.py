@@ -5,6 +5,9 @@ from apps.customers import services as customers_services
 from apps.drivers import services as drivers_services
 from apps.fleet import services as fleet_services
 
+from .models import TypeFraisMission
+from .terrain import TYPES_PLANIFIABLES
+
 
 class MissionForm(StyleTailwindMixin, forms.Form):
     """Création d'une mission (cahier-des-charges.md:129-131)."""
@@ -109,3 +112,20 @@ class CodeForm(StyleTailwindMixin, forms.Form):
 
 class LivraisonForm(CodeForm):
     km_arrivee = forms.IntegerField(label="Kilométrage à l'arrivée", min_value=0)
+
+
+class FraisPrevisionForm(StyleTailwindMixin, forms.Form):
+    """Le Parc Auto planifie une avance de route ou une dépense prévue (R4)."""
+
+    type_frais = forms.ChoiceField(
+        label="Type",
+        choices=[(t, l) for t, l in TypeFraisMission.choices if t in TYPES_PLANIFIABLES],
+    )
+    montant = forms.DecimalField(label="Montant (FCFA)", min_value=0, decimal_places=2, max_digits=12)
+    description = forms.CharField(label="Libellé", max_length=255, required=False)
+
+
+class MotifRejetFraisForm(StyleTailwindMixin, forms.Form):
+    """Motif du rejet d'un frais de mission."""
+
+    motif = forms.CharField(label="Motif du rejet", widget=forms.Textarea(attrs={"rows": 2}))

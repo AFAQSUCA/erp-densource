@@ -17,11 +17,16 @@ facture_validee = Signal()
 # La DIRECTION a refusé la facture (retour en brouillon). Arguments : ``facture``, ``motif``.
 facture_refusee = Signal()
 
+# Un règlement vient d'être enregistré (entrée de trésorerie). Argument : ``reglement``. Utile à
+# ``missions`` (R4) pour refléter l'encaissement dans la prévision de trésorerie de la mission
+# facturée, sans double saisie.
+reglement_enregistre = Signal()
 
-def emettre(signal: Signal, **arguments) -> None:
+
+def emettre(signal: Signal, *, sender: type | None = None, **arguments) -> None:
     """Émet un signal en journalisant (sans propager) les erreurs des récepteurs."""
     from .models import Facture
 
-    for recepteur, resultat in signal.send_robust(sender=Facture, **arguments):
+    for recepteur, resultat in signal.send_robust(sender=sender or Facture, **arguments):
         if isinstance(resultat, Exception):
             logger.error("Récepteur %r en erreur", recepteur, exc_info=resultat)

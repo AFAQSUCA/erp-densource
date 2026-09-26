@@ -16,6 +16,7 @@ urlpatterns = [
     path("missions/<int:pk>/checklist/", v.ChecklistView.as_view(), name="checklist"),
     path("plein/", v.PleinView.as_view(), name="plein"),
     path("incident/", v.IncidentView.as_view(), name="incident"),
+    path("imprevu/", v.FraisImprevuView.as_view(), name="imprevu"),
     path("manifest.webmanifest", v.ManifesteView.as_view(), name="manifeste"),
     path("sw.js", v.ServiceWorkerView.as_view(), name="sw"),
     path("hors-ligne/", v.HorsLigneView.as_view(), name="hors_ligne"),

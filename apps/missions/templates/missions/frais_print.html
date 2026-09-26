@@ -1,0 +1,42 @@
+{% load humanize static %}<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rapport de mission {{ mission.numero }}</title>
+  {% include "rapports/_style_impression.html" %}
+</head>
+<body>
+  {% include "rapports/_entete_impression.html" %}
+
+  <p style="margin-top:1.5rem">
+    <strong>{{ mission.client.raison_sociale }}</strong><br>
+    <span class="petit">{{ mission.lieu_chargement }} → {{ mission.lieu_livraison }} ({{ mission.nature_marchandise }})</span>
+  </p>
+
+  <table>
+    <thead><tr><th>Type</th><th>Détail</th><th>Statut</th><th class="droite">Montant</th></tr></thead>
+    <tbody>
+      {% for f in lignes %}
+        <tr>
+          <td>{{ f.get_type_frais_display }}</td>
+          <td>{% if f.type_frais == "IMPREVU" %}{{ f.chauffeur.personnel.prenom }} {{ f.chauffeur.personnel.nom }}{% else %}{{ f.saisi_par|default:"—" }}{% endif %}{% if f.description %} · {{ f.description }}{% endif %}</td>
+          <td>{{ f.get_statut_display }}</td>
+          <td class="droite">{{ f.montant|floatformat:0|intcomma }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="4">Aucun frais enregistré.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="totaux" style="margin-left:auto;width:320px;margin-top:1rem">
+    <div style="display:flex;justify-content:space-between;padding:.25rem 0"><span>Sorties confirmées</span><span>{{ totaux.sorties|floatformat:0|intcomma }} FCFA</span></div>
+    <div style="display:flex;justify-content:space-between;padding:.25rem 0"><span>Encaissé confirmé</span><span>{{ totaux.encaisse|floatformat:0|intcomma }} FCFA</span></div>
+    <div style="display:flex;justify-content:space-between;padding:.25rem 0;border-top:2px solid #111;font-weight:bold"><span>Solde</span><span>{{ totaux.solde|floatformat:0|intcomma }} FCFA</span></div>
+  </div>
+
+  {% include "rapports/_pied_impression.html" %}
+  <script src="{% static 'js/app.js' %}" defer></script>
+</body>
+</html>

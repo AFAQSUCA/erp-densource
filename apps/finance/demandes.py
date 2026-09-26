@@ -28,7 +28,7 @@ from django.utils import timezone
 
 from apps.billing import services as billing_services
 from apps.billing.exceptions import ActionFactureNonAutorisee, MontantInvalide, TransitionFactureInterdite
-from apps.billing.models import CATEGORIES_AUTOMATIQUES, CategorieDepense, Depense, OrigineDepense
+from apps.billing.models import CategorieDepense, Depense, OrigineDepense
 from apps.core.services import prochain_numero
 from apps.fleet.models import Vehicule
 
@@ -47,6 +47,11 @@ SEUIL_DEPASSEMENT = Decimal("1.10")  # au-delà de 10 % du montant validé, l'ex
 PREFIXE_DEMANDE = "DEM"
 PREFIXE_ORDRE = "ODC"
 
+# Catégories couvertes par R2 (enveloppes et demandes). Volontairement plus restreint que
+# ``billing.CATEGORIES_AUTOMATIQUES`` : les frais de mission (R4) ont déjà leur propre double
+# validation (Parc Auto puis Finance) et ne passent pas en plus par une enveloppe ou une demande.
+CATEGORIES_PARC_AUTO = (CategorieDepense.CARBURANT, CategorieDepense.PIECES, CategorieDepense.MAINTENANCE)
+
 
 def _exiger_role(acteur, roles, action: str, *, strict: bool = False) -> None:
     role = acteur.role if strict else acteur.role_effectif
@@ -61,7 +66,7 @@ def _verrouiller(objet):
 
 
 def _exiger_categorie_automatique(categorie: str) -> None:
-    if categorie not in CATEGORIES_AUTOMATIQUES:
+    if categorie not in CATEGORIES_PARC_AUTO:
         raise MontantInvalide(
             "Seules les catégories du parc auto (carburant, pièces détachées, main-d'œuvre des "
             "réparations) passent par une demande ou une enveloppe."

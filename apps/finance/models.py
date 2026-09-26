@@ -56,7 +56,7 @@ class EnveloppeDepense(BaseModel):
     = enveloppe globale pour la catégorie ; sinon propre à ce camion (prioritaire sur la globale).
     """
 
-    categorie = models.CharField(_("catégorie"), max_length=12, choices=CategorieDepense.choices)
+    categorie = models.CharField(_("catégorie"), max_length=14, choices=CategorieDepense.choices)
     vehicule = models.ForeignKey(
         "fleet.Vehicule",
         verbose_name=_("camion"),
@@ -112,7 +112,7 @@ class DemandeDepense(BaseModel):
     """
 
     numero = models.CharField(_("numéro"), max_length=20, unique=True)
-    categorie = models.CharField(_("catégorie"), max_length=12, choices=CategorieDepense.choices)
+    categorie = models.CharField(_("catégorie"), max_length=14, choices=CategorieDepense.choices)
     vehicule = models.ForeignKey(
         "fleet.Vehicule", verbose_name=_("camion"), null=True, blank=True,
         on_delete=models.PROTECT, related_name="demandes_depense",

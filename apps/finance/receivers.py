@@ -15,10 +15,15 @@ donc dans les charges que par sa main-d'œuvre (sinon la pièce serait comptée 
 from django.dispatch import receiver
 from django.utils import timezone
 
+from apps.billing import services as billing_services
 from apps.billing.models import CategorieDepense, OrigineDepense
+from apps.billing.signals import reglement_enregistre
 from apps.fuel.signals import plein_enregistre
 from apps.garage.signals import or_cloture
 from apps.inventory.signals import entree_stock_enregistree
+from apps.missions import terrain as missions_terrain
+from apps.missions.models import TypeFraisMission
+from apps.missions.signals import frais_mission_confirme
 
 from . import demandes
 
@@ -64,4 +69,36 @@ def comptabiliser_la_main_d_oeuvre(sender, ordre, **kwargs):
         montant=ordre.cout_main_oeuvre,
         reference=ordre.numero,
         vehicule=ordre.vehicule,
+    )
+
+
+@receiver(frais_mission_confirme)
+def comptabiliser_un_frais_de_mission(sender, frais, **kwargs):
+    """Avance de route, dépense prévue ou imprévu confirmé (R4) : une sortie d'argent comme une
+    autre. Un encaissement (reflet d'un règlement) ne déclenche jamais ce signal."""
+    if frais.type_frais == TypeFraisMission.ENCAISSEMENT:
+        return
+    billing_services.comptabiliser_depense_automatique(
+        origine=OrigineDepense.FRAIS_MISSION,
+        origine_id=frais.pk,
+        categorie=CategorieDepense.FRAIS_MISSION,
+        date_depense=timezone.localdate(),
+        libelle=(
+            f"{frais.get_type_frais_display()} · {frais.mission.numero}"
+            + (f" · {frais.description}" if frais.description else "")
+        ),
+        montant=frais.montant,
+        mission=frais.mission,
+    )
+
+
+@receiver(reglement_enregistre)
+def refleter_l_encaissement_sur_la_mission(sender, reglement, **kwargs):
+    """Un règlement reçu se reflète dans la prévision de trésorerie de la mission facturée (R4),
+    sans double saisie : aucune dépense ni règlement supplémentaire n'est créé ici."""
+    missions_terrain.creer_encaissement(
+        reglement.facture.mission,
+        montant=reglement.montant,
+        libelle=f"Règlement {reglement.facture.numero} ({reglement.get_mode_display()})",
+        saisi_par=reglement.saisi_par,
     )

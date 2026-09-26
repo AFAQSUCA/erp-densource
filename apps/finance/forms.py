@@ -1,10 +1,11 @@
 from django import forms
 from django.utils import timezone
 
-from apps.billing.models import CATEGORIES_AUTOMATIQUES, CategorieDepense, CompteTresorerie, ModePaiement
+from apps.billing.models import CategorieDepense, CompteTresorerie, ModePaiement
 from apps.core.forms import StyleTailwindMixin
 from apps.fleet import services as fleet_services
 
+from .demandes import CATEGORIES_PARC_AUTO as CATEGORIES_PARC_AUTO_CODES
 from .models import SensMouvement
 
 
@@ -61,7 +62,7 @@ class FiltreTresorerieForm(StyleTailwindMixin, forms.Form):
 # --- dépenses du parc auto pré-approuvées (R2) ---
 
 
-CATEGORIES_PARC_AUTO = [c for c in CategorieDepense.choices if c[0] in CATEGORIES_AUTOMATIQUES]
+CATEGORIES_PARC_AUTO = [c for c in CategorieDepense.choices if c[0] in CATEGORIES_PARC_AUTO_CODES]
 
 
 class DemandeDepenseForm(StyleTailwindMixin, forms.Form):

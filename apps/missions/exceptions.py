@@ -20,3 +20,11 @@ class CodeInvalide(MissionError):
 
 class KilometrageInvalide(MissionError):
     """Kilométrage d'arrivée incohérent avec le départ ou le compteur."""
+
+
+class FraisInvalide(MissionError):
+    """Montant, type ou justificatif d'un frais de mission invalide, ou ligne déjà traitée."""
+
+
+class ActionFraisNonAutorisee(MissionError):
+    """L'utilisateur n'a pas le droit d'effectuer cette action sur un frais de mission."""

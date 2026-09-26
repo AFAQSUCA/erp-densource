@@ -85,6 +85,10 @@ COULEURS_STATUT = {
     "ROUGE": "rouge",
     "ANOMALIE": "rouge",
     "SAISIE_SUSPECTE": "ambre",
+    # frais de mission (R4)
+    "PREVU": "ambre",
+    "CONFIRME": "vert",
+    "REJETE": "rouge",
     # demandes de dépense et ordres de décaissement (parc auto, R2)
     "SOUMISE": "ambre",
     "VALIDEE": "vert",
