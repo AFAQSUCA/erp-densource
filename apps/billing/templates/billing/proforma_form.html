@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block titre %}Nouveau devis{% endblock %}
+{% block entete %}Devis{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-3xl">
+  <nav aria-label="Fil d'Ariane" class="text-sm text-slate-600">
+    <a href="{% url 'billing:proformas' %}" class="underline-offset-2 hover:underline">Devis</a>
+    <span aria-hidden="true">/</span> Nouveau devis
+  </nav>
+  <h1 class="mt-2 text-2xl font-bold text-slate-900">Nouveau devis</h1>
+  <p class="mt-1 text-sm text-slate-600">
+    Le trajet, la marchandise et le prix seront repris tels quels dans la mission si le client accepte.
+    La TVA reprend celle du client ; vous pourrez l'ajuster avant de soumettre le devis à la finance.
+  </p>
+
+  <form method="post" novalidate class="mt-6 space-y-4 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+      <div role="alert" class="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">{% for erreur in form.non_field_errors %}<p>{{ erreur }}</p>{% endfor %}</div>
+    {% endif %}
+    {% include "components/_champ.html" with champ=form.client %}
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      {% include "components/_champ.html" with champ=form.lieu_chargement %}
+      {% include "components/_champ.html" with champ=form.lieu_livraison %}
+    </div>
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      {% include "components/_champ.html" with champ=form.nature_marchandise %}
+      {% include "components/_champ.html" with champ=form.poids_t %}
+    </div>
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      {% include "components/_champ.html" with champ=form.date_depart_souhaitee %}
+      {% include "components/_champ.html" with champ=form.prix_convenu %}
+    </div>
+    <div class="flex items-center justify-end gap-3 border-t border-slate-100 pt-5">
+      <a href="{% url 'billing:proformas' %}" class="rounded-lg px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Annuler</a>
+      <button type="submit" class="rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">Créer le devis</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

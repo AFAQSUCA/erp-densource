@@ -14,20 +14,38 @@ from apps.accounts.mixins import RoleRequiredMixin
 from apps.core.formats import nombre
 from apps.core.rapports import contexte_rapport
 from apps.core.views import ImpressionListeMixin, PaginationTolerante
+from apps.missions import permissions as missions_permissions
+from apps.missions import services as missions_services
+from apps.missions.exceptions import MissionError
 
 from . import permissions, services
 from .exceptions import BillingError
 from .forms import (
     ConditionsForm,
+    DecisionClientProformaForm,
     DepenseForm,
     FactureNouvelleForm,
     FiltreDepensesForm,
     FiltreFacturesForm,
+    FiltreProformasForm,
     LigneForm,
     MotifForm,
+    ProformaModifierForm,
+    ProformaNouveauForm,
     ReglementForm,
 )
-from .models import CategorieDepense, Depense, Facture, LigneFacture, ModePaiement, Reglement, StatutFacture, STATUTS_A_RECOUVRER
+from .models import (
+    CategorieDepense,
+    Depense,
+    Facture,
+    LigneFacture,
+    ModePaiement,
+    Proforma,
+    Reglement,
+    StatutFacture,
+    StatutProforma,
+    STATUTS_A_RECOUVRER,
+)
 
 
 def _fcfa(montant) -> str:
@@ -411,4 +429,296 @@ class DepenseModeView(RoleRequiredMixin, View):
                 request, f"Mode de paiement de « {depense.libelle} » : {ModePaiement(mode).label}."
             )
         return redirect("billing:depenses")
+
+
+# --- devis (R5) ---
+
+
+class ProformaListView(PaginationTolerante, RoleRequiredMixin, ListView):
+    roles = permissions.PROFORMA_CONSULTATION
+    template_name = "billing/proforma_list.html"
+    context_object_name = "proformas"
+    paginate_by = 20
+
+    def get_filtre(self):
+        if not hasattr(self, "_filtre"):
+            self._filtre = FiltreProformasForm(self.request.GET)
+        return self._filtre
+
+    def get_queryset(self):
+        return services.rechercher_proformas(**self.get_filtre().criteres())
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        contexte.update(
+            filtre=self.get_filtre(),
+            filtres_actifs=any(self.get_filtre().criteres().values()),
+            peut_saisir=self.request.user.role_effectif in permissions.PROFORMA_SAISIE,
+        )
+        return contexte
+
+
+class ProformaImprimerView(ImpressionListeMixin, ProformaListView):
+    """Rapport imprimable des devis (mêmes filtres que la liste)."""
+
+    titre_impression = "Devis"
+    colonnes = (
+        ("N°", lambda p: p.numero or "Brouillon"), ("Client", "client.raison_sociale"),
+        ("Trajet", lambda p: f"{p.lieu_chargement} → {p.lieu_livraison}"),
+        ("Statut", "get_statut_display"),
+        ("TTC", lambda p: f"{nombre(p.montant_ttc)} FCFA"),
+        ("Valable jusqu'au", lambda p: p.date_validite.strftime("%d/%m/%Y") if p.date_validite else "—"),
+    )
+
+    def get_sous_titre_impression(self):
+        criteres = self.get_filtre().criteres()
+        morceaux = []
+        if criteres.get("statut") in StatutProforma.values:
+            morceaux.append(f"statut : {StatutProforma(criteres['statut']).label}")
+        if criteres.get("client"):
+            morceaux.append(f"client : {criteres['client'].raison_sociale}")
+        if criteres.get("recherche"):
+            morceaux.append(f"recherche : « {criteres['recherche']} »")
+        return " · ".join(morceaux)
+
+
+class ProformaCreateView(RoleRequiredMixin, FormView):
+    roles = permissions.PROFORMA_SAISIE
+    form_class = ProformaNouveauForm
+    template_name = "billing/proforma_form.html"
+
+    def form_valid(self, form):
+        try:
+            proforma = services.creer_proforma(self.request.user, **form.cleaned_data)
+        except BillingError as erreur:
+            form.add_error(None, str(erreur))
+            return self.form_invalid(form)
+        messages.success(self.request, "Devis créé. Vérifiez le prix, puis soumettez-le à la finance.")
+        return redirect("billing:proforma", pk=proforma.pk)
+
+
+class ProformaModifierView(RoleRequiredMixin, FormView):
+    roles = permissions.PROFORMA_SAISIE
+    form_class = ProformaModifierForm
+    template_name = "billing/proforma_modifier.html"
+
+    def dispatch(self, request, *args, **kwargs):
+        self.proforma = get_object_or_404(Proforma, pk=kwargs["pk"])
+        return super().dispatch(request, *args, **kwargs)
+
+    def get(self, request, *args, **kwargs):
+        if not self.proforma.est_modifiable:
+            messages.error(request, "Ce devis n'est plus modifiable dans son état actuel.")
+            return redirect("billing:proforma", pk=self.proforma.pk)
+        return super().get(request, *args, **kwargs)
+
+    def get_initial(self):
+        p = self.proforma
+        return {
+            "lieu_chargement": p.lieu_chargement,
+            "lieu_livraison": p.lieu_livraison,
+            "nature_marchandise": p.nature_marchandise,
+            "poids_t": p.poids_t,
+            "date_depart_souhaitee": p.date_depart_souhaitee,
+            "prix_convenu": p.prix_convenu,
+            "taux_tva": p.taux_tva,
+            "motif_exoneration": p.motif_exoneration,
+        }
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        contexte["proforma"] = self.proforma
+        return contexte
+
+    def form_valid(self, form):
+        try:
+            services.modifier_proforma(self.proforma, self.request.user, **form.cleaned_data)
+        except BillingError as erreur:
+            form.add_error(None, str(erreur))
+            return self.form_invalid(form)
+        messages.success(self.request, "Devis mis à jour.")
+        return redirect("billing:proforma", pk=self.proforma.pk)
+
+
+class ProformaDetailView(RoleRequiredMixin, DetailView):
+    roles = permissions.PROFORMA_CONSULTATION
+    template_name = "billing/proforma_detail.html"
+    context_object_name = "proforma"
+
+    def get_queryset(self):
+        return services.proformas_queryset()
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        proforma = self.object
+        # La validation (finance ou direction) et la contre-proposition sont réservées au rôle
+        # lui-même (un superutilisateur n'y est pas admis), comme pour la validation d'une facture.
+        role_strict = self.request.user.role
+        saisie = self.request.user.role_effectif in permissions.PROFORMA_SAISIE
+        modifiable = proforma.est_modifiable
+        peut_valider_finances = (
+            role_strict in permissions.PROFORMA_VALIDATION_FINANCES
+            and proforma.statut == StatutProforma.SOUMISE
+        )
+        peut_valider_direction = (
+            role_strict in permissions.PROFORMA_VALIDATION_DIRECTION
+            and proforma.statut == StatutProforma.EN_ATTENTE_DIRECTION
+        )
+        contexte.update(
+            peut_modifier=saisie and modifiable,
+            peut_abandonner=saisie and modifiable,
+            peut_soumettre=saisie and modifiable,
+            peut_valider_finances=peut_valider_finances,
+            peut_valider_direction=peut_valider_direction,
+            peut_contre_proposer=peut_valider_finances or peut_valider_direction,
+            peut_envoyer_client=saisie and proforma.statut == StatutProforma.VALIDEE,
+            peut_decider_client=saisie and proforma.statut == StatutProforma.ENVOYEE_CLIENT,
+            peut_creer_mission=(
+                proforma.statut == StatutProforma.ACCEPTEE
+                and self.request.user.role_effectif in missions_permissions.CREATION
+            ),
+            form_contre_proposition=MotifForm() if peut_valider_finances or peut_valider_direction else None,
+            form_decision_client=DecisionClientProformaForm()
+            if saisie and proforma.statut == StatutProforma.ENVOYEE_CLIENT
+            else None,
+            historique=services.historique_proforma(proforma),
+        )
+        return contexte
+
+
+class ProformaPrintView(RoleRequiredMixin, DetailView):
+    """Version imprimable du devis à remettre au client (Ctrl+P → « Enregistrer au format PDF »)."""
+
+    roles = permissions.PROFORMA_CONSULTATION
+    template_name = "billing/proforma_print.html"
+    context_object_name = "proforma"
+
+    def get_queryset(self):
+        return services.proformas_queryset()
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        titre = f"DEVIS {self.object.numero}" if self.object.numero else "PROJET DE DEVIS"
+        contexte.update(contexte_rapport(self.request, titre=titre))
+        return contexte
+
+
+class _ActionProforma(RoleRequiredMixin, View):
+    """Action en POST sur un devis : formulaire → service → message → retour à la fiche."""
+
+    http_method_names = ["post"]
+    form_class = None
+
+    def get_proforma(self, pk):
+        return get_object_or_404(Proforma, pk=pk)
+
+    def executer(self, request, proforma, donnees):  # pragma: no cover - surchargé
+        raise NotImplementedError
+
+    def post(self, request, pk, **kwargs):
+        proforma = self.get_proforma(pk)
+        donnees = {}
+        if self.form_class is not None:
+            form = self.form_class(request.POST)
+            if not form.is_valid():
+                _erreurs_en_messages(request, form)
+                return redirect("billing:proforma", pk=proforma.pk)
+            donnees = form.cleaned_data
+        try:
+            message = self.executer(request, proforma, donnees, **kwargs)
+        except BillingError as erreur:
+            messages.error(request, str(erreur))
+        else:
+            if message:
+                messages.success(request, message)
+        cible, arguments = self.redirection(proforma)
+        return redirect(cible, **arguments)
+
+    def redirection(self, proforma):
+        return "billing:proforma", {"pk": proforma.pk}
+
+
+class ProformaAbandonnerView(_ActionProforma):
+    roles = permissions.PROFORMA_SAISIE
+
+    def executer(self, request, proforma, donnees):
+        services.abandonner_proforma(proforma, request.user)
+        messages.success(request, "Devis abandonné.")
+        return None
+
+    def redirection(self, proforma):
+        return "billing:proformas", {}
+
+
+class ProformaSoumettreView(_ActionProforma):
+    roles = permissions.PROFORMA_SAISIE
+
+    def executer(self, request, proforma, donnees):
+        services.soumettre_proforma(proforma, request.user)
+        return "Devis envoyé à la finance pour validation."
+
+
+class ProformaContreProposerView(_ActionProforma):
+    roles = permissions.PROFORMA_VALIDATION_FINANCES | permissions.PROFORMA_VALIDATION_DIRECTION
+    form_class = MotifForm
+
+    def executer(self, request, proforma, donnees):
+        services.contre_proposer_proforma(proforma, request.user, motif=donnees["motif"])
+        return "Devis renvoyé au chargé clientèle avec votre motif."
+
+
+class ProformaValiderFinancesView(_ActionProforma):
+    roles = permissions.PROFORMA_VALIDATION_FINANCES
+
+    def executer(self, request, proforma, donnees):
+        proforma = services.valider_proforma(proforma, request.user)
+        if proforma.statut == StatutProforma.EN_ATTENTE_DIRECTION:
+            return "Devis validé : transmis à la direction (montant au-delà du seuil)."
+        return f"Devis {proforma.numero} validé."
+
+
+class ProformaValiderDirectionView(_ActionProforma):
+    roles = permissions.PROFORMA_VALIDATION_DIRECTION
+
+    def executer(self, request, proforma, donnees):
+        proforma = services.valider_proforma_direction(proforma, request.user)
+        return f"Devis {proforma.numero} validé."
+
+
+class ProformaEnvoyerClientView(_ActionProforma):
+    roles = permissions.PROFORMA_SAISIE
+
+    def executer(self, request, proforma, donnees):
+        proforma = services.envoyer_proforma_au_client(proforma, request.user)
+        return f"Devis envoyé au client, valable jusqu'au {proforma.date_validite:%d/%m/%Y}."
+
+
+class ProformaDecisionClientView(_ActionProforma):
+    roles = permissions.PROFORMA_SAISIE
+    form_class = DecisionClientProformaForm
+
+    def executer(self, request, proforma, donnees):
+        services.enregistrer_decision_client(
+            proforma, request.user,
+            acceptee=donnees["decision"] == "ACCEPTEE",
+            motif=donnees.get("motif", ""),
+        )
+        return "Décision du client enregistrée."
+
+
+class ProformaCreerMissionView(RoleRequiredMixin, View):
+    """Devis accepté → mission (R6) : même rôle que la création manuelle d'une mission."""
+
+    roles = missions_permissions.CREATION
+    http_method_names = ["post"]
+
+    def post(self, request, pk):
+        proforma = get_object_or_404(Proforma, pk=pk)
+        try:
+            mission = missions_services.creer_mission_depuis_proforma(proforma)
+        except MissionError as erreur:
+            messages.error(request, str(erreur))
+            return redirect("billing:proforma", pk=proforma.pk)
+        messages.success(request, f"Mission {mission.numero} créée à partir du devis {proforma.numero}.")
+        return redirect("missions:detail", pk=mission.pk)
 

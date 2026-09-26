@@ -169,6 +169,7 @@ def executer_taches_quotidiennes(*, aujourd_hui: date | None = None) -> dict[str
         "echeances_chauffeurs": alerter_echeances_chauffeurs(aujourd_hui=aujourd_hui),
         "validations_en_retard": relancer_validations_en_retard(),
         "factures_echues": alerter_factures_echues(aujourd_hui=aujourd_hui),
+        "proformas_expirees": billing_services.expirer_proformas(aujourd_hui=aujourd_hui),
     }
     conges = hr_services.synchroniser_statuts_conges(aujourd_hui=aujourd_hui)
     resultat["conges_demarres"] = conges["demarres"]

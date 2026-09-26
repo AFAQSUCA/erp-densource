@@ -61,6 +61,16 @@ Le formulaire de création propose (liste `datalist`) les lieux de chargement et
 les plus fréquents d'abord, dès les premières lettres (`services.lieux_deja_utilises`) ; un lieu écrit avec
 une autre casse ou sans accent ne compte qu'une fois. La saisie libre reste possible.
 
+### Mission créée depuis un devis accepté (R6)
+
+`Mission.proforma` (`OneToOneField` vers `billing.Proforma`, PROTECT) garantit **1 devis = 1
+mission** au niveau base. `services.creer_mission_depuis_proforma(proforma)` (pas de contrôle de
+rôle ici, comme le reste de ce module : c'est `permissions.CREATION`, le même rôle que la
+création manuelle, qui gère l'accès, sur `POST /facturation/devis/<id>/creer-mission/`) recopie
+tel quel le trajet, la marchandise, le poids et le **prix HT** du devis (la facture recalculera
+la TVA plus tard, avec le taux du client en vigueur ce jour-là) ; le devis passe à `CONVERTIE`.
+Refusé si le devis n'est pas `ACCEPTEE` (y compris s'il l'a déjà été converti).
+
 Reste à faire :
 - Notification « en cours de route (départ) » : signal `mission_demarree`, abonné par `notifications` (fait, étape 5).
 - Alerte N1 des congés « chauffeur avec mission sur la période » (via `date_depart_prevue`).

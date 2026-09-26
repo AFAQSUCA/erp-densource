@@ -27,4 +27,42 @@ urlpatterns = [
     path("depenses/imprimer/", views.DepenseImprimerView.as_view(), name="depenses_imprimer"),
     path("depenses/nouvelle/", views.DepenseCreateView.as_view(), name="depense_nouvelle"),
     path("depenses/<int:pk>/mode/", views.DepenseModeView.as_view(), name="depense_mode"),
+    path("devis/", views.ProformaListView.as_view(), name="proformas"),
+    path("devis/imprimer/", views.ProformaImprimerView.as_view(), name="proformas_imprimer"),
+    path("devis/nouveau/", views.ProformaCreateView.as_view(), name="proforma_nouveau"),
+    path("devis/<int:pk>/", views.ProformaDetailView.as_view(), name="proforma"),
+    path("devis/<int:pk>/imprimer/", views.ProformaPrintView.as_view(), name="proforma_imprimer"),
+    path("devis/<int:pk>/modifier/", views.ProformaModifierView.as_view(), name="proforma_modifier"),
+    path("devis/<int:pk>/abandonner/", views.ProformaAbandonnerView.as_view(), name="proforma_abandonner"),
+    path("devis/<int:pk>/soumettre/", views.ProformaSoumettreView.as_view(), name="proforma_soumettre"),
+    path(
+        "devis/<int:pk>/contre-proposer/",
+        views.ProformaContreProposerView.as_view(),
+        name="proforma_contre_proposer",
+    ),
+    path(
+        "devis/<int:pk>/valider-finances/",
+        views.ProformaValiderFinancesView.as_view(),
+        name="proforma_valider_finances",
+    ),
+    path(
+        "devis/<int:pk>/valider-direction/",
+        views.ProformaValiderDirectionView.as_view(),
+        name="proforma_valider_direction",
+    ),
+    path(
+        "devis/<int:pk>/envoyer-client/",
+        views.ProformaEnvoyerClientView.as_view(),
+        name="proforma_envoyer_client",
+    ),
+    path(
+        "devis/<int:pk>/decision-client/",
+        views.ProformaDecisionClientView.as_view(),
+        name="proforma_decision_client",
+    ),
+    path(
+        "devis/<int:pk>/creer-mission/",
+        views.ProformaCreerMissionView.as_view(),
+        name="proforma_creer_mission",
+    ),
 ]

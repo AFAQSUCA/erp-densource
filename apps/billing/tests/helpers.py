@@ -48,3 +48,43 @@ def emise(*, aujourd_hui=JOUR, **surcharges):
     facture = a_valider(**surcharges)
     services.valider(facture, direction(), aujourd_hui=aujourd_hui)
     return facture
+
+
+# --- devis (R5) ---
+
+
+def charge_clientele():
+    return UserFactory(role=Role.CHARGE_CLIENTELE)
+
+
+def proforma_brouillon(*, prix="300000", acteur=None, client=None, **surcharges):
+    """Prix HT par défaut sous le seuil de validation direction (TTC 354 000 < 500 000)."""
+    return services.creer_proforma(
+        acteur or charge_clientele(),
+        client=client or ClientFactory(),
+        lieu_chargement=surcharges.pop("lieu_chargement", "Abidjan"),
+        lieu_livraison=surcharges.pop("lieu_livraison", "Bouaké"),
+        nature_marchandise=surcharges.pop("nature_marchandise", "Ciment"),
+        poids_t=surcharges.pop("poids_t", Decimal("20")),
+        prix_convenu=Decimal(prix),
+        **surcharges,
+    )
+
+
+def proforma_soumise(**surcharges):
+    proforma = proforma_brouillon(**surcharges)
+    services.soumettre_proforma(proforma, charge_clientele())
+    return proforma
+
+
+def proforma_validee(*, aujourd_hui=JOUR, **surcharges):
+    """Validée par la seule finance (montant sous le seuil par défaut : 1 000 000 FCFA)."""
+    proforma = proforma_soumise(**surcharges)
+    services.valider_proforma(proforma, finances(), aujourd_hui=aujourd_hui)
+    return proforma
+
+
+def proforma_envoyee(*, aujourd_hui=JOUR, **surcharges):
+    proforma = proforma_validee(aujourd_hui=aujourd_hui, **surcharges)
+    services.envoyer_proforma_au_client(proforma, charge_clientele(), aujourd_hui=aujourd_hui)
+    return proforma

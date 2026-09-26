@@ -1,0 +1,49 @@
+{% load humanize static %}<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ proforma.numero|default:"Devis" }} · {{ proforma.client.raison_sociale }}</title>
+  {% include "rapports/_style_impression.html" %}
+  <style>
+    .totaux { margin-left: auto; width: 320px; margin-top: 1rem; }
+    .totaux div { display: flex; justify-content: space-between; padding: .25rem 0; }
+    .total { border-top: 2px solid #111; font-weight: bold; font-size: 1.1rem; }
+    .filigrane { color: #b91c1c; border: 2px solid #b91c1c; display: inline-block; padding: .2rem .8rem; font-weight: bold; margin-top: .5rem; }
+  </style>
+</head>
+<body>
+  {% include "rapports/_entete_impression.html" %}
+  <div style="text-align:right">
+    {% if proforma.date_envoi %}<div class="petit">Envoyé le {{ proforma.date_envoi|date:"d/m/Y" }} — Valable jusqu'au {{ proforma.date_validite|date:"d/m/Y" }}</div>{% endif %}
+    {% if not proforma.numero %}<div class="filigrane">NON VALIDÉ</div>{% endif %}
+  </div>
+
+  <p style="margin-top:1.5rem">
+    <strong>{{ proforma.client.raison_sociale }}</strong><br>
+    <span class="petit">{{ proforma.client.adresse|linebreaksbr }}<br>NCC / NIF {{ proforma.client.ncc_nif }}</span>
+  </p>
+
+  <table>
+    <thead><tr><th>Désignation</th><th class="droite">Poids</th><th class="droite">Montant HT</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Transport : {{ proforma.lieu_chargement }} → {{ proforma.lieu_livraison }} ({{ proforma.nature_marchandise }})</td>
+        <td class="droite">{{ proforma.poids_t|floatformat:"-2" }} t</td>
+        <td class="droite">{{ proforma.montant_ht|floatformat:0|intcomma }}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="totaux">
+    <div><span>Total HT</span><span>{{ proforma.montant_ht|floatformat:0|intcomma }} FCFA</span></div>
+    <div><span>TVA {% if proforma.taux_tva == 0 %}(exonérée : {{ proforma.get_motif_exoneration_display }}){% else %}({{ proforma.taux_tva|floatformat:"-2" }} %){% endif %}</span><span>{{ proforma.montant_tva|floatformat:0|intcomma }} FCFA</span></div>
+    <div class="total"><span>Total TTC</span><span>{{ proforma.montant_ttc|floatformat:0|intcomma }} FCFA</span></div>
+  </div>
+
+  {% if proforma.date_depart_souhaitee %}<p class="petit" style="margin-top:1.5rem">Départ souhaité : {{ proforma.date_depart_souhaitee|date:"d/m/Y" }}</p>{% endif %}
+  <p class="petit">Ce devis est valable 30 jours à compter de son envoi.</p>
+  {% include "rapports/_pied_impression.html" %}
+  <script src="{% static 'js/app.js' %}" defer></script>
+</body>
+</html>
