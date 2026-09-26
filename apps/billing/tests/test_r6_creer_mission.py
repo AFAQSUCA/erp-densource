@@ -1,14 +1,17 @@
-"""Mission créée depuis un devis accepté (R6) : recopie du trajet, du prix HT, et « 1 devis = 1 mission »."""
+"""Mission créée depuis un devis accepté (R6) : recopie du trajet, du prix HT, et « 1 devis = 1 mission ».
+
+Orchestré dans ``billing.services`` (pas dans ``missions``) : le graphe de dépendance des apps
+(architecture.md:95-163) interdit à ``missions`` de dépendre de ``billing`` — l'inverse est permis.
+"""
 
 from decimal import Decimal
 
 import pytest
 
-from apps.billing import services as billing_services
+from apps.billing import services
+from apps.billing.exceptions import TransitionFactureInterdite
 from apps.billing.models import StatutProforma
 from apps.billing.tests.helpers import JOUR, charge_clientele, proforma_envoyee
-from apps.missions import services
-from apps.missions.exceptions import TransitionMissionInterdite
 from apps.missions.models import StatutMission
 
 pytestmark = pytest.mark.django_db
@@ -16,14 +19,14 @@ pytestmark = pytest.mark.django_db
 
 def _acceptee(**surcharges):
     proforma = proforma_envoyee(aujourd_hui=JOUR, **surcharges)
-    billing_services.enregistrer_decision_client(proforma, charge_clientele(), acceptee=True)
+    services.enregistrer_decision_client(proforma, charge_clientele(), acceptee=True)
     return proforma
 
 
 def test_la_mission_recopie_le_trajet_la_marchandise_le_poids_et_le_prix_ht():
     proforma = _acceptee(prix="350000")
 
-    mission = services.creer_mission_depuis_proforma(proforma)
+    mission = services.convertir_en_mission(proforma)
 
     assert mission.client == proforma.client
     assert mission.lieu_chargement == proforma.lieu_chargement
@@ -37,7 +40,7 @@ def test_la_mission_recopie_le_trajet_la_marchandise_le_poids_et_le_prix_ht():
 def test_le_devis_devient_convertie_et_reference_la_mission():
     proforma = _acceptee()
 
-    mission = services.creer_mission_depuis_proforma(proforma)
+    mission = services.convertir_en_mission(proforma)
 
     proforma.refresh_from_db()
     assert proforma.statut == StatutProforma.CONVERTIE
@@ -54,13 +57,13 @@ def test_creation_impossible_hors_devis_accepte(statut):
     proforma.statut = statut
     proforma.save(update_fields=["statut"])
 
-    with pytest.raises(TransitionMissionInterdite):
-        services.creer_mission_depuis_proforma(proforma)
+    with pytest.raises(TransitionFactureInterdite):
+        services.convertir_en_mission(proforma)
 
 
 def test_un_devis_deja_converti_ne_recree_pas_de_seconde_mission():
     proforma = _acceptee()
-    services.creer_mission_depuis_proforma(proforma)
+    services.convertir_en_mission(proforma)
 
-    with pytest.raises(TransitionMissionInterdite):
-        services.creer_mission_depuis_proforma(proforma)
+    with pytest.raises(TransitionFactureInterdite):
+        services.convertir_en_mission(proforma)

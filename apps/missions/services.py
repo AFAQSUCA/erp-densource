@@ -20,8 +20,6 @@ from django.db import transaction
 from django.db.models import Count, QuerySet, Sum
 from django.utils import timezone
 
-from apps.billing import services as billing_services
-from apps.billing.models import Proforma, StatutProforma
 from apps.core.search import filtrer_par_texte, normaliser
 from apps.core.services import prochain_numero, total_par_mois
 from apps.customers.models import Client
@@ -253,34 +251,6 @@ def creer_mission(
         code_expediteur=code_expediteur,
         code_destinataire=code_destinataire,
     )
-
-
-@transaction.atomic
-def creer_mission_depuis_proforma(proforma: Proforma) -> Mission:
-    """Mission créée depuis un devis accepté (R6) : trajet, marchandise, poids et prix recopiés
-    tels quels ; le devis devient une archive figée (« 1 devis = 1 mission »).
-
-    Le prix repris est le HT du devis, comme celui d'une mission créée à la main : la facture
-    calculera la TVA à son tour, avec le taux du client en vigueur au moment de la facturation.
-    """
-    proforma = Proforma.objects.select_for_update().get(pk=proforma.pk)
-    if proforma.statut != StatutProforma.ACCEPTEE:
-        raise TransitionMissionInterdite(
-            f"Impossible de créer la mission : le devis est « {proforma.get_statut_display()} »."
-        )
-    mission = creer_mission(
-        client=proforma.client,
-        lieu_chargement=proforma.lieu_chargement,
-        lieu_livraison=proforma.lieu_livraison,
-        nature_marchandise=proforma.nature_marchandise,
-        poids_t=proforma.poids_t,
-        prix_convenu=proforma.prix_convenu,
-        date_depart_prevue=proforma.date_depart_souhaitee,
-    )
-    mission.proforma = proforma
-    mission.save(update_fields=["proforma", "updated_at"])
-    billing_services.marquer_proforma_convertie(proforma)
-    return mission
 
 
 @transaction.atomic

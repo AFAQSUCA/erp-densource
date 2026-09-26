@@ -21,6 +21,7 @@ from apps.audit import services as audit_services
 from apps.core.search import filtrer_par_texte
 from apps.core.services import prochain_numero, total_par_mois
 from apps.customers.models import Client
+from apps.missions import services as missions_services
 from apps.missions.models import Mission, StatutMission
 
 from . import permissions, signals
@@ -869,17 +870,33 @@ def enregistrer_decision_client(
 
 
 @transaction.atomic
-def marquer_proforma_convertie(proforma: Proforma) -> Proforma:
-    """Le devis accepté vient de donner sa mission (R6) : il devient une archive figée.
+def convertir_en_mission(proforma: Proforma) -> Mission:
+    """Mission créée depuis un devis accepté (R6) : trajet, marchandise, poids et prix recopiés
+    tels quels ; le devis devient une archive figée (« 1 devis = 1 mission »).
 
+    Le prix repris est le HT du devis, comme celui d'une mission créée à la main : la facture
+    calculera la TVA à son tour, avec le taux du client en vigueur au moment de la facturation.
     Le contrôle de rôle relève de la création de la mission (``missions.permissions.CREATION``),
-    pas de ce module : cette fonction n'est appelée que depuis ce flux déjà autorisé.
+    pas de ce module : cette fonction n'est appelée que depuis ce flux déjà autorisé. Orchestrée
+    ici (et non dans ``missions``) car le graphe de dépendance des apps interdit à ``missions``
+    de dépendre de ``billing`` (architecture.md:95-163) — l'inverse est permis.
     """
     _verrouiller(proforma)
     _exiger_statut(proforma, (StatutProforma.ACCEPTEE,), "convertir le devis en mission")
+    mission = missions_services.creer_mission(
+        client=proforma.client,
+        lieu_chargement=proforma.lieu_chargement,
+        lieu_livraison=proforma.lieu_livraison,
+        nature_marchandise=proforma.nature_marchandise,
+        poids_t=proforma.poids_t,
+        prix_convenu=proforma.prix_convenu,
+        date_depart_prevue=proforma.date_depart_souhaitee,
+    )
+    mission.proforma = proforma
+    mission.save(update_fields=["proforma", "updated_at"])
     proforma.statut = StatutProforma.CONVERTIE
     proforma.save(update_fields=["statut", "updated_at"])
-    return proforma
+    return mission
 
 
 def expirer_proformas(aujourd_hui: date | None = None) -> int:

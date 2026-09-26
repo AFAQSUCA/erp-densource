@@ -15,7 +15,6 @@ from apps.core.formats import nombre
 from apps.core.rapports import contexte_rapport
 from apps.core.views import ImpressionListeMixin, PaginationTolerante
 from apps.missions import permissions as missions_permissions
-from apps.missions import services as missions_services
 from apps.missions.exceptions import MissionError
 
 from . import permissions, services
@@ -715,8 +714,8 @@ class ProformaCreerMissionView(RoleRequiredMixin, View):
     def post(self, request, pk):
         proforma = get_object_or_404(Proforma, pk=pk)
         try:
-            mission = missions_services.creer_mission_depuis_proforma(proforma)
-        except MissionError as erreur:
+            mission = services.convertir_en_mission(proforma)
+        except (BillingError, MissionError) as erreur:
             messages.error(request, str(erreur))
             return redirect("billing:proforma", pk=proforma.pk)
         messages.success(request, f"Mission {mission.numero} créée à partir du devis {proforma.numero}.")
