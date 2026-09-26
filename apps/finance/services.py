@@ -250,24 +250,27 @@ def synthese_periode(debut: date, fin: date) -> dict:
 
 
 def charges(debut: date, fin: date) -> dict:
-    """Charges de la période = toutes les dépenses, y compris celles du parc auto créées automatiquement.
+    """Charges de la période = toutes les dépenses, y compris celles créées automatiquement.
 
-    Un plein, un achat de pièces et la main-d'œuvre d'un OR clôturé sont des dépenses comme les autres
-    (``finance.receivers``) : la page Dépenses, la trésorerie et ces charges donnent le même total.
-    Ventilation : ``carburant``, ``pieces`` (achetées), ``main_oeuvre`` (des OR), ``maintenance``
-    (pièces + main-d'œuvre) et ``depenses`` (le reste : péages, frais, saisies à la main).
+    Un plein, un achat de pièces, la main-d'œuvre d'un OR clôturé et un frais de mission confirmé
+    (avance, dépense prévue, imprévu — R4) sont des dépenses comme les autres (``finance.receivers``) :
+    la page Dépenses, la trésorerie et ces charges donnent le même total. Ventilation : ``carburant``,
+    ``pieces`` (achetées), ``main_oeuvre`` (des OR), ``maintenance`` (pièces + main-d'œuvre),
+    ``frais_mission`` et ``depenses`` (le reste : péages, frais, saisies à la main).
     """
     par_categorie = {c["code"]: c["total"] for c in billing_services.depenses_par_categorie(debut, fin)}
     carburant = par_categorie[CategorieDepense.CARBURANT]
     pieces = par_categorie[CategorieDepense.PIECES]
     main_oeuvre = par_categorie[CategorieDepense.MAINTENANCE]
+    frais_mission = par_categorie[CategorieDepense.FRAIS_MISSION]
     total = sum(par_categorie.values(), ZERO)
     return {
-        "depenses": total - carburant - pieces - main_oeuvre,
+        "depenses": total - carburant - pieces - main_oeuvre - frais_mission,
         "carburant": carburant,
         "pieces": pieces,
         "main_oeuvre": main_oeuvre,
         "maintenance": pieces + main_oeuvre,
+        "frais_mission": frais_mission,
         "total": total,
     }
 

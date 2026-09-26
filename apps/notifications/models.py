@@ -13,6 +13,7 @@ class CategorieNotification(models.TextChoices):
     DOCUMENT = "DOCUMENT", _("Échéance")
     MISSION = "MISSION", _("Mission")
     FACTURE = "FACTURE", _("Facturation")
+    FRAIS_MISSION = "FRAIS_MISSION", _("Frais de mission")
     INCIDENT = "INCIDENT", _("Incident")
 
 
@@ -35,7 +36,7 @@ class Notification(BaseModel):
         on_delete=models.CASCADE,
         related_name="notifications",
     )
-    categorie = models.CharField(_("catégorie"), max_length=12, choices=CategorieNotification.choices)
+    categorie = models.CharField(_("catégorie"), max_length=14, choices=CategorieNotification.choices)
     niveau = models.CharField(
         _("niveau"),
         max_length=10,

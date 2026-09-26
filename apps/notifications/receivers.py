@@ -27,7 +27,14 @@ from apps.hr import services as hr_services
 from apps.hr import signals as hr_signals
 from apps.inventory.signals import seuil_bas_atteint
 from apps.missions import services as missions_services
-from apps.missions.signals import mission_demarree
+from apps.missions.models import TypeFraisMission
+from apps.missions.signals import (
+    frais_mission_declare,
+    frais_mission_rejete,
+    frais_mission_valide_parcauto,
+    mission_affectee,
+    mission_demarree,
+)
 
 from .models import CategorieNotification, NiveauNotification
 from .services import notifier, utilisateurs_du_role
@@ -203,6 +210,66 @@ def prevenir_du_depart(sender, mission, **kwargs):
             f"vers {mission.lieu_livraison}."
         ),
         url=reverse("missions:detail", args=[mission.pk]),
+    )
+
+
+@receiver(mission_affectee)
+def prevenir_la_finance_d_une_affectation(sender, mission, **kwargs):
+    notifier(
+        utilisateurs_du_role(Role.FINANCES),
+        categorie=CategorieNotification.FRAIS_MISSION,
+        niveau=NiveauNotification.INFO,
+        titre=f"Mission affectée : {mission.numero}",
+        message=(
+            f"{mission.client.raison_sociale} : {mission.lieu_chargement} → {mission.lieu_livraison}. "
+            "Mouvement de caisse probable (avance de route, dépense prévue)."
+        ),
+        url=reverse("missions:frais", args=[mission.pk]),
+    )
+
+
+@receiver(frais_mission_declare)
+def prevenir_le_parc_auto_d_un_imprevu(sender, frais, **kwargs):
+    chauffeur = frais.chauffeur.personnel
+    notifier(
+        utilisateurs_du_role(Role.PARCAUTO),
+        categorie=CategorieNotification.FRAIS_MISSION,
+        niveau=NiveauNotification.ATTENTION,
+        titre=f"Imprévu signalé : {frais.mission.numero}",
+        message=f"{chauffeur.prenom} {chauffeur.nom} : {nombre(frais.montant)} FCFA. À valider.",
+        url=reverse("missions:frais", args=[frais.mission_id]),
+        action="Examiner",
+    )
+
+
+@receiver(frais_mission_valide_parcauto)
+def prevenir_la_finance_d_un_imprevu_valide(sender, frais, **kwargs):
+    notifier(
+        utilisateurs_du_role(Role.FINANCES),
+        categorie=CategorieNotification.FRAIS_MISSION,
+        niveau=NiveauNotification.ATTENTION,
+        titre=f"Imprévu à confirmer : {frais.mission.numero}",
+        message=f"Validé par le Parc Auto : {nombre(frais.montant)} FCFA. Confirmation attendue.",
+        url=reverse("missions:frais", args=[frais.mission_id]),
+        action="Confirmer",
+    )
+
+
+@receiver(frais_mission_rejete)
+def prevenir_de_l_auteur_du_rejet(sender, frais, **kwargs):
+    if frais.type_frais == TypeFraisMission.IMPREVU:
+        destinataire = frais.chauffeur.personnel.utilisateur if frais.chauffeur_id else None
+    else:
+        destinataire = frais.saisi_par
+    if destinataire is None:
+        return
+    notifier(
+        [destinataire],
+        categorie=CategorieNotification.FRAIS_MISSION,
+        niveau=NiveauNotification.ATTENTION,
+        titre=f"Frais rejeté : {frais.mission.numero}",
+        message=f"Motif : {frais.motif_rejet}",
+        url=reverse("missions:frais", args=[frais.mission_id]),
     )
 
 

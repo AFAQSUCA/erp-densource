@@ -16,12 +16,14 @@ from django.views.generic import DetailView, FormView, ListView
 
 from apps.accounts.mixins import RoleRequiredMixin
 from apps.core.formats import nombre
+from apps.core.rapports import contexte_rapport
 from apps.core.views import ImpressionListeMixin, PaginationTolerante
 
 from . import documents, permissions, services
+from . import terrain as frais_terrain
 from .exceptions import MissionError
-from .forms import AffectationForm, CodeForm, LivraisonForm, MissionForm
-from .models import StatutMission
+from .forms import AffectationForm, CodeForm, FraisPrevisionForm, LivraisonForm, MissionForm, MotifRejetFraisForm
+from .models import FraisMission, Mission, StatutMission
 
 ETAPES = [
     (StatutMission.BROUILLON, "Brouillon"),
@@ -111,6 +113,7 @@ class MissionDetailView(RoleRequiredMixin, DetailView):
             form_affectation=AffectationForm() if actions["affecter"] else None,
             form_recuperation=CodeForm() if actions["recuperation"] else None,
             form_livraison=LivraisonForm() if actions["livraison"] else None,
+            peut_voir_frais=utilisateur.role_effectif in permissions.FRAIS_CONSULTATION,
         )
         return contexte
 
@@ -282,3 +285,138 @@ class CodeQrView(RoleRequiredMixin, View):
         reponse = HttpResponse(tampon.getvalue(), content_type="image/png")
         reponse["Cache-Control"] = "no-store, private"
         return reponse
+
+
+# --- prévision de trésorerie des missions (R4) ---
+
+
+class FraisMissionListeView(PaginationTolerante, RoleRequiredMixin, ListView):
+    """Lignes en attente (toutes missions), pour le Parc Auto et la Finance."""
+
+    roles = permissions.FRAIS_CONSULTATION
+    template_name = "missions/frais_liste.html"
+    context_object_name = "lignes"
+    paginate_by = 30
+
+    def get_queryset(self):
+        return frais_terrain.frais_a_traiter()
+
+
+class FraisMissionDetailView(RoleRequiredMixin, DetailView):
+    """Prévision de trésorerie d'une mission : lignes, totaux, planification et validation."""
+
+    roles = permissions.FRAIS_CONSULTATION
+    template_name = "missions/frais_detail.html"
+    context_object_name = "mission"
+
+    def get_queryset(self):
+        return services.missions_queryset()
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        mission = self.object
+        role = self.request.user.role
+        peut_planifier = self.request.user.role_effectif in permissions.FRAIS_SAISIE_PREVISION
+        contexte.update(
+            lignes=frais_terrain.frais_queryset(mission),
+            totaux=frais_terrain.totaux(mission),
+            peut_planifier=peut_planifier,
+            peut_valider_parcauto=role in permissions.FRAIS_VALIDATION_PARCAUTO,
+            peut_valider_finances=role in permissions.FRAIS_VALIDATION_FINANCES,
+            form_planifier=FraisPrevisionForm() if peut_planifier else None,
+            form_rejet=MotifRejetFraisForm(),
+        )
+        return contexte
+
+
+class FraisMissionPrintView(RoleRequiredMixin, DetailView):
+    """Rapport de mission imprimable : toutes les lignes et leurs totaux."""
+
+    roles = permissions.FRAIS_CONSULTATION
+    template_name = "missions/frais_print.html"
+    context_object_name = "mission"
+
+    def get_queryset(self):
+        return services.missions_queryset()
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        contexte.update(contexte_rapport(self.request, titre=f"Rapport de mission {self.object.numero}"))
+        contexte.update(lignes=frais_terrain.frais_queryset(self.object), totaux=frais_terrain.totaux(self.object))
+        return contexte
+
+
+class FraisPlanifierView(RoleRequiredMixin, View):
+    roles = permissions.FRAIS_SAISIE_PREVISION
+    http_method_names = ["post"]
+
+    def post(self, request, pk):
+        mission = get_object_or_404(Mission, pk=pk)
+        form = FraisPrevisionForm(request.POST)
+        if not form.is_valid():
+            for erreurs in form.errors.values():
+                for erreur in erreurs:
+                    messages.error(request, erreur)
+            return redirect("missions:frais", pk=mission.pk)
+        try:
+            frais_terrain.planifier_frais(mission, request.user, **form.cleaned_data)
+        except MissionError as erreur:
+            messages.error(request, str(erreur))
+        else:
+            messages.success(request, "Frais planifié : la finance peut le confirmer.")
+        return redirect("missions:frais", pk=mission.pk)
+
+
+class _ActionFrais(RoleRequiredMixin, View):
+    """Action en POST sur un frais de mission : formulaire → service → message → retour à la mission."""
+
+    http_method_names = ["post"]
+    form_class = None
+
+    def executer(self, request, frais, donnees):  # pragma: no cover - surchargé
+        raise NotImplementedError
+
+    def post(self, request, frais_pk):
+        frais = get_object_or_404(FraisMission, pk=frais_pk)
+        donnees = {}
+        if self.form_class is not None:
+            form = self.form_class(request.POST)
+            if not form.is_valid():
+                for erreurs in form.errors.values():
+                    for erreur in erreurs:
+                        messages.error(request, erreur)
+                return redirect("missions:frais", pk=frais.mission_id)
+            donnees = form.cleaned_data
+        try:
+            message = self.executer(request, frais, donnees)
+        except MissionError as erreur:
+            messages.error(request, str(erreur))
+        else:
+            if message:
+                messages.success(request, message)
+        return redirect("missions:frais", pk=frais.mission_id)
+
+
+class FraisValiderParcautoView(_ActionFrais):
+    roles = permissions.FRAIS_VALIDATION_PARCAUTO
+
+    def executer(self, request, frais, donnees):
+        frais_terrain.valider_parcauto(frais, request.user)
+        return "Imprévu validé : transmis à la finance pour confirmation."
+
+
+class FraisValiderFinancesView(_ActionFrais):
+    roles = permissions.FRAIS_VALIDATION_FINANCES
+
+    def executer(self, request, frais, donnees):
+        frais_terrain.valider_finances(frais, request.user)
+        return "Frais confirmé : comptabilisé en dépense."
+
+
+class FraisRejeterView(_ActionFrais):
+    roles = permissions.FRAIS_VALIDATION_PARCAUTO | permissions.FRAIS_VALIDATION_FINANCES
+    form_class = MotifRejetFraisForm
+
+    def executer(self, request, frais, donnees):
+        frais_terrain.rejeter(frais, request.user, motif=donnees["motif"])
+        return "Frais rejeté."

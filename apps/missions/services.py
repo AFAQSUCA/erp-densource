@@ -36,8 +36,9 @@ from .exceptions import (
     MissionError,
     TransitionMissionInterdite,
 )
+from . import signals
 from .models import STATUTS_ACTIFS, Mission, StatutMission
-from .signals import mission_demarree
+from .signals import mission_affectee, mission_demarree
 
 PREFIXE_NUMERO = "MIS"
 # Sans caractères ambigus (0/O, 1/I) : les codes se dictent au téléphone.
@@ -300,6 +301,7 @@ def affecter_mission(mission: Mission, *, vehicule: Vehicule, chauffeur: Chauffe
     mission.chauffeur = chauffeur
     mission.statut = StatutMission.AFFECTEE
     mission.save(update_fields=["vehicule", "chauffeur", "statut", "updated_at"])
+    signals.emettre(mission_affectee, mission=mission)
     return mission
 
 

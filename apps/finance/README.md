@@ -21,6 +21,16 @@ migration `billing.0003` (pleins, achats et OR déjà enregistrés, en espèces)
 elle rétro-débite la trésorerie ; si un « solde d'ouverture » a été saisi à une date, les dépenses antérieures sont
 déjà comprises dedans.
 
+**Frais de mission** (`receivers.py`, R4 — avenant-separation-des-taches.md) : même mécanisme que ci-dessus, pour une
+avance de route, une dépense prévue ou un imprévu (`missions.FraisMission`) une fois **confirmé**
+(`missions.signals.frais_mission_confirme`, `send` non protégé : une dépense qui ne peut pas s'écrire annule la
+confirmation) — catégorie « Frais de mission », dépense liée à la mission d'origine. Un encaissement
+(`FraisMission` de type ``ENCAISSEMENT``) est le reflet automatique d'un règlement déjà enregistré
+(`billing.signals.reglement_enregistre`, `send_robust` : un échec ici ne bloque jamais le règlement) : il ne crée ni
+dépense ni règlement supplémentaire, seulement une ligne pour la vue « Frais de mission » de la mission facturée.
+`missions` et `billing` s'ignorent l'un l'autre : c'est `finance` qui relie les deux (graphe de dépendance,
+architecture.md:95-163).
+
 **Versements à confirmer** : une facture émise mais pas soldée est un versement attendu
 (`services.versements_attendus`). Quand la Direction valide une facture, la FINANCES reçoit une
 notification avec le bouton « Confirmer le versement » ; il mène à `/finances/versements/<id>/confirmer/`
@@ -35,8 +45,8 @@ pour le graphique du tableau de bord ; le mois en cours reprend les indicateurs 
 
 **Indicateurs du mois** (`services.indicateurs`, affichés au tableau de bord) :
 - CA facturé = total **HT** des factures émises ; encaissé = règlements du mois ;
-- charges = **toutes les dépenses** (`services.charges`), y compris celles du parc auto qui se créent toutes
-  seules (voir ci-dessous) ; ventilées en carburant, pièces, main-d'œuvre et autres ;
+- charges = **toutes les dépenses** (`services.charges`), y compris celles du parc auto et des missions qui se
+  créent toutes seules (voir ci-dessous) ; ventilées en carburant, pièces, main-d'œuvre, frais de mission et autres ;
 - marge nette = CA HT - charges ; créances = reste à recouvrer (dont échu) ; trésorerie = solde.
   Les charges (économiques) et la trésorerie (réelle) ne sont volontairement pas les mêmes chiffres.
 

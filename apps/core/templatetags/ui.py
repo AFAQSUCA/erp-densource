@@ -85,6 +85,10 @@ COULEURS_STATUT = {
     "ROUGE": "rouge",
     "ANOMALIE": "rouge",
     "SAISIE_SUSPECTE": "ambre",
+    # frais de mission
+    "PREVU": "ambre",
+    "CONFIRME": "vert",
+    "REJETE": "rouge",
 }
 
 

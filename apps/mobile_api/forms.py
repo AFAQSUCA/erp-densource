@@ -73,6 +73,25 @@ class IncidentChauffeurForm(StyleTactileMixin, forms.Form):
         ]
 
 
+class FraisImprevuChauffeurForm(StyleTactileMixin, forms.Form):
+    """Déclaration d'un imprévu (panne, incident) sur la mission en cours, avec une preuve."""
+
+    mission = forms.TypedChoiceField(label="Mission concernée", coerce=int)
+    montant = forms.DecimalField(
+        label="Montant (FCFA)", min_value=0, decimal_places=2, max_digits=12,
+        widget=forms.NumberInput(attrs={"inputmode": "decimal", "step": "1"}),
+    )
+    description = forms.CharField(label="Ce qui s'est passé", widget=forms.Textarea(attrs={"rows": 3}))
+    justificatif = forms.FileField(label="Preuve (photo, facture)")
+
+    def __init__(self, *args, missions=(), **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["mission"].choices = [
+            (m.pk, f"{m.numero} : {m.lieu_chargement} → {m.lieu_livraison}") for m in missions
+        ]
+        self.fields["justificatif"].widget.attrs["class"] = "block w-full text-sm text-slate-700"
+
+
 class ChecklistForm(forms.Form):
     """Un choix OK / KO par point, et une remarque (obligatoire si KO, contrôlé par le service)."""
 

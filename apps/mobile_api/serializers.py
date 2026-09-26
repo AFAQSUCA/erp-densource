@@ -8,7 +8,7 @@ from rest_framework import serializers
 
 from apps.fuel.models import Plein
 from apps.garage.models import GraviteIncident, Incident, TypeIncident
-from apps.missions.models import Mission
+from apps.missions.models import FraisMission, Mission
 
 from . import services
 
@@ -109,5 +109,26 @@ class IncidentSerializer(serializers.ModelSerializer):
         fields = (
             "id", "vehicule", "type_incident", "type_libelle", "gravite", "gravite_libelle",
             "description", "lieu", "statut", "statut_libelle", "created_at",
+        )
+        read_only_fields = fields
+
+
+class FraisImprevuEntreeSerializer(serializers.Serializer):
+    mission = serializers.IntegerField()
+    montant = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=0)
+    description = serializers.CharField(required=False, allow_blank=True, default="")
+    justificatif = serializers.FileField()
+
+
+class FraisMissionSerializer(serializers.ModelSerializer):
+    mission = serializers.CharField(source="mission.numero")
+    type_libelle = serializers.CharField(source="get_type_frais_display")
+    statut_libelle = serializers.CharField(source="get_statut_display")
+
+    class Meta:
+        model = FraisMission
+        fields = (
+            "id", "mission", "type_frais", "type_libelle", "montant", "description",
+            "statut", "statut_libelle", "created_at",
         )
         read_only_fields = fields

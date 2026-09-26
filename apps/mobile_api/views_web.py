@@ -30,7 +30,14 @@ from apps.missions.exceptions import MissionError
 
 from . import services
 from .exceptions import MissionIntrouvable, MobileError
-from .forms import ChecklistForm, CodeForm, IncidentChauffeurForm, LivraisonForm, PleinChauffeurForm
+from .forms import (
+    ChecklistForm,
+    CodeForm,
+    FraisImprevuChauffeurForm,
+    IncidentChauffeurForm,
+    LivraisonForm,
+    PleinChauffeurForm,
+)
 
 ERREURS = (MissionError, CarburantError, GarageError, MobileError)
 
@@ -47,6 +54,7 @@ class ChauffeurRequisMixin(RoleRequiredMixin):
             ("missions", reverse("chauffeur:missions"), "fa-truck-fast", "Missions"),
             ("plein", reverse("chauffeur:plein"), "fa-gas-pump", "Plein"),
             ("incident", reverse("chauffeur:incident"), "fa-triangle-exclamation", "Panne"),
+            ("imprevu", reverse("chauffeur:imprevu"), "fa-money-bill-transfer", "Imprévu"),
         ]
         return contexte
 
@@ -289,6 +297,51 @@ class IncidentView(ChauffeurRequisMixin, TemplateView):
             form.add_error(None, str(erreur))
             return self.render_to_response(self.get_context_data(form=form))
         messages.success(request, "Incident signalé : le Parc Auto et la Direction sont prévenus.")
+        return redirect("chauffeur:accueil")
+
+
+class FraisImprevuView(ChauffeurRequisMixin, TemplateView):
+    """Déclaration d'un imprévu (panne, incident) avec une preuve — R4."""
+
+    template_name = "mobile/imprevu.html"
+
+    def _missions(self):
+        return list(services.missions_du_chauffeur(self.chauffeur))
+
+    def _formulaire_vide(self):
+        mission = self.request.GET.get("mission", "")
+        return FraisImprevuChauffeurForm(
+            missions=self._missions(), initial={"mission": mission} if mission.isdigit() else {}
+        )
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        contexte.update(
+            form=kwargs.get("form") or self._formulaire_vide(),
+            derniers=services.frais_du_chauffeur(self.chauffeur, limite=5),
+            nav="imprevu",
+        )
+        return contexte
+
+    def post(self, request):
+        form = FraisImprevuChauffeurForm(request.POST, request.FILES, missions=self._missions())
+        if not form.is_valid():
+            return self.render_to_response(self.get_context_data(form=form))
+        donnees = form.cleaned_data
+        try:
+            services.declarer_frais_imprevu(
+                self.chauffeur,
+                mission_id=donnees["mission"],
+                montant=donnees["montant"],
+                justificatif=donnees["justificatif"],
+                description=donnees["description"],
+            )
+        except MissionIntrouvable as erreur:
+            raise Http404 from erreur
+        except ERREURS as erreur:
+            form.add_error(None, str(erreur))
+            return self.render_to_response(self.get_context_data(form=form))
+        messages.success(request, "Imprévu signalé : le Parc Auto est prévenu.")
         return redirect("chauffeur:accueil")
 
 

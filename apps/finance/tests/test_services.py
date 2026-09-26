@@ -215,6 +215,7 @@ def test_charges_regroupe_depenses_carburant_pieces_et_main_d_oeuvre():
         "pieces": Decimal("50000"),  # comptées à l'achat, pas à la sortie vers l'OR
         "main_oeuvre": Decimal("30000"),
         "maintenance": Decimal("80000"),
+        "frais_mission": Decimal("0"),
         "total": Decimal("165500"),
     }
 

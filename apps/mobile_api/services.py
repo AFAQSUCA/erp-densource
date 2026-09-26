@@ -22,7 +22,8 @@ from apps.fuel.models import Plein
 from apps.garage import terrain as garage_terrain
 from apps.garage.models import ChecklistVehicule, Incident
 from apps.missions import services as missions_services
-from apps.missions.models import Mission, StatutMission
+from apps.missions import terrain as missions_terrain
+from apps.missions.models import FraisMission, Mission, StatutMission
 
 from .exceptions import AucunCamion, MissionIntrouvable
 
@@ -200,6 +201,27 @@ def declarer_incident(
 
 def incidents_du_chauffeur(chauffeur: Chauffeur, *, limite: int = 20) -> QuerySet[Incident]:
     return Incident.objects.filter(chauffeur=chauffeur).select_related("vehicule").order_by("-created_at", "-pk")[:limite]
+
+
+# --- imprévus (prévision de trésorerie, R4) ---
+
+
+def declarer_frais_imprevu(
+    chauffeur: Chauffeur, *, mission_id: int, montant, justificatif, description: str = ""
+) -> FraisMission:
+    """Le chauffeur déclare un imprévu (panne, incident) sur une de ses missions, avec une preuve."""
+    mission = mission_du_chauffeur(chauffeur, mission_id)
+    return missions_terrain.declarer_imprevu(
+        mission, chauffeur, montant=montant, justificatif=justificatif, description=description
+    )
+
+
+def frais_du_chauffeur(chauffeur: Chauffeur, *, limite: int = 20) -> QuerySet[FraisMission]:
+    return (
+        FraisMission.objects.filter(chauffeur=chauffeur)
+        .select_related("mission")
+        .order_by("-created_at", "-pk")[:limite]
+    )
 
 
 # --- tableau de bord du chauffeur (cahier-des-charges.md:238-239) ---

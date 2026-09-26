@@ -12,13 +12,18 @@ Trois couches sur les mêmes règles :
 Ce que fait le chauffeur : voir ses missions (à faire, en cours, livrées cette semaine), faire la
 **check-list** du camion, **démarrer**, confirmer la **récupération** puis la **livraison** en scannant
 ou saisissant le code (QR), saisir un **plein** (avec la confirmation d'une saisie suspecte),
-signaler un **incident**. L'accueil est son tableau de bord : course du jour, km du mois,
+signaler un **incident**, déclarer un **imprévu** (panne, avec preuve — R4, prévision de trésorerie des
+missions, voir `apps/missions/README.md`). L'accueil est son tableau de bord : course du jour, km du mois,
 consommation, état du camion.
 
 Points de sécurité : le chauffeur ne voit jamais les codes secrets ni le prix convenu ; il ne saisit
-un plein ou un incident que sur son camion (mission en cours ou à venir, ou camion habituel) ; session
-de 15 minutes d'inactivité (jeton d'accès de 15 minutes pour l'API) ; le service worker ne met en cache
-que la page « hors connexion », jamais les pages privées.
+un plein, un incident ou un imprévu que sur son camion (mission en cours ou à venir, ou camion habituel) ;
+session de 15 minutes d'inactivité (jeton d'accès de 15 minutes pour l'API) ; le service worker ne met en
+cache que la page « hors connexion », jamais les pages privées.
+
+**Preuve d'un imprévu** (`FraisMission.justificatif`) : premier champ fichier du projet, stocké sur le
+disque local (`MEDIA_ROOT`/`media_data`, déjà prévu par le déploiement) — distinct de la photo d'un
+incident, toujours pas gérée (S3/MinIO, étape 7, voir ci-dessous).
 
 Lecture des QR : `static/js/scanner.js` (API `BarcodeDetector`, Chrome sur Android). Sur un navigateur
 qui ne la propose pas, le bouton n'apparaît pas et le chauffeur saisit le code (8 caractères).

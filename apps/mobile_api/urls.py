@@ -15,4 +15,5 @@ urlpatterns = [
     path("missions/<int:pk>/checklist/", views.ChecklistView.as_view(), name="checklist"),
     path("pleins/", views.PleinsView.as_view(), name="pleins"),
     path("incidents/", views.IncidentsView.as_view(), name="incidents"),
+    path("imprevus/", views.FraisImprevusView.as_view(), name="imprevus"),
 ]

@@ -17,4 +17,19 @@ urlpatterns = [
     path("<int:pk>/cloturer/", views.CloturerView.as_view(), name="cloturer"),
     path("<int:pk>/codes.pdf", views.CodesPdfView.as_view(), name="codes_pdf"),
     path("<int:pk>/qr/<str:qui>.png", views.CodeQrView.as_view(), name="qr"),
+    path("frais/", views.FraisMissionListeView.as_view(), name="frais_liste"),
+    path("<int:pk>/frais/", views.FraisMissionDetailView.as_view(), name="frais"),
+    path("<int:pk>/frais/imprimer/", views.FraisMissionPrintView.as_view(), name="frais_imprimer"),
+    path("<int:pk>/frais/planifier/", views.FraisPlanifierView.as_view(), name="frais_planifier"),
+    path(
+        "frais/<int:frais_pk>/valider-parcauto/",
+        views.FraisValiderParcautoView.as_view(),
+        name="frais_valider_parcauto",
+    ),
+    path(
+        "frais/<int:frais_pk>/valider-finances/",
+        views.FraisValiderFinancesView.as_view(),
+        name="frais_valider_finances",
+    ),
+    path("frais/<int:frais_pk>/rejeter/", views.FraisRejeterView.as_view(), name="frais_rejeter"),
 ]

@@ -464,6 +464,7 @@ def enregistrer_reglement(
     )
     facture.statut = _statut_selon_reste(facture)
     facture.save(update_fields=["statut", "updated_at"])
+    signals.emettre(signals.reglement_enregistre, reglement=reglement)
     return reglement
 
 
@@ -537,14 +538,16 @@ def comptabiliser_depense_automatique(
     montant: Decimal,
     reference: str = "",
     mode: str = ModePaiement.ESPECES,
+    mission: Mission | None = None,
 ) -> Depense | None:
-    """Crée la dépense d'un plein, d'un achat de pièces ou d'une main-d'œuvre d'OR (une seule fois par source).
+    """Crée la dépense d'un plein, d'un achat de pièces, d'une main-d'œuvre d'OR ou d'un frais de
+    mission confirmé (une seule fois par source).
 
     Appelée par les récepteurs de ``finance`` dans la transaction de l'opération d'origine : si la dépense
     ne peut pas être écrite, l'opération est annulée plutôt que de laisser une sortie d'argent non comptée.
     Mode de paiement par défaut : espèces (caisse), que la Finance corrige ensuite si besoin
     (:func:`changer_mode_depense`). Un montant nul ne crée rien. Idempotent : rejouer la même source
-    renvoie la dépense existante.
+    renvoie la dépense existante. ``mission`` relie la dépense à la mission d'origine (frais de mission).
     """
     montant = Decimal(montant).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     if montant <= 0:
@@ -559,6 +562,7 @@ def comptabiliser_depense_automatique(
             "montant": montant,
             "mode": mode,
             "reference": reference[:100],
+            "mission": mission,
         },
     )
     return depense
