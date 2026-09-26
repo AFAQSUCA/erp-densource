@@ -116,12 +116,16 @@ boutons uniquement pour le confort.
 Chaque app définit ses ensembles de rôles dans son `permissions.py` :
 
 ```python
-# apps/fuel/permissions.py:11-12
+# apps/fuel/permissions.py:13,15
 CONSULTATION = frozenset({Role.ADMIN, Role.DIRECTION, Role.PARCAUTO})
-MODIFICATION = frozenset({Role.ADMIN, Role.PARCAUTO})
+MODIFICATION = frozenset({Role.ADMIN, Role.DIRECTION, Role.PARCAUTO})
 ```
 
 Puis la vue déclare simplement `roles = permissions.CONSULTATION` (ou `MODIFICATION`).
+Notez que la DIRECTION est présente dans les deux ensembles : suite à un retour de réunion
+entreprise, elle a la même largeur que l'ADMIN sur la saisie/modification dans toute
+l'application (jamais sur un rôle exclusivement validateur, comme la FINANCES seule qui
+exécute un ordre de décaissement).
 
 ---
 
