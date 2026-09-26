@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block titre %}Modifier {{ mission.numero }}{% endblock %}
+{% block entete %}Missions{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-3xl">
+  <nav aria-label="Fil d'Ariane" class="text-sm text-slate-600">
+    <a href="{% url 'missions:liste' %}" class="underline-offset-2 hover:underline">Missions</a>
+    <span aria-hidden="true">/</span>
+    <a href="{% url 'missions:detail' mission.pk %}" class="underline-offset-2 hover:underline">{{ mission.numero }}</a>
+    <span aria-hidden="true">/</span> Modifier
+  </nav>
+  <h1 class="mt-2 text-2xl font-bold text-slate-900">Modifier {{ mission.numero }}</h1>
+  <p class="mt-1 text-sm text-slate-600">
+    {{ mission.client.raison_sociale }} · possible tant que le colis n'est pas encore récupéré.
+    {% if form.vehicule %}Changer le camion ou le chauffeur revérifie leur disponibilité.{% endif %}
+    Changer un lieu régénère les deux codes secrets (l'ancien QR ne servira plus).
+  </p>
+
+  <datalist id="lieux-missions">{% for lieu in lieux %}<option value="{{ lieu }}"></option>{% endfor %}</datalist>
+
+  <form method="post" novalidate class="mt-6 space-y-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+      <div role="alert" class="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">
+        {% for erreur in form.non_field_errors %}<p>{{ erreur }}</p>{% endfor %}
+      </div>
+    {% endif %}
+
+    <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
+      {% include "components/_champ.html" with champ=form.lieu_chargement %}
+      {% include "components/_champ.html" with champ=form.lieu_livraison %}
+      <div class="sm:col-span-2">{% include "components/_champ.html" with champ=form.nature_marchandise %}</div>
+      {% include "components/_champ.html" with champ=form.poids_t %}
+      {% include "components/_champ.html" with champ=form.prix_convenu %}
+      <div class="sm:col-span-2">{% include "components/_champ.html" with champ=form.date_depart_prevue %}</div>
+      {% if form.vehicule %}
+        {% include "components/_champ.html" with champ=form.vehicule %}
+        {% include "components/_champ.html" with champ=form.chauffeur %}
+      {% endif %}
+    </div>
+
+    <div class="flex items-center justify-end gap-3 border-t border-slate-100 pt-5">
+      <a href="{% url 'missions:detail' mission.pk %}" class="rounded-lg px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Annuler</a>
+      <button type="submit" class="rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">
+        Enregistrer les modifications
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}

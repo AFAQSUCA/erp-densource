@@ -126,7 +126,7 @@ def test_la_fiche_affiche_salaire_droits_et_conges(client):
     reponse = client.get(reverse("hr:personnel_detail", args=[employe.pk]))
 
     assert "1\xa0250\xa0000 FCFA" in reponse.content.decode().replace(" ", "\xa0")
-    assert reponse.context["droits"]["disponible"] == 12
+    assert reponse.context["droits"]["disponible"] == 26
     assert "Aucun congé demandé" in reponse.content.decode()
 
 
@@ -331,7 +331,7 @@ def test_la_rh_accorde_des_jours_exceptionnels(client):
 
     attribution = AttributionConge.objects.get(employe=employe)
     assert (attribution.jours, attribution.accorde_par) == (3, compte_rh)
-    assert services.droits_conges(employe, 2026)["disponible"] == 15
+    assert services.droits_conges(employe, 2026)["disponible"] == 29
     assert any("3 jour(s) exceptionnel(s)" in m for m in _messages(reponse))
     assert "Naissance" in reponse.content.decode()
 

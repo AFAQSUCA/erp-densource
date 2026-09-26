@@ -20,6 +20,7 @@ from django.utils import timezone
 from apps.core.search import filtrer_par_texte
 from apps.core.services import prochain_numero, total_par_mois
 from apps.customers.models import Client
+from apps.fleet.models import Vehicule
 from apps.missions.models import Mission, StatutMission
 
 from . import permissions, signals
@@ -539,15 +540,17 @@ def comptabiliser_depense_automatique(
     reference: str = "",
     mode: str = ModePaiement.ESPECES,
     mission: Mission | None = None,
+    vehicule: Vehicule | None = None,
 ) -> Depense | None:
-    """Crée la dépense d'un plein, d'un achat de pièces, d'une main-d'œuvre d'OR ou d'un frais de
-    mission confirmé (une seule fois par source).
+    """Crée la dépense d'un plein, d'un achat de pièces, d'une main-d'œuvre d'OR, d'un frais de
+    mission confirmé ou d'un ordre de décaissement exécuté (une seule fois par source).
 
     Appelée par les récepteurs de ``finance`` dans la transaction de l'opération d'origine : si la dépense
     ne peut pas être écrite, l'opération est annulée plutôt que de laisser une sortie d'argent non comptée.
     Mode de paiement par défaut : espèces (caisse), que la Finance corrige ensuite si besoin
     (:func:`changer_mode_depense`). Un montant nul ne crée rien. Idempotent : rejouer la même source
-    renvoie la dépense existante. ``mission`` relie la dépense à la mission d'origine (frais de mission).
+    renvoie la dépense existante. ``mission`` relie la dépense à la mission d'origine (frais de mission,
+    R4) ; ``vehicule`` (plein, main-d'œuvre d'OR) sert au suivi par enveloppe (R2).
     """
     montant = Decimal(montant).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     if montant <= 0:
@@ -563,6 +566,7 @@ def comptabiliser_depense_automatique(
             "mode": mode,
             "reference": reference[:100],
             "mission": mission,
+            "vehicule": vehicule,
         },
     )
     return depense

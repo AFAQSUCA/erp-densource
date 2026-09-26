@@ -1,9 +1,11 @@
 from django import forms
 from django.utils import timezone
 
-from apps.billing.models import CompteTresorerie, ModePaiement
+from apps.billing.models import CategorieDepense, CompteTresorerie, ModePaiement
 from apps.core.forms import StyleTailwindMixin
+from apps.fleet import services as fleet_services
 
+from .demandes import CATEGORIES_PARC_AUTO as CATEGORIES_PARC_AUTO_CODES
 from .models import SensMouvement
 
 
@@ -55,3 +57,86 @@ class FiltreTresorerieForm(StyleTailwindMixin, forms.Form):
             "sens": donnees.get("sens") or "",
             "compte": donnees.get("compte") or "",
         }
+
+
+# --- dépenses du parc auto pré-approuvées (R2) ---
+
+
+CATEGORIES_PARC_AUTO = [c for c in CategorieDepense.choices if c[0] in CATEGORIES_PARC_AUTO_CODES]
+
+
+class DemandeDepenseForm(StyleTailwindMixin, forms.Form):
+    """Le Parc Auto demande par avance un achat ou une réparation non routinière."""
+
+    categorie = forms.ChoiceField(label="Catégorie", choices=CATEGORIES_PARC_AUTO)
+    vehicule = forms.ModelChoiceField(
+        label="Camion", queryset=None, required=False, empty_label="Aucun camion en particulier",
+    )
+    montant_estime = forms.DecimalField(
+        label="Montant estimé (FCFA)", min_value=0, decimal_places=2, max_digits=14
+    )
+    fournisseur = forms.CharField(label="Fournisseur", max_length=200, required=False)
+    motif = forms.CharField(label="Motif", widget=forms.Textarea(attrs={"rows": 3}))
+    piece_jointe = forms.FileField(label="Devis ou pièce jointe", required=False)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["vehicule"].queryset = fleet_services.vehicules_queryset()
+
+
+class DecisionDemandeForm(StyleTailwindMixin, forms.Form):
+    """Décision de la direction : validation (montant validé ajustable) ou refus (motif)."""
+
+    decision = forms.ChoiceField(
+        label="Décision", choices=[("VALIDER", "Valider"), ("REFUSER", "Refuser")], widget=forms.RadioSelect,
+    )
+    montant_valide = forms.DecimalField(
+        label="Montant validé (FCFA)", min_value=0, decimal_places=2, max_digits=14, required=False,
+        help_text="Laissez vide pour valider le montant estimé tel quel.",
+    )
+    motif_refus = forms.CharField(
+        label="Motif du refus", widget=forms.Textarea(attrs={"rows": 2}), required=False
+    )
+
+    def clean(self):
+        donnees = super().clean()
+        if donnees.get("decision") == "REFUSER" and not donnees.get("motif_refus", "").strip():
+            self.add_error("motif_refus", "Motif obligatoire en cas de refus.")
+        return donnees
+
+
+class ExecuterOrdreForm(StyleTailwindMixin, forms.Form):
+    """La Finance exécute un ordre de décaissement validé par la direction."""
+
+    mode_paiement = forms.ChoiceField(label="Mode de paiement", choices=ModePaiement.choices)
+    montant_reel = forms.DecimalField(
+        label="Montant réel (FCFA)", min_value=0, decimal_places=2, max_digits=14
+    )
+    reference = forms.CharField(label="Référence", max_length=100, required=False)
+    justificatif = forms.FileField(label="Justificatif", required=False)
+
+
+class RevaliderOrdreForm(StyleTailwindMixin, forms.Form):
+    """La direction revoit un ordre bloqué par un dépassement de plus de 10 %."""
+
+    montant_valide = forms.DecimalField(
+        label="Nouveau montant validé (FCFA)", min_value=0, decimal_places=2, max_digits=14
+    )
+
+
+class EnveloppeForm(StyleTailwindMixin, forms.Form):
+    """La direction fixe le plafond mensuel d'une catégorie, globalement ou pour un camion précis."""
+
+    categorie = forms.ChoiceField(label="Catégorie", choices=CATEGORIES_PARC_AUTO)
+    vehicule = forms.ModelChoiceField(
+        label="Camion", queryset=None, required=False, empty_label="Tous les camions (enveloppe globale)",
+    )
+    annee = forms.IntegerField(label="Année", min_value=2020, max_value=2100)
+    mois = forms.IntegerField(label="Mois", min_value=1, max_value=12)
+    montant_plafond = forms.DecimalField(
+        label="Plafond (FCFA)", min_value=0, decimal_places=2, max_digits=14
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["vehicule"].queryset = fleet_services.vehicules_queryset()

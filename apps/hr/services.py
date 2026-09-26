@@ -39,7 +39,9 @@ from .models import (
     NiveauValidation,
     Personnel,
     POSTES_COURANTS,
+    ReportConge,
     StatutConge,
+    StatutReport,
     ValidationConge,
 )
 
@@ -48,11 +50,12 @@ DELAI_VALIDATION_N2 = timedelta(hours=24)  # cahier-des-charges.md:214
 
 PREFIXE_MATRICULE = "PERS"  # matricule auto-généré : PERS-AAAA-XXXX (voir recruter)
 
-# Droit annuel : 2 semaines, comptées en jours ouvrables (lundi-samedi) selon
-# le droit ivoirien, soit 2 x 6 = 12 jours (cahier-des-charges.md:219-221).
-DROIT_ANNUEL_JOURS = 12
+# Droit annuel : 26 jours ouvrés (lundi-vendredi), au-delà du minimum légal ivoirien de 2,2 jours
+# ouvrables par mois — avantage social décidé par l'entreprise (avenant-separation-des-taches.md § R7 ;
+# remplace les 12 jours ouvrables du cahier-des-charges.md:219-221 d'origine).
+DROIT_ANNUEL_JOURS = 26
 STATUTS_DECOMPTES = (StatutConge.APPROUVE, StatutConge.EN_COURS, StatutConge.TERMINE)
-DIMANCHE = 6
+JOURS_NON_OUVRES = (5, 6)  # samedi, dimanche (weekday()) : jours ouvrés, pas ouvrables
 
 
 # --- fiche du personnel et recrutement ---
@@ -371,7 +374,7 @@ def _verrouiller_employe(employe: Personnel) -> Personnel:
 
 
 def droits_conges(employe: Personnel, annee: int) -> dict[str, int]:
-    """Droits de congé d'un employé pour une année (en jours ouvrables).
+    """Droits de congé d'un employé pour une année (en jours ouvrés).
 
     ``disponible`` = droit annuel + jours exceptionnels - jours déjà décomptés
     (congés approuvés, en cours ou terminés commençant cette année-là). Les
@@ -401,7 +404,7 @@ def _exiger_solde(employe: Personnel, annee: int, jours: int) -> None:
     disponible = droits_conges(employe, annee)["disponible"]
     if jours > disponible:
         raise SoldeInsuffisant(
-            f"Solde insuffisant en {annee} : {jours} jour(s) ouvrable(s) demandé(s), "
+            f"Solde insuffisant en {annee} : {jours} jour(s) ouvré(s) demandé(s), "
             f"{disponible} disponible(s)."
         )
 
@@ -589,11 +592,9 @@ def valider_conge(conge: Conge, acteur, *, commentaire: str = "") -> Conge:
 
 
 def calculer_jours(date_debut: date, date_fin: date) -> int:
-    """Jours ouvrables entre deux dates, bornes incluses.
-
-    Droit ivoirien : tous les jours sauf le dimanche (repos hebdomadaire) et
-    les jours fériés légaux enregistrés dans ``JourFerie``.
-    """
+    """Jours ouvrés entre deux dates, bornes incluses : lundi à vendredi, hors jours fériés légaux
+    enregistrés dans ``JourFerie`` (avenant-separation-des-taches.md § R7 ; remplace le calcul en
+    jours ouvrables — samedi compris — du cahier-des-charges.md d'origine)."""
     feries = set(
         JourFerie.objects.filter(date__range=(date_debut, date_fin)).values_list(
             "date", flat=True
@@ -601,7 +602,7 @@ def calculer_jours(date_debut: date, date_fin: date) -> int:
     )
     total, jour = 0, date_debut
     while jour <= date_fin:
-        if jour.weekday() != DIMANCHE and jour not in feries:
+        if jour.weekday() not in JOURS_NON_OUVRES and jour not in feries:
             total += 1
         jour += timedelta(days=1)
     return total
@@ -628,7 +629,7 @@ def demander_conge(
         raise CongeError("Aucun supérieur hiérarchique renseigné pour cet employé.")
     jours = calculer_jours(date_debut, date_fin)
     if jours == 0:
-        raise CongeError("Aucun jour ouvrable dans la période demandée.")
+        raise CongeError("Aucun jour ouvré dans la période demandée.")
     _exiger_solde(_verrouiller_employe(employe), date_debut.year, jours)
 
     maintenant = maintenant or timezone.now()
@@ -751,6 +752,132 @@ def annuler_conge_approuve(conge: Conge, acteur, *, motif: str = "") -> Conge:
         signals.conge_decide, conge=conge, decision=signals.DECISION_ANNULE, acteur=acteur
     )
     return conge
+
+
+# --- report du solde d'un congé en cours (avenant-separation-des-taches.md § R7) ---
+
+
+def _recharger_report(report: ReportConge) -> ReportConge:
+    ReportConge.objects.select_for_update().filter(pk=report.pk).first()
+    report.refresh_from_db()
+    return report
+
+
+def peut_demander_report(conge: Conge, acteur) -> bool:
+    """Vrai si ``acteur`` est l'employé de ce congé, actuellement en cours : lui seul peut en
+    demander le report, et seulement pendant qu'il y est (bouton sur sa propre ligne)."""
+    fiche = _fiche_de(acteur)
+    return (
+        conge.statut == StatutConge.EN_COURS
+        and fiche is not None
+        and fiche.pk == conge.employe_id
+    )
+
+
+@transaction.atomic
+def demander_report(
+    conge: Conge, acteur, *, nouvelle_date_fin: date, motif: str, aujourd_hui: date | None = None
+) -> ReportConge:
+    """L'employé en congé écourte son congé et demande à garder le solde non pris. Sans validation de
+    la RH, la demande n'a aucun effet : le congé continue normalement jusqu'à sa fin initiale.
+    """
+    _recharger(conge)
+    if not peut_demander_report(conge, acteur):
+        raise ActionNonAutorisee(
+            "Seul l'employé actuellement en congé peut en demander le report."
+        )
+    aujourd_hui = aujourd_hui or timezone.localdate()
+    if nouvelle_date_fin < aujourd_hui:
+        raise CongeError("La date de reprise ne peut pas être dans le passé.")
+    if not (conge.date_debut <= nouvelle_date_fin < conge.date_fin):
+        raise CongeError(
+            "La date de reprise doit être comprise entre le début du congé et sa fin actuelle "
+            "(exclue : sans jour à reporter, ce n'est pas un report)."
+        )
+    if ReportConge.objects.filter(conge=conge, statut=StatutReport.DEMANDE).exists():
+        raise CongeError("Une demande de report est déjà en attente pour ce congé.")
+    if not motif.strip():
+        raise CongeError("Un motif est obligatoire pour un report.")
+
+    jours_restants = calculer_jours(nouvelle_date_fin + timedelta(days=1), conge.date_fin)
+    if jours_restants == 0:
+        raise CongeError("Aucun jour ouvré à reporter avec cette date de reprise.")
+
+    report = ReportConge.objects.create(
+        conge=conge, nouvelle_date_fin=nouvelle_date_fin, jours_restants=jours_restants, motif=motif.strip(),
+    )
+    signals.emettre(signals.report_demande, report=report)
+    return report
+
+
+@transaction.atomic
+def approuver_report(
+    report: ReportConge, acteur, *, commentaire: str = "", aujourd_hui: date | None = None
+) -> ReportConge:
+    """La RH valide le report : le congé est raccourci à la nouvelle date de reprise, ce qui libère
+    aussitôt le solde (``droits_conges`` ne décompte que ``conge.jours``, réduit d'autant)."""
+    _recharger_report(report)
+    if report.statut != StatutReport.DEMANDE:
+        raise TransitionInterdite("Cette demande de report a déjà été décidée.")
+    conge = _recharger(report.conge)
+    if not _est_rh_pour(acteur, conge.employe):
+        raise ActionNonAutorisee("Validation d'un report réservée à la RH.")
+    if conge.statut != StatutConge.EN_COURS:
+        raise TransitionInterdite(
+            "Le congé n'est plus en cours : cette demande de report n'est plus recevable."
+        )
+
+    aujourd_hui = aujourd_hui or timezone.localdate()
+    conge.date_fin = report.nouvelle_date_fin
+    conge.jours = conge.jours - report.jours_restants
+    conge.statut = StatutConge.TERMINE if conge.date_fin < aujourd_hui else StatutConge.EN_COURS
+    conge.save(update_fields=["date_fin", "jours", "statut", "updated_at"])
+
+    report.statut = StatutReport.APPROUVE
+    report.motif_decision = commentaire
+    report.valide_par = acteur
+    report.date_decision = timezone.now()
+    report.save(
+        update_fields=["statut", "motif_decision", "valide_par", "date_decision", "updated_at"]
+    )
+    signals.emettre(
+        signals.report_decide, report=report, decision=signals.DECISION_APPROUVE, acteur=acteur
+    )
+    return report
+
+
+@transaction.atomic
+def refuser_report(report: ReportConge, acteur, *, motif: str) -> ReportConge:
+    """La RH refuse le report : le congé continue sans changement jusqu'à sa fin initiale."""
+    _recharger_report(report)
+    if report.statut != StatutReport.DEMANDE:
+        raise TransitionInterdite("Cette demande de report a déjà été décidée.")
+    if not _est_rh_pour(acteur, report.conge.employe):
+        raise ActionNonAutorisee("Validation d'un report réservée à la RH.")
+    if not motif.strip():
+        raise CongeError("Un motif est obligatoire pour refuser un report.")
+
+    report.statut = StatutReport.REFUSE
+    report.motif_decision = motif.strip()
+    report.valide_par = acteur
+    report.date_decision = timezone.now()
+    report.save(
+        update_fields=["statut", "motif_decision", "valide_par", "date_decision", "updated_at"]
+    )
+    signals.emettre(
+        signals.report_decide, report=report, decision=signals.DECISION_REFUSE, acteur=acteur
+    )
+    return report
+
+
+def report_en_attente(conge: Conge) -> ReportConge | None:
+    """Demande de report en attente de décision pour ce congé, s'il y en a une."""
+    return conge.reports.filter(statut=StatutReport.DEMANDE).order_by("-created_at").first()
+
+
+def peut_decider_report(report: ReportConge, acteur) -> bool:
+    """Vrai si ``acteur`` est la RH habilitée à valider/refuser cette demande de report."""
+    return report.statut == StatutReport.DEMANDE and _est_rh_pour(acteur, report.conge.employe)
 
 
 def synchroniser_statuts_conges(*, aujourd_hui: date | None = None) -> dict[str, int]:

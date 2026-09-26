@@ -268,6 +268,15 @@ Les migrations et `collectstatic` se rejouent automatiquement au démarrage de `
 (`ops/entrypoint.sh`) ; `celery_worker`/`celery_beat` attendent que `web` soit de nouveau en bonne
 santé avant de redémarrer.
 
+**Une fois, après la mise à jour qui introduit la comptabilisation automatique des dépenses du parc auto**
+(carburant, pièces, main-d'œuvre des OR) : reprendre l'historique déjà enregistré n'est pas automatique
+(voir `apps/finance/README.md`). Vérifier d'abord si un « solde d'ouverture » a été saisi en trésorerie et à
+quelle date, puis :
+```bash
+docker compose exec web python manage.py comptabiliser_historique_parc_auto --dry-run
+docker compose exec web python manage.py comptabiliser_historique_parc_auto [--depuis AAAA-MM-JJ]
+```
+
 ## 12. Dépannage
 
 | Symptôme | Piste |

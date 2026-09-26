@@ -27,6 +27,18 @@ l'**ADMIN**, en correction depuis le back-office (`permissions.CODES_TERRAIN`). 
 chargé clientèle voient les codes, pour les communiquer, mais ne peuvent plus les saisir ; le
 « départ », lui, reste ouvert à l'ADMIN et à la DIRECTION (aucun code n'est en jeu).
 
+### Modification (`modifier_mission`, séparation des tâches — avenant-separation-des-taches.md § R3)
+
+Tant que la mission n'a pas dépassé « Colis récupéré » (`STATUTS_MODIFIABLES`), **DIRECTION et ADMIN
+seulement** (`permissions.MODIFICATION` — plus restreint que `CREATION`, qui inclut aussi le chargé
+clientèle) peuvent modifier lieux, marchandise, poids, prix, date de départ prévue, et — une fois la
+mission déjà **Affectée** seulement — réaffecter camion/chauffeur (revérifie leur disponibilité comme à
+l'affectation, `_verifier_disponibilite` partagée avec `affecter_mission`). Changer un lieu régénère les
+deux codes secrets (donc leurs QR, rendus à la volée). Le client n'est pas modifiable : c'est l'identité
+de la mission. Réaffecter camion/chauffeur une fois le départ effectué (`EN_COURS_DEPART`) n'est pas pris
+en charge : le camion est physiquement engagé, ça relève d'un signalement d'incident plutôt que d'une
+simple modification. Tracé gratuitement par l'audit déjà branché sur `Mission`.
+
 ### PDF des codes (`documents.py`, ReportLab)
 
 `/missions/<id>/codes.pdf` (bouton « Télécharger le PDF des codes » de la fiche, proposé dès la création) :

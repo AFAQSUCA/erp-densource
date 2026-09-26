@@ -37,7 +37,7 @@ from .exceptions import (
     TransitionMissionInterdite,
 )
 from . import signals
-from .models import STATUTS_ACTIFS, Mission, StatutMission
+from .models import STATUTS_ACTIFS, STATUTS_MODIFIABLES, Mission, StatutMission
 from .signals import mission_affectee, mission_demarree
 
 PREFIXE_NUMERO = "MIS"
@@ -51,6 +51,15 @@ logger = logging.getLogger(__name__)
 def generer_code() -> str:
     """Code secret aléatoire (module ``secrets``, adapté aux usages sensibles)."""
     return "".join(secrets.choice(ALPHABET_CODES) for _ in range(LONGUEUR_CODE))
+
+
+def _deux_codes() -> tuple[str, str]:
+    """Codes expéditeur et destinataire, garantis différents l'un de l'autre."""
+    expediteur = generer_code()
+    destinataire = generer_code()
+    while destinataire == expediteur:
+        destinataire = generer_code()
+    return expediteur, destinataire
 
 
 def _recharger(objet):
@@ -235,10 +244,7 @@ def creer_mission(
     if prix_convenu < 0:
         raise MissionError("Le prix convenu ne peut pas être négatif.")
 
-    code_expediteur = generer_code()
-    code_destinataire = generer_code()
-    while code_destinataire == code_expediteur:
-        code_destinataire = generer_code()
+    code_expediteur, code_destinataire = _deux_codes()
 
     return Mission.objects.create(
         numero=prochain_numero(PREFIXE_NUMERO),
@@ -255,6 +261,77 @@ def creer_mission(
 
 
 @transaction.atomic
+def modifier_mission(
+    mission: Mission,
+    *,
+    lieu_chargement: str,
+    lieu_livraison: str,
+    nature_marchandise: str,
+    poids_t: Decimal,
+    prix_convenu: Decimal,
+    date_depart_prevue: date | None,
+    vehicule: Vehicule | None = None,
+    chauffeur: Chauffeur | None = None,
+) -> Mission:
+    """Modifie une mission tant que le colis n'est pas encore récupéré (``STATUTS_MODIFIABLES`` :
+    Brouillon, Planifiée, Affectée, En cours de départ) — règle de séparation des tâches, réservée à
+    DIRECTION et ADMIN (``permissions.MODIFICATION``), tracée dans l'audit comme toute mission.
+
+    Le client n'est pas modifiable : c'est l'identité de la mission. Un changement de lieu régénère les
+    deux codes secrets (donc leurs QR, rendus à la volée depuis le code — ``CodeQrView``) : l'ancien code
+    ne doit plus servir une fois le lieu changé. Un changement de camion ou de chauffeur (uniquement
+    possible une fois la mission Affectée : avant, il n'y en a pas encore) revérifie leur disponibilité
+    comme à l'affectation (:func:`_verifier_disponibilite`) ; réaffecter en cours de route
+    (``EN_COURS_DEPART``) n'est pas pris en charge ici (le camion est physiquement engagé : ça relève
+    d'un signalement d'incident et d'une nouvelle mission, pas d'une simple modification).
+    """
+    _recharger(mission)
+    if mission.statut not in STATUTS_MODIFIABLES:
+        raise TransitionMissionInterdite(
+            f"Impossible de modifier la mission {mission.numero} : elle est déjà "
+            f"« {mission.get_statut_display()} »."
+        )
+    if poids_t <= 0:
+        raise MissionError("Le poids doit être strictement positif.")
+    if prix_convenu < 0:
+        raise MissionError("Le prix convenu ne peut pas être négatif.")
+
+    champs = [
+        "lieu_chargement", "lieu_livraison", "nature_marchandise",
+        "poids_t", "prix_convenu", "date_depart_prevue", "updated_at",
+    ]
+    if lieu_chargement != mission.lieu_chargement or lieu_livraison != mission.lieu_livraison:
+        mission.code_expediteur, mission.code_destinataire = _deux_codes()
+        champs += ["code_expediteur", "code_destinataire"]
+
+    mission.lieu_chargement = lieu_chargement
+    mission.lieu_livraison = lieu_livraison
+    mission.nature_marchandise = nature_marchandise
+    mission.poids_t = poids_t
+    mission.prix_convenu = prix_convenu
+    mission.date_depart_prevue = date_depart_prevue
+
+    if (vehicule is not None or chauffeur is not None) and (
+        vehicule is None or chauffeur is None
+    ):
+        raise MissionError("Le camion et le chauffeur se changent ensemble.")
+    if vehicule is not None and (vehicule.pk != mission.vehicule_id or chauffeur.pk != mission.chauffeur_id):
+        if mission.statut != StatutMission.AFFECTEE:
+            raise TransitionMissionInterdite(
+                "Le camion et le chauffeur ne se réaffectent qu'avant le départ (mission Affectée)."
+            )
+        _recharger(vehicule)
+        _recharger(chauffeur)
+        _verifier_disponibilite(vehicule, chauffeur, poids_t)
+        mission.vehicule = vehicule
+        mission.chauffeur = chauffeur
+        champs += ["vehicule", "chauffeur"]
+
+    mission.save(update_fields=champs)
+    return mission
+
+
+@transaction.atomic
 def planifier_mission(mission: Mission) -> Mission:
     """Brouillon → Planifiée (validation du chargé clientèle, architecture.md:241)."""
     _recharger(mission)
@@ -264,15 +341,11 @@ def planifier_mission(mission: Mission) -> Mission:
     return mission
 
 
-@transaction.atomic
-def affecter_mission(mission: Mission, *, vehicule: Vehicule, chauffeur: Chauffeur) -> Mission:
-    """Planifiée → Affectée : camion et chauffeur disponibles, non réservés,
-    et capable d'emporter la charge (cahier-des-charges.md:130-131)."""
-    _recharger(mission)
-    _exiger_statut(mission, StatutMission.PLANIFIEE, "affecter la mission")
-    _recharger(vehicule)
-    _recharger(chauffeur)
-
+def _verifier_disponibilite(vehicule: Vehicule, chauffeur: Chauffeur, poids_t: Decimal) -> None:
+    """Camion et chauffeur disponibles, non réservés par une autre mission active, et le camion
+    capable d'emporter la charge (cahier-des-charges.md:130-131). Partagé par l'affectation et la
+    réaffectation (modification d'une mission déjà affectée, cahier-des-charges.md « modification
+    mission »)."""
     if vehicule.statut != StatutVehicule.DISPONIBLE:
         raise AffectationImpossible(
             f"Le camion {vehicule.immatriculation} n'est pas disponible "
@@ -291,11 +364,22 @@ def affecter_mission(mission: Mission, *, vehicule: Vehicule, chauffeur: Chauffe
         raise AffectationImpossible(
             f"Le chauffeur {chauffeur} est déjà réservé par une autre mission."
         )
-    if mission.poids_t > vehicule.capacite_charge_t:
+    if poids_t > vehicule.capacite_charge_t:
         raise AffectationImpossible(
-            f"Charge de {mission.poids_t} t supérieure à la capacité du camion "
+            f"Charge de {poids_t} t supérieure à la capacité du camion "
             f"({vehicule.capacite_charge_t} t)."
         )
+
+
+@transaction.atomic
+def affecter_mission(mission: Mission, *, vehicule: Vehicule, chauffeur: Chauffeur) -> Mission:
+    """Planifiée → Affectée : camion et chauffeur disponibles, non réservés,
+    et capable d'emporter la charge (cahier-des-charges.md:130-131)."""
+    _recharger(mission)
+    _exiger_statut(mission, StatutMission.PLANIFIEE, "affecter la mission")
+    _recharger(vehicule)
+    _recharger(chauffeur)
+    _verifier_disponibilite(vehicule, chauffeur, mission.poids_t)
 
     mission.vehicule = vehicule
     mission.chauffeur = chauffeur

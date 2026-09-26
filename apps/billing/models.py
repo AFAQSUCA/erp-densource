@@ -239,6 +239,7 @@ class OrigineDepense(models.TextChoices):
     ACHAT_STOCK = "ACHAT_STOCK", _("Achat de pièces")
     MAIN_OEUVRE_OR = "MAIN_OEUVRE_OR", _("Main-d'œuvre d'un OR")
     FRAIS_MISSION = "FRAIS_MISSION", _("Frais de mission confirmé")
+    ORDRE_DECAISSEMENT = "ORDRE_DECAISSEMENT", _("Ordre de décaissement exécuté")
 
 
 class Depense(BaseModel):
@@ -262,12 +263,21 @@ class Depense(BaseModel):
         settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="+"
     )
     origine = models.CharField(
-        _("origine"), max_length=14, choices=OrigineDepense.choices, blank=True,
+        _("origine"), max_length=20, choices=OrigineDepense.choices, blank=True,
         help_text=_("Renseignée pour une dépense créée automatiquement (plein, achat de pièces, OR)."),
     )
     origine_id = models.PositiveBigIntegerField(
         _("identifiant de l'origine"), null=True, blank=True,
         help_text=_("Numéro du plein, du mouvement de stock ou de l'OR à l'origine de la dépense."),
+    )
+    vehicule = models.ForeignKey(
+        "fleet.Vehicule",
+        verbose_name=_("camion"),
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="depenses",
+        help_text=_("Renseigné pour un plein, une main-d'œuvre d'OR ou un ordre de décaissement lié à un camion."),
     )
 
     class Meta:

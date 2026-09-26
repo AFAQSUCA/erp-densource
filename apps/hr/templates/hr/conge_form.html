@@ -10,7 +10,7 @@
   </nav>
   <h1 class="mt-2 text-2xl font-bold text-slate-900">Demander un congé</h1>
   <p class="mt-1 text-sm text-slate-600">
-    Les jours sont comptés en jours ouvrables : tous les jours sauf les dimanches et les jours fériés.
+    Les jours sont comptés en jours ouvrés : du lundi au vendredi, hors jours fériés.
     Votre solde {{ annee }} est de <strong class="{% if droits.disponible <= 0 %}text-red-700{% else %}text-emerald-800{% endif %}">{{ droits.disponible }} jour{{ droits.disponible|pluralize }}</strong>
     ({{ droits.droit_annuel }} de droit annuel{% if droits.exceptionnels %} + {{ droits.exceptionnels }} exceptionnel{{ droits.exceptionnels|pluralize }}{% endif %}, {{ droits.consommes }} déjà approuvé{{ droits.consommes|pluralize }}).
   </p>

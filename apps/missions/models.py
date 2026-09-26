@@ -28,6 +28,16 @@ STATUTS_ACTIFS = (
     StatutMission.EN_COURS_COLIS_RECUPERE,
 )
 
+# Modification autorisée tant que le colis n'est pas encore récupéré : au-delà, le client a déjà le
+# camion à quai / la marchandise est en route sur la base de ces informations (règle de séparation des
+# tâches, avenant-separation-des-taches.md § R3).
+STATUTS_MODIFIABLES = (
+    StatutMission.BROUILLON,
+    StatutMission.PLANIFIEE,
+    StatutMission.AFFECTEE,
+    StatutMission.EN_COURS_DEPART,
+)
+
 
 class Mission(BaseModel):
     """Mission de transport — cahier-des-charges.md:127-143."""
