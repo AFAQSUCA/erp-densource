@@ -54,6 +54,34 @@ class DecisionForm(StyleTailwindMixin, forms.Form):
         return donnees
 
 
+class ReportForm(StyleTailwindMixin, forms.Form):
+    """Demande de report du solde non pris d'un congé en cours (avenant § R7)."""
+
+    nouvelle_date_fin = forms.DateField(
+        label="Je reprends le travail le", widget=forms.DateInput(attrs={"type": "date"}),
+        help_text="Dernier jour de congé réellement pris ; les jours ouvrés restants jusqu'à la fin "
+        "initialement prévue vous sont reversés une fois la RH d'accord.",
+    )
+    motif = forms.CharField(label="Motif", widget=forms.Textarea(attrs={"rows": 3}))
+
+
+class DecisionReportForm(StyleTailwindMixin, forms.Form):
+    """Décision de la RH sur une demande de report : valider ou refuser (motif obligatoire)."""
+
+    action = forms.ChoiceField(
+        choices=[("valider", "Valider"), ("refuser", "Refuser")], widget=forms.HiddenInput,
+    )
+    commentaire = forms.CharField(
+        label="Commentaire", required=False, widget=forms.Textarea(attrs={"rows": 2})
+    )
+
+    def clean(self):
+        donnees = super().clean()
+        if donnees.get("action") == "refuser" and not donnees.get("commentaire", "").strip():
+            self.add_error("commentaire", "Indiquez le motif du refus : il sera visible par l'employé.")
+        return donnees
+
+
 class AttributionForm(StyleTailwindMixin, forms.Form):
     """Jours de congé exceptionnels accordés par la RH (motif obligatoire)."""
 

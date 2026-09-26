@@ -8,7 +8,7 @@ hiérarchie et non du seul rôle : c'est ``services.py`` qui le tranche.
 import openpyxl
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied
-from django.http import HttpResponse
+from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.utils import timezone
 from django.views import View
@@ -18,10 +18,18 @@ from apps.accounts.mixins import RoleRequiredMixin
 from apps.core.formats import nombre
 from apps.core.views import ImpressionListeMixin, PaginationTolerante
 
-from . import permissions, sections, services
+from . import documents, permissions, sections, services
 from .exceptions import CongeError, ImportPersonnelError, PersonnelError
-from .forms import AttributionForm, CongeForm, DecisionForm, ImportPersonnelForm, PersonnelForm
-from .models import AttributionConge, Departement, StatutConge
+from .forms import (
+    AttributionForm,
+    CongeForm,
+    DecisionForm,
+    DecisionReportForm,
+    ImportPersonnelForm,
+    PersonnelForm,
+    ReportForm,
+)
+from .models import AttributionConge, Departement, ReportConge, StatutConge
 
 VUE_MES, VUE_A_VALIDER, VUE_TOUS = "mes", "a_valider", "tous"
 
@@ -97,7 +105,13 @@ class CongeListView(PaginationTolerante, RoleRequiredMixin, ListView):
             annee=annee,
             droits=services.droits_conges(self.fiche, annee) if self.fiche else None,
             lignes=[
-                {"conge": c, "echeance": services.echeance_en_attente(c)}
+                {
+                    "conge": c,
+                    "echeance": services.echeance_en_attente(c),
+                    # Équivalent à services.peut_demander_report(c, utilisateur), sans requête
+                    # supplémentaire par ligne : self.fiche est déjà mise en cache pour la page.
+                    "peut_reporter": c.statut == StatutConge.EN_COURS and self.fiche is not None and self.fiche.pk == c.employe_id,
+                }
                 for c in contexte["page_obj"]
             ],
         )
@@ -190,6 +204,7 @@ class CongeDetailView(RoleRequiredMixin, DetailView):
     def get_context_data(self, **kwargs):
         contexte = super().get_context_data(**kwargs)
         conge, utilisateur = self.object, self.request.user
+        report = services.report_en_attente(conge)
         contexte.update(
             validations=conge.validations.select_related("validateur"),
             droits=services.droits_conges(conge.employe, conge.date_debut.year),
@@ -198,6 +213,11 @@ class CongeDetailView(RoleRequiredMixin, DetailView):
             en_remplacement=services.decide_en_remplacement(conge, utilisateur),
             sections=sections.DETAIL_CONGE.sections(conge, utilisateur),
             peut_voir_employe=utilisateur.role_effectif in permissions.PERSONNEL_CONSULTATION,
+            peut_reporter=services.peut_demander_report(conge, utilisateur),
+            report_en_attente=report,
+            peut_decider_report=bool(report) and services.peut_decider_report(report, utilisateur),
+            reports_decides=conge.reports.exclude(pk=getattr(report, "pk", None)).select_related("valide_par"),
+            peut_telecharger_autorisation=conge.statut in services.STATUTS_DECOMPTES,
         )
         return contexte
 
@@ -246,6 +266,93 @@ class CongeDecisionView(RoleRequiredMixin, View):
             f"Congé approuvé : {conge.jours} jour{'s' if conge.jours > 1 else ''} "
             f"décompté{'s' if conge.jours > 1 else ''} du droit de {conge.date_debut.year}."
         )
+
+
+# --- report du solde d'un congé en cours (avenant-separation-des-taches.md § R7) ---
+
+
+class ReportCreateView(RoleRequiredMixin, FormView):
+    """Demande de report, par l'employé actuellement en congé (bouton sur sa ligne du tableau)."""
+
+    roles = permissions.CONGES_ACCES
+    form_class = ReportForm
+    template_name = "hr/report_form.html"
+
+    def dispatch(self, request, *args, **kwargs):
+        self.conge = get_object_or_404(services.conges_queryset(), pk=kwargs["pk"])
+        return super().dispatch(request, *args, **kwargs)
+
+    def get(self, request, *args, **kwargs):
+        if not services.peut_demander_report(self.conge, request.user):
+            messages.error(request, "Le report n'est possible que pour votre propre congé, pendant que vous y êtes.")
+            return redirect("hr:conges_detail", pk=self.conge.pk)
+        return super().get(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        return super().get_context_data(conge=self.conge, **kwargs)
+
+    def form_valid(self, form):
+        try:
+            services.demander_report(self.conge, self.request.user, **form.cleaned_data)
+        except CongeError as erreur:
+            form.add_error(None, str(erreur))
+            return self.form_invalid(form)
+        messages.success(
+            self.request,
+            "Demande de report envoyée à la RH : sans sa validation, votre congé continue normalement.",
+        )
+        return redirect("hr:conges_detail", pk=self.conge.pk)
+
+
+class ReportDecisionView(RoleRequiredMixin, View):
+    """Valide ou refuse une demande de report (POST, RH uniquement — contrôlé par le service)."""
+
+    roles = permissions.CONGES_ACCES
+    http_method_names = ["post"]
+
+    def post(self, request, pk):
+        report = get_object_or_404(ReportConge.objects.select_related("conge"), pk=pk)
+        form = DecisionReportForm(request.POST)
+        if not form.is_valid():
+            _erreurs_en_messages(request, form)
+            return redirect("hr:conges_detail", pk=report.conge_id)
+        action, commentaire = form.cleaned_data["action"], form.cleaned_data["commentaire"]
+        try:
+            if action == "valider":
+                services.approuver_report(report, request.user, commentaire=commentaire)
+                messages.success(
+                    request,
+                    f"Report validé : {report.jours_restants} jour(s) reversé(s) au solde de l'employé.",
+                )
+            else:
+                services.refuser_report(report, request.user, motif=commentaire)
+                messages.success(request, "Report refusé : le congé continue jusqu'à sa fin initiale.")
+        except CongeError as erreur:
+            messages.error(request, str(erreur))
+        return redirect("hr:conges_detail", pk=report.conge_id)
+
+
+class AutorisationCongePdfView(RoleRequiredMixin, View):
+    """PDF de l'autorisation de congé, produit à la demande (jamais stocké)."""
+
+    roles = permissions.CONGES_ACCES
+    http_method_names = ["get"]
+
+    def get(self, request, pk):
+        conge = get_object_or_404(services.conges_queryset(), pk=pk)
+        if (
+            request.user.role_effectif not in permissions.CONGES_TOUS
+            and not services.est_concerne_par(conge, request.user)
+        ):
+            raise PermissionDenied
+        try:
+            contenu = documents.generer_pdf_autorisation(conge)
+        except ValueError:
+            raise Http404
+        reponse = HttpResponse(contenu, content_type="application/pdf")
+        reponse["Content-Disposition"] = f'attachment; filename="autorisation-conge-{conge.pk}.pdf"'
+        reponse["Cache-Control"] = "no-store, private"
+        return reponse
 
 
 # --- personnel ---
