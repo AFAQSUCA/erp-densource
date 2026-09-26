@@ -78,17 +78,21 @@ Une fois le devis `ACCEPTEE`, l'acteur qui pourrait créer une mission à la mai
 « Créer la mission » depuis la fiche du devis
 (`POST /facturation/devis/<id>/creer-mission/`) :
 
-- `missions.services.creer_mission_depuis_proforma(proforma)` recopie tel quel le trajet, la
-  marchandise, le poids et le **prix HT** du devis dans une nouvelle `Mission` (au statut
-  `BROUILLON`, comme une mission créée à la main) — la facture recalculera la TVA plus tard, avec
-  le taux du client en vigueur ce jour-là, jamais celui figé sur le devis ;
-- le devis passe à `CONVERTIE` (`billing.services.marquer_proforma_convertie`) ;
+- `billing.services.convertir_en_mission(proforma)` recopie tel quel le trajet, la marchandise, le
+  poids et le **prix HT** du devis dans une nouvelle `Mission` (via `missions.services.creer_mission`,
+  au statut `BROUILLON`, comme une mission créée à la main) — la facture recalculera la TVA plus
+  tard, avec le taux du client en vigueur ce jour-là, jamais celui figé sur le devis ;
+- le devis passe à `CONVERTIE` (même fonction) ;
 - **1 devis = 1 mission** est garanti au niveau base par `Mission.proforma`
   (`OneToOneField(billing.Proforma, on_delete=PROTECT)`), pas seulement par le contrôle de
   statut : deux tentatives concurrentes ne peuvent pas produire deux missions.
 
-Refusé (`TransitionMissionInterdite`) si le devis n'est pas `ACCEPTEE` — y compris s'il l'a déjà
-été converti une première fois.
+Refusé (`TransitionFactureInterdite`) si le devis n'est pas `ACCEPTEE` — y compris s'il l'a déjà
+été converti une première fois. Orchestré côté `billing` et non `missions` : le graphe de
+dépendance des apps (architecture.md:95-163) interdit à `missions` (Exploitation) de dépendre de
+`billing` (Finance) — l'inverse est permis, `billing` appelle donc `missions.services.creer_mission`
+plutôt que l'inverse. (Écart corrigé après une première version qui faisait dépendre `missions` de
+`billing` ; repéré en relisant le graphe pendant le lot R4.)
 
 **Limite connue** : une mission créée ainsi reste modifiable comme n'importe quelle autre
 (R3, une fois fusionnée) — rien n'empêche aujourd'hui de changer son prix après coup, alors que
