@@ -1,6 +1,6 @@
 # Chapitre 2 — Le socle : l'app core
 
-> 18 fichier(s) dans ce chapitre, 699 lignes de code.
+> 21 fichier(s) dans ce chapitre, 1093 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -189,14 +189,18 @@ class CompteurNumero(models.Model):
 
 #### `apps/core/services.py`
 
-*48 lignes* — Services transverses.
+*83 lignes* — Services transverses.
 
 ```python
 """Services transverses."""
 
+import calendar
 from datetime import date
+from decimal import Decimal
 
 from django.db import transaction
+from django.db.models import Count, Sum
+from django.db.models.functions import TruncMonth
 from django.utils import timezone
 
 from .constants import DELAI_ALERTE_JOURS
@@ -240,6 +244,37 @@ def etat_echeance(
     if restants < 0:
         return "EXPIRE", restants
     return ("A_RENOUVELER" if restants <= jours else "VALIDE"), restants
+
+
+# --- séries mensuelles (graphiques du tableau de bord) ---
+
+
+def debuts_de_mois(jour: date, nombre: int) -> list[date]:
+    """Premiers jours des ``nombre`` derniers mois, celui de ``jour`` compris, du plus ancien au plus récent."""
+    resultat = []
+    for decalage in range(nombre - 1, -1, -1):
+        annee, mois = divmod(jour.year * 12 + jour.month - 1 - decalage, 12)
+        resultat.append(date(annee, mois + 1, 1))
+    return resultat
+
+
+def fin_de_mois(debut: date) -> date:
+    return debut.replace(day=calendar.monthrange(debut.year, debut.month)[1])
+
+
+def total_par_mois(queryset, champ_date: str, champ_valeur: str | None = "montant") -> dict[tuple[int, int], Decimal | int]:
+    """Somme de ``champ_valeur`` (ou nombre de lignes si ``None``) par mois de ``champ_date``, en une requête.
+
+    Clé : ``(année, mois)``. Les mois sans ligne sont absents : lire avec ``.get(cle, 0)``.
+    """
+    agregat = Sum(champ_valeur) if champ_valeur else Count("pk")
+    lignes = (
+        queryset.annotate(_mois=TruncMonth(champ_date))
+        .values_list("_mois")
+        .annotate(_total=agregat)
+        .order_by()
+    )
+    return {(mois.year, mois.month): total for mois, total in lignes if mois is not None and total is not None}
 ```
 
 `prochain_numero` est le premier vrai **service** du projet (une fonction qui porte une règle métier).
@@ -257,7 +292,7 @@ est donc très simple à tester (voir `test_echeance.py`).
 
 #### `apps/core/search.py`
 
-*67 lignes* — Recherche texte insensible aux accents et à la casse (« traore » trouve « Traoré »).
+*72 lignes* — Recherche texte insensible aux accents et à la casse (« traore » trouve « Traoré »).
 
 ```python
 """Recherche texte insensible aux accents et à la casse (« traore » trouve « Traoré »).
@@ -299,9 +334,14 @@ class Normalise(Func):
         return super().as_sql(compiler, connection, function="NORMALISER", **contexte)
 
     def as_sql(self, compiler, connection, **contexte):
+        # Minuscules d'abord, puis suppression des accents : la table ACCENTS/SANS_ACCENT n'a que
+        # des lettres minuscules, donc « TRANSLATE » avant « LOWER » laisserait passer un accent
+        # majuscule (« É » → toujours « É » après TRANSLATE, puis « é » après LOWER : l'accent
+        # reste). Même ordre que `normaliser()` ci-dessus (``.lower().translate(...)``).
         (expression,) = self.get_source_expressions()
-        traduit = Func(expression, Value(ACCENTS), Value(SANS_ACCENT), function="TRANSLATE")
-        return Lower(traduit).as_sql(compiler, connection)
+        minuscule = Lower(expression)
+        traduit = Func(minuscule, Value(ACCENTS), Value(SANS_ACCENT), function="TRANSLATE")
+        return traduit.as_sql(compiler, connection)
 
 
 def enregistrer_fonction_sqlite(sender, connection, **kwargs):
@@ -541,7 +581,7 @@ Trois éléments :
 
 #### `apps/core/forms.py`
 
-*16 lignes*
+*27 lignes*
 
 ```python
 from django import forms
@@ -553,6 +593,16 @@ CHAMP = (
 )
 
 
+def corriger_format_date(widget) -> None:
+    """Un ``<input type="date">`` n'accepte que ``AAAA-MM-JJ``.
+
+    En français, Django écrit la valeur initiale en ``JJ/MM/AAAA`` : le navigateur la refuse et le champ
+    s'affiche vide (date du jour non préremplie, date existante perdue à la modification).
+    """
+    if isinstance(widget, forms.DateInput) and widget.input_type == "date":
+        widget.format = "%Y-%m-%d"
+
+
 class StyleTailwindMixin:
     """Applique le style Tailwind commun à tous les champs d'un formulaire."""
 
@@ -560,6 +610,7 @@ class StyleTailwindMixin:
         super().__init__(*args, **kwargs)
         for champ in self.fields.values():
             champ.widget.attrs.setdefault("class", CHAMP)
+            corriger_format_date(champ.widget)
 ```
 
 Un tout petit mixin : il applique le même style Tailwind à tous les champs d'un formulaire.
@@ -614,19 +665,19 @@ Modifiez `config/settings/base.py` :
 ```diff
 --- config/settings/base.py (avant)
 +++ config/settings/base.py (après)
-@@ -49,4 +49,5 @@
+@@ -52,4 +52,5 @@
  
  LOCAL_APPS = [
 +    "apps.core",
  ]
  
-@@ -66,4 +67,5 @@
+@@ -74,4 +75,5 @@
  MIDDLEWARE = [
      "django.middleware.security.SecurityMiddleware",
 +    "apps.core.middleware.SecurityHeadersMiddleware",
      "corsheaders.middleware.CorsMiddleware",
      "django.contrib.sessions.middleware.SessionMiddleware",
-@@ -73,4 +75,5 @@
+@@ -81,4 +83,5 @@
      "django.contrib.messages.middleware.MessageMiddleware",
      "django.middleware.clickjacking.XFrameOptionsMiddleware",
 +    "apps.core.middleware.CurrentRequestMiddleware",
@@ -640,7 +691,7 @@ Les deux lignes de `MIDDLEWARE` ajoutent nos deux middlewares ; `"apps.core"` d�
 
 #### `apps/core/README.md`
 
-*14 lignes* — core
+*37 lignes* — core
 
 ```markdown
 # core
@@ -657,6 +708,217 @@ Traoré) ; à utiliser pour tout champ de recherche des listes plutôt que `icon
 PostgreSQL : `LOWER(TRANSLATE(...))` sans extension ; sur SQLite : fonction `NORMALISER`
 enregistrée à la connexion. `views.PaginationTolerante` : une page inexistante ou illisible
 affiche la première ou la dernière page au lieu d'une erreur 404.
+
+Formulaires (`forms.py`) : `StyleTailwindMixin` applique le style commun **et** écrit les champs `type="date"` au
+format `AAAA-MM-JJ` que le navigateur exige (en français, Django écrivait `JJ/MM/AAAA` : la date du jour ou la date
+existante n'apparaissait pas dans le champ). À utiliser pour tout formulaire.
+
+Graphiques (`graphiques.py`, balises `graphiques`) et séries mensuelles (`services.py` : `debuts_de_mois`,
+`total_par_mois`) : voir `apps/dashboard/README.md`.
+
+Rapports imprimables (`rapports.py`, `views.ImpressionListeMixin`, `templates/rapports/`) — cahier-des-charges.md:82,
+305 « Export PDF et Excel » : une page HTML autonome (pas `base.html`) avec un bouton « Imprimer » qui ouvre
+l'impression du navigateur (Ctrl+P / Enregistrer au format PDF) ; même mécanisme que `billing.facture_print`,
+généralisé pour ne pas le récrire à chaque écran. `contexte_rapport()` fournit l'en-tête (entreprise, titre,
+généré le/par) ; `ImpressionListeMixin` transforme un `ListView` existant en rapport (mêmes rôles, recherche et
+filtres, sans pagination, plafonné à 500 lignes) — voir les `*ImprimerView` de `missions`, `fleet`, `hr`,
+`drivers`, `inventory`, `garage`, `fuel`, `customers`, `billing` et `audit`. La trésorerie (`finance`) et le
+tableau de bord (`dashboard`) ont chacun leur propre vue, plus riches qu'une simple liste. Un nouveau rapport
+de liste : sous-classer le `ListView` existant, ajouter `titre_impression` et `colonnes`, l'inscrire dans
+`urls.py`, ajouter le bouton dans le gabarit avec `?{{ request.GET.urlencode }}` pour reprendre les filtres.
+
+
+
+En-tête commune (`_entete_impression.html`) : logo (`static/img/logo-emblem.jpg`), raison sociale en bordeaux (`#8b0319`) et filet orange (`#f28a14`) — les couleurs du logo (`frontend/tailwind.config.js`), reprises aussi par le PDF des codes de mission (`apps/missions/documents.py`, ReportLab). Tout nouveau document imprimable doit inclure `_style_impression.html` et `_entete_impression.html` pour rester cohérent avec les autres ; c'est aussi le cas de la facture (`billing.facture_print`), qui les réutilise pour son propre en-tête.
+
+```
+
+#### `apps/core/graphiques.py`
+
+*139 lignes* — Préparation des graphiques du tableau de bord : des données à ce que le gabarit affiche.
+
+```python
+"""Préparation des graphiques du tableau de bord : des données à ce que le gabarit affiche.
+
+Aucun calcul métier ici : on reçoit des séries déjà calculées (par les services des apps) et on
+en tire les proportions, les graduations et les libellés. Le rendu est du HTML/CSS (classes
+``viz-*`` de ``frontend/input.css``), donc sans script, compatible avec la CSP stricte, et le
+texte reste du vrai texte (lisible, sélectionnable, lu par les lecteurs d'écran).
+
+Deux formes seulement, choisies selon le travail à faire :
+- ``barres_horizontales`` : comparer des grandeurs par catégorie (statuts, départements, clients) ;
+- ``colonnes_groupees`` : suivre 2 ou 3 séries dans le temps (CA, encaissé, charges par mois).
+Les deux portent une équivalence en tableau (``tableau``) : rien n'est lisible uniquement à la souris.
+"""
+
+from __future__ import annotations
+
+from decimal import Decimal
+
+from .formats import nombre
+
+# Palette catégorielle validée (dataviz/scripts/validate_palette.js, surface #ffffff) : le bleu,
+# l'orange et l'aqua, dans cet ordre. Les codes couleur vivent dans frontend/input.css.
+MAX_SERIES = 3
+GRADUATIONS = 4  # nombre d'intervalles de l'axe vertical
+
+_PAS = (1, 2, 2.5, 5, 10)
+_PAS_ENTIERS = (1, 2, 5, 10)  # des comptes (missions...) : pas de graduation à virgule
+
+
+def _pas_lisible(brut: float, pas=_PAS) -> float:
+    """Plus petit pas « rond » (1, 2, 2,5, 5 × 10^n) supérieur ou égal à ``brut``."""
+    if brut <= 0:
+        return 1
+    puissance = 10 ** (len(str(int(brut))) - 1) if brut >= 1 else 1
+    for facteur in pas:
+        if facteur * puissance >= brut:
+            return facteur * puissance
+    return 10 * puissance
+
+
+def compact(valeur) -> str:
+    """Valeur d'axe courte : ``0``, ``500 k``, ``1,5 M``, ``2 Md``."""
+    valeur = Decimal(valeur)
+    for seuil, suffixe in ((Decimal(10) ** 9, "Md"), (Decimal(10) ** 6, "M"), (Decimal(10) ** 3, "k")):
+        if abs(valeur) >= seuil:
+            reduit = valeur / seuil
+            decimales = 0 if reduit == reduit.to_integral_value() else 1
+            return f"{nombre(reduit, decimales)} {suffixe}"
+    return nombre(valeur)
+
+
+def barres_horizontales(lignes, *, unite: str = "", maximum=None) -> dict:
+    """Barres horizontales, une par catégorie, valeur au bout de la barre.
+
+    ``lignes`` : suite de dicts ``libelle``, ``valeur`` et, facultatif, ``url`` (lien du libellé) et
+    ``detail`` (texte secondaire). L'échelle part de 0 ; ``maximum`` la fixe (sinon : la plus grande
+    valeur). Retourne ``{"lignes": [...], "unite": ..., "vide": bool}`` ; chaque ligne reçoit
+    ``valeur_texte`` et ``largeur`` (pourcentage entier de la piste, 0 pour une valeur nulle).
+    """
+    lignes = [dict(ligne) for ligne in lignes]
+    plus_grand = Decimal(maximum) if maximum is not None else max((Decimal(l["valeur"]) for l in lignes), default=0)
+    for ligne in lignes:
+        valeur = Decimal(ligne["valeur"])
+        ligne["valeur_texte"] = nombre(valeur)
+        if valeur > 0 and plus_grand > 0:
+            # jamais moins de 1 % : une valeur non nulle doit rester visible
+            ligne["largeur"] = max(1, min(100, round(valeur / plus_grand * 100)))
+        else:
+            ligne["largeur"] = 0
+    return {
+        "lignes": lignes,
+        "unite": unite,
+        "vide": not any(Decimal(l["valeur"]) for l in lignes),
+    }
+
+
+def colonnes_groupees(categories, series, *, unite: str = "", entier: bool = False) -> dict:
+    """Colonnes groupées : une grappe par catégorie (un mois), une colonne par série.
+
+    ``categories`` : libellés de l'axe horizontal. ``series`` : suite de dicts ``nom`` et ``valeurs``
+    (une par catégorie, ≥ 0), 3 au plus (au-delà, regrouper ou faire deux graphiques : la palette
+    validée ne garantit pas davantage). La couleur suit la série (rang 1, 2, 3), jamais sa valeur.
+    ``entier`` : des comptes, l'axe ne graduera qu'en nombres entiers.
+
+    Retourne :
+    - ``graduations`` : de haut en bas, ``etiquette`` et ``position`` (% depuis le bas) ;
+    - ``grappes`` : ``libelle`` (+ ``libelle_court`` et ``sous_libelle`` pour l'axe), ``colonnes`` (``serie``, ``rang``, ``hauteur`` %, ``valeur_texte``) et
+      ``bord`` (``debut``/``milieu``/``fin`` : de quel côté l'infobulle s'aligne pour ne pas déborder) ;
+    - ``legende`` : ``nom`` et ``rang`` ; ``tableau`` : ``entetes`` et ``lignes`` ; ``vide``.
+    """
+    series = list(series)
+    if len(series) > MAX_SERIES:
+        raise ValueError(f"{MAX_SERIES} séries au plus par graphique")
+    valeurs = [[Decimal(v) for v in s["valeurs"]] for s in series]
+    plus_grand = max((v for serie in valeurs for v in serie), default=Decimal(0))
+    pas = _pas_lisible(float(plus_grand) / GRADUATIONS, _PAS_ENTIERS if entier else _PAS) if plus_grand > 0 else 1
+    haut = Decimal(str(pas)) * GRADUATIONS
+
+    graduations = [
+        {"etiquette": compact(haut * i / GRADUATIONS), "position": round(100 * i / GRADUATIONS)}
+        for i in range(GRADUATIONS, -1, -1)
+    ]
+
+    grappes = []
+    dernier = len(categories) - 1
+    for i, libelle in enumerate(categories):
+        colonnes = []
+        for rang, (serie, valeurs_serie) in enumerate(zip(series, valeurs), start=1):
+            valeur = valeurs_serie[i]
+            colonnes.append({
+                "serie": serie["nom"],
+                "rang": rang,
+                # jamais moins de 1 % : une valeur non nulle doit rester visible
+                "hauteur": max(1.0, round(float(valeur / haut * 100), 1)) if valeur > 0 else 0,
+                "valeur_texte": nombre(valeur),
+            })
+        court, _, suffixe = libelle.rpartition(" ")
+        grappes.append({
+            "libelle": libelle,
+            # sur l'axe, le dernier mot (l'année) passe à la ligne : 6 mois tiennent sur un écran de téléphone
+            "libelle_court": court or libelle,
+            "sous_libelle": suffixe if court else "",
+            "colonnes": colonnes,
+            "bord": "debut" if i == 0 else "fin" if i == dernier else "milieu",
+        })
+
+    return {
+        "graduations": graduations,
+        "grappes": grappes,
+        "legende": [{"nom": s["nom"], "rang": rang} for rang, s in enumerate(series, start=1)],
+        "unite": unite,
+        "tableau": {
+            "entetes": [s["nom"] for s in series],
+            "lignes": [
+                {"libelle": libelle, "valeurs": [nombre(valeurs[j][i]) for j in range(len(series))]}
+                for i, libelle in enumerate(categories)
+            ],
+        },
+        "vide": plus_grand == 0,
+    }
+```
+
+#### `apps/core/rapports.py`
+
+*35 lignes* — Aides communes aux rapports imprimables (trésorerie, tableau de bord, listes, journal d'audit).
+
+```python
+"""Aides communes aux rapports imprimables (trésorerie, tableau de bord, listes, journal d'audit).
+
+Chaque rapport est une page HTML autonome (pas `base.html` : pas de menu ni de barre latérale dans le
+tirage), avec le bouton « Imprimer » (`data-imprimer`, voir `static/js/app.js`) qui ouvre l'impression du
+navigateur — l'utilisateur choisit « Enregistrer au format PDF » ou une imprimante. Même mécanisme que
+`billing.facture_print` ; ce module en généralise l'en-tête pour ne pas le récrire à chaque rapport.
+
+Le seul cas qui a besoin d'une mise en page pixel-près (document envoyé à un tiers) reste
+`apps.missions.documents` (ReportLab) ; un rapport interne n'en a pas besoin.
+"""
+
+from __future__ import annotations
+
+from django.conf import settings
+from django.utils import timezone
+
+
+def contexte_entreprise() -> dict:
+    return {
+        "nom": settings.ENTREPRISE_NOM,
+        "adresse": settings.ENTREPRISE_ADRESSE,
+        "ncc": settings.ENTREPRISE_NCC,
+    }
+
+
+def contexte_rapport(request, *, titre: str, sous_titre: str = "") -> dict:
+    """Contexte commun à tout gabarit de `templates/rapports/` : en-tête entreprise, titre, généré le/par."""
+    utilisateur = request.user
+    return {
+        "entreprise": contexte_entreprise(),
+        "titre": titre,
+        "sous_titre": sous_titre,
+        "genere_par": utilisateur.get_full_name() or utilisateur.get_username(),
+        "genere_le": timezone.now(),
+    }
 ```
 
 #### `apps/core/tests/test_echeance.py`
@@ -752,6 +1014,156 @@ def test_pourcentage_signe(valeur, attendu):
 
 def test_pourcentage_signe_accepte_le_nombre_de_decimales():
     assert pourcentage_signe(Decimal("66.666"), decimales=2) == "+66,67"
+```
+
+#### `apps/core/tests/test_graphiques.py`
+
+*143 lignes* — Préparation des graphiques : proportions, graduations lisibles, garde-fous.
+
+```python
+"""Préparation des graphiques : proportions, graduations lisibles, garde-fous."""
+
+from decimal import Decimal
+
+import pytest
+from django.template import Context, Template
+
+from apps.core import graphiques
+
+
+def _texte(valeur: str) -> str:
+    return valeur.replace(" ", " ").replace("\xa0", " ")
+
+
+# --- barres horizontales ---
+
+
+def test_les_barres_sont_proportionnelles_a_la_plus_grande_valeur():
+    g = graphiques.barres_horizontales([
+        {"libelle": "A", "valeur": 200}, {"libelle": "B", "valeur": 50}, {"libelle": "C", "valeur": 0},
+    ])
+
+    assert [ligne["largeur"] for ligne in g["lignes"]] == [100, 25, 0]
+    assert [ligne["valeur_texte"] for ligne in g["lignes"]] == ["200", "50", "0"]
+    assert g["vide"] is False
+
+
+def test_une_petite_valeur_non_nulle_reste_visible():
+    g = graphiques.barres_horizontales([{"libelle": "Gros", "valeur": 1_000_000}, {"libelle": "Petit", "valeur": 1}])
+
+    assert g["lignes"][1]["largeur"] == 1
+
+
+def test_le_maximum_impose_fixe_l_echelle():
+    g = graphiques.barres_horizontales([{"libelle": "A", "valeur": 30}], maximum=120)
+
+    assert g["lignes"][0]["largeur"] == 25
+
+
+def test_sans_valeur_le_graphique_est_vide():
+    assert graphiques.barres_horizontales([])["vide"] is True
+    assert graphiques.barres_horizontales([{"libelle": "A", "valeur": 0}])["vide"] is True
+
+
+def test_les_valeurs_decimales_et_les_details_sont_conserves():
+    g = graphiques.barres_horizontales(
+        [{"libelle": "Alpha", "valeur": Decimal("1250000"), "url": "/x/", "detail": "3 missions"}], unite="FCFA"
+    )
+
+    ligne = g["lignes"][0]
+    assert _texte(ligne["valeur_texte"]) == "1 250 000"
+    assert (ligne["url"], ligne["detail"], g["unite"]) == ("/x/", "3 missions", "FCFA")
+
+
+# --- colonnes groupées ---
+
+
+def test_les_graduations_sont_des_nombres_ronds_et_couvrent_la_plus_grande_valeur():
+    g = graphiques.colonnes_groupees(["a", "b"], [{"nom": "CA", "valeurs": [Decimal("1180000"), Decimal("300000")]}])
+
+    etiquettes = [t["etiquette"] for t in g["graduations"]]
+    assert etiquettes == ["2 M", "1,5 M", "1 M", "500 k", "0"]
+    assert [t["position"] for t in g["graduations"]] == [100, 75, 50, 25, 0]
+    assert g["grappes"][0]["colonnes"][0]["hauteur"] == 59.0  # 1 180 000 / 2 000 000
+
+
+@pytest.mark.parametrize("plus_grand, attendu", [
+    (Decimal("1000"), "1 k"),
+    (Decimal("7"), "8"),
+    (Decimal("95000000"), "100 M"),
+    (Decimal("3000000000"), "4 Md"),
+])
+def test_le_haut_de_l_axe_est_un_pas_rond(plus_grand, attendu):
+    g = graphiques.colonnes_groupees(["m"], [{"nom": "S", "valeurs": [plus_grand]}])
+
+    assert _texte(g["graduations"][0]["etiquette"]) == attendu
+
+
+def test_chaque_serie_garde_son_rang_de_couleur():
+    g = graphiques.colonnes_groupees(
+        ["m1", "m2"],
+        [{"nom": "CA", "valeurs": [10, 20]}, {"nom": "Encaissé", "valeurs": [5, 0]}, {"nom": "Charges", "valeurs": [1, 2]}],
+        unite="FCFA",
+    )
+
+    assert [(e["nom"], e["rang"]) for e in g["legende"]] == [("CA", 1), ("Encaissé", 2), ("Charges", 3)]
+    assert [c["rang"] for c in g["grappes"][0]["colonnes"]] == [1, 2, 3]
+    assert g["grappes"][1]["colonnes"][1]["hauteur"] == 0  # valeur nulle : pas de colonne
+
+
+def test_l_infobulle_s_aligne_sur_les_bords_pour_ne_pas_deborder():
+    g = graphiques.colonnes_groupees(["a", "b", "c"], [{"nom": "S", "valeurs": [1, 2, 3]}])
+
+    assert [grappe["bord"] for grappe in g["grappes"]] == ["debut", "milieu", "fin"]
+
+
+def test_le_tableau_reprend_toutes_les_valeurs():
+    g = graphiques.colonnes_groupees(["janv.", "févr."], [{"nom": "CA", "valeurs": [1000, 2500]}, {"nom": "Charges", "valeurs": [0, 400]}])
+
+    assert g["tableau"]["entetes"] == ["CA", "Charges"]
+    assert [(l["libelle"], [_texte(v) for v in l["valeurs"]]) for l in g["tableau"]["lignes"]] == [
+        ("janv.", ["1 000", "0"]), ("févr.", ["2 500", "400"]),
+    ]
+
+
+def test_au_dela_de_trois_series_le_graphique_est_refuse():
+    with pytest.raises(ValueError):
+        graphiques.colonnes_groupees(["m"], [{"nom": str(i), "valeurs": [1]} for i in range(4)])
+
+
+def test_sans_aucune_valeur_le_graphique_est_vide():
+    assert graphiques.colonnes_groupees(["m"], [{"nom": "CA", "valeurs": [0]}])["vide"] is True
+
+
+# --- rendu ---
+
+
+def test_le_rendu_des_colonnes_offre_legende_infobulle_et_tableau():
+    g = graphiques.colonnes_groupees(
+        ["janv.", "févr."], [{"nom": "CA", "valeurs": [1000, 2000]}, {"nom": "Charges", "valeurs": [500, 100]}], unite="FCFA"
+    )
+
+    html = Template('{% load graphiques %}{% graphique_colonnes g "test" %}').render(Context({"g": g}))
+
+    assert 'aria-label="Légende"' in html and "viz-s2" in html
+    assert 'role="tooltip"' in html and 'tabindex="0"' in html  # même contenu au clavier qu'à la souris
+    assert 'id="test-tableau"' in html and "Voir en tableau" in html
+
+
+def test_le_rendu_echappe_les_libelles():
+    g = graphiques.barres_horizontales([{"libelle": "<script>alert(1)</script>", "valeur": 3}])
+
+    html = Template("{% load graphiques %}{% graphique_barres g %}").render(Context({"g": g}))
+
+    assert "<script>" not in html and "&lt;script&gt;" in html
+
+
+def test_un_graphique_vide_affiche_le_message_sans_barre():
+    g = graphiques.barres_horizontales([])
+
+    html = Template('{% load graphiques %}{% graphique_barres g "Rien à montrer." %}').render(Context({"g": g}))
+
+    assert "Rien à montrer." in html and "viz-barre" not in html
 ```
 
 #### `apps/core/tests/test_models.py`
@@ -988,7 +1400,7 @@ python manage.py check
 ```
 
 ```bash
-python -m pytest apps/core/tests/test_echeance.py apps/core/tests/test_formats.py apps/core/tests/test_models.py apps/core/tests/test_numerotation.py apps/core/tests/test_sections.py -q --no-cov
+python -m pytest apps/core/tests/test_echeance.py apps/core/tests/test_formats.py apps/core/tests/test_graphiques.py apps/core/tests/test_models.py apps/core/tests/test_numerotation.py apps/core/tests/test_sections.py -q --no-cov
 ```
 
 **Résultat attendu :** `42 passed` (pour les 5 fichier(s) de tests présentés dans ce chapitre).

@@ -1,6 +1,6 @@
 # Chapitre 27 — L'espace mobile du chauffeur
 
-> 29 fichier(s) dans ce chapitre, 2291 lignes de code.
+> 31 fichier(s) dans ce chapitre, 2522 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -86,7 +86,7 @@ class AucunCamion(MobileError):
 
 #### `apps/mobile_api/services.py`
 
-*233 lignes* — Services de l'espace chauffeur : ce qu'un chauffeur voit et fait, sur SES données seulement.
+*255 lignes* — Services de l'espace chauffeur : ce qu'un chauffeur voit et fait, sur SES données seulement.
 
 ```python
 """Services de l'espace chauffeur : ce qu'un chauffeur voit et fait, sur SES données seulement.
@@ -113,7 +113,8 @@ from apps.fuel.models import Plein
 from apps.garage import terrain as garage_terrain
 from apps.garage.models import ChecklistVehicule, Incident
 from apps.missions import services as missions_services
-from apps.missions.models import Mission, StatutMission
+from apps.missions import terrain as missions_terrain
+from apps.missions.models import FraisMission, Mission, StatutMission
 
 from .exceptions import AucunCamion, MissionIntrouvable
 
@@ -293,6 +294,27 @@ def incidents_du_chauffeur(chauffeur: Chauffeur, *, limite: int = 20) -> QuerySe
     return Incident.objects.filter(chauffeur=chauffeur).select_related("vehicule").order_by("-created_at", "-pk")[:limite]
 
 
+# --- imprévus (prévision de trésorerie, R4) ---
+
+
+def declarer_frais_imprevu(
+    chauffeur: Chauffeur, *, mission_id: int, montant, justificatif, description: str = ""
+) -> FraisMission:
+    """Le chauffeur déclare un imprévu (panne, incident) sur une de ses missions, avec une preuve."""
+    mission = mission_du_chauffeur(chauffeur, mission_id)
+    return missions_terrain.declarer_imprevu(
+        mission, chauffeur, montant=montant, justificatif=justificatif, description=description
+    )
+
+
+def frais_du_chauffeur(chauffeur: Chauffeur, *, limite: int = 20) -> QuerySet[FraisMission]:
+    return (
+        FraisMission.objects.filter(chauffeur=chauffeur)
+        .select_related("mission")
+        .order_by("-created_at", "-pk")[:limite]
+    )
+
+
 # --- tableau de bord du chauffeur (cahier-des-charges.md:238-239) ---
 
 
@@ -363,7 +385,7 @@ class EstChauffeur(BasePermission):
 
 #### `apps/mobile_api/serializers.py`
 
-*113 lignes* — Représentation JSON de l'espace chauffeur.
+*134 lignes* — Représentation JSON de l'espace chauffeur.
 
 ```python
 """Représentation JSON de l'espace chauffeur.
@@ -376,7 +398,7 @@ from rest_framework import serializers
 
 from apps.fuel.models import Plein
 from apps.garage.models import GraviteIncident, Incident, TypeIncident
-from apps.missions.models import Mission
+from apps.missions.models import FraisMission, Mission
 
 from . import services
 
@@ -479,6 +501,27 @@ class IncidentSerializer(serializers.ModelSerializer):
             "description", "lieu", "statut", "statut_libelle", "created_at",
         )
         read_only_fields = fields
+
+
+class FraisImprevuEntreeSerializer(serializers.Serializer):
+    mission = serializers.IntegerField()
+    montant = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=0)
+    description = serializers.CharField(required=False, allow_blank=True, default="")
+    justificatif = serializers.FileField()
+
+
+class FraisMissionSerializer(serializers.ModelSerializer):
+    mission = serializers.CharField(source="mission.numero")
+    type_libelle = serializers.CharField(source="get_type_frais_display")
+    statut_libelle = serializers.CharField(source="get_statut_display")
+
+    class Meta:
+        model = FraisMission
+        fields = (
+            "id", "mission", "type_frais", "type_libelle", "montant", "description",
+            "statut", "statut_libelle", "created_at",
+        )
+        read_only_fields = fields
 ```
 
 `permissions.py` et `serializers.py` servent surtout à l'**API mobile** du chapitre 28 ; ils sont écrits ici parce
@@ -502,7 +545,7 @@ class MobileApiConfig(AppConfig):
 
 #### `apps/mobile_api/forms.py`
 
-*106 lignes* — Formulaires de l'espace mobile du chauffeur (grands champs tactiles).
+*127 lignes* — Formulaires de l'espace mobile du chauffeur (grands champs tactiles).
 
 ```python
 """Formulaires de l'espace mobile du chauffeur (grands champs tactiles)."""
@@ -510,6 +553,7 @@ class MobileApiConfig(AppConfig):
 from django import forms
 from django.utils import timezone
 
+from apps.core.forms import corriger_format_date
 from apps.garage.models import POINTS_CHECKLIST, GraviteIncident, TypeIncident
 
 CHAMP_TACTILE = (
@@ -524,6 +568,7 @@ class StyleTactileMixin:
         super().__init__(*args, **kwargs)
         for champ in self.fields.values():
             champ.widget.attrs.setdefault("class", CHAMP_TACTILE)
+            corriger_format_date(champ.widget)
 
 
 class CodeForm(StyleTactileMixin, forms.Form):
@@ -578,6 +623,25 @@ class IncidentChauffeurForm(StyleTactileMixin, forms.Form):
         ]
 
 
+class FraisImprevuChauffeurForm(StyleTactileMixin, forms.Form):
+    """Déclaration d'un imprévu (panne, incident) sur la mission en cours, avec une preuve."""
+
+    mission = forms.TypedChoiceField(label="Mission concernée", coerce=int)
+    montant = forms.DecimalField(
+        label="Montant (FCFA)", min_value=0, decimal_places=2, max_digits=12,
+        widget=forms.NumberInput(attrs={"inputmode": "decimal", "step": "1"}),
+    )
+    description = forms.CharField(label="Ce qui s'est passé", widget=forms.Textarea(attrs={"rows": 3}))
+    justificatif = forms.FileField(label="Preuve (photo, facture)")
+
+    def __init__(self, *args, missions=(), **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["mission"].choices = [
+            (m.pk, f"{m.numero} : {m.lieu_chargement} → {m.lieu_livraison}") for m in missions
+        ]
+        self.fields["justificatif"].widget.attrs["class"] = "block w-full text-sm text-slate-700"
+
+
 class ChecklistForm(forms.Form):
     """Un choix OK / KO par point, et une remarque (obligatoire si KO, contrôlé par le service)."""
 
@@ -615,7 +679,7 @@ class ChecklistForm(forms.Form):
 
 #### `apps/mobile_api/views_web.py`
 
-*340 lignes* — Espace mobile du chauffeur (PWA) : pages tactiles servies sous ``/chauffeur/``.
+*393 lignes* — Espace mobile du chauffeur (PWA) : pages tactiles servies sous ``/chauffeur/``.
 
 ```python
 """Espace mobile du chauffeur (PWA) : pages tactiles servies sous ``/chauffeur/``.
@@ -650,7 +714,14 @@ from apps.missions.exceptions import MissionError
 
 from . import services
 from .exceptions import MissionIntrouvable, MobileError
-from .forms import ChecklistForm, CodeForm, IncidentChauffeurForm, LivraisonForm, PleinChauffeurForm
+from .forms import (
+    ChecklistForm,
+    CodeForm,
+    FraisImprevuChauffeurForm,
+    IncidentChauffeurForm,
+    LivraisonForm,
+    PleinChauffeurForm,
+)
 
 ERREURS = (MissionError, CarburantError, GarageError, MobileError)
 
@@ -667,6 +738,7 @@ class ChauffeurRequisMixin(RoleRequiredMixin):
             ("missions", reverse("chauffeur:missions"), "fa-truck-fast", "Missions"),
             ("plein", reverse("chauffeur:plein"), "fa-gas-pump", "Plein"),
             ("incident", reverse("chauffeur:incident"), "fa-triangle-exclamation", "Panne"),
+            ("imprevu", reverse("chauffeur:imprevu"), "fa-money-bill-transfer", "Imprévu"),
         ]
         return contexte
 
@@ -912,6 +984,51 @@ class IncidentView(ChauffeurRequisMixin, TemplateView):
         return redirect("chauffeur:accueil")
 
 
+class FraisImprevuView(ChauffeurRequisMixin, TemplateView):
+    """Déclaration d'un imprévu (panne, incident) avec une preuve — R4."""
+
+    template_name = "mobile/imprevu.html"
+
+    def _missions(self):
+        return list(services.missions_du_chauffeur(self.chauffeur))
+
+    def _formulaire_vide(self):
+        mission = self.request.GET.get("mission", "")
+        return FraisImprevuChauffeurForm(
+            missions=self._missions(), initial={"mission": mission} if mission.isdigit() else {}
+        )
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        contexte.update(
+            form=kwargs.get("form") or self._formulaire_vide(),
+            derniers=services.frais_du_chauffeur(self.chauffeur, limite=5),
+            nav="imprevu",
+        )
+        return contexte
+
+    def post(self, request):
+        form = FraisImprevuChauffeurForm(request.POST, request.FILES, missions=self._missions())
+        if not form.is_valid():
+            return self.render_to_response(self.get_context_data(form=form))
+        donnees = form.cleaned_data
+        try:
+            services.declarer_frais_imprevu(
+                self.chauffeur,
+                mission_id=donnees["mission"],
+                montant=donnees["montant"],
+                justificatif=donnees["justificatif"],
+                description=donnees["description"],
+            )
+        except MissionIntrouvable as erreur:
+            raise Http404 from erreur
+        except ERREURS as erreur:
+            form.add_error(None, str(erreur))
+            return self.render_to_response(self.get_context_data(form=form))
+        messages.success(request, "Imprévu signalé : le Parc Auto est prévenu.")
+        return redirect("chauffeur:accueil")
+
+
 # --- application installable (PWA) ---
 
 
@@ -965,7 +1082,7 @@ sinon 403. Toutes les vues s'appuient dessus.
 
 #### `apps/mobile_api/urls_web.py`
 
-*22 lignes* — Écrans mobiles du chauffeur, montés sous ``/chauffeur/`` par ``config/urls.py``.
+*23 lignes* — Écrans mobiles du chauffeur, montés sous ``/chauffeur/`` par ``config/urls.py``.
 
 ```python
 """Écrans mobiles du chauffeur, montés sous ``/chauffeur/`` par ``config/urls.py``."""
@@ -986,6 +1103,7 @@ urlpatterns = [
     path("missions/<int:pk>/checklist/", v.ChecklistView.as_view(), name="checklist"),
     path("plein/", v.PleinView.as_view(), name="plein"),
     path("incident/", v.IncidentView.as_view(), name="incident"),
+    path("imprevu/", v.FraisImprevuView.as_view(), name="imprevu"),
     path("manifest.webmanifest", v.ManifesteView.as_view(), name="manifeste"),
     path("sw.js", v.ServiceWorkerView.as_view(), name="sw"),
     path("hors-ligne/", v.HorsLigneView.as_view(), name="hors_ligne"),
@@ -994,7 +1112,7 @@ urlpatterns = [
 
 #### `apps/mobile_api/views.py`
 
-*151 lignes* — API mobile du chauffeur : ``/api/v1/mobile/``.
+*180 lignes* — API mobile du chauffeur : ``/api/v1/mobile/``.
 
 ```python
 """API mobile du chauffeur : ``/api/v1/mobile/``.
@@ -1006,6 +1124,7 @@ traduites en HTTP par ``apps.api.exceptions.gestionnaire_erreurs``.
 
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
+from rest_framework.parsers import MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -1018,6 +1137,8 @@ from .serializers import (
     ChecklistEntreeSerializer,
     ChecklistSerializer,
     CodeSerializer,
+    FraisImprevuEntreeSerializer,
+    FraisMissionSerializer,
     IncidentEntreeSerializer,
     IncidentSerializer,
     LivraisonSerializer,
@@ -1148,11 +1269,37 @@ class IncidentsView(ChauffeurAPIView):
             vehicule_id=valeurs.get("vehicule"),
         )
         return Response(IncidentSerializer(incident).data, status=status.HTTP_201_CREATED)
+
+
+class FraisImprevusView(ChauffeurAPIView):
+    parser_classes = [MultiPartParser]
+
+    @extend_schema(tags=TAG, summary="Mes imprévus déclarés", responses=FraisMissionSerializer(many=True))
+    def get(self, request):
+        return Response(FraisMissionSerializer(services.frais_du_chauffeur(self.chauffeur), many=True).data)
+
+    @extend_schema(
+        tags=TAG, summary="Déclarer un imprévu (panne, incident) avec une preuve",
+        description="Le Parc Auto valide en premier, puis la Finance confirme (double validation).",
+        request=FraisImprevuEntreeSerializer, responses={201: FraisMissionSerializer},
+    )
+    def post(self, request):
+        donnees = FraisImprevuEntreeSerializer(data=request.data)
+        donnees.is_valid(raise_exception=True)
+        valeurs = dict(donnees.validated_data)
+        frais = services.declarer_frais_imprevu(
+            self.chauffeur,
+            mission_id=valeurs["mission"],
+            montant=valeurs["montant"],
+            justificatif=valeurs["justificatif"],
+            description=valeurs.get("description", ""),
+        )
+        return Response(FraisMissionSerializer(frais).data, status=status.HTTP_201_CREATED)
 ```
 
 #### `apps/mobile_api/urls.py`
 
-*18 lignes* — Routes de l'API mobile : montées sous ``/api/v1/mobile/`` par ``apps.api.urls``.
+*19 lignes* — Routes de l'API mobile : montées sous ``/api/v1/mobile/`` par ``apps.api.urls``.
 
 ```python
 """Routes de l'API mobile : montées sous ``/api/v1/mobile/`` par ``apps.api.urls``."""
@@ -1172,6 +1319,7 @@ urlpatterns = [
     path("missions/<int:pk>/checklist/", views.ChecklistView.as_view(), name="checklist"),
     path("pleins/", views.PleinsView.as_view(), name="pleins"),
     path("incidents/", views.IncidentsView.as_view(), name="incidents"),
+    path("imprevus/", views.FraisImprevusView.as_view(), name="imprevus"),
 ]
 ```
 
@@ -1719,7 +1867,7 @@ s'affiche même sans réseau.
 
 #### `apps/mobile_api/README.md`
 
-*30 lignes* — mobile_api
+*35 lignes* — mobile_api
 
 ```markdown
 # mobile_api
@@ -1736,13 +1884,18 @@ Trois couches sur les mêmes règles :
 Ce que fait le chauffeur : voir ses missions (à faire, en cours, livrées cette semaine), faire la
 **check-list** du camion, **démarrer**, confirmer la **récupération** puis la **livraison** en scannant
 ou saisissant le code (QR), saisir un **plein** (avec la confirmation d'une saisie suspecte),
-signaler un **incident**. L'accueil est son tableau de bord : course du jour, km du mois,
+signaler un **incident**, déclarer un **imprévu** (panne, avec preuve — R4, prévision de trésorerie des
+missions, voir `apps/missions/README.md`). L'accueil est son tableau de bord : course du jour, km du mois,
 consommation, état du camion.
 
 Points de sécurité : le chauffeur ne voit jamais les codes secrets ni le prix convenu ; il ne saisit
-un plein ou un incident que sur son camion (mission en cours ou à venir, ou camion habituel) ; session
-de 15 minutes d'inactivité (jeton d'accès de 15 minutes pour l'API) ; le service worker ne met en cache
-que la page « hors connexion », jamais les pages privées.
+un plein, un incident ou un imprévu que sur son camion (mission en cours ou à venir, ou camion habituel) ;
+session de 15 minutes d'inactivité (jeton d'accès de 15 minutes pour l'API) ; le service worker ne met en
+cache que la page « hors connexion », jamais les pages privées.
+
+**Preuve d'un imprévu** (`FraisMission.justificatif`) : premier champ fichier du projet, stocké sur le
+disque local (`MEDIA_ROOT`/`media_data`, déjà prévu par le déploiement) — distinct de la photo d'un
+incident, toujours pas gérée (S3/MinIO, étape 7, voir ci-dessous).
 
 Lecture des QR : `static/js/scanner.js` (API `BarcodeDetector`, Chrome sur Android). Sur un navigateur
 qui ne la propose pas, le bouton n'apparaît pas et le chauffeur saisit le code (8 caractères).
@@ -1752,6 +1905,44 @@ Pas encore fait :
   décision de l'utilisateur pour cette étape. Sans réseau, une page « hors connexion » s'affiche.
 - Photos des incidents (stockage S3 ou MinIO, étape 7) ; notifications push (Firebase).
 - Avoir une position GPS ; envoi du code par SMS à l'expéditeur.
+```
+
+#### `apps/mobile_api/templates/mobile/imprevu.html`
+
+*31 lignes*
+
+```django
+{% extends "mobile/base.html" %}
+{% load ui humanize %}
+{% block titre %}Signaler un imprévu{% endblock %}
+
+{% block contenu %}
+<h1 class="text-xl font-bold text-slate-900">Signaler un imprévu (panne, incident)</h1>
+<p class="text-sm text-slate-600">Le Parc Auto est prévenu tout de suite, puis la Finance confirme. Joignez une preuve (photo, facture).</p>
+
+<form method="post" enctype="multipart/form-data" class="mt-4 space-y-4" novalidate>
+  {% csrf_token %}
+  {% if form.non_field_errors %}
+    <div role="alert" class="rounded-2xl border border-red-300 bg-red-50 px-4 py-3 text-sm font-medium text-red-900">{% for e in form.non_field_errors %}<p>{{ e }}</p>{% endfor %}</div>
+  {% endif %}
+  {% include "components/_champ.html" with champ=form.mission %}
+  {% include "components/_champ.html" with champ=form.montant %}
+  {% include "components/_champ.html" with champ=form.description %}
+  {% include "components/_champ.html" with champ=form.justificatif %}
+  <button type="submit" class="w-full rounded-2xl bg-slate-900 px-4 py-4 text-lg font-bold text-white shadow active:bg-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900"><i class="fa-solid fa-paper-plane mr-2" aria-hidden="true"></i>Envoyer le signalement</button>
+</form>
+
+{% if derniers %}
+  <section class="mt-6" aria-labelledby="titre-derniers">
+    <h2 id="titre-derniers" class="text-sm font-semibold uppercase tracking-wide text-slate-600">Mes derniers imprévus</h2>
+    <ul class="mt-2 divide-y divide-slate-200 rounded-2xl border border-slate-200 bg-white text-sm">
+      {% for f in derniers %}
+        <li class="px-4 py-3"><div class="flex items-center justify-between gap-2"><span class="font-medium">{{ f.mission.numero }} · {{ f.montant|floatformat:0|intcomma }} FCFA</span>{% badge f.statut f.get_statut_display %}</div><p class="mt-1 text-slate-700">{{ f.description|default:"—"|truncatechars:80 }}</p></li>
+      {% endfor %}
+    </ul>
+  </section>
+{% endif %}
+{% endblock %}
 ```
 
 #### `apps/mobile_api/tests/helpers.py`
@@ -1800,6 +1991,58 @@ def checklist_ok(**ko):
     return [
         {"code": c, "ok": c not in ko, "remarque": ko.get(c, "")} for c in CODES_CHECKLIST
     ]
+```
+
+#### `apps/core/tests/test_forms_date.py`
+
+*45 lignes* — Les champs date préremplis s'affichent : ``<input type="date">`` exige AAAA-MM-JJ, même en français.
+
+```python
+"""Les champs date préremplis s'affichent : ``<input type="date">`` exige AAAA-MM-JJ, même en français."""
+
+from datetime import date
+
+import pytest
+from django import forms
+from django.utils import translation
+
+from apps.billing.forms import ReglementForm
+from apps.core.forms import StyleTailwindMixin
+from apps.mobile_api.forms import PleinChauffeurForm
+
+
+class _Formulaire(StyleTailwindMixin, forms.Form):
+    jour = forms.DateField(widget=forms.DateInput(attrs={"type": "date"}))
+    texte = forms.DateField(widget=forms.DateInput())  # champ texte : format de la langue conservé
+
+
+def test_la_date_initiale_est_ecrite_au_format_attendu_par_le_navigateur():
+    with translation.override("fr"):
+        html = str(_Formulaire(initial={"jour": date(2026, 9, 24)})["jour"])
+
+    assert 'value="2026-09-24"' in html
+
+
+def test_un_champ_date_sans_type_date_garde_le_format_de_la_langue():
+    with translation.override("fr"):
+        html = str(_Formulaire(initial={"texte": date(2026, 9, 24)})["texte"])
+
+    assert 'value="24/09/2026"' in html
+
+
+def test_le_reglement_prerempli_avec_la_date_du_jour():
+    with translation.override("fr"):
+        html = str(ReglementForm(initial={"date_reglement": date(2026, 9, 24)})["date_reglement"])
+
+    assert 'value="2026-09-24"' in html
+
+
+@pytest.mark.django_db
+def test_l_espace_mobile_utilise_le_meme_format():
+    with translation.override("fr"):
+        html = str(PleinChauffeurForm(initial={"date_plein": date(2026, 9, 24)})["date_plein"])
+
+    assert 'value="2026-09-24"' in html
 ```
 
 #### `apps/mobile_api/tests/test_services.py`
@@ -2563,7 +2806,7 @@ def test_les_formulaires_du_chauffeur_exigent_le_csrf():
 ```diff
 --- config/settings/base.py (avant)
 +++ config/settings/base.py (après)
-@@ -64,4 +64,5 @@
+@@ -67,4 +67,5 @@
      "apps.notifications",
      "apps.dashboard",
 +    "apps.mobile_api",
@@ -2578,8 +2821,8 @@ def test_les_formulaires_du_chauffeur_exigent_le_csrf():
 ```diff
 --- config/urls.py (avant)
 +++ config/urls.py (après)
-@@ -28,4 +28,5 @@
-     path("finances/", include("apps.finance.urls")),
+@@ -30,4 +30,5 @@
+     path("audit/", include("apps.audit.urls")),
      path("notifications/", include("apps.notifications.urls")),
 +    path("chauffeur/", include("apps.mobile_api.urls_web")),
      path("admin/", admin.site.urls),
@@ -2599,7 +2842,7 @@ python manage.py check
 ```
 
 ```bash
-python -m pytest apps/mobile_api/tests/test_services.py apps/mobile_api/tests/test_web.py -q --no-cov
+python -m pytest apps/core/tests/test_forms_date.py apps/mobile_api/tests/test_services.py apps/mobile_api/tests/test_web.py -q --no-cov
 ```
 
 **Résultat attendu :** `56 passed` (pour les 2 fichier(s) de tests présentés dans ce chapitre).

@@ -1,6 +1,6 @@
 # Chapitre 11 — Le stock de pièces : l'app inventory
 
-> 16 fichier(s) dans ce chapitre, 1449 lignes de code.
+> 16 fichier(s) dans ce chapitre, 1459 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -259,7 +259,7 @@ class DoublonArticle(StockError):
 
 #### `apps/inventory/services.py`
 
-*331 lignes* — Logique métier du stock — cahier-des-charges.md:177-183.
+*333 lignes* — Logique métier du stock — cahier-des-charges.md:177-183.
 
 ```python
 """Logique métier du stock — cahier-des-charges.md:177-183.
@@ -291,7 +291,7 @@ from .exceptions import (
     StockInsuffisant,
 )
 from .models import Article, MouvementStock, TypeMouvement
-from .signals import seuil_bas_atteint
+from .signals import entree_stock_enregistree, seuil_bas_atteint
 
 CENTIME = Decimal("0.01")
 
@@ -416,9 +416,11 @@ def enregistrer_entree(
     article.pump = (valeur / Decimal(article.quantite + quantite)).quantize(
         CENTIME, rounding=ROUND_HALF_UP
     )
-    return _enregistrer(
+    mouvement = _enregistrer(
         article, TypeMouvement.ENTREE, quantite, prix, acteur=acteur
     )
+    entree_stock_enregistree.send(sender=MouvementStock, mouvement=mouvement)
+    return mouvement
 
 
 @transaction.atomic
@@ -608,7 +610,7 @@ def cout_des_or_clotures(debut: date, fin: date) -> Decimal:
 
 #### `apps/inventory/signals.py`
 
-*10 lignes* — Signaux émis par le stock (souscrits par ``notifications``, étape 5).
+*14 lignes* — Signaux émis par le stock (souscrits par ``notifications``, étape 5).
 
 ```python
 """Signaux émis par le stock (souscrits par ``notifications``, étape 5)."""
@@ -621,24 +623,30 @@ from django.dispatch import Signal
 # mouvement : un récepteur qui envoie un message doit utiliser
 # ``transaction.on_commit``.
 seuil_bas_atteint = Signal()
+
+# Une entrée de stock (achat de pièces) vient d'être enregistrée, dans sa transaction. Argument :
+# ``mouvement``. Souscrit par ``finance`` (dépense) ; émis avec ``send`` pour qu'une erreur annule l'achat.
+entree_stock_enregistree = Signal()
 ```
 
 #### `apps/inventory/permissions.py`
 
-*11 lignes* — Qui peut consulter et faire bouger le stock.
+*13 lignes* — Qui peut consulter et faire bouger le stock.
 
 ```python
 """Qui peut consulter et faire bouger le stock.
 
 Cahier-des-charges.md:44-55 : le PARCAUTO gère les « mouvements de stock,
-inventaires » ; la DIRECTION est en « lecture seule sur Parc Auto ». L'ADMIN a tous
-les droits.
+inventaires ». L'ADMIN a tous les droits. La DIRECTION, à l'origine en « lecture
+seule sur Parc Auto », agit désormais aussi : retour d'une réunion entreprise, elle a
+la même largeur que l'ADMIN sur la saisie/modification.
 """
 
 from apps.accounts.models import Role
 
 CONSULTATION = frozenset({Role.ADMIN, Role.DIRECTION, Role.PARCAUTO})
-MODIFICATION = frozenset({Role.ADMIN, Role.PARCAUTO})
+# Retour réunion : la DIRECTION a la même largeur que l'ADMIN pour la saisie/modification.
+MODIFICATION = frozenset({Role.ADMIN, Role.DIRECTION, Role.PARCAUTO})
 ```
 
 #### `apps/inventory/forms.py`
@@ -865,7 +873,7 @@ class ArticleFactory(factory.django.DjangoModelFactory):
 
 #### `apps/inventory/README.md`
 
-*36 lignes* — inventory
+*38 lignes* — inventory
 
 ```markdown
 # inventory
@@ -904,6 +912,8 @@ Accès : ADMIN, DIRECTION (lecture seule) et PARCAUTO (`permissions.py`) ; seuls
 PARCAUTO créent, modifient, enregistrent des mouvements et font sortir des pièces.
 Services ajoutés : `rechercher_articles`, `categories_articles`, `valeur_totale_stock`,
 `modifier_article`, `rechercher_mouvements`, `mouvements_de_l_article`.
+
+Rapport imprimable du stock (bouton « Imprimer » sur la liste, mêmes filtres) : voir `apps/core/README.md` (`ImpressionListeMixin`).
 ```
 
 #### `apps/inventory/tests/test_fiche.py`
@@ -1616,7 +1626,7 @@ def test_cout_total_de_l_or_ajoute_la_main_d_oeuvre_aux_pieces():
 ```diff
 --- config/settings/base.py (avant)
 +++ config/settings/base.py (après)
-@@ -58,4 +58,5 @@
+@@ -61,4 +61,5 @@
      "apps.missions",
      "apps.garage",
 +    "apps.inventory",

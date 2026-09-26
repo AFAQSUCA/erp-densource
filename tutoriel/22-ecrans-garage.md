@@ -1,6 +1,6 @@
 # Chapitre 22 — Écrans : garage, incidents et check-lists
 
-> 14 fichier(s) dans ce chapitre, 1463 lignes de code.
+> 14 fichier(s) dans ce chapitre, 1533 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -143,7 +143,7 @@ class FiltreChecklistsForm(StyleTailwindMixin, forms.Form):
 
 #### `apps/garage/views.py`
 
-*157 lignes* — Écrans du garage : liste et fiche des OR, ouverture, clôture, statut des camions.
+*183 lignes* — Écrans du garage : liste et fiche des OR, ouverture, clôture, statut des camions.
 
 ```python
 """Écrans du garage : liste et fiche des OR, ouverture, clôture, statut des camions.
@@ -158,7 +158,8 @@ from django.views import View
 from django.views.generic import DetailView, FormView, ListView
 
 from apps.accounts.mixins import RoleRequiredMixin
-from apps.core.views import PaginationTolerante
+from apps.core.formats import nombre
+from apps.core.views import ImpressionListeMixin, PaginationTolerante
 from apps.fleet import services as fleet_services
 
 from . import permissions, sections, services
@@ -194,6 +195,31 @@ class OrListView(PaginationTolerante, RoleRequiredMixin, ListView):
             peut_modifier=self.request.user.role_effectif in permissions.MODIFICATION,
         )
         return contexte
+
+
+class OrImprimerView(ImpressionListeMixin, OrListView):
+    """Rapport imprimable des ordres de réparation (mêmes filtres que la liste)."""
+
+    titre_impression = "Ordres de réparation"
+    colonnes = (
+        ("N°", "numero"), ("Camion", "vehicule.immatriculation"), ("Type", "get_type_or_display"),
+        ("Lieu", "get_lieu_display"), ("Motif", "motif"),
+        ("Ouvert le", lambda o: o.date_ouverture.strftime("%d/%m/%Y")),
+        ("Clôturé le", lambda o: o.date_cloture.strftime("%d/%m/%Y") if o.date_cloture else "—"),
+        ("Statut", "get_statut_display"), ("Main-d'œuvre", lambda o: f"{nombre(o.cout_main_oeuvre)} FCFA"),
+    )
+
+    def get_sous_titre_impression(self):
+        morceaux = []
+        for cle, choix, param in (
+            ("statut", StatutOr, "statut"), ("type", TypeOr, "type"), ("lieu", LieuReparation, "lieu"),
+        ):
+            valeur = self.request.GET.get(param, "")
+            if valeur in choix.values:
+                morceaux.append(f"{cle} : {choix(valeur).label}")
+        if self.request.GET.get("q", ""):
+            morceaux.append(f"recherche : « {self.request.GET['q']} »")
+        return " · ".join(morceaux)
 
 
 class OrDetailView(RoleRequiredMixin, DetailView):
@@ -307,7 +333,7 @@ class RemiseEnServiceView(StatutVehiculeView):
 
 #### `apps/garage/views_terrain.py`
 
-*120 lignes* — Écrans du Parc Auto pour les signalements du chauffeur : incidents et check-lists.
+*145 lignes* — Écrans du Parc Auto pour les signalements du chauffeur : incidents et check-lists.
 
 ```python
 """Écrans du Parc Auto pour les signalements du chauffeur : incidents et check-lists.
@@ -322,7 +348,7 @@ from django.views import View
 from django.views.generic import DetailView, ListView
 
 from apps.accounts.mixins import RoleRequiredMixin
-from apps.core.views import PaginationTolerante
+from apps.core.views import ImpressionListeMixin, PaginationTolerante
 
 from . import permissions, terrain
 from .exceptions import GarageError
@@ -332,7 +358,7 @@ from .forms_terrain import (
     FiltreIncidentsForm,
     TraitementIncidentForm,
 )
-from .models import Incident, StatutIncident
+from .models import GraviteIncident, Incident, StatutIncident
 
 
 class IncidentListView(PaginationTolerante, RoleRequiredMixin, ListView):
@@ -357,6 +383,31 @@ class IncidentListView(PaginationTolerante, RoleRequiredMixin, ListView):
             a_traiter=terrain.incidents_a_traiter().count(),
         )
         return contexte
+
+
+class IncidentImprimerView(ImpressionListeMixin, IncidentListView):
+    """Rapport imprimable des incidents signalés (mêmes filtres que la liste)."""
+
+    titre_impression = "Incidents signalés par les chauffeurs"
+    colonnes = (
+        ("Camion", "vehicule.immatriculation"),
+        ("Chauffeur", lambda i: f"{i.chauffeur.personnel.prenom} {i.chauffeur.personnel.nom}" if i.chauffeur_id else "—"),
+        ("Type", "get_type_incident_display"), ("Gravité", "get_gravite_display"), ("Lieu", "lieu"),
+        ("Description", "description"),
+        ("Signalé le", lambda i: i.created_at.strftime("%d/%m/%Y %H:%M")),
+        ("Statut", "get_statut_display"),
+    )
+
+    def get_sous_titre_impression(self):
+        criteres = self.get_filtre().criteres()
+        morceaux = []
+        if criteres.get("statut") in StatutIncident.values:
+            morceaux.append(f"statut : {StatutIncident(criteres['statut']).label}")
+        if criteres.get("gravite") in GraviteIncident.values:
+            morceaux.append(f"gravité : {GraviteIncident(criteres['gravite']).label}")
+        if criteres.get("recherche"):
+            morceaux.append(f"recherche : « {criteres['recherche']} »")
+        return " · ".join(morceaux)
 
 
 class IncidentDetailView(RoleRequiredMixin, DetailView):
@@ -434,7 +485,7 @@ class ChecklistListView(PaginationTolerante, RoleRequiredMixin, ListView):
 
 #### `apps/garage/urls.py`
 
-*27 lignes*
+*29 lignes*
 
 ```python
 from django.urls import path
@@ -445,10 +496,12 @@ app_name = "garage"
 
 urlpatterns = [
     path("", views.OrListView.as_view(), name="liste"),
+    path("imprimer/", views.OrImprimerView.as_view(), name="imprimer"),
     path("nouveau/", views.OrCreateView.as_view(), name="creer"),
     path("<int:pk>/", views.OrDetailView.as_view(), name="detail"),
     path("<int:pk>/cloturer/", views.OrCloturerView.as_view(), name="cloturer"),
     path("incidents/", views_terrain.IncidentListView.as_view(), name="incidents"),
+    path("incidents/imprimer/", views_terrain.IncidentImprimerView.as_view(), name="incidents_imprimer"),
     path("incidents/<int:pk>/", views_terrain.IncidentDetailView.as_view(), name="incident"),
     path(
         "incidents/<int:pk>/traiter/",
@@ -473,12 +526,12 @@ urlpatterns = [
 ```diff
 --- config/urls.py (avant)
 +++ config/urls.py (après)
-@@ -21,4 +21,5 @@
+@@ -22,4 +22,5 @@
      path("rh/", include("apps.hr.urls")),
      path("chauffeurs/", include("apps.drivers.urls")),
 +    path("garage/", include("apps.garage.urls")),
+     path("audit/", include("apps.audit.urls")),
      path("notifications/", include("apps.notifications.urls")),
-     path("admin/", admin.site.urls),
 ```
 
 ## Étape 3 — Gabarits
@@ -489,7 +542,7 @@ mkdir -p apps/garage/templates/garage
 
 #### `apps/garage/templates/garage/or_list.html`
 
-*99 lignes*
+*105 lignes*
 
 ```django
 {% extends "base.html" %}
@@ -504,12 +557,18 @@ mkdir -p apps/garage/templates/garage
       <h1 class="text-2xl font-bold text-slate-900">Ordres de réparation</h1>
       <p class="mt-1 text-sm text-slate-600">{{ paginator.count|default:0 }} ordre{{ paginator.count|pluralize }} de réparation</p>
     </div>
-    {% if peut_modifier %}
-      <a href="{% url 'garage:creer' %}"
-         class="inline-flex items-center gap-2 rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">
-        <i class="fa-solid fa-plus" aria-hidden="true"></i> Nouvel OR
+    <div class="flex flex-wrap items-center gap-2">
+      <a href="{% url 'garage:imprimer' %}?{{ request.GET.urlencode }}" target="_blank" rel="noopener"
+         class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+        <i class="fa-solid fa-print" aria-hidden="true"></i> Imprimer
       </a>
-    {% endif %}
+      {% if peut_modifier %}
+        <a href="{% url 'garage:creer' %}"
+           class="inline-flex items-center gap-2 rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">
+          <i class="fa-solid fa-plus" aria-hidden="true"></i> Nouvel OR
+        </a>
+      {% endif %}
+    </div>
   </div>
 
   <form method="get" class="mt-5 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -621,7 +680,7 @@ mkdir -p apps/garage/templates/garage
         {% for erreur in form.non_field_errors %}<p>{{ erreur }}</p>{% endfor %}
       </div>
     {% endif %}
-    <div class="grid gap-5 sm:grid-cols-2">
+    <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
       <div class="sm:col-span-2">{% include "components/_champ.html" with champ=form.vehicule %}</div>
       {% include "components/_champ.html" with champ=form.type_or %}
       {% include "components/_champ.html" with champ=form.lieu %}
@@ -664,11 +723,11 @@ mkdir -p apps/garage/templates/garage
     · statut actuel : {% badge ordre.vehicule.statut ordre.vehicule.get_statut_display %}
   </p>
 
-  <div class="mt-6 grid gap-6 xl:grid-cols-3">
+  <div class="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-3">
     <div class="space-y-6 xl:col-span-2">
       <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-intervention">
         <h2 id="titre-intervention" class="text-base font-semibold text-slate-900">Intervention</h2>
-        <dl class="mt-4 grid gap-x-6 gap-y-4 text-sm sm:grid-cols-2">
+        <dl class="mt-4 grid grid-cols-1 gap-x-6 gap-y-4 text-sm sm:grid-cols-2">
           <div><dt class="text-slate-600">Type</dt><dd class="mt-0.5 font-medium text-slate-900">{{ ordre.get_type_or_display }}</dd></div>
           <div><dt class="text-slate-600">Lieu</dt><dd class="mt-0.5 font-medium text-slate-900">{{ ordre.get_lieu_display }}</dd></div>
           <div><dt class="text-slate-600">Ouvert le</dt><dd class="mt-0.5 font-medium text-slate-900">{{ ordre.date_ouverture|date:"d/m/Y H:i" }}</dd></div>
@@ -771,7 +830,7 @@ mkdir -p apps/garage/templates/garage
 
 #### `apps/garage/templates/garage/incident_list.html`
 
-*59 lignes*
+*65 lignes*
 
 ```django
 {% extends "base.html" %}
@@ -789,9 +848,15 @@ mkdir -p apps/garage/templates/garage
         {% if a_traiter %}· <strong class="text-red-800">{{ a_traiter }} à traiter</strong>{% endif %}
       </p>
     </div>
-    <a href="{% url 'garage:checklists' %}" class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
-      <i class="fa-solid fa-list-check" aria-hidden="true"></i> Check-lists
-    </a>
+    <div class="flex flex-wrap items-center gap-2">
+      <a href="{% url 'garage:incidents_imprimer' %}?{{ request.GET.urlencode }}" target="_blank" rel="noopener"
+         class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+        <i class="fa-solid fa-print" aria-hidden="true"></i> Imprimer
+      </a>
+      <a href="{% url 'garage:checklists' %}" class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+        <i class="fa-solid fa-list-check" aria-hidden="true"></i> Check-lists
+      </a>
+    </div>
   </div>
 
   <form method="get" class="mt-5 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -859,7 +924,7 @@ mkdir -p apps/garage/templates/garage
   </div>
   <p class="mt-1 text-sm text-slate-600">Signalé le {{ incident.created_at|date:"d/m/Y à H:i" }}{% if incident.chauffeur %} par {{ incident.chauffeur.personnel.prenom }} {{ incident.chauffeur.personnel.nom }}{% endif %}</p>
 
-  <div class="mt-6 grid gap-6 lg:grid-cols-3">
+  <div class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
     <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm lg:col-span-2" aria-labelledby="titre-incident">
       <h2 id="titre-incident" class="text-base font-semibold text-slate-900">Description</h2>
       <p class="mt-3 whitespace-pre-line text-sm text-slate-900">{{ incident.description }}</p>
@@ -961,7 +1026,7 @@ mkdir -p apps/garage/templates/garage
 
 #### `apps/garage/tests/test_views.py`
 
-*431 lignes* — Écrans du garage : accès par rôle, OR, blocs dans la fiche d'un camion.
+*435 lignes* — Écrans du garage : accès par rôle, OR, blocs dans la fiche d'un camion.
 
 ```python
 """Écrans du garage : accès par rôle, OR, blocs dans la fiche d'un camion."""
@@ -1026,17 +1091,18 @@ def test_le_garage_est_interdit_aux_autres_roles(client, role):
     assert client.get(reverse("garage:creer")).status_code == 403
 
 
-def test_la_direction_est_en_lecture_seule_sur_le_garage(client):
+def test_la_direction_peut_desormais_agir_sur_le_garage(client):
+    """Retour réunion : la DIRECTION a la même largeur que l'ADMIN pour la saisie/modification."""
     _connecte(client, Role.DIRECTION)
     camion = VehiculeFactory()
     ordre = _ouvrir()
 
-    assert client.get(reverse("garage:creer")).status_code == 403
-    assert client.post(reverse("garage:cloturer", args=[ordre.pk]), {"cout_main_oeuvre": "0"}).status_code == 403
-    assert client.post(reverse("garage:immobiliser", args=[camion.pk])).status_code == 403
+    assert client.get(reverse("garage:creer")).status_code == 200
+    assert client.post(reverse("garage:cloturer", args=[ordre.pk]), {"cout_main_oeuvre": "0"}).status_code == 302
+    assert client.post(reverse("garage:immobiliser", args=[camion.pk])).status_code == 302
     ordre.refresh_from_db()
-    assert ordre.statut == StatutOr.OUVERT
-    assert _statut(camion) == StatutVehicule.DISPONIBLE
+    assert ordre.statut == StatutOr.CLOTURE
+    assert _statut(camion) == StatutVehicule.IMMOBILISE
 
 
 def test_un_visiteur_non_connecte_est_renvoye_vers_la_connexion(client):
@@ -1138,7 +1204,9 @@ def test_la_fiche_d_un_or_inconnu_est_introuvable(client):
     assert client.get(reverse("garage:detail", args=[999999])).status_code == 404
 
 
-def test_la_fiche_propose_la_cloture_au_parc_auto_seulement_tant_que_l_or_est_ouvert(client):
+def test_la_fiche_propose_la_cloture_tant_que_l_or_est_ouvert(client):
+    """Retour réunion : la DIRECTION a désormais la même largeur que l'ADMIN (MODIFICATION),
+    elle voit donc aussi le bouton de clôture tant que l'OR est ouvert."""
     ordre = _ouvrir()
     _connecte(client, Role.PARCAUTO)
     assert reverse("garage:cloturer", args=[ordre.pk]) in client.get(
@@ -1147,7 +1215,7 @@ def test_la_fiche_propose_la_cloture_au_parc_auto_seulement_tant_que_l_or_est_ou
 
     direction = Client()
     _connecte(direction, Role.DIRECTION)
-    assert reverse("garage:cloturer", args=[ordre.pk]) not in direction.get(
+    assert reverse("garage:cloturer", args=[ordre.pk]) in direction.get(
         reverse("garage:detail", args=[ordre.pk])
     ).content.decode()
 
@@ -1361,7 +1429,8 @@ def test_le_bloc_propose_la_remise_en_service_d_un_camion_immobilise(client):
     assert reverse("garage:immobiliser", args=[camion.pk]) not in contenu
 
 
-def test_la_direction_voit_l_historique_sans_les_boutons(client):
+def test_la_direction_voit_l_historique_et_desormais_les_boutons(client):
+    """Retour réunion : la DIRECTION a la même largeur que l'ADMIN pour la saisie/modification."""
     _connecte(client, Role.DIRECTION)
     camion = VehiculeFactory()
     ordre = _ouvrir(camion)
@@ -1369,8 +1438,8 @@ def test_la_direction_voit_l_historique_sans_les_boutons(client):
     contenu = client.get(reverse("fleet:detail", args=[camion.pk])).content.decode()
 
     assert ordre.numero in contenu
-    assert reverse("garage:immobiliser", args=[camion.pk]) not in contenu
-    assert f"{reverse('garage:creer')}?vehicule=" not in contenu
+    assert reverse("garage:immobiliser", args=[camion.pk]) in contenu
+    assert f"{reverse('garage:creer')}?vehicule=" in contenu
 
 
 def test_les_formulaires_du_garage_sont_proteges_par_csrf():
@@ -1399,7 +1468,7 @@ def test_le_bloc_maintenance_n_est_jamais_fourni_aux_roles_sans_acces(role):
 
 #### `apps/garage/tests/test_views_terrain.py`
 
-*199 lignes* — Écrans du Parc Auto : incidents et check-lists signalés par les chauffeurs.
+*200 lignes* — Écrans du Parc Auto : incidents et check-lists signalés par les chauffeurs.
 
 ```python
 """Écrans du Parc Auto : incidents et check-lists signalés par les chauffeurs."""
@@ -1489,7 +1558,8 @@ def test_liste_vide_des_incidents(client):
     assert "Aucun incident" in client.get(reverse("garage:incidents")).content.decode()
 
 
-def test_la_fiche_propose_le_traitement_au_parc_auto_pas_a_la_direction(client):
+def test_la_fiche_propose_le_traitement_au_parc_auto_et_a_la_direction(client):
+    """Retour réunion : la DIRECTION a désormais la même largeur que l'ADMIN (MODIFICATION)."""
     incident = _incident()
     url = reverse("garage:incident", args=[incident.pk])
 
@@ -1499,7 +1569,7 @@ def test_la_fiche_propose_le_traitement_au_parc_auto_pas_a_la_direction(client):
     assert f"{reverse('garage:creer')}?vehicule={incident.vehicule.pk}" in texte
 
     _connecte(client, Role.DIRECTION)
-    assert "Prendre en compte" not in client.get(url).content.decode()
+    assert "Prendre en compte" in client.get(url).content.decode()
 
 
 def test_prendre_en_compte_puis_clore(client):
@@ -1533,14 +1603,14 @@ def test_un_incident_clos_ne_se_retraite_pas(client):
     assert any("déjà clos" in m for m in _messages(reponse))
 
 
-def test_la_direction_ne_peut_pas_traiter_meme_en_postant(client):
+def test_la_direction_peut_desormais_traiter_en_postant(client):
+    """Retour réunion : la DIRECTION a désormais la même largeur que l'ADMIN (MODIFICATION)."""
     _connecte(client, Role.DIRECTION)
     incident = _incident()
 
-    assert client.post(reverse("garage:incident_traiter", args=[incident.pk]),
-                       {"action": "clore", "note": "x"}).status_code == 403
+    client.post(reverse("garage:incident_traiter", args=[incident.pk]), {"action": "clore", "note": "x"})
     incident.refresh_from_db()
-    assert incident.statut == StatutIncident.SIGNALE
+    assert incident.statut == StatutIncident.CLOS
 
 
 def test_action_inconnue_ou_incident_inexistant(client):

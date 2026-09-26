@@ -1,6 +1,6 @@
 # Chapitre 24 — Écrans : carburant
 
-> 9 fichier(s) dans ce chapitre, 1593 lignes de code.
+> 9 fichier(s) dans ce chapitre, 1674 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -146,7 +146,7 @@ class FiltrePleinsForm(StyleTailwindMixin, forms.Form):
 
 #### `apps/fuel/views.py`
 
-*119 lignes* — Écrans du carburant : liste des pleins, saisie, analyse.
+*146 lignes* — Écrans du carburant : liste des pleins, saisie, analyse.
 
 ```python
 """Écrans du carburant : liste des pleins, saisie, analyse.
@@ -162,7 +162,7 @@ from django.views.generic import FormView, ListView, TemplateView
 
 from apps.accounts.mixins import RoleRequiredMixin
 from apps.core.formats import nombre, pourcentage_signe
-from apps.core.views import PaginationTolerante
+from apps.core.views import ImpressionListeMixin, PaginationTolerante
 
 from . import permissions, services
 from .exceptions import CarburantError, SaisieSuspecte
@@ -197,6 +197,33 @@ class PleinListView(PaginationTolerante, RoleRequiredMixin, ListView):
             peut_modifier=self.request.user.role_effectif in permissions.MODIFICATION,
         )
         return contexte
+
+
+class PleinImprimerView(ImpressionListeMixin, PleinListView):
+    """Rapport imprimable des pleins (mêmes filtres que la liste)."""
+
+    titre_impression = "Carburant"
+    colonnes = (
+        ("Date", lambda p: p.date_plein.strftime("%d/%m/%Y")), ("Camion", "vehicule.immatriculation"),
+        ("Chauffeur", lambda p: f"{p.chauffeur.personnel.prenom} {p.chauffeur.personnel.nom}"),
+        ("Station", "station"), ("Litres", lambda p: f"{nombre(p.quantite_litres, 2)} L"),
+        ("Prix unitaire", lambda p: f"{nombre(p.prix_unitaire)} FCFA"),
+        ("Montant", lambda p: f"{nombre(p.quantite_litres * p.prix_unitaire)} FCFA"),
+        ("Consommation", lambda p: f"{nombre(p.consommation, 1)} L/100 km" if p.consommation is not None else "—"),
+    )
+
+    def get_sous_titre_impression(self):
+        criteres = self.get_filtre().criteres()
+        morceaux = []
+        if criteres.get("vehicule"):
+            morceaux.append(f"camion : {criteres['vehicule'].immatriculation}")
+        if criteres.get("chauffeur"):
+            morceaux.append(f"chauffeur : {criteres['chauffeur'].personnel.nom}")
+        if criteres.get("date_debut"):
+            morceaux.append(f"du {criteres['date_debut'].strftime('%d/%m/%Y')}")
+        if criteres.get("date_fin"):
+            morceaux.append(f"au {criteres['date_fin'].strftime('%d/%m/%Y')}")
+        return " · ".join(morceaux)
 
 
 class PleinCreateView(RoleRequiredMixin, FormView):
@@ -272,7 +299,7 @@ class AnalyseView(RoleRequiredMixin, TemplateView):
 
 #### `apps/fuel/urls.py`
 
-*11 lignes*
+*12 lignes*
 
 ```python
 from django.urls import path
@@ -283,6 +310,7 @@ app_name = "fuel"
 
 urlpatterns = [
     path("", views.PleinListView.as_view(), name="liste"),
+    path("imprimer/", views.PleinImprimerView.as_view(), name="imprimer"),
     path("nouveau/", views.PleinCreateView.as_view(), name="creer"),
     path("analyse/", views.AnalyseView.as_view(), name="analyse"),
 ]
@@ -295,12 +323,12 @@ urlpatterns = [
 ```diff
 --- config/urls.py (avant)
 +++ config/urls.py (après)
-@@ -22,4 +22,5 @@
+@@ -23,4 +23,5 @@
      path("chauffeurs/", include("apps.drivers.urls")),
      path("garage/", include("apps.garage.urls")),
 +    path("carburant/", include("apps.fuel.urls")),
      path("stock/", include("apps.inventory.urls")),
-     path("notifications/", include("apps.notifications.urls")),
+     path("audit/", include("apps.audit.urls")),
 ```
 
 ## Étape 2 — Gabarits
@@ -311,7 +339,7 @@ mkdir -p apps/fuel/templates/fuel
 
 #### `apps/fuel/templates/fuel/plein_list.html`
 
-*112 lignes*
+*116 lignes*
 
 ```django
 {% extends "base.html" %}
@@ -327,6 +355,10 @@ mkdir -p apps/fuel/templates/fuel
       <p class="mt-1 text-sm text-slate-600">{{ paginator.count|default:0 }} plein{{ paginator.count|pluralize }}</p>
     </div>
     <div class="flex flex-wrap gap-3">
+      <a href="{% url 'fuel:imprimer' %}?{{ request.GET.urlencode }}" target="_blank" rel="noopener"
+         class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+        <i class="fa-solid fa-print" aria-hidden="true"></i> Imprimer
+      </a>
       <a href="{% url 'fuel:analyse' %}"
          class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
         <i class="fa-solid fa-chart-column" aria-hidden="true"></i> Analyse de la consommation
@@ -340,7 +372,7 @@ mkdir -p apps/fuel/templates/fuel
     </div>
   </div>
 
-  <dl class="mt-5 grid gap-4 sm:grid-cols-2">
+  <dl class="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
     <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <dt class="text-sm text-slate-600">Consommation moyenne{% if filtre.cleaned_data.vehicule or filtre.cleaned_data.chauffeur %} (selon le filtre){% else %} de la flotte{% endif %}</dt>
       <dd class="mt-1 text-2xl font-bold text-slate-900">
@@ -357,7 +389,7 @@ mkdir -p apps/fuel/templates/fuel
   </dl>
 
   <form method="get" class="mt-5 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
       {% include "components/_champ.html" with champ=filtre.q %}
       {% include "components/_champ.html" with champ=filtre.vehicule %}
       {% include "components/_champ.html" with champ=filtre.chauffeur %}
@@ -475,7 +507,7 @@ mkdir -p apps/fuel/templates/fuel
       </div>
     {% endif %}
 
-    <div class="grid gap-5 sm:grid-cols-2">
+    <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
       {% include "components/_champ.html" with champ=form.vehicule %}
       {% include "components/_champ.html" with champ=form.chauffeur %}
       {% include "components/_champ.html" with champ=form.date_plein %}
@@ -532,7 +564,7 @@ mkdir -p apps/fuel/templates/fuel
     </p>
   </div>
 
-  <div class="mt-6 grid gap-6 xl:grid-cols-2">
+  <div class="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-2">
     <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-camions">
       <h2 id="titre-camions" class="text-base font-semibold text-slate-900">Par camion</h2>
       {% if par_vehicule %}
@@ -805,7 +837,7 @@ def test_la_recherche_du_personnel_ignore_accents_et_casse_dans_l_ecran(client):
 
 #### `apps/fuel/tests/test_views.py`
 
-*556 lignes* — Écrans du carburant : liste, saisie (avec confirmation d'une saisie suspecte), analyse.
+*557 lignes* — Écrans du carburant : liste, saisie (avec confirmation d'une saisie suspecte), analyse.
 
 ```python
 """Écrans du carburant : liste, saisie (avec confirmation d'une saisie suspecte), analyse."""
@@ -912,13 +944,14 @@ def test_le_carburant_est_interdit_aux_autres_roles(client, role):
         assert client.get(reverse(nom)).status_code == 403, nom
 
 
-def test_la_direction_ne_peut_pas_saisir_de_plein(client):
+def test_la_direction_peut_desormais_saisir_un_plein(client):
+    """Retour réunion : la DIRECTION a la même largeur que l'ADMIN pour la saisie."""
     _connecte(client, Role.DIRECTION)
     camion, chauffeur = VehiculeFactory(), ChauffeurFactory()
 
-    assert client.get(reverse("fuel:creer")).status_code == 403
-    assert client.post(reverse("fuel:creer"), _donnees(camion, chauffeur)).status_code == 403
-    assert Plein.objects.count() == 0
+    assert client.get(reverse("fuel:creer")).status_code == 200
+    client.post(reverse("fuel:creer"), _donnees(camion, chauffeur))
+    assert Plein.objects.count() == 1
 
 
 def test_un_visiteur_non_connecte_est_renvoye_vers_la_connexion(client):
@@ -1368,7 +1401,7 @@ def test_une_date_illisible_est_signalee_sans_erreur(client):
 
 #### `apps/notifications/tests/test_receivers.py`
 
-*328 lignes* — Qui est prévenu de quoi : congés, stock, carburant, départ de mission.
+*376 lignes* — Qui est prévenu de quoi : congés, stock, carburant, départ de mission.
 
 ```python
 """Qui est prévenu de quoi : congés, stock, carburant, départ de mission."""
@@ -1440,7 +1473,7 @@ def test_le_superieur_est_prevenu_d_une_demande(equipe):
     assert notification.categorie == CategorieNotification.CONGE
     assert notification.niveau == NiveauNotification.ATTENTION
     assert "Issa Bamba" in notification.titre
-    assert "5 jours ouvrables du 05/10/2026 au 09/10/2026" in notification.message
+    assert "5 jours ouvrés du 05/10/2026 au 09/10/2026" in notification.message
     assert "03/09/2026" in notification.message  # 48 h après la demande
     assert notification.url == reverse("hr:conges_detail", args=[conge.pk])
     assert _de(equipe.compte) == [] and _de(equipe.compte_rh) == []
@@ -1510,7 +1543,7 @@ def test_l_employe_est_prevenu_de_l_approbation(equipe):
 
     (notification,) = _de(equipe.compte)
     assert notification.titre == "Votre congé est approuvé"
-    assert "5 jours ouvrables du 05/10/2026 au 09/10/2026" in notification.message
+    assert "5 jours ouvrés du 05/10/2026 au 09/10/2026" in notification.message
 
 
 def test_l_employe_est_prevenu_du_refus_avec_le_motif(equipe):
@@ -1559,6 +1592,54 @@ def test_une_notification_en_erreur_ne_bloque_jamais_un_conge(equipe, monkeypatc
     conge.refresh_from_db()
     assert conge.statut == "APPROUVE"
     assert "en erreur" in caplog.text
+
+
+def _en_cours(equipe):
+    from apps.hr.models import Conge, StatutConge
+
+    conge = equipe.demander()
+    hr.valider_n1(conge, equipe.compte_sup, maintenant=MAINTENANT)
+    hr.valider_n2(conge, equipe.compte_rh)
+    Conge.objects.filter(pk=conge.pk).update(statut=StatutConge.EN_COURS)
+    conge.refresh_from_db()
+    return conge
+
+
+def test_la_rh_est_prevenue_d_une_demande_de_report(equipe):
+    conge = _en_cours(equipe)
+
+    report = hr.demander_report(
+        conge, equipe.compte, nouvelle_date_fin=date(2026, 10, 7), motif="Fin des vacances"
+    )
+
+    notification = _de(equipe.compte_rh)[-1]  # la RH a déjà la notification de validation N2 (_en_cours)
+    assert notification.categorie == CategorieNotification.CONGE
+    assert "Issa Bamba" in notification.titre
+    assert "07/10/2026" in notification.message
+    assert notification.action == "Confirmer le report"
+    assert notification.url == reverse("hr:conges_detail", args=[conge.pk])
+
+
+def test_l_employe_est_prevenu_de_la_decision_sur_son_report(equipe):
+    conge = _en_cours(equipe)
+    report = hr.demander_report(conge, equipe.compte, nouvelle_date_fin=date(2026, 10, 7), motif="x")
+
+    hr.approuver_report(report, equipe.compte_rh)
+
+    notification = _de(equipe.compte)[-1]  # l'employé a déjà la notification d'approbation (_en_cours)
+    assert "validé" in notification.titre
+    assert "07/10/2026" in notification.message
+
+
+def test_l_employe_est_prevenu_du_refus_de_son_report(equipe):
+    conge = _en_cours(equipe)
+    report = hr.demander_report(conge, equipe.compte, nouvelle_date_fin=date(2026, 10, 7), motif="x")
+
+    hr.refuser_report(report, equipe.compte_rh, motif="Effectif insuffisant")
+
+    notification = _de(equipe.compte)[-1]
+    assert "refusée" in notification.titre
+    assert "Effectif insuffisant" in notification.message
 
 
 # --- stock ---

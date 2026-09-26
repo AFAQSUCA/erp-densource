@@ -1,6 +1,6 @@
 # Chapitre 28 — L'API REST
 
-> 19 fichier(s) dans ce chapitre, 2548 lignes de code.
+> 20 fichier(s) dans ce chapitre, 2664 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -62,7 +62,7 @@ touch apps/api/tests/__init__.py
 
 #### `apps/api/exceptions.py`
 
-*71 lignes* — Traduction des erreurs métier en réponses HTTP claires.
+*73 lignes* — Traduction des erreurs métier en réponses HTTP claires.
 
 ```python
 """Traduction des erreurs métier en réponses HTTP claires.
@@ -93,14 +93,16 @@ from apps.fuel.exceptions import CarburantError, SaisieSuspecte
 from apps.garage.exceptions import ChauffeurNonAutorise, GarageError
 from apps.hr.exceptions import ActionNonAutorisee, CongeError, PersonnelError
 from apps.inventory.exceptions import StockError
-from apps.missions.exceptions import MissionError
+from apps.missions.exceptions import ActionFraisNonAutorisee, MissionError
 from apps.mobile_api.exceptions import MissionIntrouvable, MobileError
 
 ERREURS_METIER = (
     BillingError, ClientError, ChauffeurError, FlotteError, CarburantError, GarageError,
     CongeError, PersonnelError, StockError, MissionError, MobileError,
 )
-ERREURS_DE_DROIT = (ChauffeurNonAutorise, ActionFactureNonAutorisee, ActionNonAutorisee)
+ERREURS_DE_DROIT = (
+    ChauffeurNonAutorise, ActionFactureNonAutorisee, ActionNonAutorisee, ActionFraisNonAutorisee,
+)
 
 
 CODES_MFA = frozenset({"mfa_requise", "mfa_non_activee", "mfa_invalide"})
@@ -1873,7 +1875,7 @@ def test_le_champ_otp_est_documente_dans_le_schema(api):
 
 #### `apps/api/tests/test_v1.py`
 
-*278 lignes* — API bureau /api/v1 : droits par rôle, pagination, filtres, champs exposés, documentation.
+*280 lignes* — API bureau /api/v1 : droits par rôle, pagination, filtres, champs exposés, documentation.
 
 ```python
 """API bureau /api/v1 : droits par rôle, pagination, filtres, champs exposés, documentation."""
@@ -1915,11 +1917,13 @@ def _api(role=Role.ADMIN):
 
 
 RESSOURCES = {
-    "api:mission-list": {Role.ADMIN, Role.DIRECTION, Role.CHARGE_CLIENTELE},
+    # Retour réunion : le Parc Auto affecte les missions, donc les consulte désormais aussi.
+    "api:mission-list": {Role.ADMIN, Role.DIRECTION, Role.CHARGE_CLIENTELE, Role.PARCAUTO},
     "api:camion-list": {Role.ADMIN, Role.DIRECTION, Role.PARCAUTO},
     "api:chauffeur-list": {Role.ADMIN, Role.DIRECTION, Role.RH},
     "api:client-list": {Role.ADMIN, Role.DIRECTION, Role.CHARGE_CLIENTELE},
-    "api:facture-list": {Role.ADMIN, Role.DIRECTION, Role.FINANCES},
+    # Retour réunion : la RH fait tout ce que fait la FINANCES, y compris consulter les factures.
+    "api:facture-list": {Role.ADMIN, Role.DIRECTION, Role.FINANCES, Role.RH},
 }
 
 
@@ -2216,7 +2220,7 @@ def test_la_documentation_de_l_api_a_sa_propre_politique(client):
 
 
 def test_les_pages_d_erreur_ont_aussi_la_csp(client):
-    client.force_login(UserFactory(role=Role.RH))
+    client.force_login(UserFactory(role=Role.PARCAUTO))
 
     reponse = client.get("/facturation/")  # 403
 
@@ -2711,6 +2715,124 @@ def test_la_documentation_decrit_l_api_mobile():
         assert attendu in chemins, attendu
 ```
 
+#### `apps/mobile_api/tests/test_frais_mission.py`
+
+*111 lignes* — Déclaration d'un imprévu (R4) depuis l'espace mobile du chauffeur : PWA et API.
+
+```python
+"""Déclaration d'un imprévu (R4) depuis l'espace mobile du chauffeur : PWA et API."""
+
+from decimal import Decimal
+from io import BytesIO
+
+import pytest
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.urls import reverse
+from rest_framework.test import APIClient
+
+from apps.missions.models import FraisMission, StatutFraisMission, TypeFraisMission
+
+from .helpers import chauffeur_avec_compte, mission_de
+
+pytestmark = pytest.mark.django_db
+
+
+def _preuve() -> SimpleUploadedFile:
+    return SimpleUploadedFile("preuve.jpg", BytesIO(b"donnees").read(), content_type="image/jpeg")
+
+
+@pytest.fixture
+def chauffeur(client):
+    fiche, compte = chauffeur_avec_compte()
+    client.force_login(compte)
+    return fiche, compte
+
+
+def _messages(reponse):
+    return [str(m) for m in reponse.context["messages"]]
+
+
+# --- PWA ---
+
+
+def test_declaration_d_un_imprevu_depuis_le_telephone(client, chauffeur):
+    fiche, _ = chauffeur
+    mission = mission_de(fiche)
+
+    reponse = client.post(
+        reverse("chauffeur:imprevu"),
+        {"mission": mission.pk, "montant": "15000", "description": "Panne moteur", "justificatif": _preuve()},
+        follow=True,
+    )
+
+    frais = FraisMission.objects.get()
+    assert frais.mission == mission and frais.chauffeur == fiche and frais.montant == Decimal("15000")
+    assert frais.statut == StatutFraisMission.PREVU
+    assert any("Parc Auto est prévenu" in m for m in _messages(reponse))
+
+
+def test_un_imprevu_sans_justificatif_est_refuse(client, chauffeur):
+    fiche, _ = chauffeur
+    mission = mission_de(fiche)
+
+    client.post(reverse("chauffeur:imprevu"), {"mission": mission.pk, "montant": "15000", "description": "x"})
+
+    assert not FraisMission.objects.exists()
+
+
+def test_imprevu_sur_la_mission_d_un_autre_chauffeur_refuse(client, chauffeur):
+    from apps.drivers.tests.factories import ChauffeurFactory
+
+    autre_mission = mission_de(ChauffeurFactory())
+
+    client.post(
+        reverse("chauffeur:imprevu"),
+        {"mission": autre_mission.pk, "montant": "1000", "description": "x", "justificatif": _preuve()},
+    )
+
+    assert not FraisMission.objects.exists()
+
+
+# --- API ---
+
+
+def _api(compte):
+    client = APIClient()
+    client.force_authenticate(compte)
+    return client
+
+
+def test_declaration_d_un_imprevu_par_l_api(chauffeur):
+    fiche, compte = chauffeur
+    mission = mission_de(fiche)
+    api = _api(compte)
+
+    reponse = api.post(
+        reverse("api:mobile:imprevus"),
+        {"mission": mission.pk, "montant": "15000", "description": "Panne", "justificatif": _preuve()},
+        format="multipart",
+    )
+
+    assert reponse.status_code == 201
+    assert reponse.data["type_frais"] == TypeFraisMission.IMPREVU
+    assert reponse.data["statut"] == StatutFraisMission.PREVU
+    assert [f["id"] for f in api.get(reverse("api:mobile:imprevus")).data] == [reponse.data["id"]]
+
+
+def test_imprevu_sans_preuve_par_l_api_est_refuse(chauffeur):
+    fiche, compte = chauffeur
+    mission = mission_de(fiche)
+    api = _api(compte)
+
+    reponse = api.post(
+        reverse("api:mobile:imprevus"),
+        {"mission": mission.pk, "montant": "15000", "description": "x"},
+        format="multipart",
+    )
+
+    assert reponse.status_code == 400
+```
+
 Ce chapitre présente aussi plusieurs fichiers de tests qui ont besoin de l'API : les tests de la
 **double authentification** et de l'**anti force brute** (`accounts/tests/test_mfa.py`,
 `test_securite_connexion.py`), ceux de la **politique de sécurité du contenu** (`core/tests/test_csp.py`) et ceux de
@@ -2725,7 +2847,7 @@ l'**API mobile** (`mobile_api/tests/test_api.py`).
 ```diff
 --- config/settings/base.py (avant)
 +++ config/settings/base.py (après)
-@@ -64,4 +64,5 @@
+@@ -67,4 +67,5 @@
      "apps.notifications",
      "apps.dashboard",
 +    "apps.api",
@@ -2740,8 +2862,8 @@ l'**API mobile** (`mobile_api/tests/test_api.py`).
 ```diff
 --- config/urls.py (avant)
 +++ config/urls.py (après)
-@@ -28,4 +28,5 @@
-     path("finances/", include("apps.finance.urls")),
+@@ -30,4 +30,5 @@
+     path("audit/", include("apps.audit.urls")),
      path("notifications/", include("apps.notifications.urls")),
 +    path("api/v1/", include("apps.api.urls")),
      path("chauffeur/", include("apps.mobile_api.urls_web")),
@@ -2767,7 +2889,7 @@ python manage.py check
 ```
 
 ```bash
-python -m pytest apps/accounts/tests/test_mfa.py apps/accounts/tests/test_securite_connexion.py apps/api/tests/test_auth.py apps/api/tests/test_auth_mfa.py apps/api/tests/test_v1.py apps/core/tests/test_csp.py apps/mobile_api/tests/test_api.py -q --no-cov
+python -m pytest apps/accounts/tests/test_mfa.py apps/accounts/tests/test_securite_connexion.py apps/api/tests/test_auth.py apps/api/tests/test_auth_mfa.py apps/api/tests/test_v1.py apps/core/tests/test_csp.py apps/mobile_api/tests/test_api.py apps/mobile_api/tests/test_frais_mission.py -q --no-cov
 ```
 
 **Résultat attendu :** `304 passed` (pour les 7 fichier(s) de tests présentés dans ce chapitre).

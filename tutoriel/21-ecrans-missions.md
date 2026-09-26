@@ -1,6 +1,6 @@
 # Chapitre 21 — Écrans : missions et codes QR
 
-> 14 fichier(s) dans ce chapitre, 2393 lignes de code.
+> 20 fichier(s) dans ce chapitre, 3448 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -40,7 +40,7 @@ chapitre 19).
 
 #### `apps/missions/forms.py`
 
-*58 lignes*
+*135 lignes*
 
 ```python
 from django import forms
@@ -50,13 +50,26 @@ from apps.customers import services as customers_services
 from apps.drivers import services as drivers_services
 from apps.fleet import services as fleet_services
 
+from .models import TypeFraisMission
+from .terrain import TYPES_PLANIFIABLES
+
 
 class MissionForm(StyleTailwindMixin, forms.Form):
     """Création d'une mission (cahier-des-charges.md:129-131)."""
 
     client = forms.ModelChoiceField(queryset=None, label="Client")
-    lieu_chargement = forms.CharField(label="Lieu de chargement", max_length=200)
-    lieu_livraison = forms.CharField(label="Lieu de livraison", max_length=200)
+    # « list » relie le champ à la liste de suggestions « lieux-missions » (mission_form.html) :
+    # les lieux déjà utilisés s'affichent dès les premières lettres, la saisie libre reste possible.
+    lieu_chargement = forms.CharField(
+        label="Lieu de chargement",
+        max_length=200,
+        widget=forms.TextInput(attrs={"list": "lieux-missions", "autocomplete": "off"}),
+    )
+    lieu_livraison = forms.CharField(
+        label="Lieu de livraison",
+        max_length=200,
+        widget=forms.TextInput(attrs={"list": "lieux-missions", "autocomplete": "off"}),
+    )
     nature_marchandise = forms.CharField(label="Nature de la marchandise", max_length=200)
     poids_t = forms.DecimalField(
         label="Poids (tonnes)", min_value=0, decimal_places=2, max_digits=8
@@ -76,11 +89,57 @@ class MissionForm(StyleTailwindMixin, forms.Form):
         self.fields["client"].queryset = customers_services.clients_pour_selection()
 
 
+class ModificationForm(StyleTailwindMixin, forms.Form):
+    """Modification d'une mission déjà créée (avenant-separation-des-taches.md § R3).
+
+    Le camion et le chauffeur ne sont proposés que si la mission est déjà affectée
+    (``reaffectation=True``) : avant, il n'y en a pas encore à réaffecter.
+    """
+
+    lieu_chargement = forms.CharField(
+        label="Lieu de chargement",
+        max_length=200,
+        widget=forms.TextInput(attrs={"list": "lieux-missions", "autocomplete": "off"}),
+    )
+    lieu_livraison = forms.CharField(
+        label="Lieu de livraison",
+        max_length=200,
+        widget=forms.TextInput(attrs={"list": "lieux-missions", "autocomplete": "off"}),
+    )
+    nature_marchandise = forms.CharField(label="Nature de la marchandise", max_length=200)
+    poids_t = forms.DecimalField(
+        label="Poids (tonnes)", min_value=0, decimal_places=2, max_digits=8
+    )
+    prix_convenu = forms.DecimalField(
+        label="Prix convenu (FCFA)", min_value=0, decimal_places=2, max_digits=12
+    )
+    date_depart_prevue = forms.DateField(
+        label="Départ prévu", required=False, widget=forms.DateInput(attrs={"type": "date"}),
+    )
+    vehicule = forms.ModelChoiceField(queryset=None, label="Camion disponible", required=False)
+    chauffeur = forms.ModelChoiceField(queryset=None, label="Chauffeur disponible", required=False)
+
+    def __init__(self, *args, reaffectation=False, **kwargs):
+        super().__init__(*args, **kwargs)
+        if reaffectation:
+            self.fields["vehicule"].queryset = fleet_services.vehicules_disponibles()
+            self.fields["vehicule"].label_from_instance = lambda v: (
+                f"{v.immatriculation} - {v.marque} {v.modele} ({v.capacite_charge_t} t)"
+            )
+            self.fields["chauffeur"].queryset = drivers_services.chauffeurs_disponibles()
+        else:
+            del self.fields["vehicule"]
+            del self.fields["chauffeur"]
+
+
 class AffectationForm(StyleTailwindMixin, forms.Form):
-    """Affectation d'un camion et d'un chauffeur disponibles."""
+    """Affectation d'un camion, d'un chauffeur disponibles et, si le voyage l'exige, d'un copilote."""
 
     vehicule = forms.ModelChoiceField(queryset=None, label="Camion disponible")
     chauffeur = forms.ModelChoiceField(queryset=None, label="Chauffeur disponible")
+    copilote = forms.ModelChoiceField(
+        queryset=None, label="Copilote", required=False, empty_label="Aucun (facultatif)"
+    )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -89,6 +148,7 @@ class AffectationForm(StyleTailwindMixin, forms.Form):
             f"{v.immatriculation} - {v.marque} {v.modele} ({v.capacite_charge_t} t)"
         )
         self.fields["chauffeur"].queryset = drivers_services.chauffeurs_disponibles()
+        self.fields["copilote"].queryset = drivers_services.copilotes_disponibles()
 
 
 class CodeForm(StyleTailwindMixin, forms.Form):
@@ -101,11 +161,28 @@ class CodeForm(StyleTailwindMixin, forms.Form):
 
 class LivraisonForm(CodeForm):
     km_arrivee = forms.IntegerField(label="Kilométrage à l'arrivée", min_value=0)
+
+
+class FraisPrevisionForm(StyleTailwindMixin, forms.Form):
+    """Le Parc Auto planifie une avance de route ou une dépense prévue (R4)."""
+
+    type_frais = forms.ChoiceField(
+        label="Type",
+        choices=[(t, l) for t, l in TypeFraisMission.choices if t in TYPES_PLANIFIABLES],
+    )
+    montant = forms.DecimalField(label="Montant (FCFA)", min_value=0, decimal_places=2, max_digits=12)
+    description = forms.CharField(label="Libellé", max_length=255, required=False)
+
+
+class MotifRejetFraisForm(StyleTailwindMixin, forms.Form):
+    """Motif du rejet d'un frais de mission."""
+
+    motif = forms.CharField(label="Motif du rejet", widget=forms.Textarea(attrs={"rows": 2}))
 ```
 
 #### `apps/missions/views.py`
 
-*231 lignes* — Écrans des missions.
+*498 lignes* — Écrans des missions.
 
 ```python
 """Écrans des missions.
@@ -125,12 +202,23 @@ from django.views import View
 from django.views.generic import DetailView, FormView, ListView
 
 from apps.accounts.mixins import RoleRequiredMixin
-from apps.core.views import PaginationTolerante
+from apps.core.formats import nombre
+from apps.core.rapports import contexte_rapport
+from apps.core.views import ImpressionListeMixin, PaginationTolerante
 
-from . import permissions, services
+from . import documents, permissions, services
+from . import terrain as frais_terrain
 from .exceptions import MissionError
-from .forms import AffectationForm, CodeForm, LivraisonForm, MissionForm
-from .models import StatutMission
+from .forms import (
+    AffectationForm,
+    CodeForm,
+    FraisPrevisionForm,
+    LivraisonForm,
+    MissionForm,
+    ModificationForm,
+    MotifRejetFraisForm,
+)
+from .models import STATUTS_MODIFIABLES, FraisMission, Mission, StatutMission
 
 ETAPES = [
     (StatutMission.BROUILLON, "Brouillon"),
@@ -178,6 +266,29 @@ class MissionListView(PaginationTolerante, RoleRequiredMixin, ListView):
         return contexte
 
 
+class MissionImprimerView(ImpressionListeMixin, MissionListView):
+    """Rapport imprimable des missions (mêmes recherche et filtre statut que la liste)."""
+
+    titre_impression = "Missions"
+    colonnes = (
+        ("N°", "numero"), ("Client", "client.raison_sociale"),
+        ("Chargement", "lieu_chargement"), ("Livraison", "lieu_livraison"),
+        ("Départ prévu", lambda m: m.date_depart_prevue.strftime("%d/%m/%Y") if m.date_depart_prevue else "—"),
+        ("Camion", lambda m: m.vehicule.immatriculation if m.vehicule_id else "—"),
+        ("Chauffeur", lambda m: f"{m.chauffeur.personnel.prenom} {m.chauffeur.personnel.nom}" if m.chauffeur_id else "—"),
+        ("Statut", "get_statut_display"), ("Prix convenu", lambda m: f"{nombre(m.prix_convenu)} FCFA"),
+    )
+
+    def get_sous_titre_impression(self):
+        statut = self.request.GET.get("statut", "")
+        morceaux = []
+        if statut in StatutMission.values:
+            morceaux.append(f"statut : {StatutMission(statut).label}")
+        if self.request.GET.get("q", ""):
+            morceaux.append(f"recherche : « {self.request.GET['q']} »")
+        return " · ".join(morceaux)
+
+
 class MissionDetailView(RoleRequiredMixin, DetailView):
     roles = permissions.CONSULTATION
     template_name = "missions/mission_detail.html"
@@ -197,6 +308,11 @@ class MissionDetailView(RoleRequiredMixin, DetailView):
             form_affectation=AffectationForm() if actions["affecter"] else None,
             form_recuperation=CodeForm() if actions["recuperation"] else None,
             form_livraison=LivraisonForm() if actions["livraison"] else None,
+            peut_voir_frais=utilisateur.role_effectif in permissions.FRAIS_CONSULTATION,
+            peut_modifier=(
+                utilisateur.role_effectif in permissions.MODIFICATION
+                and mission.statut in STATUTS_MODIFIABLES
+            ),
         )
         return contexte
 
@@ -206,14 +322,84 @@ class MissionCreateView(RoleRequiredMixin, FormView):
     form_class = MissionForm
     template_name = "missions/mission_form.html"
 
+    def get_context_data(self, **kwargs):
+        return super().get_context_data(lieux=services.lieux_deja_utilises(), **kwargs)
+
     def form_valid(self, form):
         try:
             mission = services.creer_mission(**form.cleaned_data)
         except MissionError as erreur:
             form.add_error(None, str(erreur))
             return self.form_invalid(form)
-        messages.success(self.request, f"Mission {mission.numero} créée en brouillon.")
+        messages.success(
+            self.request,
+            f"Mission {mission.numero} créée en brouillon. Le PDF des codes à transmettre à "
+            "l'expéditeur et au destinataire se télécharge ci-dessous.",
+        )
         return redirect("missions:detail", pk=mission.pk)
+
+
+class MissionUpdateView(RoleRequiredMixin, FormView):
+    """Modification d'une mission (avenant-separation-des-taches.md § R3) : DIRECTION et ADMIN
+    seulement, tant que le colis n'est pas encore récupéré (``STATUTS_MODIFIABLES``)."""
+
+    roles = permissions.MODIFICATION
+    form_class = ModificationForm
+    template_name = "missions/mission_modifier.html"
+
+    def dispatch(self, request, *args, **kwargs):
+        self.mission = get_object_or_404(services.missions_queryset(), pk=kwargs["pk"])
+        return super().dispatch(request, *args, **kwargs)
+
+    def get(self, request, *args, **kwargs):
+        if self.mission.statut not in STATUTS_MODIFIABLES:
+            messages.info(
+                request,
+                f"La mission {self.mission.numero} n'est plus modifiable "
+                f"({self.mission.get_statut_display()}).",
+            )
+            return redirect("missions:detail", pk=self.mission.pk)
+        return super().get(request, *args, **kwargs)
+
+    @property
+    def reaffectation(self) -> bool:
+        return self.mission.statut == StatutMission.AFFECTEE
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["reaffectation"] = self.reaffectation
+        return kwargs
+
+    def get_initial(self):
+        initial = {
+            "lieu_chargement": self.mission.lieu_chargement,
+            "lieu_livraison": self.mission.lieu_livraison,
+            "nature_marchandise": self.mission.nature_marchandise,
+            "poids_t": self.mission.poids_t,
+            "prix_convenu": self.mission.prix_convenu,
+            "date_depart_prevue": self.mission.date_depart_prevue,
+        }
+        if self.reaffectation:
+            initial.update(vehicule=self.mission.vehicule_id, chauffeur=self.mission.chauffeur_id)
+        return initial
+
+    def get_context_data(self, **kwargs):
+        return super().get_context_data(
+            mission=self.mission, lieux=services.lieux_deja_utilises(), **kwargs
+        )
+
+    def form_valid(self, form):
+        donnees = dict(form.cleaned_data)
+        if not self.reaffectation:
+            donnees.pop("vehicule", None)
+            donnees.pop("chauffeur", None)
+        try:
+            services.modifier_mission(self.mission, **donnees)
+        except MissionError as erreur:
+            form.add_error(None, str(erreur))
+            return self.form_invalid(form)
+        messages.success(self.request, f"Mission {self.mission.numero} modifiée.")
+        return redirect("missions:detail", pk=self.mission.pk)
 
 
 class ActionMissionView(RoleRequiredMixin, View):
@@ -264,7 +450,8 @@ class AffecterView(ActionMissionView):
 
     def executer(self, mission, donnees):
         services.affecter_mission(
-            mission, vehicule=donnees["vehicule"], chauffeur=donnees["chauffeur"]
+            mission, vehicule=donnees["vehicule"], chauffeur=donnees["chauffeur"],
+            copilote=donnees.get("copilote"),
         )
 
     def message_succes(self, mission):
@@ -282,7 +469,7 @@ class DemarrerView(ActionMissionView):
 
 
 class RecuperationView(ActionMissionView):
-    roles = permissions.SUIVI_TERRAIN
+    roles = permissions.CODES_TERRAIN
     form_class = CodeForm
 
     def executer(self, mission, donnees):
@@ -293,7 +480,7 @@ class RecuperationView(ActionMissionView):
 
 
 class LivraisonView(ActionMissionView):
-    roles = permissions.SUIVI_TERRAIN
+    roles = permissions.CODES_TERRAIN
     form_class = LivraisonForm
 
     def executer(self, mission, donnees):
@@ -313,6 +500,28 @@ class CloturerView(ActionMissionView):
 
     def message_succes(self, mission):
         return f"Mission {mission.numero} clôturée et validée."
+
+
+class CodesPdfView(RoleRequiredMixin, View):
+    """PDF des codes à transmettre (une page pour l'expéditeur, une pour le destinataire).
+
+    Mêmes règles que l'affichage des codes : rôles qui les voient, et seulement les codes encore
+    utiles (jamais après la récupération / la livraison). Produit à la demande, jamais stocké ni
+    mis en cache : le code est un secret.
+    """
+
+    roles = permissions.CONSULTATION
+    http_method_names = ["get"]
+
+    def get(self, request, pk):
+        mission = get_object_or_404(services.missions_queryset(), pk=pk)
+        codes = permissions.codes_visibles(request.user, mission)
+        if not (codes["expediteur"] or codes["destinataire"]):
+            raise Http404
+        reponse = HttpResponse(documents.generer_pdf_codes(mission, codes), content_type="application/pdf")
+        reponse["Content-Disposition"] = f'attachment; filename="codes-{mission.numero}.pdf"'
+        reponse["Cache-Control"] = "no-store, private"
+        return reponse
 
 
 class CodeQrView(RoleRequiredMixin, View):
@@ -339,6 +548,141 @@ class CodeQrView(RoleRequiredMixin, View):
         reponse = HttpResponse(tampon.getvalue(), content_type="image/png")
         reponse["Cache-Control"] = "no-store, private"
         return reponse
+
+
+# --- prévision de trésorerie des missions (R4) ---
+
+
+class FraisMissionListeView(PaginationTolerante, RoleRequiredMixin, ListView):
+    """Lignes en attente (toutes missions), pour le Parc Auto et la Finance."""
+
+    roles = permissions.FRAIS_CONSULTATION
+    template_name = "missions/frais_liste.html"
+    context_object_name = "lignes"
+    paginate_by = 30
+
+    def get_queryset(self):
+        return frais_terrain.frais_a_traiter()
+
+
+class FraisMissionDetailView(RoleRequiredMixin, DetailView):
+    """Prévision de trésorerie d'une mission : lignes, totaux, planification et validation."""
+
+    roles = permissions.FRAIS_CONSULTATION
+    template_name = "missions/frais_detail.html"
+    context_object_name = "mission"
+
+    def get_queryset(self):
+        return services.missions_queryset()
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        mission = self.object
+        role = self.request.user.role
+        peut_planifier = self.request.user.role_effectif in permissions.FRAIS_SAISIE_PREVISION
+        contexte.update(
+            lignes=frais_terrain.frais_queryset(mission),
+            totaux=frais_terrain.totaux(mission),
+            peut_planifier=peut_planifier,
+            peut_valider_parcauto=role in permissions.FRAIS_VALIDATION_PARCAUTO,
+            peut_valider_finances=role in permissions.FRAIS_VALIDATION_FINANCES,
+            form_planifier=FraisPrevisionForm() if peut_planifier else None,
+            form_rejet=MotifRejetFraisForm(),
+        )
+        return contexte
+
+
+class FraisMissionPrintView(RoleRequiredMixin, DetailView):
+    """Rapport de mission imprimable : toutes les lignes et leurs totaux."""
+
+    roles = permissions.FRAIS_CONSULTATION
+    template_name = "missions/frais_print.html"
+    context_object_name = "mission"
+
+    def get_queryset(self):
+        return services.missions_queryset()
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        contexte.update(contexte_rapport(self.request, titre=f"Rapport de mission {self.object.numero}"))
+        contexte.update(lignes=frais_terrain.frais_queryset(self.object), totaux=frais_terrain.totaux(self.object))
+        return contexte
+
+
+class FraisPlanifierView(RoleRequiredMixin, View):
+    roles = permissions.FRAIS_SAISIE_PREVISION
+    http_method_names = ["post"]
+
+    def post(self, request, pk):
+        mission = get_object_or_404(Mission, pk=pk)
+        form = FraisPrevisionForm(request.POST)
+        if not form.is_valid():
+            for erreurs in form.errors.values():
+                for erreur in erreurs:
+                    messages.error(request, erreur)
+            return redirect("missions:frais", pk=mission.pk)
+        try:
+            frais_terrain.planifier_frais(mission, request.user, **form.cleaned_data)
+        except MissionError as erreur:
+            messages.error(request, str(erreur))
+        else:
+            messages.success(request, "Frais planifié : la finance peut le confirmer.")
+        return redirect("missions:frais", pk=mission.pk)
+
+
+class _ActionFrais(RoleRequiredMixin, View):
+    """Action en POST sur un frais de mission : formulaire → service → message → retour à la mission."""
+
+    http_method_names = ["post"]
+    form_class = None
+
+    def executer(self, request, frais, donnees):  # pragma: no cover - surchargé
+        raise NotImplementedError
+
+    def post(self, request, frais_pk):
+        frais = get_object_or_404(FraisMission, pk=frais_pk)
+        donnees = {}
+        if self.form_class is not None:
+            form = self.form_class(request.POST)
+            if not form.is_valid():
+                for erreurs in form.errors.values():
+                    for erreur in erreurs:
+                        messages.error(request, erreur)
+                return redirect("missions:frais", pk=frais.mission_id)
+            donnees = form.cleaned_data
+        try:
+            message = self.executer(request, frais, donnees)
+        except MissionError as erreur:
+            messages.error(request, str(erreur))
+        else:
+            if message:
+                messages.success(request, message)
+        return redirect("missions:frais", pk=frais.mission_id)
+
+
+class FraisValiderParcautoView(_ActionFrais):
+    roles = permissions.FRAIS_VALIDATION_PARCAUTO
+
+    def executer(self, request, frais, donnees):
+        frais_terrain.valider_parcauto(frais, request.user)
+        return "Imprévu validé : transmis à la finance pour confirmation."
+
+
+class FraisValiderFinancesView(_ActionFrais):
+    roles = permissions.FRAIS_VALIDATION_FINANCES
+
+    def executer(self, request, frais, donnees):
+        frais_terrain.valider_finances(frais, request.user)
+        return "Frais confirmé : comptabilisé en dépense."
+
+
+class FraisRejeterView(_ActionFrais):
+    roles = permissions.FRAIS_VALIDATION_PARCAUTO | permissions.FRAIS_VALIDATION_FINANCES
+    form_class = MotifRejetFraisForm
+
+    def executer(self, request, frais, donnees):
+        frais_terrain.rejeter(frais, request.user, motif=donnees["motif"])
+        return "Frais rejeté."
 ```
 
 Repérez :
@@ -351,7 +695,7 @@ Repérez :
 
 #### `apps/missions/urls.py`
 
-*18 lignes*
+*36 lignes*
 
 ```python
 from django.urls import path
@@ -362,15 +706,33 @@ app_name = "missions"
 
 urlpatterns = [
     path("", views.MissionListView.as_view(), name="liste"),
+    path("imprimer/", views.MissionImprimerView.as_view(), name="imprimer"),
     path("nouvelle/", views.MissionCreateView.as_view(), name="creer"),
     path("<int:pk>/", views.MissionDetailView.as_view(), name="detail"),
+    path("<int:pk>/modifier/", views.MissionUpdateView.as_view(), name="modifier"),
     path("<int:pk>/planifier/", views.PlanifierView.as_view(), name="planifier"),
     path("<int:pk>/affecter/", views.AffecterView.as_view(), name="affecter"),
     path("<int:pk>/demarrer/", views.DemarrerView.as_view(), name="demarrer"),
     path("<int:pk>/recuperation/", views.RecuperationView.as_view(), name="recuperation"),
     path("<int:pk>/livraison/", views.LivraisonView.as_view(), name="livraison"),
     path("<int:pk>/cloturer/", views.CloturerView.as_view(), name="cloturer"),
+    path("<int:pk>/codes.pdf", views.CodesPdfView.as_view(), name="codes_pdf"),
     path("<int:pk>/qr/<str:qui>.png", views.CodeQrView.as_view(), name="qr"),
+    path("frais/", views.FraisMissionListeView.as_view(), name="frais_liste"),
+    path("<int:pk>/frais/", views.FraisMissionDetailView.as_view(), name="frais"),
+    path("<int:pk>/frais/imprimer/", views.FraisMissionPrintView.as_view(), name="frais_imprimer"),
+    path("<int:pk>/frais/planifier/", views.FraisPlanifierView.as_view(), name="frais_planifier"),
+    path(
+        "frais/<int:frais_pk>/valider-parcauto/",
+        views.FraisValiderParcautoView.as_view(),
+        name="frais_valider_parcauto",
+    ),
+    path(
+        "frais/<int:frais_pk>/valider-finances/",
+        views.FraisValiderFinancesView.as_view(),
+        name="frais_valider_finances",
+    ),
+    path("frais/<int:frais_pk>/rejeter/", views.FraisRejeterView.as_view(), name="frais_rejeter"),
 ]
 ```
 
@@ -381,7 +743,7 @@ urlpatterns = [
 ```diff
 --- config/urls.py (avant)
 +++ config/urls.py (après)
-@@ -16,4 +16,5 @@
+@@ -17,4 +17,5 @@
      path("favicon.ico", RedirectView.as_view(url=settings.STATIC_URL + "img/favicon.png", permanent=True)),
      path("", include("apps.accounts.urls")),
 +    path("missions/", include("apps.missions.urls")),
@@ -397,27 +759,34 @@ mkdir -p apps/missions/templates/missions
 
 #### `apps/missions/templates/missions/mission_list.html`
 
-*90 lignes*
+*100 lignes*
 
 ```django
 {% extends "base.html" %}
-{% load humanize ui %}
+{% load humanize static ui %}
 {% block titre %}Missions{% endblock %}
 {% block entete %}Missions{% endblock %}
 
 {% block contenu %}
-<div class="mx-auto max-w-7xl">
+<div class="mx-auto max-w-7xl" data-suivi-missions data-ws-chemin="/ws/missions/suivi/">
   <div class="flex flex-wrap items-end justify-between gap-3">
     <div>
       <h1 class="text-2xl font-bold text-slate-900">Missions</h1>
-      <p class="mt-1 text-sm text-slate-600">{{ paginator.count|default:0 }} mission{{ paginator.count|pluralize }}</p>
+      <p class="mt-1 text-sm text-slate-600" data-suivi-zone="compteur">{{ paginator.count|default:0 }} mission{{ paginator.count|pluralize }}</p>
+      <div class="mt-2">{% include "components/_suivi_direct.html" %}</div>
     </div>
-    {% if peut_creer %}
-      <a href="{% url 'missions:creer' %}"
-         class="inline-flex items-center gap-2 rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">
-        <i class="fa-solid fa-plus" aria-hidden="true"></i> Nouvelle mission
+    <div class="flex flex-wrap items-center gap-2">
+      <a href="{% url 'missions:imprimer' %}?{{ request.GET.urlencode }}" target="_blank" rel="noopener"
+         class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+        <i class="fa-solid fa-print" aria-hidden="true"></i> Imprimer
       </a>
-    {% endif %}
+      {% if peut_creer %}
+        <a href="{% url 'missions:creer' %}"
+           class="inline-flex items-center gap-2 rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">
+          <i class="fa-solid fa-plus" aria-hidden="true"></i> Nouvelle mission
+        </a>
+      {% endif %}
+    </div>
   </div>
 
   <form method="get" class="mt-5 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -442,6 +811,7 @@ mkdir -p apps/missions/templates/missions
     {% endif %}
   </form>
 
+  <div data-suivi-zone="liste">
   {% if missions %}
     <div class="mt-5 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
       <table class="min-w-full divide-y divide-slate-200 text-sm">
@@ -488,13 +858,15 @@ mkdir -p apps/missions/templates/missions
       </p>
     </div>
   {% endif %}
+  </div>{# fin de la zone rafraîchie en direct #}
 </div>
+<script src="{% static 'js/suivi-missions.js' %}" defer></script>
 {% endblock %}
 ```
 
 #### `apps/missions/templates/missions/mission_form.html`
 
-*42 lignes*
+*45 lignes*
 
 ```django
 {% extends "base.html" %}
@@ -512,6 +884,9 @@ mkdir -p apps/missions/templates/missions
     La mission est créée en brouillon ; elle reçoit son numéro et ses deux codes (expéditeur, destinataire).
   </p>
 
+  {# Lieux déjà utilisés par des missions : suggérés dès les premières lettres (champs « list ») #}
+  <datalist id="lieux-missions">{% for lieu in lieux %}<option value="{{ lieu }}"></option>{% endfor %}</datalist>
+
   <form method="post" novalidate class="mt-6 space-y-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
     {% csrf_token %}
     {% if form.non_field_errors %}
@@ -520,7 +895,7 @@ mkdir -p apps/missions/templates/missions
       </div>
     {% endif %}
 
-    <div class="grid gap-5 sm:grid-cols-2">
+    <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
       <div class="sm:col-span-2">{% include "components/_champ.html" with champ=form.client %}</div>
       {% include "components/_champ.html" with champ=form.lieu_chargement %}
       {% include "components/_champ.html" with champ=form.lieu_livraison %}
@@ -543,24 +918,43 @@ mkdir -p apps/missions/templates/missions
 
 #### `apps/missions/templates/missions/mission_detail.html`
 
-*160 lignes*
+*196 lignes*
 
 ```django
 {% extends "base.html" %}
-{% load humanize ui %}
+{% load humanize static ui %}
 {% block titre %}{{ mission.numero }}{% endblock %}
 {% block entete %}Missions{% endblock %}
 
 {% block contenu %}
-<div class="mx-auto max-w-5xl">
+<div class="mx-auto max-w-5xl" data-suivi-missions data-ws-chemin="/ws/missions/suivi/" data-mission-id="{{ mission.pk }}">
   <nav aria-label="Fil d'Ariane" class="text-sm text-slate-600">
     <a href="{% url 'missions:liste' %}" class="underline-offset-2 hover:underline">Missions</a>
     <span aria-hidden="true">/</span> {{ mission.numero }}
   </nav>
+  <div class="mt-2">{% include "components/_suivi_direct.html" %}</div>
 
-  <div class="mt-2 flex flex-wrap items-center gap-3">
-    <h1 class="text-2xl font-bold text-slate-900">{{ mission.numero }}</h1>
-    {% badge mission.statut mission.get_statut_display %}
+  {% if peut_voir_frais %}
+    <div class="mt-2 text-right">
+      <a href="{% url 'missions:frais' mission.pk %}" class="text-sm font-medium text-marque-700 underline-offset-2 hover:underline">
+        <i class="fa-solid fa-money-bill-transfer mr-1" aria-hidden="true"></i>Frais de mission
+      </a>
+    </div>
+  {% endif %}
+
+  {# Zone rafraîchie en direct (static/js/suivi-missions.js) : statut, frise, actions et codes #}
+  <div data-suivi-zone="mission">
+  <div class="mt-2 flex flex-wrap items-center justify-between gap-3">
+    <div class="flex flex-wrap items-center gap-3">
+      <h1 class="text-2xl font-bold text-slate-900">{{ mission.numero }}</h1>
+      {% badge mission.statut mission.get_statut_display %}
+    </div>
+    {% if peut_modifier %}
+      <a href="{% url 'missions:modifier' mission.pk %}"
+         class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+        <i class="fa-solid fa-pen" aria-hidden="true"></i> Modifier
+      </a>
+    {% endif %}
   </div>
   <p class="mt-1 text-sm text-slate-600">{{ mission.client }}</p>
 
@@ -580,11 +974,11 @@ mkdir -p apps/missions/templates/missions
     {% endfor %}
   </ol>
 
-  <div class="mt-6 grid gap-6 lg:grid-cols-3">
+  <div class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
     <div class="space-y-6 lg:col-span-2">
       <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-transport">
         <h2 id="titre-transport" class="text-base font-semibold text-slate-900">Transport</h2>
-        <dl class="mt-4 grid gap-x-6 gap-y-4 text-sm sm:grid-cols-2">
+        <dl class="mt-4 grid grid-cols-1 gap-x-6 gap-y-4 text-sm sm:grid-cols-2">
           <div><dt class="text-slate-600">Chargement</dt><dd class="mt-0.5 font-medium text-slate-900">{{ mission.lieu_chargement }}</dd></div>
           <div><dt class="text-slate-600">Livraison</dt><dd class="mt-0.5 font-medium text-slate-900">{{ mission.lieu_livraison }}</dd></div>
           <div><dt class="text-slate-600">Marchandise</dt><dd class="mt-0.5 font-medium text-slate-900">{{ mission.nature_marchandise }}</dd></div>
@@ -597,9 +991,12 @@ mkdir -p apps/missions/templates/missions
       <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-affectation">
         <h2 id="titre-affectation" class="text-base font-semibold text-slate-900">Camion et chauffeur</h2>
         {% if mission.vehicule %}
-          <dl class="mt-4 grid gap-x-6 gap-y-4 text-sm sm:grid-cols-2">
+          <dl class="mt-4 grid grid-cols-1 gap-x-6 gap-y-4 text-sm sm:grid-cols-2">
             <div><dt class="text-slate-600">Camion</dt><dd class="mt-0.5 font-medium text-slate-900">{{ mission.vehicule.immatriculation }} — {{ mission.vehicule.marque }} {{ mission.vehicule.modele }}</dd></div>
             <div><dt class="text-slate-600">Chauffeur</dt><dd class="mt-0.5 font-medium text-slate-900">{{ mission.chauffeur.personnel.prenom }} {{ mission.chauffeur.personnel.nom }}</dd></div>
+            {% if mission.copilote %}
+              <div><dt class="text-slate-600">Copilote</dt><dd class="mt-0.5 font-medium text-slate-900">{{ mission.copilote.personnel.prenom }} {{ mission.copilote.personnel.nom }}</dd></div>
+            {% endif %}
             <div><dt class="text-slate-600">Km au départ</dt><dd class="mt-0.5 font-medium text-slate-900">{{ mission.km_depart|default_if_none:"—"|intcomma }}</dd></div>
             <div><dt class="text-slate-600">Km à l'arrivée</dt><dd class="mt-0.5 font-medium text-slate-900">{{ mission.km_arrivee|default_if_none:"—"|intcomma }}</dd></div>
           </dl>
@@ -610,7 +1007,7 @@ mkdir -p apps/missions/templates/missions
 
       <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-dates">
         <h2 id="titre-dates" class="text-base font-semibold text-slate-900">Historique</h2>
-        <dl class="mt-4 grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
+        <dl class="mt-4 grid grid-cols-1 gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
           <div><dt class="text-slate-600">Créée le</dt><dd class="mt-0.5 font-medium text-slate-900">{{ mission.created_at|date:"d/m/Y H:i" }}</dd></div>
           <div><dt class="text-slate-600">Départ effectif</dt><dd class="mt-0.5 font-medium text-slate-900">{{ mission.date_depart|date:"d/m/Y H:i"|default:"—" }}</dd></div>
           <div><dt class="text-slate-600">Colis récupéré le</dt><dd class="mt-0.5 font-medium text-slate-900">{{ mission.date_recuperation|date:"d/m/Y H:i"|default:"—" }}</dd></div>
@@ -637,6 +1034,7 @@ mkdir -p apps/missions/templates/missions
             {% csrf_token %}
             {% include "components/_champ.html" with champ=form_affectation.vehicule %}
             {% include "components/_champ.html" with champ=form_affectation.chauffeur %}
+            {% include "components/_champ.html" with champ=form_affectation.copilote %}
             <button type="submit" class="w-full rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">Affecter</button>
           </form>
         {% endif %}
@@ -676,6 +1074,12 @@ mkdir -p apps/missions/templates/missions
           </form>
         {% endif %}
 
+        {% if mission.statut == "EN_COURS_DEPART" and not actions.recuperation %}
+          <p class="mt-4 text-sm text-slate-700"><i class="fa-solid fa-mobile-screen mr-1" aria-hidden="true"></i>La récupération se confirme par le code de l'expéditeur, saisi ou scanné par le chauffeur affecté depuis son téléphone. Cet écran se met à jour dès que c'est fait.</p>
+        {% elif mission.statut == "EN_COURS_COLIS_RECUPERE" and not actions.livraison %}
+          <p class="mt-4 text-sm text-slate-700"><i class="fa-solid fa-mobile-screen mr-1" aria-hidden="true"></i>La livraison se confirme par le code du destinataire, saisi ou scanné par le chauffeur affecté depuis son téléphone. Cet écran se met à jour dès que c'est fait.</p>
+        {% endif %}
+
         {% if not actions.planifier and not actions.affecter and not actions.demarrer and not actions.recuperation and not actions.livraison and not actions.cloturer %}
           <p class="mt-3 text-sm text-slate-700">Aucune action disponible pour votre rôle à cette étape.</p>
         {% endif %}
@@ -685,6 +1089,11 @@ mkdir -p apps/missions/templates/missions
         <section class="rounded-xl border border-amber-300 bg-amber-50 p-5 shadow-sm" aria-labelledby="titre-codes">
           <h2 id="titre-codes" class="text-base font-semibold text-amber-900"><i class="fa-solid fa-key mr-2" aria-hidden="true"></i>Codes à communiquer</h2>
           <p class="mt-1 text-xs text-amber-900">Confidentiels : à remettre uniquement à la personne concernée.</p>
+          <a href="{% url 'missions:codes_pdf' mission.pk %}"
+             class="mt-3 flex items-center justify-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-amber-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-700 focus-visible:ring-offset-2">
+            <i class="fa-solid fa-file-pdf" aria-hidden="true"></i> Télécharger le PDF des codes
+          </a>
+          <p class="mt-1 text-center text-xs text-amber-900">Une page pour l'expéditeur, une pour le destinataire : à envoyer à chacun.</p>
           {% if codes.expediteur %}
             <div class="mt-4">
               <p class="text-sm text-amber-900">Expéditeur (récupération du colis)</p>
@@ -704,7 +1113,9 @@ mkdir -p apps/missions/templates/missions
       {% endif %}
     </div>
   </div>
+  </div>{# fin de la zone rafraîchie en direct #}
 </div>
+<script src="{% static 'js/suivi-missions.js' %}" defer></script>
 {% endblock %}
 ```
 
@@ -763,237 +1174,282 @@ C'est le gabarit le plus riche du projet : la **frise** (`{% for … %}` sur les
 
 ## Étape 3 — Tests
 
-#### `apps/accounts/tests/test_web.py`
-
-*221 lignes* — Connexion, accueil, menu par rôle et garde d'accès.
-
-```python
-"""Connexion, accueil, menu par rôle et garde d'accès."""
-
-import pytest
-from django.conf import settings
-from django.test import Client
-from django.urls import reverse
-
-from apps.accounts import navigation
-from apps.accounts.models import Role
-from apps.audit.models import ActionChoices, AuditLog, StatutChoices
-
-from .factories import UserFactory
-
-pytestmark = pytest.mark.django_db
-
-MOT_DE_PASSE = "Test-Passw0rd!"
-
-
-def _connecte(client, role):
-    utilisateur = UserFactory(role=role)
-    client.force_login(utilisateur)
-    return utilisateur
-
-
-# --- connexion / déconnexion ---
-
-
-def test_la_page_de_connexion_s_affiche(client):
-    reponse = client.get(reverse("accounts:login"))
-
-    assert reponse.status_code == 200
-    assert "Se connecter" in reponse.content.decode()
-
-
-def test_connexion_reussie_redirige_vers_l_accueil_et_est_tracee(client):
-    utilisateur = UserFactory(username="awa", role=Role.DIRECTION)
-
-    reponse = client.post(
-        reverse("accounts:login"), {"username": "awa", "password": MOT_DE_PASSE}
-    )
-
-    assert reponse.status_code == 302
-    assert reponse.url == reverse("home")
-    assert AuditLog.objects.filter(
-        action=ActionChoices.LOGIN, utilisateur=utilisateur, statut=StatutChoices.SUCCESS
-    ).exists()
-
-
-def test_connexion_avec_un_mauvais_mot_de_passe_affiche_une_erreur_et_est_tracee(client):
-    UserFactory(username="awa")
-
-    reponse = client.post(
-        reverse("accounts:login"), {"username": "awa", "password": "faux"}
-    )
-
-    assert reponse.status_code == 200
-    assert reponse.context["form"].non_field_errors()
-    assert AuditLog.objects.filter(
-        action=ActionChoices.LOGIN, statut=StatutChoices.FAILED
-    ).exists()
-
-
-def test_un_utilisateur_connecte_qui_ouvre_la_connexion_va_a_l_accueil(client):
-    _connecte(client, Role.RH)
-
-    reponse = client.get(reverse("accounts:login"))
-
-    assert reponse.status_code == 302
-    assert reponse.url == reverse("home")
-
-
-def test_deconnexion_par_post_ferme_la_session_et_est_tracee(client):
-    utilisateur = _connecte(client, Role.RH)
-
-    reponse = client.post(reverse("accounts:logout"))
-
-    assert reponse.status_code == 302
-    assert reponse.url == reverse("accounts:login")
-    assert client.get(reverse("home")).status_code == 302
-    assert AuditLog.objects.filter(
-        action=ActionChoices.LOGOUT, utilisateur=utilisateur
-    ).exists()
-
-
-def test_la_deconnexion_refuse_le_get(client):
-    _connecte(client, Role.RH)
-
-    assert client.get(reverse("accounts:logout")).status_code == 405
-
-
-def test_la_deconnexion_est_protegee_par_csrf():
-    client = Client(enforce_csrf_checks=True)
-    client.force_login(UserFactory())
-
-    assert client.post(reverse("accounts:logout")).status_code == 403
-
-
-def test_la_session_expire_apres_30_minutes_d_inactivite():
-    assert settings.SESSION_COOKIE_AGE == 30 * 60
-    assert settings.SESSION_SAVE_EVERY_REQUEST is True
-
-
-# --- accueil ---
-
-
-def test_l_accueil_exige_une_connexion_et_conserve_la_destination(client):
-    reponse = client.get(reverse("home"))
-
-    assert reponse.status_code == 302
-    assert reponse.url == f"{reverse('accounts:login')}?next=/"
-
-
-def test_l_accueil_salue_l_utilisateur(client):
-    utilisateur = UserFactory(role=Role.DIRECTION, first_name="Awa")
-    client.force_login(utilisateur)
-
-    contenu = client.get(reverse("home")).content.decode()
-
-    assert "Bonjour Awa" in contenu
-    assert "Direction" in contenu
-
-
-def test_le_menu_depend_du_role(client):
-    _connecte(client, Role.DIRECTION)
-    assert 'href="/missions/"' in client.get(reverse("home")).content.decode()
-
-    finances = Client()
-    _connecte(finances, Role.FINANCES)  # seuls les congés sont ouverts à ce rôle pour l'instant
-    contenu = finances.get(reverse("home")).content.decode()
-    assert 'href="/missions/"' not in contenu
-    assert 'href="/rh/conges/"' in contenu
-    assert "Aucun écran n" not in contenu
-
-    chauffeur = Client()
-    _connecte(chauffeur, Role.CHAUFFEUR)  # passe par l'espace mobile : aucun écran web
-    assert "Aucun écran n" in chauffeur.get(reverse("home")).content.decode()
-
-
-def test_un_chauffeur_est_renvoye_vers_l_espace_mobile(client):
-    _connecte(client, Role.CHAUFFEUR)
-
-    assert "espace mobile" in client.get(reverse("home")).content.decode()
-
-
-def test_un_superutilisateur_sans_role_agit_en_admin(client):
-    admin = UserFactory(role="", is_superuser=True, is_staff=True)
-    client.force_login(admin)
-
-    assert admin.role_effectif == Role.ADMIN
-    assert client.get(reverse("missions:liste")).status_code == 200
-
-
-# --- pages d'erreur ---
-
-
-def test_un_role_non_autorise_recoit_la_page_403(client):
-    _connecte(client, Role.FINANCES)
-
-    reponse = client.get(reverse("missions:liste"))
-
-    assert reponse.status_code == 403
-    assert "Accès refusé" in reponse.content.decode()
-
-
-def test_une_page_inexistante_affiche_la_page_404(client, settings):
-    settings.DEBUG = False
-    settings.ALLOWED_HOSTS = ["testserver"]
-    _connecte(client, Role.DIRECTION)
-
-    reponse = client.get("/n-existe-pas/")
-
-    assert reponse.status_code == 404
-    assert "Page introuvable" in reponse.content.decode()
-
-
-# --- navigation ---
-
-
-def test_entrees_pour_filtre_par_role_trie_et_marque_l_entree_active(monkeypatch):
-    accueil = navigation.EntreeMenu("Accueil", "home", "fa-house", None, ordre=0)
-    reserve_rh = navigation.EntreeMenu(
-        "Réservé RH", "missions:liste", "fa-flask", frozenset({Role.RH}), ordre=5
-    )
-    monkeypatch.setattr(
-        navigation, "_ENTREES", {"missions:liste": reserve_rh, "home": accueil}
-    )
-
-    rh = navigation.entrees_pour(Role.RH, "/missions/")
-    finances = navigation.entrees_pour(Role.FINANCES, "/missions/")
-
-    assert [e["libelle"] for e in rh] == ["Accueil", "Réservé RH"]
-    assert [e["actif"] for e in rh] == [False, True]
-    assert [e["libelle"] for e in finances] == ["Accueil"]
-
-
-def test_l_accueil_n_est_actif_que_sur_la_racine(monkeypatch):
-    accueil = navigation.EntreeMenu("Accueil", "home", "fa-house", None, ordre=0)
-    monkeypatch.setattr(navigation, "_ENTREES", {"home": accueil})
-
-    assert navigation.entrees_pour(Role.RH, "/")[0]["actif"] is True
-    assert navigation.entrees_pour(Role.RH, "/missions/")[0]["actif"] is False
-
-
-def test_une_entree_dont_l_ecran_n_existe_pas_est_ignoree_sans_erreur(monkeypatch):
-    accueil = navigation.EntreeMenu("Accueil", "home", "fa-house", None, ordre=0)
-    fantome = navigation.EntreeMenu("Fantôme", "ecran:inexistant", "fa-ghost", None, ordre=1)
-    monkeypatch.setattr(navigation, "_ENTREES", {"home": accueil, "ecran:inexistant": fantome})
-
-    assert [e["libelle"] for e in navigation.entrees_pour(Role.RH, "/")] == ["Accueil"]
-
-
-def test_aucun_commentaire_de_template_ne_fuit_dans_les_pages(client):
-    """`{# ... #}` multi-lignes s'afficherait en texte brut : régression déjà vue."""
-    pages = [reverse("accounts:login")]
-    _connecte(client, Role.DIRECTION)
-    pages += [reverse("home"), reverse("missions:liste"), reverse("missions:creer")]
-
-    for url in pages:
-        contenu = client.get(url).content.decode()
-        assert "{#" not in contenu and "#}" not in contenu, url
-        assert "{%" not in contenu and "%}" not in contenu, url
+#### `apps/missions/templates/missions/frais_detail.html`
+
+*98 lignes*
+
+```django
+{% extends "base.html" %}
+{% load ui humanize %}
+{% block titre %}Frais de mission {{ mission.numero }}{% endblock %}
+{% block entete %}Frais de mission{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-5xl">
+  <nav aria-label="Fil d'Ariane" class="text-sm text-slate-600">
+    <a href="{% url 'missions:frais_liste' %}" class="underline-offset-2 hover:underline">Frais de mission</a>
+    <span aria-hidden="true">/</span> {{ mission.numero }}
+  </nav>
+
+  <div class="mt-2 flex flex-wrap items-center justify-between gap-3">
+    <h1 class="text-2xl font-bold text-slate-900">Frais de mission {{ mission.numero }}</h1>
+    <div class="flex items-center gap-2">
+      <a href="{% url 'missions:detail' mission.pk %}" class="text-sm font-medium text-slate-700 underline-offset-2 hover:underline">Voir la mission</a>
+      <a href="{% url 'missions:frais_imprimer' mission.pk %}" target="_blank" rel="noopener"
+         class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50">
+        <i class="fa-solid fa-print" aria-hidden="true"></i> Rapport de mission
+      </a>
+    </div>
+  </div>
+  <p class="mt-1 text-sm text-slate-600">{{ mission.client.raison_sociale }} · {{ mission.lieu_chargement }} → {{ mission.lieu_livraison }}</p>
+
+  <dl class="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
+    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Sorties confirmées</dt><dd class="mt-1 text-2xl font-bold text-slate-900">{{ totaux.sorties|floatformat:0|intcomma }} <span class="text-sm font-medium text-slate-600">FCFA</span></dd></div>
+    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Encaissé</dt><dd class="mt-1 text-2xl font-bold text-slate-900">{{ totaux.encaisse|floatformat:0|intcomma }} <span class="text-sm font-medium text-slate-600">FCFA</span></dd></div>
+    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Solde</dt><dd class="mt-1 text-2xl font-bold {% if totaux.solde < 0 %}text-red-800{% else %}text-slate-900{% endif %}">{{ totaux.solde|floatformat:0|intcomma }} <span class="text-sm font-medium text-slate-600">FCFA</span></dd></div>
+  </dl>
+
+  {% if form_planifier %}
+    <form method="post" action="{% url 'missions:frais_planifier' mission.pk %}" class="mt-5 space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      {% csrf_token %}
+      <h2 class="text-sm font-semibold text-slate-900">Planifier une avance de route ou une dépense prévue</h2>
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        {% include "components/_champ.html" with champ=form_planifier.type_frais %}
+        {% include "components/_champ.html" with champ=form_planifier.montant %}
+        {% include "components/_champ.html" with champ=form_planifier.description %}
+      </div>
+      <button type="submit" class="rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700">Planifier</button>
+    </form>
+  {% endif %}
+
+  {% if lignes %}
+    <div class="mt-5 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+      <table class="min-w-full divide-y divide-slate-200 text-sm">
+        <caption class="sr-only">Lignes de frais de la mission</caption>
+        <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+          <tr>
+            <th scope="col" class="px-4 py-3">Type</th>
+            <th scope="col" class="px-4 py-3">Détail</th>
+            <th scope="col" class="px-4 py-3 text-right">Montant</th>
+            <th scope="col" class="px-4 py-3">Statut</th>
+            <th scope="col" class="px-4 py-3"><span class="sr-only">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          {% for f in lignes %}
+            <tr>
+              <td class="whitespace-nowrap px-4 py-3 text-slate-900">{{ f.get_type_frais_display }}</td>
+              <td class="px-4 py-3 text-slate-700">
+                {% if f.type_frais == "IMPREVU" %}{{ f.chauffeur.personnel.prenom }} {{ f.chauffeur.personnel.nom }}{% else %}{{ f.saisi_par|default:"—" }}{% endif %}
+                {% if f.description %}<span class="block text-xs text-slate-600">{{ f.description }}</span>{% endif %}
+                {% if f.justificatif %}<a href="{{ f.justificatif.url }}" target="_blank" rel="noopener" class="text-xs font-medium text-marque-700 underline-offset-2 hover:underline">Voir la preuve</a>{% endif %}
+                {% if f.statut == "REJETE" and f.motif_rejet %}<span class="block text-xs text-red-700">Motif : {{ f.motif_rejet }}</span>{% endif %}
+              </td>
+              <td class="whitespace-nowrap px-4 py-3 text-right font-medium text-slate-900">{{ f.montant|floatformat:0|intcomma }}</td>
+              <td class="whitespace-nowrap px-4 py-3">{% badge f.statut f.get_statut_display %}</td>
+              <td class="px-4 py-3">
+                {% if f.attend_le_parc_auto and peut_valider_parcauto %}
+                  <form method="post" action="{% url 'missions:frais_valider_parcauto' f.pk %}" class="inline">{% csrf_token %}<button type="submit" class="text-sm font-medium text-emerald-800 underline-offset-2 hover:underline">Valider</button></form>
+                {% elif f.attend_la_finance and peut_valider_finances %}
+                  <form method="post" action="{% url 'missions:frais_valider_finances' f.pk %}" class="inline">{% csrf_token %}<button type="submit" class="text-sm font-medium text-emerald-800 underline-offset-2 hover:underline">Confirmer</button></form>
+                {% endif %}
+                {% if f.statut == "PREVU" %}
+                  {% if peut_valider_parcauto or peut_valider_finances %}
+                    <span x-data="{ ouvert: false }" class="ml-2 inline">
+                      <button type="button" @click="ouvert = !ouvert" class="text-sm font-medium text-red-800 underline-offset-2 hover:underline">Rejeter</button>
+                      <form method="post" action="{% url 'missions:frais_rejeter' f.pk %}" x-show="ouvert" x-cloak class="mt-2 space-y-2 text-left">{% csrf_token %}
+                        <textarea name="motif" rows="2" required placeholder="Motif du rejet" class="block w-full rounded-lg border border-slate-300 px-2 py-1 text-xs"></textarea>
+                        <button type="submit" class="rounded-lg border border-red-300 bg-white px-3 py-1 text-xs font-semibold text-red-800 hover:bg-red-50">Confirmer le rejet</button>
+                      </form>
+                    </span>
+                  {% endif %}
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="mt-5 rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center">
+      <p class="text-sm text-slate-600">Aucun frais de mission pour l'instant.</p>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}
+```
+
+#### `apps/missions/templates/missions/frais_liste.html`
+
+*54 lignes*
+
+```django
+{% extends "base.html" %}
+{% load ui humanize %}
+{% block titre %}Frais de mission{% endblock %}
+{% block entete %}Frais de mission{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-6xl">
+  <h1 class="text-2xl font-bold text-slate-900">Frais de mission</h1>
+  <p class="mt-1 text-sm text-slate-600">Lignes en attente de validation, toutes missions confondues.</p>
+
+  {% if lignes %}
+    <div class="mt-5 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+      <table class="min-w-full divide-y divide-slate-200 text-sm">
+        <caption class="sr-only">Frais de mission en attente</caption>
+        <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+          <tr>
+            <th scope="col" class="px-4 py-3">Mission</th>
+            <th scope="col" class="px-4 py-3">Type</th>
+            <th scope="col" class="px-4 py-3">Détail</th>
+            <th scope="col" class="px-4 py-3 text-right">Montant</th>
+            <th scope="col" class="px-4 py-3">Étape</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          {% for f in lignes %}
+            <tr class="hover:bg-slate-50">
+              <td class="whitespace-nowrap px-4 py-3 font-semibold"><a href="{% url 'missions:frais' f.mission_id %}" class="text-marque-700 underline-offset-2 hover:underline">{{ f.mission.numero }}</a></td>
+              <td class="whitespace-nowrap px-4 py-3 text-slate-700">{{ f.get_type_frais_display }}</td>
+              <td class="px-4 py-3 text-slate-700">
+                {% if f.type_frais == "IMPREVU" %}{{ f.chauffeur.personnel.prenom }} {{ f.chauffeur.personnel.nom }}{% else %}{{ f.saisi_par|default:"—" }}{% endif %}
+                {% if f.description %} · {{ f.description|truncatechars:60 }}{% endif %}
+              </td>
+              <td class="whitespace-nowrap px-4 py-3 text-right text-slate-900">{{ f.montant|floatformat:0|intcomma }}</td>
+              <td class="whitespace-nowrap px-4 py-3">
+                {% if f.attend_le_parc_auto %}
+                  {% badge "PREVU" "Attend le Parc Auto" %}
+                {% else %}
+                  {% badge "PREVU" "Attend la Finance" %}
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% include "components/_pagination.html" %}
+  {% else %}
+    <div class="mt-5 rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center">
+      <span class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-600"><i class="fa-solid fa-money-bill-transfer" aria-hidden="true"></i></span>
+      <p class="mt-3 font-semibold text-slate-900">Aucune ligne en attente</p>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}
+```
+
+#### `apps/missions/templates/missions/frais_print.html`
+
+*42 lignes*
+
+```django
+{% load humanize static %}<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rapport de mission {{ mission.numero }}</title>
+  {% include "rapports/_style_impression.html" %}
+</head>
+<body>
+  {% include "rapports/_entete_impression.html" %}
+
+  <p style="margin-top:1.5rem">
+    <strong>{{ mission.client.raison_sociale }}</strong><br>
+    <span class="petit">{{ mission.lieu_chargement }} → {{ mission.lieu_livraison }} ({{ mission.nature_marchandise }})</span>
+  </p>
+
+  <table>
+    <thead><tr><th>Type</th><th>Détail</th><th>Statut</th><th class="droite">Montant</th></tr></thead>
+    <tbody>
+      {% for f in lignes %}
+        <tr>
+          <td>{{ f.get_type_frais_display }}</td>
+          <td>{% if f.type_frais == "IMPREVU" %}{{ f.chauffeur.personnel.prenom }} {{ f.chauffeur.personnel.nom }}{% else %}{{ f.saisi_par|default:"—" }}{% endif %}{% if f.description %} · {{ f.description }}{% endif %}</td>
+          <td>{{ f.get_statut_display }}</td>
+          <td class="droite">{{ f.montant|floatformat:0|intcomma }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="4">Aucun frais enregistré.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="totaux" style="margin-left:auto;width:320px;margin-top:1rem">
+    <div style="display:flex;justify-content:space-between;padding:.25rem 0"><span>Sorties confirmées</span><span>{{ totaux.sorties|floatformat:0|intcomma }} FCFA</span></div>
+    <div style="display:flex;justify-content:space-between;padding:.25rem 0"><span>Encaissé confirmé</span><span>{{ totaux.encaisse|floatformat:0|intcomma }} FCFA</span></div>
+    <div style="display:flex;justify-content:space-between;padding:.25rem 0;border-top:2px solid #111;font-weight:bold"><span>Solde</span><span>{{ totaux.solde|floatformat:0|intcomma }} FCFA</span></div>
+  </div>
+
+  {% include "rapports/_pied_impression.html" %}
+  <script src="{% static 'js/app.js' %}" defer></script>
+</body>
+</html>
+```
+
+#### `apps/missions/templates/missions/mission_modifier.html`
+
+*51 lignes*
+
+```django
+{% extends "base.html" %}
+{% block titre %}Modifier {{ mission.numero }}{% endblock %}
+{% block entete %}Missions{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-3xl">
+  <nav aria-label="Fil d'Ariane" class="text-sm text-slate-600">
+    <a href="{% url 'missions:liste' %}" class="underline-offset-2 hover:underline">Missions</a>
+    <span aria-hidden="true">/</span>
+    <a href="{% url 'missions:detail' mission.pk %}" class="underline-offset-2 hover:underline">{{ mission.numero }}</a>
+    <span aria-hidden="true">/</span> Modifier
+  </nav>
+  <h1 class="mt-2 text-2xl font-bold text-slate-900">Modifier {{ mission.numero }}</h1>
+  <p class="mt-1 text-sm text-slate-600">
+    {{ mission.client.raison_sociale }} · possible tant que le colis n'est pas encore récupéré.
+    {% if form.vehicule %}Changer le camion ou le chauffeur revérifie leur disponibilité.{% endif %}
+    Changer un lieu régénère les deux codes secrets (l'ancien QR ne servira plus).
+  </p>
+
+  <datalist id="lieux-missions">{% for lieu in lieux %}<option value="{{ lieu }}"></option>{% endfor %}</datalist>
+
+  <form method="post" novalidate class="mt-6 space-y-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+      <div role="alert" class="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">
+        {% for erreur in form.non_field_errors %}<p>{{ erreur }}</p>{% endfor %}
+      </div>
+    {% endif %}
+
+    <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
+      {% include "components/_champ.html" with champ=form.lieu_chargement %}
+      {% include "components/_champ.html" with champ=form.lieu_livraison %}
+      <div class="sm:col-span-2">{% include "components/_champ.html" with champ=form.nature_marchandise %}</div>
+      {% include "components/_champ.html" with champ=form.poids_t %}
+      {% include "components/_champ.html" with champ=form.prix_convenu %}
+      <div class="sm:col-span-2">{% include "components/_champ.html" with champ=form.date_depart_prevue %}</div>
+      {% if form.vehicule %}
+        {% include "components/_champ.html" with champ=form.vehicule %}
+        {% include "components/_champ.html" with champ=form.chauffeur %}
+      {% endif %}
+    </div>
+
+    <div class="flex items-center justify-end gap-3 border-t border-slate-100 pt-5">
+      <a href="{% url 'missions:detail' mission.pk %}" class="rounded-lg px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Annuler</a>
+      <button type="submit" class="rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">
+        Enregistrer les modifications
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}
 ```
 
 #### `apps/customers/tests/test_views.py`
 
-*376 lignes* — Écrans clients : accès par rôle, portefeuille, fiche, création, interactions.
+*377 lignes* — Écrans clients : accès par rôle, portefeuille, fiche, création, interactions.
 
 ```python
 """Écrans clients : accès par rôle, portefeuille, fiche, création, interactions."""
@@ -1081,15 +1537,16 @@ def test_les_clients_sont_interdits_aux_autres_roles(client, role):
         assert client.get(url).status_code == 403, url
 
 
-def test_la_direction_est_en_lecture_seule(client):
+def test_la_direction_peut_desormais_modifier(client):
+    """Retour réunion : la DIRECTION a la même largeur que l'ADMIN pour la saisie/modification."""
     _connecte(client, Role.DIRECTION)
     fiche = ClientFactory()
 
-    assert client.get(reverse("customers:creer")).status_code == 403
-    assert client.get(reverse("customers:modifier", args=[fiche.pk])).status_code == 403
-    assert client.post(reverse("customers:interaction", args=[fiche.pk]), _interaction()).status_code == 403
+    assert client.get(reverse("customers:creer")).status_code == 200
+    assert client.get(reverse("customers:modifier", args=[fiche.pk])).status_code == 200
+    assert client.post(reverse("customers:interaction", args=[fiche.pk]), _interaction()).status_code != 403
     texte = client.get(reverse("customers:detail", args=[fiche.pk])).content.decode()
-    assert "Modifier" not in texte and "Ajouter une interaction" not in texte
+    assert "Modifier" in texte and "Ajouter une interaction" in texte
 
 
 def test_les_clients_exigent_la_connexion(client):
@@ -1376,7 +1833,7 @@ def test_le_delai_de_paiement_doit_etre_entre_1_et_365_jours(client):
 
 #### `apps/drivers/tests/test_views.py`
 
-*350 lignes* — Écrans des chauffeurs : accès par rôle, liste, fiche, modification, statut.
+*352 lignes* — Écrans des chauffeurs : accès par rôle, liste, fiche, modification, statut.
 
 ```python
 """Écrans des chauffeurs : accès par rôle, liste, fiche, modification, statut."""
@@ -1533,11 +1990,13 @@ def test_la_liste_n_effectue_pas_une_requete_par_chauffeur(client, django_assert
 
 def test_les_donnees_saisies_sont_echappees_contre_le_xss(client):
     _connecte(client, Role.DIRECTION)
-    ChauffeurFactory(telephone="<script>alert(1)</script>")
+    # Charge utile courte : `telephone` fait max_length=20 (apps/drivers/models.py), une contrainte
+    # que PostgreSQL applique réellement (SQLite l'aurait acceptée sans erreur).
+    ChauffeurFactory(telephone="<script>x</script>")
 
     contenu = client.get(reverse("drivers:liste")).content.decode()
 
-    assert "<script>alert(1)</script>" not in contenu
+    assert "<script>x</script>" not in contenu
     assert "&lt;script&gt;" in contenu
 
 
@@ -1733,7 +2192,7 @@ def test_les_formulaires_des_chauffeurs_sont_proteges_par_csrf():
 
 #### `apps/missions/tests/test_alerte_conge.py`
 
-*114 lignes* — Alerte N1 : le chauffeur qui demande un congé a une mission prévue sur la période.
+*116 lignes* — Alerte N1 : le chauffeur qui demande un congé a une mission prévue sur la période.
 
 ```python
 """Alerte N1 : le chauffeur qui demande un congé a une mission prévue sur la période.
@@ -1798,8 +2257,10 @@ def test_le_lien_vers_la_mission_est_reserve_aux_roles_qui_y_ont_acces(client, c
     )
     lien = reverse("missions:detail", args=[mission.pk])
 
-    assert lien not in _page(client, compte_sup, conge)  # PARCAUTO n'a pas accès aux missions
+    # Retour réunion : le Parc Auto affecte les missions, donc les consulte désormais aussi.
+    assert lien in _page(client, compte_sup, conge)
     assert lien in _page(client, UserFactory(role=Role.DIRECTION), conge)
+    assert lien not in _page(client, UserFactory(role=Role.RH), conge)
 
 
 @pytest.mark.parametrize(
@@ -1852,9 +2313,572 @@ def test_la_section_missions_du_client_est_reservee_aux_roles_des_missions():
     assert sections.section_missions_client(fiche, UserFactory(role=Role.DIRECTION)) is not None
 ```
 
+#### `apps/missions/tests/test_documents.py`
+
+*118 lignes* — PDF des codes d'une mission : une page par partie, jamais un code devenu inutile.
+
+```python
+"""PDF des codes d'une mission : une page par partie, jamais un code devenu inutile."""
+
+import re
+
+import pytest
+from django.urls import reverse
+
+from apps.accounts.models import Role
+from apps.accounts.tests.factories import UserFactory
+from apps.drivers.tests.factories import ChauffeurFactory
+from apps.fleet.tests.factories import VehiculeFactory
+from apps.missions import documents, permissions
+from apps.missions.models import StatutMission
+
+from .factories import MissionFactory
+
+pytestmark = pytest.mark.django_db
+
+CODES = {"expediteur": "ABCD2345", "destinataire": "WXYZ6789"}
+
+
+def _pages(pdf: bytes) -> int:
+    return len(re.findall(rb"/Type /Page(?![s\w])", pdf))
+
+
+def test_le_pdf_a_une_page_par_partie_avec_son_code_et_son_qr():
+    mission = MissionFactory(numero="MIS-2026-0042")
+
+    pdf = documents.generer_pdf_codes(mission, CODES)
+
+    assert pdf.startswith(b"%PDF")
+    assert _pages(pdf) == 2
+    assert b"MIS-2026-0042" in pdf
+    # chaque code sert de contenu à son QR ; à l'écran il est écrit espacé (« A B C D … »)
+    assert b"(A B C D 2 3 4 5) Tj" in pdf and b"(W X Y Z 6 7 8 9) Tj" in pdf
+    assert pdf.count(b"/Subtype /Image") >= 2  # le logo et les QR
+
+
+def test_un_seul_code_utile_donne_une_seule_page():
+    pdf = documents.generer_pdf_codes(MissionFactory(), {"expediteur": None, "destinataire": "WXYZ6789"})
+
+    assert _pages(pdf) == 1
+    assert b"ABCD2345" not in pdf and b"A B C D 2 3 4 5" not in pdf  # le code de l'autre partie n'y est pas
+
+
+def test_aucun_code_utile_est_une_erreur():
+    with pytest.raises(ValueError):
+        documents.generer_pdf_codes(MissionFactory(), {"expediteur": None, "destinataire": None})
+
+
+def test_l_entete_porte_le_nom_de_l_entreprise(settings):
+    settings.ENTREPRISE_NOM = "Transport Essai SA"
+    settings.ENTREPRISE_ADRESSE = "Zone 4, Abidjan"
+
+    pdf = documents.generer_pdf_codes(MissionFactory(), CODES)
+
+    assert b"Transport Essai SA" in pdf and b"Zone 4, Abidjan" in pdf
+
+
+# --- écran ---
+
+
+@pytest.mark.parametrize("role", sorted(permissions.VOIR_CODES))
+def test_les_roles_qui_voient_les_codes_telechargent_le_pdf(client, role):
+    client.force_login(UserFactory(role=role))
+    mission = MissionFactory()
+
+    reponse = client.get(reverse("missions:codes_pdf", args=[mission.pk]))
+
+    assert reponse.status_code == 200
+    assert reponse["Content-Type"] == "application/pdf"
+    assert reponse["Content-Disposition"] == f'attachment; filename="codes-{mission.numero}.pdf"'
+    assert "no-store" in reponse["Cache-Control"]
+
+
+@pytest.mark.parametrize("role", [Role.CHAUFFEUR, Role.RH, Role.FINANCES])
+def test_les_autres_roles_n_ont_pas_le_pdf(client, role):
+    client.force_login(UserFactory(role=role))
+
+    assert client.get(reverse("missions:codes_pdf", args=[MissionFactory().pk])).status_code == 403
+
+
+def test_le_parc_auto_consulte_la_mission_mais_pas_le_pdf_des_codes(client):
+    """Retour réunion : le Parc Auto affecte les missions (CONSULTATION), mais les codes restent
+    réservés à ceux qui gèrent la relation client (VOIR_CODES, décision indépendante)."""
+    client.force_login(UserFactory(role=Role.PARCAUTO))
+
+    assert client.get(reverse("missions:codes_pdf", args=[MissionFactory().pk])).status_code == 404
+
+
+def test_le_pdf_ne_contient_plus_le_code_expediteur_apres_la_recuperation(client):
+    client.force_login(UserFactory(role=Role.ADMIN))
+    mission = MissionFactory(
+        statut=StatutMission.EN_COURS_COLIS_RECUPERE, vehicule=VehiculeFactory(), chauffeur=ChauffeurFactory(), km_depart=1000
+    )
+
+    pdf = client.get(reverse("missions:codes_pdf", args=[mission.pk])).content
+
+    assert _pages(pdf) == 1
+    assert b"A B C D 2 3 4 5" not in pdf and b"W X Y Z 6 7 8 9" in pdf
+
+
+def test_le_pdf_est_introuvable_une_fois_la_mission_livree(client):
+    client.force_login(UserFactory(role=Role.ADMIN))
+    mission = MissionFactory(
+        statut=StatutMission.LIVREE, vehicule=VehiculeFactory(), chauffeur=ChauffeurFactory(), km_depart=1000, km_arrivee=1200
+    )
+
+    assert client.get(reverse("missions:codes_pdf", args=[mission.pk])).status_code == 404
+
+
+def test_la_fiche_propose_le_telechargement_du_pdf(client):
+    client.force_login(UserFactory(role=Role.CHARGE_CLIENTELE))
+    mission = MissionFactory()
+
+    contenu = client.get(reverse("missions:detail", args=[mission.pk])).content.decode()
+
+    assert reverse("missions:codes_pdf", args=[mission.pk]) in contenu
+```
+
+#### `apps/missions/tests/test_frais_mission_views.py`
+
+*119 lignes* — Écrans de la prévision de trésorerie des missions (R4) : accès, planification, validation.
+
+```python
+"""Écrans de la prévision de trésorerie des missions (R4) : accès, planification, validation."""
+
+from decimal import Decimal
+from io import BytesIO
+
+import pytest
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.urls import reverse
+
+from apps.accounts.models import Role
+from apps.accounts.tests.factories import UserFactory
+from apps.missions import terrain as missions_terrain
+from apps.missions.models import StatutFraisMission, TypeFraisMission
+
+from .test_frais_mission import _chauffeur, _finances, _mission_affectee, _parcauto
+
+pytestmark = pytest.mark.django_db
+
+
+def _connecte(client, role):
+    compte = UserFactory(role=role)
+    client.force_login(compte)
+    return compte
+
+
+@pytest.mark.parametrize("role", [Role.ADMIN, Role.DIRECTION, Role.PARCAUTO, Role.FINANCES])
+def test_les_frais_de_mission_sont_accessibles_aux_roles_concernes(client, role):
+    _connecte(client, role)
+    mission = _mission_affectee()
+
+    for url in (reverse("missions:frais_liste"), reverse("missions:frais", args=[mission.pk])):
+        assert client.get(url).status_code == 200, url
+
+
+@pytest.mark.parametrize("role", [Role.RH, Role.CHARGE_CLIENTELE, Role.CHAUFFEUR])
+def test_les_frais_de_mission_sont_interdits_aux_autres_roles(client, role):
+    _connecte(client, role)
+    mission = _mission_affectee()
+
+    assert client.get(reverse("missions:frais_liste")).status_code == 403
+    assert client.get(reverse("missions:frais", args=[mission.pk])).status_code == 403
+
+
+def test_le_lien_frais_de_mission_n_apparait_pas_pour_le_charge_clientele(client):
+    mission = _mission_affectee()
+    _connecte(client, Role.DIRECTION)
+    assert "Frais de mission" in client.get(reverse("missions:detail", args=[mission.pk])).content.decode()
+
+    _connecte(client, Role.CHARGE_CLIENTELE)
+    assert "Frais de mission" not in client.get(reverse("missions:detail", args=[mission.pk])).content.decode()
+
+
+def test_le_parc_auto_planifie_une_avance_via_l_ecran(client):
+    mission = _mission_affectee()
+    _connecte(client, Role.PARCAUTO)
+
+    reponse = client.post(
+        reverse("missions:frais_planifier", args=[mission.pk]),
+        {"type_frais": TypeFraisMission.AVANCE_ROUTE, "montant": "50000", "description": "Avance essence"},
+    )
+
+    assert reponse.status_code == 302
+    assert mission.frais.filter(type_frais=TypeFraisMission.AVANCE_ROUTE).exists()
+
+
+def test_la_finance_confirme_une_avance_via_l_ecran(client):
+    mission = _mission_affectee()
+    frais = missions_terrain.planifier_frais(
+        mission, _parcauto(), type_frais=TypeFraisMission.AVANCE_ROUTE, montant=Decimal("50000")
+    )
+    _connecte(client, Role.FINANCES)
+
+    reponse = client.post(reverse("missions:frais_valider_finances", args=[frais.pk]))
+
+    assert reponse.status_code == 302
+    frais.refresh_from_db()
+    assert frais.statut == StatutFraisMission.CONFIRME
+
+
+def test_le_parc_auto_valide_puis_la_finance_confirme_un_imprevu_via_les_ecrans(client):
+    chauffeur = _chauffeur()
+    mission = _mission_affectee(chauffeur)
+    preuve = SimpleUploadedFile("p.jpg", BytesIO(b"x").read(), content_type="image/jpeg")
+    frais = missions_terrain.declarer_imprevu(mission, chauffeur, montant=Decimal("9000"), justificatif=preuve)
+
+    _connecte(client, Role.PARCAUTO)
+    reponse = client.post(reverse("missions:frais_valider_parcauto", args=[frais.pk]))
+    assert reponse.status_code == 302
+    frais.refresh_from_db()
+    assert frais.statut == StatutFraisMission.PREVU and frais.valide_parcauto_par is not None
+
+    _connecte(client, Role.FINANCES)
+    reponse = client.post(reverse("missions:frais_valider_finances", args=[frais.pk]))
+    assert reponse.status_code == 302
+    frais.refresh_from_db()
+    assert frais.statut == StatutFraisMission.CONFIRME
+
+
+def test_rejeter_un_frais_via_l_ecran(client):
+    mission = _mission_affectee()
+    frais = missions_terrain.planifier_frais(
+        mission, _parcauto(), type_frais=TypeFraisMission.AVANCE_ROUTE, montant=Decimal("50000")
+    )
+    _connecte(client, Role.FINANCES)
+
+    reponse = client.post(reverse("missions:frais_rejeter", args=[frais.pk]), {"motif": "Montant excessif"})
+
+    assert reponse.status_code == 302
+    frais.refresh_from_db()
+    assert frais.statut == StatutFraisMission.REJETE
+
+
+def test_le_rapport_de_mission_s_imprime(client):
+    mission = _mission_affectee()
+    _connecte(client, Role.DIRECTION)
+
+    reponse = client.get(reverse("missions:frais_imprimer", args=[mission.pk]))
+
+    assert reponse.status_code == 200
+```
+
+#### `apps/missions/tests/test_modification.py`
+
+*305 lignes* — R3 — Modification d'une mission (avenant-separation-des-taches.md) : DIRECTION et ADMIN
+
+```python
+"""R3 — Modification d'une mission (avenant-separation-des-taches.md) : DIRECTION et ADMIN
+seulement, tant que le colis n'est pas encore récupéré ; changer un lieu régénère les codes,
+changer camion/chauffeur revérifie leur disponibilité."""
+
+from decimal import Decimal
+
+import pytest
+from django.test import Client
+from django.urls import reverse
+
+from apps.accounts.models import Role
+from apps.accounts.tests.factories import UserFactory
+from apps.drivers.models import StatutChauffeur
+from apps.drivers.tests.factories import ChauffeurFactory
+from apps.fleet.models import StatutVehicule
+from apps.fleet.tests.factories import VehiculeFactory
+from apps.missions import services
+from apps.missions.exceptions import AffectationImpossible, MissionError, TransitionMissionInterdite
+from apps.missions.models import Mission, StatutMission
+
+from .test_services import _affectee, _creer, _en_cours, _livree, _planifiee, _recuperee
+
+pytestmark = pytest.mark.django_db
+
+
+def _connecte(client, role):
+    utilisateur = UserFactory(role=role)
+    client.force_login(utilisateur)
+    return utilisateur
+
+
+def _messages(reponse):
+    return [str(m) for m in reponse.context["messages"]]
+
+
+def _champs(mission, **surcharges):
+    donnees = dict(
+        lieu_chargement=mission.lieu_chargement,
+        lieu_livraison=mission.lieu_livraison,
+        nature_marchandise=mission.nature_marchandise,
+        poids_t=mission.poids_t,
+        prix_convenu=mission.prix_convenu,
+        date_depart_prevue=mission.date_depart_prevue,
+    )
+    donnees.update(surcharges)
+    return donnees
+
+
+def _poste(mission, **surcharges):
+    """``_champs`` prête pour un POST HTTP (le client de test n'encode pas ``None``)."""
+    donnees = _champs(mission, **surcharges)
+    if donnees.get("date_depart_prevue") is None:
+        donnees["date_depart_prevue"] = ""
+    return donnees
+
+
+# --- service : statuts modifiables ---
+
+
+@pytest.mark.parametrize("fabrique", [_creer, _planifiee, _affectee, _en_cours])
+def test_modifiable_jusqu_a_en_cours_depart(fabrique):
+    mission = fabrique()
+
+    modifiee = services.modifier_mission(mission, **_champs(mission, nature_marchandise="Sable"))
+
+    assert modifiee.nature_marchandise == "Sable"
+
+
+@pytest.mark.parametrize("fabrique", [_recuperee, _livree])
+def test_plus_modifiable_a_partir_de_colis_recupere(fabrique):
+    mission = fabrique()
+
+    with pytest.raises(TransitionMissionInterdite):
+        services.modifier_mission(mission, **_champs(mission, nature_marchandise="Sable"))
+
+
+# --- validations ---
+
+
+def test_poids_et_prix_restent_valides():
+    mission = _creer()
+
+    with pytest.raises(MissionError, match="poids"):
+        services.modifier_mission(mission, **_champs(mission, poids_t=Decimal("0")))
+    with pytest.raises(MissionError, match="négatif"):
+        services.modifier_mission(mission, **_champs(mission, prix_convenu=Decimal("-1")))
+
+
+def test_le_prix_convenu_est_bien_modifiable():
+    mission = _creer()
+
+    modifiee = services.modifier_mission(mission, **_champs(mission, prix_convenu=Decimal("999000")))
+
+    assert modifiee.prix_convenu == Decimal("999000")
+
+
+# --- lieu → codes régénérés ---
+
+
+def test_changer_un_lieu_regenere_les_deux_codes():
+    mission = _creer()
+    ancien_expediteur, ancien_destinataire = mission.code_expediteur, mission.code_destinataire
+
+    modifiee = services.modifier_mission(mission, **_champs(mission, lieu_livraison="Korhogo"))
+
+    assert modifiee.code_expediteur != ancien_expediteur
+    assert modifiee.code_destinataire != ancien_destinataire
+    assert modifiee.code_expediteur != modifiee.code_destinataire
+
+
+def test_ne_pas_changer_le_lieu_garde_les_memes_codes():
+    mission = _creer()
+    code = mission.code_expediteur
+
+    modifiee = services.modifier_mission(mission, **_champs(mission, nature_marchandise="Sable"))
+
+    assert modifiee.code_expediteur == code
+
+
+# --- camion / chauffeur ---
+
+
+def test_reaffecter_camion_et_chauffeur_sur_une_mission_affectee():
+    mission = _affectee()
+    nouveau_vehicule, nouveau_chauffeur = VehiculeFactory(), ChauffeurFactory()
+
+    modifiee = services.modifier_mission(
+        mission, **_champs(mission), vehicule=nouveau_vehicule, chauffeur=nouveau_chauffeur
+    )
+
+    assert (modifiee.vehicule, modifiee.chauffeur) == (nouveau_vehicule, nouveau_chauffeur)
+
+
+def test_reaffecter_revalide_la_disponibilite():
+    mission = _affectee()
+
+    with pytest.raises(AffectationImpossible, match="camion"):
+        services.modifier_mission(
+            mission, **_champs(mission),
+            vehicule=VehiculeFactory(statut=StatutVehicule.EN_MAINTENANCE), chauffeur=ChauffeurFactory(),
+        )
+
+
+def test_reaffecter_refuse_un_camion_deja_reserve_par_une_autre_mission():
+    vehicule = VehiculeFactory()
+    _affectee(vehicule=vehicule)
+    mission = _affectee()
+
+    with pytest.raises(AffectationImpossible, match="déjà réservé"):
+        services.modifier_mission(
+            mission, **_champs(mission), vehicule=vehicule, chauffeur=ChauffeurFactory()
+        )
+
+
+def test_ne_pas_changer_camion_ni_chauffeur_ne_revalide_rien():
+    """Le camion actuel n'est pas « disponible » au sens strict une fois affecté ailleurs (une autre
+    mission) : mais tant qu'on ne le change pas, aucune revérification n'a lieu."""
+    mission = _affectee()
+    vehicule, chauffeur = mission.vehicule, mission.chauffeur
+
+    modifiee = services.modifier_mission(mission, **_champs(mission), vehicule=vehicule, chauffeur=chauffeur)
+
+    assert (modifiee.vehicule, modifiee.chauffeur) == (vehicule, chauffeur)
+
+
+def test_reaffecter_impossible_apres_le_depart():
+    mission = _en_cours()
+
+    with pytest.raises(TransitionMissionInterdite, match="avant le départ"):
+        services.modifier_mission(
+            mission, **_champs(mission), vehicule=VehiculeFactory(), chauffeur=ChauffeurFactory()
+        )
+
+
+def test_reaffecter_impossible_avant_l_affectation():
+    mission = _planifiee()
+
+    with pytest.raises(TransitionMissionInterdite, match="avant le départ"):
+        services.modifier_mission(
+            mission, **_champs(mission), vehicule=VehiculeFactory(), chauffeur=ChauffeurFactory()
+        )
+
+
+def test_camion_et_chauffeur_se_changent_ensemble():
+    mission = _affectee()
+
+    with pytest.raises(MissionError, match="ensemble"):
+        services.modifier_mission(mission, **_champs(mission), vehicule=VehiculeFactory())
+
+
+# --- audit ---
+
+
+def test_la_modification_est_tracee_dans_l_audit():
+    from apps.audit.models import ActionChoices, AuditLog
+
+    mission = _creer()
+
+    services.modifier_mission(mission, **_champs(mission, nature_marchandise="Sable"))
+
+    entree = AuditLog.objects.filter(entite="Mission", entite_id=mission.pk, action=ActionChoices.UPDATE).latest("date_heure")
+    assert entree.nouvelle_valeur.get("nature_marchandise") == "Sable"
+    assert "code_expediteur" not in (entree.ancienne_valeur or {})  # codes exclus de l'audit
+
+
+# --- permissions ---
+
+
+@pytest.mark.parametrize("role", [Role.ADMIN, Role.DIRECTION])
+def test_admin_et_direction_modifient(client, role):
+    _connecte(client, role)
+    mission = _creer()
+
+    reponse = client.post(
+        reverse("missions:modifier", args=[mission.pk]),
+        _poste(mission, nature_marchandise="Sable"),
+        follow=True,
+    )
+
+    mission.refresh_from_db()
+    assert mission.nature_marchandise == "Sable"
+    assert any("modifiée" in m for m in _messages(reponse))
+
+
+@pytest.mark.parametrize("role", [Role.CHARGE_CLIENTELE, Role.PARCAUTO, Role.FINANCES, Role.RH])
+def test_les_autres_roles_ne_modifient_pas(client, role):
+    _connecte(client, role)
+    mission = _creer()
+
+    for methode, args in ((client.get, ()), (client.post, (_poste(mission),))):
+        reponse = methode(reverse("missions:modifier", args=[mission.pk]), *args)
+        assert reponse.status_code == 403
+
+
+def test_le_lien_modifier_n_apparait_que_pour_les_bons_roles_et_statuts(client):
+    mission = _recuperee()
+
+    _connecte(client, Role.DIRECTION)
+    page = client.get(reverse("missions:detail", args=[mission.pk])).content.decode()
+    assert reverse("missions:modifier", args=[mission.pk]) not in page  # plus modifiable
+
+    autre = _creer()
+    page = client.get(reverse("missions:detail", args=[autre.pk])).content.decode()
+    assert reverse("missions:modifier", args=[autre.pk]) in page
+
+    _connecte(client, Role.CHARGE_CLIENTELE)
+    page = client.get(reverse("missions:detail", args=[autre.pk])).content.decode()
+    assert reverse("missions:modifier", args=[autre.pk]) not in page  # pas le bon rôle
+
+
+# --- écran ---
+
+
+def test_le_formulaire_est_prerempli(client):
+    _connecte(client, Role.DIRECTION)
+    mission = _creer()
+
+    reponse = client.get(reverse("missions:modifier", args=[mission.pk]))
+
+    assert reponse.context["form"].initial["nature_marchandise"] == mission.nature_marchandise
+    assert "vehicule" not in reponse.context["form"].fields  # pas encore affectée
+
+
+def test_le_formulaire_propose_camion_et_chauffeur_une_fois_affectee(client):
+    _connecte(client, Role.DIRECTION)
+    mission = _affectee()
+
+    reponse = client.get(reverse("missions:modifier", args=[mission.pk]))
+
+    assert "vehicule" in reponse.context["form"].fields
+    assert reponse.context["form"].initial["vehicule"] == mission.vehicule_id
+
+
+def test_acceder_a_l_ecran_sur_une_mission_non_modifiable_renvoie_a_la_fiche(client):
+    _connecte(client, Role.DIRECTION)
+    mission = _livree()
+
+    reponse = client.get(reverse("missions:modifier", args=[mission.pk]), follow=True)
+
+    assert reponse.redirect_chain[-1][0] == reverse("missions:detail", args=[mission.pk])
+    assert any("n'est plus modifiable" in m for m in _messages(reponse))
+
+
+def test_une_erreur_metier_reste_sur_le_formulaire(client):
+    _connecte(client, Role.DIRECTION)
+    mission = _creer()
+
+    reponse = client.post(
+        reverse("missions:modifier", args=[mission.pk]), _poste(mission, poids_t="0"),
+    )
+
+    assert reponse.status_code == 200
+    assert "strictement positif" in reponse.content.decode()
+    mission.refresh_from_db()
+    assert mission.poids_t != Decimal("0")
+
+
+def test_le_client_n_est_pas_modifiable(client):
+    """Aucun champ « client » sur l'écran : il n'apparaît nulle part dans le formulaire."""
+    _connecte(client, Role.DIRECTION)
+    mission = _creer()
+
+    reponse = client.get(reverse("missions:modifier", args=[mission.pk]))
+
+    assert "client" not in reponse.context["form"].fields
+```
+
 #### `apps/missions/tests/test_qr.py`
 
-*109 lignes* — Image QR des codes d'une mission : droits, contenu, secret.
+*118 lignes* — Image QR des codes d'une mission : droits, contenu, secret.
 
 ```python
 """Image QR des codes d'une mission : droits, contenu, secret."""
@@ -1922,12 +2946,21 @@ def test_les_roles_qui_voient_les_codes_voient_le_qr(client, role):
     assert client.get(reverse("missions:qr", args=[mission.pk, "expediteur"])).status_code == 200
 
 
-@pytest.mark.parametrize("role", [Role.CHAUFFEUR, Role.PARCAUTO, Role.RH, Role.FINANCES])
+@pytest.mark.parametrize("role", [Role.CHAUFFEUR, Role.RH, Role.FINANCES])
 def test_les_autres_roles_n_obtiennent_pas_le_qr(client, role):
     client.force_login(UserFactory(role=role))
     mission = _mission()
 
     assert client.get(reverse("missions:qr", args=[mission.pk, "expediteur"])).status_code == 403
+
+
+def test_le_parc_auto_consulte_la_mission_mais_pas_le_qr_des_codes(client):
+    """Retour réunion : le Parc Auto affecte les missions (CONSULTATION), mais les codes restent
+    réservés à ceux qui gèrent la relation client (VOIR_CODES, décision indépendante)."""
+    client.force_login(UserFactory(role=Role.PARCAUTO))
+    mission = _mission()
+
+    assert client.get(reverse("missions:qr", args=[mission.pk, "expediteur"])).status_code == 404
 
 
 def test_le_qr_exige_la_connexion(client):
@@ -1970,7 +3003,7 @@ def test_le_qr_ne_fuite_pas_dans_la_fiche_des_roles_sans_droit(client):
 
 #### `apps/missions/tests/test_views.py`
 
-*575 lignes* — Écrans des missions : accès par rôle, affichage, actions du cycle de vie.
+*633 lignes* — Écrans des missions : accès par rôle, affichage, actions du cycle de vie.
 
 ```python
 """Écrans des missions : accès par rôle, affichage, actions du cycle de vie."""
@@ -2020,16 +3053,15 @@ def _url(nom, mission):
 # --- accès par rôle ---
 
 
-@pytest.mark.parametrize("role", [Role.ADMIN, Role.DIRECTION, Role.CHARGE_CLIENTELE])
+@pytest.mark.parametrize("role", [Role.ADMIN, Role.DIRECTION, Role.CHARGE_CLIENTELE, Role.PARCAUTO])
 def test_la_liste_est_accessible_aux_roles_de_gestion(client, role):
+    # Retour réunion : le Parc Auto affecte les missions, donc les consulte désormais aussi.
     _connecte(client, role)
 
     assert client.get(reverse("missions:liste")).status_code == 200
 
 
-@pytest.mark.parametrize(
-    "role", [Role.RH, Role.FINANCES, Role.PARCAUTO, Role.CHAUFFEUR]
-)
+@pytest.mark.parametrize("role", [Role.RH, Role.FINANCES, Role.CHAUFFEUR])
 def test_la_liste_est_interdite_aux_autres_roles(client, role):
     _connecte(client, role)
 
@@ -2217,12 +3249,54 @@ def test_la_direction_voit_le_formulaire_d_affectation_avec_les_seuls_camions_di
     ("etape", "action_attendue"),
     [
         (_affectee, "demarrer"),
-        (_en_cours, "recuperation"),
-        (_recuperee, "livraison"),
         (_livree, "cloturer"),
     ],
 )
 def test_la_direction_voit_l_action_de_l_etape(client, etape, action_attendue):
+    _connecte(client, Role.DIRECTION)
+    mission = etape()
+
+    contenu = client.get(_url("detail", mission)).content.decode()
+
+    assert _url(action_attendue, mission) in contenu
+
+
+@pytest.mark.parametrize(
+    ("etape", "action_attendue"), [(_en_cours, "recuperation"), (_recuperee, "livraison")]
+)
+def test_l_admin_voit_la_saisie_du_code_a_la_place_du_chauffeur(client, etape, action_attendue):
+    _connecte(client, Role.ADMIN)
+    mission = etape()
+
+    contenu = client.get(_url("detail", mission)).content.decode()
+
+    assert _url(action_attendue, mission) in contenu
+
+
+@pytest.mark.parametrize(
+    ("etape", "action"), [(_en_cours, "recuperation"), (_recuperee, "livraison")]
+)
+def test_seul_le_chargeur_clientele_voit_les_codes_sans_les_saisir(client, etape, action):
+    """Le chargé clientèle voit les codes mais ne les saisit pas."""
+    _connecte(client, Role.CHARGE_CLIENTELE)
+    mission = etape()
+    statut_avant = mission.statut
+    code = mission.code_expediteur if action == "recuperation" else mission.code_destinataire
+
+    contenu = client.get(_url("detail", mission)).content.decode()
+    reponse = client.post(_url(action, mission), {"code": code, "km_arrivee": mission.km_depart + 10})
+
+    assert _url(action, mission) not in contenu
+    assert reponse.status_code == 403
+    mission.refresh_from_db()
+    assert mission.statut == statut_avant
+
+
+@pytest.mark.parametrize(
+    ("etape", "action_attendue"), [(_en_cours, "recuperation"), (_recuperee, "livraison")]
+)
+def test_la_direction_saisit_desormais_aussi_les_codes(client, etape, action_attendue):
+    """Retour réunion : la DIRECTION a la même largeur que l'ADMIN (CODES_TERRAIN)."""
     _connecte(client, Role.DIRECTION)
     mission = etape()
 
@@ -2414,7 +3488,7 @@ def test_demarrer(client):
 
 
 def test_recuperation_avec_un_mauvais_code_est_refusee(client):
-    _connecte(client, Role.DIRECTION)
+    _connecte(client, Role.ADMIN)
     mission = _en_cours()
 
     reponse = client.post(_url("recuperation", mission), {"code": "AAAAAAAA"}, follow=True)
@@ -2425,7 +3499,7 @@ def test_recuperation_avec_un_mauvais_code_est_refusee(client):
 
 
 def test_recuperation_avec_le_bon_code_meme_en_minuscules(client):
-    _connecte(client, Role.DIRECTION)
+    _connecte(client, Role.ADMIN)
     mission = _en_cours()
 
     client.post(_url("recuperation", mission), {"code": mission.code_expediteur.lower()})
@@ -2435,7 +3509,7 @@ def test_recuperation_avec_le_bon_code_meme_en_minuscules(client):
 
 
 def test_livraison(client):
-    _connecte(client, Role.DIRECTION)
+    _connecte(client, Role.ADMIN)
     mission = _recuperee()
 
     client.post(
@@ -2451,7 +3525,7 @@ def test_livraison(client):
 
 
 def test_livraison_avec_un_km_incoherent_est_refusee(client):
-    _connecte(client, Role.DIRECTION)
+    _connecte(client, Role.ADMIN)
     mission = _recuperee()
 
     reponse = client.post(
@@ -2466,7 +3540,7 @@ def test_livraison_avec_un_km_incoherent_est_refusee(client):
 
 
 def test_livraison_sans_km_est_refusee_par_le_formulaire(client):
-    _connecte(client, Role.DIRECTION)
+    _connecte(client, Role.ADMIN)
     mission = _recuperee()
 
     client.post(_url("livraison", mission), {"code": mission.code_destinataire})
@@ -2511,11 +3585,13 @@ def test_les_actions_sont_protegees_par_csrf():
 
 
 def test_un_parcours_complet_par_l_interface(client):
-    """Brouillon → clôturée, uniquement par les écrans, avec les bons rôles."""
+    """Brouillon → clôturée, uniquement par les écrans, avec les bons rôles (les codes : l'ADMIN)."""
     charge = Client()
     _connecte(charge, Role.CHARGE_CLIENTELE)
     direction = Client()
     _connecte(direction, Role.DIRECTION)
+    admin = Client()
+    _connecte(admin, Role.ADMIN)
     societe = ClientFactory()
     camion, chauffeur = VehiculeFactory(kilometrage=50000), ChauffeurFactory()
 
@@ -2537,8 +3613,8 @@ def test_un_parcours_complet_par_l_interface(client):
     )
     direction.post(_url("demarrer", mission))
     mission.refresh_from_db()
-    direction.post(_url("recuperation", mission), {"code": mission.code_expediteur})
-    direction.post(
+    admin.post(_url("recuperation", mission), {"code": mission.code_expediteur})
+    admin.post(
         _url("livraison", mission),
         {"code": mission.code_destinataire, "km_arrivee": 50240},
     )
@@ -2548,6 +3624,21 @@ def test_un_parcours_complet_par_l_interface(client):
     camion.refresh_from_db()
     assert mission.statut == StatutMission.CLOTUREE
     assert camion.kilometrage == 50240 and camion.statut == StatutVehicule.DISPONIBLE
+
+
+# --- suggestions de lieux ---
+
+
+def test_le_formulaire_propose_les_lieux_deja_utilises(client):
+    _connecte(client, Role.CHARGE_CLIENTELE)
+    _creer(lieu_chargement="Abidjan", lieu_livraison="Korhogo")
+
+    contenu = client.get(reverse("missions:creer")).content.decode()
+
+    assert '<datalist id="lieux-missions">' in contenu
+    assert '<option value="Korhogo">' in contenu
+    assert '<option value="Abidjan">' in contenu
+    assert contenu.count('list="lieux-missions"') == 2  # chargement et livraison
 ```
 
 Ce chapitre présente de nombreux tests laissés plus tôt car ils ouvrent des pages qui dépendent des missions :
@@ -2567,7 +3658,7 @@ python manage.py check
 ```
 
 ```bash
-python -m pytest apps/accounts/tests/test_web.py apps/customers/tests/test_views.py apps/drivers/tests/test_views.py apps/missions/tests/test_alerte_conge.py apps/missions/tests/test_qr.py apps/missions/tests/test_views.py -q --no-cov
+python -m pytest apps/customers/tests/test_views.py apps/drivers/tests/test_views.py apps/missions/tests/test_alerte_conge.py apps/missions/tests/test_documents.py apps/missions/tests/test_frais_mission_views.py apps/missions/tests/test_modification.py apps/missions/tests/test_qr.py apps/missions/tests/test_views.py -q --no-cov
 ```
 
 **Résultat attendu :** `157 passed, 5 failed` (pour les 6 fichier(s) de tests présentés dans ce chapitre).

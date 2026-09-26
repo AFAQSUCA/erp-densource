@@ -1,6 +1,6 @@
 # Chapitre 3 — Utilisateurs, rôles et sécurité de la connexion : l'app accounts
 
-> 20 fichier(s) dans ce chapitre, 925 lignes de code.
+> 20 fichier(s) dans ce chapitre, 944 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -283,7 +283,7 @@ rien ; c'est cette garde, **côté serveur**, qui protège.
 
 #### `apps/accounts/navigation.py`
 
-*57 lignes* — Menu latéral, filtré selon le rôle de l'utilisateur.
+*64 lignes* — Menu latéral, filtré selon le rôle de l'utilisateur.
 
 ```python
 """Menu latéral, filtré selon le rôle de l'utilisateur.
@@ -330,15 +330,22 @@ def entrees_pour(role: str, chemin: str) -> list[dict]:
             url = reverse(entree.url_name)
         except NoReverseMatch:
             continue  # « une entrée n'existe que si son écran existe » : jamais d'erreur 500 pour un menu
-        actif = chemin == url if url == "/" else chemin.startswith(url)
         resultat.append(
             {
                 "libelle": entree.libelle,
                 "url": url,
                 "icone": entree.icone,
-                "actif": actif,
+                "actif": False,
             }
         )
+    # Un seul onglet actif : le plus précis. Sans cela, sur /facturation/depenses/ « Facturation »
+    # (préfixe /facturation/) et « Dépenses » s'allumaient ensemble, comme « Garage » et « Incidents » :
+    # un clic sur un onglet semblait en activer un autre. L'accueil (« / ») ne correspond qu'à lui-même.
+    correspondants = [
+        e for e in resultat if (chemin == e["url"] if e["url"] == "/" else chemin.startswith(e["url"]))
+    ]
+    if correspondants:
+        max(correspondants, key=lambda e: len(e["url"]))["actif"] = True
     return resultat
 
 
@@ -353,14 +360,16 @@ n'existe pas encore est simplement ignorée : c'est ce qui permet de construire 
 
 #### `apps/accounts/signals.py`
 
-*32 lignes* — Signaux de l'app ``accounts``.
+*37 lignes* — Signaux de l'app ``accounts``.
 
 ```python
 """Signaux de l'app ``accounts``.
 
 ``mfa_evenement`` : émis à chaque étape de la double authentification (activation, code vérifié ou
-refusé, codes régénérés, réinitialisation). L'app ``audit`` s'y abonne pour l'inscrire au journal :
-``accounts`` n'importe pas ``audit`` (sens des dépendances, architecture.md:134).
+refusé, codes régénérés, réinitialisation). ``mot_de_passe_reinitialise`` : émis quand un compte
+choisit un nouveau mot de passe via « mot de passe oublié » (``views.ReinitialiserMotDePasseConfirmerView``).
+L'app ``audit`` s'y abonne pour inscrire ces deux au journal : ``accounts`` n'importe pas ``audit``
+(sens des dépendances, architecture.md:134).
 
 Les récepteurs ci-dessous branchent aussi la limitation d'essais et l'oubli de la vérification MFA
 sur les signaux d'authentification de Django.
@@ -373,6 +382,9 @@ from . import mfa, throttle
 
 # providing_args : request, utilisateur, evenement (str), succes (bool)
 mfa_evenement = Signal()
+
+# providing_args : request, utilisateur
+mot_de_passe_reinitialise = Signal()
 
 
 @receiver(user_login_failed)
@@ -999,7 +1011,7 @@ def code_frais(utilisateur):
 
 #### `apps/accounts/README.md`
 
-*49 lignes* — accounts
+*56 lignes* — accounts
 
 ```markdown
 # accounts
@@ -1023,6 +1035,13 @@ Entités : `User` (`AUTH_USER_MODEL`), `Role`, `AppareilMFA` (application TOTP d
   `TRUSTED_PROXY_COUNT` (proxys de confiance) est renseigné, et seule l'adresse ajoutée par eux compte.
   Sinon un client pourrait forger son adresse et échapper à la limitation. Derrière Nginx : `1`.
 - L'administration Django n'a plus son propre formulaire : `/admin/login/` renvoie vers `/connexion/`.
+- **Mot de passe oublié** (`/mot-de-passe/`) : les 4 vues standard de Django (demande de l'adresse,
+  confirmation d'envoi, lien reçu par e-mail, nouveau mot de passe), gabarits français assortis au
+  reste du site. Ne révèle jamais si l'adresse correspond à un compte (même page dans les deux cas).
+  Le nouveau mot de passe passe par les mêmes règles qu'à la création (Argon2, longueur 10,
+  validateurs). Nécessite un serveur SMTP réel en production (`EMAIL_HOST` et consorts,
+  `.env.example`) ; sans lui, sans autre canal, cette fonctionnalité ne peut pas envoyer de lien.
+  Tracé au journal d'audit (module AUTH, entité User), sans jamais inscrire le mot de passe.
 
 ## Double authentification (MFA)
 
@@ -1151,19 +1170,19 @@ def test_has_role_denies_unauthenticated_user():
 ```diff
 --- config/settings/base.py (avant)
 +++ config/settings/base.py (après)
-@@ -50,4 +50,5 @@
+@@ -53,4 +53,5 @@
  LOCAL_APPS = [
      "apps.core",
 +    "apps.accounts",
  ]
  
-@@ -55,4 +56,5 @@
+@@ -58,4 +59,5 @@
  
  # 7 rôles, RBAC simple — cahier-des-charges.md:44-55, architecture.md:534.
 +AUTH_USER_MODEL = "accounts.User"
  
  LOGIN_URL = "accounts:login"
-@@ -73,4 +75,5 @@
+@@ -81,4 +83,5 @@
      "django.middleware.csrf.CsrfViewMiddleware",
      "django.contrib.auth.middleware.AuthenticationMiddleware",
 +    "apps.accounts.middleware.MFARequiseMiddleware",

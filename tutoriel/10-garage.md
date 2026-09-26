@@ -1,6 +1,6 @@
 # Chapitre 10 — Le garage : l'app garage
 
-> 17 fichier(s) dans ce chapitre, 1568 lignes de code.
+> 17 fichier(s) dans ce chapitre, 1579 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -323,7 +323,7 @@ class TransitionIncidentInterdite(GarageError):
 
 #### `apps/garage/services.py`
 
-*179 lignes* — Logique métier du garage — cahier-des-charges.md:161-168.
+*181 lignes* — Logique métier du garage — cahier-des-charges.md:161-168.
 
 ```python
 """Logique métier du garage — cahier-des-charges.md:161-168.
@@ -350,6 +350,7 @@ from apps.missions import services as missions_services
 
 from .exceptions import CoutInvalide, StatutVehiculeInvalide, TransitionOrInterdite
 from .models import OrdreReparation, StatutOr, TypeOr, LieuReparation
+from .signals import or_cloture
 
 PREFIXE_NUMERO = "OR"
 
@@ -417,6 +418,7 @@ def cloturer_or(
         or_ouverts=vehicule_a_or_ouvert(vehicule),
         mission_active=missions_services.vehicule_a_mission_active(vehicule),
     )
+    or_cloture.send(sender=OrdreReparation, ordre=ordre)
     return ordre
 
 
@@ -759,7 +761,7 @@ Ce que fait le chauffeur sur le terrain :
 
 #### `apps/garage/signals.py`
 
-*22 lignes* — Événements des signalements du chauffeur (souscrits par ``notifications``).
+*26 lignes* — Événements des signalements du chauffeur (souscrits par ``notifications``).
 
 ```python
 """Événements des signalements du chauffeur (souscrits par ``notifications``).
@@ -784,25 +786,31 @@ def emettre(signal: Signal, **arguments) -> None:
     for recepteur, resultat in signal.send_robust(sender=None, **arguments):
         if isinstance(resultat, Exception):
             logger.error("Récepteur %r en erreur", recepteur, exc_info=resultat)
+
+# Un OR vient d'être clôturé, dans sa transaction. Argument : ``ordre``. Souscrit par ``finance`` (dépense de
+# main-d'œuvre) ; émis avec ``send`` (pas ``emettre``) pour qu'une erreur annule la clôture.
+or_cloture = Signal()
 ```
 
 #### `apps/garage/permissions.py`
 
-*12 lignes* — Qui peut consulter et gérer le garage.
+*14 lignes* — Qui peut consulter et gérer le garage.
 
 ```python
 """Qui peut consulter et gérer le garage.
 
 Cahier-des-charges.md:44-55 : le PARCAUTO a la « gestion technique véhicules » et
-gère les « OR » ; la DIRECTION est en « lecture seule sur Parc Auto ». L'ADMIN a
-tous les droits. Ouvrir ou clôturer un OR, immobiliser un camion ou le remettre en
-service relèvent donc du PARCAUTO et de l'ADMIN.
+gère les « OR ». L'ADMIN a tous les droits. La DIRECTION, à l'origine en « lecture
+seule sur Parc Auto », agit désormais aussi : retour d'une réunion entreprise, elle a
+la même largeur que l'ADMIN sur la saisie/modification (ouvrir/clôturer un OR,
+immobiliser un camion ou le remettre en service).
 """
 
 from apps.accounts.models import Role
 
 CONSULTATION = frozenset({Role.ADMIN, Role.DIRECTION, Role.PARCAUTO})
-MODIFICATION = frozenset({Role.ADMIN, Role.PARCAUTO})
+# Retour réunion : la DIRECTION a la même largeur que l'ADMIN pour la saisie/modification.
+MODIFICATION = frozenset({Role.ADMIN, Role.DIRECTION, Role.PARCAUTO})
 ```
 
 #### `apps/garage/sections.py`
@@ -945,7 +953,7 @@ class OrdreReparationFactory(factory.django.DjangoModelFactory):
 
 #### `apps/garage/README.md`
 
-*41 lignes* — garage
+*43 lignes* — garage
 
 ```markdown
 # garage
@@ -989,6 +997,8 @@ Signalements du chauffeur (`terrain.py`, `views_terrain.py`) :
   et la Direction ; **aucune action automatique** : le Parc Auto le prend en compte, ouvre un OR s'il le
   juge utile, puis le clôt avec la suite donnée (`/garage/incidents/`, `/garage/checklists/`).
 Les signaux `incident_signale` et `checklist_anomalie` sont souscrits par `notifications`.
+
+Rapport imprimable des OR et des incidents (bouton « Imprimer » sur la liste, mêmes filtres) : voir `apps/core/README.md` (`ImpressionListeMixin`).
 ```
 
 #### `apps/garage/tests/test_models.py`
@@ -1451,7 +1461,7 @@ def test_ordres_du_vehicule_ignore_les_autres_camions():
 
 #### `apps/garage/tests/test_terrain.py`
 
-*284 lignes* — Check-list du véhicule et incidents signalés par le chauffeur.
+*285 lignes* — Check-list du véhicule et incidents signalés par le chauffeur.
 
 ```python
 """Check-list du véhicule et incidents signalés par le chauffeur."""
@@ -1705,14 +1715,15 @@ def test_un_incident_signale_peut_etre_clos_directement_mais_pas_deux_fois():
         terrain.prendre_en_compte(incident, admin)
 
 
-def test_seuls_parc_auto_et_admin_traitent_un_incident():
+def test_seuls_parc_auto_admin_et_direction_traitent_un_incident():
+    # Retour réunion : la DIRECTION a désormais la même largeur que l'ADMIN (MODIFICATION).
     incident = _declarer()
 
-    for role in (Role.DIRECTION, Role.RH, Role.CHAUFFEUR, Role.FINANCES):
+    for role in (Role.RH, Role.CHAUFFEUR, Role.FINANCES):
         with pytest.raises(ChauffeurNonAutorise):
             terrain.prendre_en_compte(incident, UserFactory(role=role))
-    with pytest.raises(ChauffeurNonAutorise):
-        terrain.clore_incident(incident, UserFactory(role=Role.DIRECTION), note="x")
+    assert terrain.prendre_en_compte(incident, UserFactory(role=Role.DIRECTION)).pk
+    assert terrain.clore_incident(incident, UserFactory(role=Role.DIRECTION), note="x").pk
 
 
 def test_recherche_et_file_des_incidents_a_traiter():
@@ -1752,7 +1763,7 @@ remet le camion en mission s'il a une mission affectée ».
 ```diff
 --- config/settings/base.py (avant)
 +++ config/settings/base.py (après)
-@@ -57,4 +57,5 @@
+@@ -60,4 +60,5 @@
      "apps.fleet",
      "apps.missions",
 +    "apps.garage",

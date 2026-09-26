@@ -1,6 +1,6 @@
 # Chapitre 16 — Le socle de l'interface : gabarits, styles, connexion, notifications
 
-> 34 fichier(s) dans ce chapitre, 1202 lignes de code.
+> 54 fichier(s) dans ce chapitre, 2421 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -161,7 +161,7 @@ classe par morceaux (`"bg-" + couleur`) : Tailwind ne le verrait pas.
 
 #### `frontend/input.css`
 
-*6 lignes*
+*74 lignes*
 
 ```css
 @tailwind base;
@@ -170,6 +170,74 @@ classe par morceaux (`"bg-" + couleur`) : Tailwind ne le verrait pas.
 
 /* Éléments Alpine.js masqués tant que le script n'a pas démarré (évite un flash à l'affichage). */
 [x-cloak] { display: none !important; }
+
+/* --- Graphiques du tableau de bord (apps/core/graphiques.py, templates/components/_graphique_*.html) ---
+   Palette catégorielle validée avec dataviz/scripts/validate_palette.js sur fond blanc :
+   bleu, orange, aqua (dans cet ordre). L'interface n'a pas de thème sombre : un seul jeu de valeurs.
+   Marques fines (colonnes ≤ 24 px, bout arrondi de 4 px, socle droit), quadrillage en filet plein,
+   texte toujours en encre neutre (jamais dans la couleur de la série). */
+:root {
+  --viz-1: #2a78d6;
+  --viz-2: #eb6834;
+  --viz-3: #1baf7a;
+  --viz-grille: #e1e0d9;
+  --viz-axe: #c3c2b7;
+}
+.viz-s1 { background-color: var(--viz-1); }
+.viz-s2 { background-color: var(--viz-2); }
+.viz-s3 { background-color: var(--viz-3); }
+
+/* Barres horizontales : libellé | piste | valeur */
+.viz-barres { display: grid; gap: 0.5rem; }
+.viz-barre-ligne { display: grid; grid-template-columns: minmax(6rem, 10rem) 1fr minmax(3rem, auto); align-items: center; gap: 0.75rem; font-size: 0.875rem; }
+.viz-barre-libelle { color: #334155; overflow-wrap: anywhere; }
+.viz-piste { display: block; height: 1.25rem; }
+.viz-barre { display: block; height: 100%; border-radius: 0 4px 4px 0; transition: opacity 0.15s; }
+.viz-barre-ligne:hover .viz-barre { opacity: 0.8; }
+.viz-barre-valeur { text-align: right; font-weight: 600; color: #0f172a; font-variant-numeric: tabular-nums; white-space: nowrap; }
+@media (max-width: 480px) {
+  .viz-barre-ligne { grid-template-columns: 1fr auto; }
+  .viz-barre-ligne .viz-piste { grid-column: 1 / -1; grid-row: 2; }
+}
+
+/* Légende (≥ 2 séries) */
+.viz-legende { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; margin-bottom: 0.75rem; font-size: 0.8125rem; color: #334155; }
+.viz-legende li { display: flex; align-items: center; gap: 0.375rem; }
+.viz-cle { display: inline-block; width: 0.75rem; height: 0.75rem; border-radius: 2px; }
+
+/* Colonnes groupées */
+.viz-colonnes { display: grid; grid-template-columns: 3rem 1fr; column-gap: 0.5rem; }
+.viz-axe-y { position: relative; height: 12rem; font-size: 0.75rem; color: #475569; font-variant-numeric: tabular-nums; }
+.viz-axe-y span { position: absolute; right: 0; transform: translateY(50%); line-height: 1; }
+.viz-trace { position: relative; height: 12rem; border-bottom: 1px solid var(--viz-axe); }
+.viz-grille { position: absolute; left: 0; right: 0; height: 0; border-top: 1px solid var(--viz-grille); }
+.viz-grappes { position: absolute; inset: 0; display: flex; }
+.viz-grappe { position: relative; flex: 1 1 0; height: 100%; display: flex; align-items: flex-end; justify-content: center; border-radius: 4px 4px 0 0; outline: none; }
+.viz-grappe:hover, .viz-grappe:focus { background-color: rgba(15, 23, 42, 0.05); }
+.viz-grappe:focus-visible { box-shadow: inset 0 0 0 2px var(--viz-1); }
+.viz-colonnes-serie { display: flex; align-items: flex-end; justify-content: center; gap: 2px; width: 80%; height: 100%; }
+.viz-colonne { display: block; flex: 1 1 0; min-width: 0; max-width: 24px; border-radius: 4px 4px 0 0; }
+.viz-axe-x { display: flex; margin-top: 0.375rem; font-size: 0.75rem; color: #475569; }
+.viz-axe-x span { flex: 1 1 0; min-width: 0; text-align: center; line-height: 1.2; white-space: nowrap; }
+/* Beaucoup de mois sur un petit écran : un libellé sur deux, le dernier mois toujours visible (les valeurs restent dans l'infobulle et le tableau). */
+@media (max-width: 640px) { .viz-dense .viz-axe-x span:nth-child(odd) { visibility: hidden; } }
+.viz-axe-x small { display: block; font-size: 0.6875rem; color: #64748b; }
+
+/* Infobulle : la valeur d'abord (en gras), le nom de la série ensuite ; clé = petit trait de la couleur de la série */
+.viz-info { display: none; position: absolute; bottom: calc(100% + 6px); z-index: 20; min-width: 10rem; padding: 0.5rem 0.625rem; background: #fff; border: 1px solid #cbd5e1; border-radius: 0.5rem; box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12); font-size: 0.8125rem; pointer-events: none; }
+.viz-info-milieu { left: 50%; transform: translateX(-50%); }
+.viz-info-debut { left: 0; }
+.viz-info-fin { right: 0; }
+.viz-grappe:hover .viz-info, .viz-grappe:focus .viz-info { display: block; }
+.viz-info-titre { display: block; margin-bottom: 0.25rem; color: #475569; font-weight: 500; }
+.viz-info-ligne { display: flex; align-items: center; gap: 0.5rem; white-space: nowrap; }
+.viz-trait { display: inline-block; width: 0.75rem; height: 2px; border-radius: 1px; }
+.viz-info-valeur { font-weight: 600; color: #0f172a; font-variant-numeric: tabular-nums; }
+.viz-info-nom { color: #475569; }
+
+/* Un tableau qui défile horizontalement contient aussi ses libellés cachés (.sr-only est en position absolue) :
+   sans cela, ils sortaient du conteneur et élargissaient toute la page sur téléphone. */
+.overflow-x-auto { position: relative; }
 ```
 
 #### `frontend/vendor.js`
@@ -536,7 +604,7 @@ introuvable ».
 
 #### `templates/registration/login.html`
 
-*48 lignes*
+*51 lignes*
 
 ```django
 {% extends "base.html" %}
@@ -583,6 +651,9 @@ introuvable ».
               class="w-full rounded-lg bg-marque-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">
         Se connecter
       </button>
+      <p class="text-center text-sm">
+        <a href="{% url 'accounts:password_reset' %}" class="font-medium text-marque-700 hover:underline">Mot de passe oublié ?</a>
+      </p>
     </form>
   </div>
 </div>
@@ -591,15 +662,24 @@ introuvable ».
 
 #### `apps/accounts/views.py`
 
-*40 lignes*
+*83 lignes*
 
 ```python
 from django.conf import settings
 from django.contrib.auth.forms import AuthenticationForm
-from django.contrib.auth.views import LoginView, LogoutView
+from django.contrib.auth.views import (
+    LoginView,
+    LogoutView,
+    PasswordResetCompleteView,
+    PasswordResetConfirmView,
+    PasswordResetDoneView,
+    PasswordResetView,
+)
+from django.urls import reverse_lazy
 
 from . import throttle
 from .models import Role
+from .signals import mot_de_passe_reinitialise
 
 
 class ConnexionView(LoginView):
@@ -634,6 +714,40 @@ class ConnexionView(LoginView):
 
 class DeconnexionView(LogoutView):
     """Déconnexion (POST uniquement, protégée par CSRF)."""
+
+
+# --- mot de passe oublié ---
+#
+# Les 4 étapes standard de Django, avec nos gabarits (français, mise en page du site) : demande de
+# l'adresse -> confirmation d'envoi -> lien reçu par e-mail -> nouveau mot de passe -> terminé.
+# Ne dit jamais si l'adresse correspond à un compte (mêmes pages dans les deux cas) : un tiers ne
+# peut pas s'en servir pour savoir qui a un compte ici. Le mot de passe choisi passe par les mêmes
+# règles qu'à l'inscription (AUTH_PASSWORD_VALIDATORS, longueur 10, Argon2).
+
+
+class ReinitialiserMotDePasseView(PasswordResetView):
+    template_name = "registration/password_reset_form.html"
+    email_template_name = "registration/password_reset_email.txt"
+    subject_template_name = "registration/password_reset_subject.txt"
+    success_url = reverse_lazy("accounts:password_reset_done")
+
+
+class ReinitialiserMotDePasseEnvoyeView(PasswordResetDoneView):
+    template_name = "registration/password_reset_done.html"
+
+
+class ReinitialiserMotDePasseConfirmerView(PasswordResetConfirmView):
+    template_name = "registration/password_reset_confirm.html"
+    success_url = reverse_lazy("accounts:password_reset_complete")
+
+    def form_valid(self, form):
+        reponse = super().form_valid(form)
+        mot_de_passe_reinitialise.send(sender=self.__class__, request=self.request, utilisateur=self.user)
+        return reponse
+
+
+class ReinitialiserMotDePasseTermineeView(PasswordResetCompleteView):
+    template_name = "registration/password_reset_complete.html"
 ```
 
 `ConnexionView` prolonge `LoginView` de Django : elle ajoute le **blocage anti force brute** (réponse 429 avant
@@ -889,7 +1003,7 @@ code + codes de secours affichés **une seule fois**), **QR** (l'image, jamais m
 
 #### `apps/accounts/urls.py`
 
-*15 lignes*
+*32 lignes*
 
 ```python
 from django.urls import path
@@ -906,6 +1020,23 @@ urlpatterns = [
     path("mfa/activer/", views_mfa.MFAActiverView.as_view(), name="mfa_activer"),
     path("mfa/qr/", views_mfa.MFAQrView.as_view(), name="mfa_qr"),
     path("mfa/codes/", views_mfa.MFACodesView.as_view(), name="mfa_codes"),
+    # Mot de passe oublié : ouvert à tous, avant connexion.
+    path("mot-de-passe/", views.ReinitialiserMotDePasseView.as_view(), name="password_reset"),
+    path(
+        "mot-de-passe/envoye/",
+        views.ReinitialiserMotDePasseEnvoyeView.as_view(),
+        name="password_reset_done",
+    ),
+    path(
+        "mot-de-passe/confirmer/<uidb64>/<token>/",
+        views.ReinitialiserMotDePasseConfirmerView.as_view(),
+        name="password_reset_confirm",
+    ),
+    path(
+        "mot-de-passe/termine/",
+        views.ReinitialiserMotDePasseTermineeView.as_view(),
+        name="password_reset_complete",
+    ),
 ]
 ```
 
@@ -1091,7 +1222,7 @@ def menu(request):
 
 #### `apps/core/templatetags/ui.py`
 
-*108 lignes* — Aides d'affichage : pastilles de statut colorées.
+*129 lignes* — Aides d'affichage : pastilles de statut colorées.
 
 ```python
 """Aides d'affichage : pastilles de statut colorées.
@@ -1163,6 +1294,16 @@ COULEURS_STATUT = {
     "PARTIELLEMENT_PAYEE": "indigo",
     "PAYEE": "vert",
     "ECHUE": "rouge",
+    # devis
+    "SOUMISE": "ambre",
+    "CONTRE_PROPOSEE": "ambre",
+    "EN_ATTENTE_DIRECTION": "ambre",
+    "VALIDEE": "bleu",
+    "ENVOYEE_CLIENT": "indigo",
+    "ACCEPTEE": "vert",
+    "REFUSEE": "rouge",
+    "EXPIREE": "rouge",
+    "CONVERTIE": "vert",
     # notifications
     "INFO": "bleu",
     "ATTENTION": "ambre",
@@ -1181,6 +1322,17 @@ COULEURS_STATUT = {
     "ROUGE": "rouge",
     "ANOMALIE": "rouge",
     "SAISIE_SUSPECTE": "ambre",
+    # frais de mission (R4)
+    "PREVU": "ambre",
+    "CONFIRME": "vert",
+    "REJETE": "rouge",
+    # demandes de dépense et ordres de décaissement (parc auto, R2)
+    "SOUMISE": "ambre",
+    "VALIDEE": "vert",
+    "REFUSEE": "rouge",
+    "A_EXECUTER": "ambre",
+    "EN_ATTENTE_REVALIDATION": "rouge",
+    "EXECUTE": "vert",
 }
 
 
@@ -1209,10 +1361,12 @@ porte toujours le sens, la couleur n'est qu'un renfort : accessibilité).
 
 #### `apps/core/views.py`
 
-*26 lignes* — Aides communes aux vues.
+*80 lignes* — Aides communes aux vues.
 
 ```python
 """Aides communes aux vues."""
+
+from .rapports import contexte_rapport
 
 
 class PaginationTolerante:
@@ -1238,6 +1392,58 @@ class PaginationTolerante:
         numero = min(max(numero, 1), paginator.num_pages)
         page = paginator.page(numero)
         return paginator, page, page.object_list, page.has_other_pages()
+
+
+class ImpressionListeMixin:
+    """Transforme un ``ListView`` existant en rapport imprimable, sans dupliquer ses filtres.
+
+    S'utilise en écrivant une sous-classe du ``ListView`` de la liste, mixin en premier pour que son
+    ``get_context_data`` l'emporte : ``class XImprimerView(ImpressionListeMixin, XListView): ...``. Les
+    droits (``roles``) et la recherche/les filtres (``get_queryset``) restent ceux de la liste ; seuls la
+    pagination et le contexte d'affichage changent. Chaque sous-classe déclare ``titre_impression`` et
+    ``colonnes`` : une suite de ``(libellé, clé)``, ``clé`` étant soit un chemin en pointillés résolu sur
+    chaque objet (``"client.raison_sociale"``, méthodes get_FOO_display comprises), soit un callable
+    ``clé(objet) -> str`` pour une valeur composée.
+    """
+
+    template_name = "rapports/liste_impression.html"
+    titre_impression = ""
+    colonnes: tuple = ()
+    limite_impression = 500
+
+    def get_titre_impression(self) -> str:
+        return self.titre_impression
+
+    def get_sous_titre_impression(self) -> str:
+        return ""
+
+    @staticmethod
+    def _valeur(objet, cle):
+        if callable(cle):
+            return cle(objet)
+        valeur = objet
+        for morceau in cle.split("."):
+            if valeur in (None, ""):
+                return "—"
+            valeur = getattr(valeur, morceau, "")
+            if callable(valeur):
+                valeur = valeur()
+        return valeur if valeur not in (None, "") else "—"
+
+    def get_context_data(self, **kwargs):
+        objets = list(self.get_queryset()[: self.limite_impression + 1])
+        tronque = len(objets) > self.limite_impression
+        objets = objets[: self.limite_impression]
+        contexte = contexte_rapport(
+            self.request, titre=self.get_titre_impression(), sous_titre=self.get_sous_titre_impression()
+        )
+        contexte.update(
+            entetes=[libelle for libelle, _ in self.colonnes],
+            lignes=[[self._valeur(o, cle) for _, cle in self.colonnes] for o in objets],
+            nombre=len(objets),
+            tronque=tronque,
+        )
+        return contexte
 ```
 
 `PaginationTolerante` : une page inexistante ou illisible affiche la première ou la dernière page au lieu d'une
@@ -1341,7 +1547,7 @@ def notifications(request):
 
 #### `apps/notifications/templates/notifications/liste.html`
 
-*63 lignes*
+*70 lignes*
 
 ```django
 {% extends "base.html" %}
@@ -1375,9 +1581,9 @@ def notifications(request):
   {% if notifications %}
     <ul class="mt-5 divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
       {% for n in notifications %}
-        <li class="flex items-start gap-4 p-4 {% if not n.est_lue %}bg-marque-50/40{% endif %}">
+        <li class="flex flex-wrap items-start gap-x-4 gap-y-3 p-4 {% if not n.est_lue %}bg-marque-50/40{% endif %}">
           <span class="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full {% if n.est_lue %}bg-transparent{% else %}bg-marque-600{% endif %}" aria-hidden="true"></span>
-          <div class="min-w-0 flex-1">
+          <div class="min-w-0 flex-1 basis-56">
             <p class="flex flex-wrap items-center gap-2">
               {% badge n.niveau n.get_niveau_display %}
               <span class="text-xs font-semibold uppercase tracking-wide text-slate-600">{{ n.get_categorie_display }}</span>
@@ -1387,12 +1593,19 @@ def notifications(request):
             <p class="mt-1 font-semibold text-slate-900">{{ n.titre }}</p>
             {% if n.message %}<p class="mt-0.5 text-sm text-slate-700">{{ n.message }}</p>{% endif %}
           </div>
-          <form method="post" action="{% url 'notifications:lire' n.pk %}" class="shrink-0">
+          <form method="post" action="{% url 'notifications:lire' n.pk %}" class="w-full shrink-0 pl-6 sm:w-auto sm:pl-0">
             {% csrf_token %}
-            <button type="submit"
-                    class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
-              {% if n.url %}Ouvrir{% elif n.est_lue %}Lue{% else %}Marquer comme lue{% endif %}
-            </button>
+            {% if n.action and n.url %}
+              <button type="submit"
+                      class="w-full rounded-lg bg-emerald-700 px-3 py-1.5 sm:w-auto text-sm font-semibold text-white shadow-sm hover:bg-emerald-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:ring-offset-2">
+                {{ n.action }}
+              </button>
+            {% else %}
+              <button type="submit"
+                      class="w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 sm:w-auto text-sm font-medium text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+                {% if n.url %}Ouvrir{% elif n.est_lue %}Lue{% else %}Marquer comme lue{% endif %}
+              </button>
+            {% endif %}
           </form>
         </li>
       {% endfor %}
@@ -1411,12 +1624,106 @@ def notifications(request):
 
 #### `apps/audit/views.py`
 
-*3 lignes*
+*97 lignes* — Écran du journal d'audit : liste filtrable, export CSV, rapport imprimable — ADMIN et DIRECTION
 
 ```python
-from django.shortcuts import render
+"""Écran du journal d'audit : liste filtrable, export CSV, rapport imprimable — ADMIN et DIRECTION
+(cahier-des-charges.md:56-82). Aucune écriture ici : le journal ne se remplit que via
+``services.log_action`` (signaux, ``registry.audit_model``), jamais depuis cet écran.
+"""
 
-# Create your views here.
+import csv
+
+from django.http import HttpResponse
+from django.views.generic import ListView
+
+from apps.accounts.mixins import RoleRequiredMixin
+from apps.core.views import ImpressionListeMixin, PaginationTolerante
+
+from . import permissions, services
+from .forms import FiltreJournalForm
+
+
+class JournalListView(PaginationTolerante, RoleRequiredMixin, ListView):
+    roles = permissions.CONSULTATION
+    template_name = "audit/journal_list.html"
+    context_object_name = "lignes"
+    paginate_by = 30
+
+    def get_filtre(self):
+        if not hasattr(self, "_filtre"):
+            self._filtre = FiltreJournalForm(self.request.GET, modules=services.modules_utilises())
+        return self._filtre
+
+    def get_queryset(self):
+        return services.rechercher(**self.get_filtre().criteres())
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        contexte.update(
+            filtre=self.get_filtre(),
+            filtres_actifs=any(self.get_filtre().criteres().values()),
+        )
+        return contexte
+
+
+COLONNES_EXPORT = (
+    ("Date/heure", lambda e: e.date_heure.strftime("%d/%m/%Y %H:%M:%S")),
+    ("Utilisateur", lambda e: e.utilisateur_nom or "—"),
+    ("Rôle", lambda e: e.role or "—"),
+    ("Action", "get_action_display"), ("Module", "module"), ("Entité", "entite"),
+    ("ID entité", lambda e: e.entite_id if e.entite_id is not None else "—"),
+    ("Statut", "get_statut_display"), ("Adresse IP", lambda e: e.adresse_ip or "—"),
+)
+
+
+class JournalImprimerView(ImpressionListeMixin, JournalListView):
+    """Rapport imprimable du journal (mêmes filtres que la liste)."""
+
+    titre_impression = "Journal d'audit"
+    colonnes = COLONNES_EXPORT
+
+    def get_sous_titre_impression(self):
+        criteres = self.get_filtre().criteres()
+        morceaux = []
+        if criteres.get("module"):
+            morceaux.append(f"module : {criteres['module']}")
+        if criteres.get("action"):
+            morceaux.append(f"action : {dict(services.ActionChoices.choices)[criteres['action']]}")
+        if criteres.get("statut"):
+            morceaux.append(f"statut : {dict(services.StatutChoices.choices)[criteres['statut']]}")
+        if criteres.get("date_debut"):
+            morceaux.append(f"du {criteres['date_debut'].strftime('%d/%m/%Y')}")
+        if criteres.get("date_fin"):
+            morceaux.append(f"au {criteres['date_fin'].strftime('%d/%m/%Y')}")
+        if criteres.get("recherche"):
+            morceaux.append(f"recherche : « {criteres['recherche']} »")
+        return " · ".join(morceaux)
+
+
+class JournalExporterCsvView(RoleRequiredMixin, ListView):
+    """Export CSV du journal filtré (cahier-des-charges.md:82 « Export CSV/PDF pour audits externes »).
+
+    Le PDF s'obtient par :class:`JournalImprimerView` (Ctrl+P / Enregistrer au format PDF).
+    """
+
+    roles = permissions.CONSULTATION
+
+    def get_filtre(self):
+        return FiltreJournalForm(self.request.GET, modules=services.modules_utilises())
+
+    def get_queryset(self):
+        return services.rechercher(**self.get_filtre().criteres())
+
+    def get(self, request, *args, **kwargs):
+        reponse = HttpResponse(content_type="text/csv; charset=utf-8")
+        reponse["Content-Disposition"] = 'attachment; filename="journal_audit.csv"'
+        reponse.write("﻿")  # BOM : Excel ouvre l'UTF-8 sans le déformer
+        redacteur = csv.writer(reponse, delimiter=";")
+        redacteur.writerow([libelle for libelle, _ in COLONNES_EXPORT])
+        for entree in self.get_queryset():
+            redacteur.writerow([ImpressionListeMixin._valeur(entree, cle) for _, cle in COLONNES_EXPORT])
+        return reponse
 ```
 
 (Ce fichier ne contient qu'un commentaire ; l'app `audit` n'a pas d'écran dédié.)
@@ -1453,6 +1760,769 @@ touch apps/core/templatetags/__init__.py
 ```
 
 > Sous PowerShell, `mkdir -p` s'écrit `New-Item -ItemType Directory -Force <dossier>` et `touch fichier` s'écrit `New-Item -ItemType File -Force fichier`. Vous pouvez aussi créer ces fichiers avec votre éditeur.
+
+#### `templates/components/_graphique_barres.html`
+
+*17 lignes* — Barres horizontales (apps.core.graphiques.barres_horizontales). Valeur au bout de la barre : rien ne dépend de la souris.
+
+```django
+{# Barres horizontales (apps.core.graphiques.barres_horizontales). Valeur au bout de la barre : rien ne dépend de la souris. #}
+{% if g.vide %}
+  <p class="text-sm text-slate-600">{{ vide }}</p>
+{% else %}
+  <ul class="viz-barres">
+    {% for l in g.lignes %}
+      <li class="viz-barre-ligne">
+        <span class="viz-barre-libelle">
+          {% if l.url %}<a href="{{ l.url }}" class="font-medium text-marque-700 underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">{{ l.libelle }}</a>{% else %}{{ l.libelle }}{% endif %}
+          {% if l.detail %}<span class="text-xs text-slate-600">· {{ l.detail }}</span>{% endif %}
+        </span>
+        <span class="viz-piste" aria-hidden="true"><span class="viz-barre viz-s1" style="width: {{ l.largeur }}%"></span></span>
+        <span class="viz-barre-valeur">{{ l.valeur_texte }}{% if g.unite %} <span class="text-xs font-normal text-slate-600">{{ g.unite }}</span>{% endif %}</span>
+      </li>
+    {% endfor %}
+  </ul>
+{% endif %}
+```
+
+#### `templates/components/_graphique_colonnes.html`
+
+*50 lignes*
+
+```django
+{% load l10n %}{# Colonnes groupées (apps.core.graphiques.colonnes_groupees). Infobulle au survol ET au focus clavier ; équivalent en tableau dessous. #}
+{% if g.vide %}
+  <p class="text-sm text-slate-600">{{ vide }}</p>
+{% else %}
+  <ul class="viz-legende" aria-label="Légende">
+    {% for s in g.legende %}<li><span class="viz-cle viz-s{{ s.rang }}" aria-hidden="true"></span>{{ s.nom }}</li>{% endfor %}
+  </ul>
+  <div class="viz-colonnes{% if g.grappes|length > 6 %} viz-dense{% endif %}">
+    <div class="viz-axe-y" aria-hidden="true">
+      {% for t in g.graduations %}<span style="bottom: {{ t.position }}%">{{ t.etiquette }}</span>{% endfor %}
+    </div>
+    <div class="viz-zone">
+      <div class="viz-trace">
+        {% for t in g.graduations %}<span class="viz-grille" style="bottom: {{ t.position }}%" aria-hidden="true"></span>{% endfor %}
+        <div class="viz-grappes">
+          {% for grappe in g.grappes %}
+            <div class="viz-grappe" tabindex="0" aria-label="{{ grappe.libelle }} : {% for c in grappe.colonnes %}{{ c.serie }} {{ c.valeur_texte }} {{ g.unite }}{% if not forloop.last %}, {% endif %}{% endfor %}">
+              <div class="viz-colonnes-serie">
+                {% for c in grappe.colonnes %}<span class="viz-colonne viz-s{{ c.rang }}" style="height: {{ c.hauteur|unlocalize }}%"></span>{% endfor %}
+              </div>
+              <div class="viz-info viz-info-{{ grappe.bord }}" role="tooltip">
+                <strong class="viz-info-titre">{{ grappe.libelle }}</strong>
+                {% for c in grappe.colonnes %}
+                  <span class="viz-info-ligne"><span class="viz-trait viz-s{{ c.rang }}" aria-hidden="true"></span><span class="viz-info-valeur">{{ c.valeur_texte }}</span><span class="viz-info-nom">{{ c.serie }}</span></span>
+                {% endfor %}
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="viz-axe-x" aria-hidden="true">
+        {% for grappe in g.grappes %}<span>{{ grappe.libelle_court }}{% if grappe.sous_libelle %}<small>{{ grappe.sous_libelle }}</small>{% endif %}</span>{% endfor %}
+      </div>
+    </div>
+  </div>
+  <details class="mt-3 text-sm">
+    <summary class="cursor-pointer text-marque-700 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">Voir en tableau</summary>
+    <div class="mt-2 overflow-x-auto">
+      <table class="w-full text-left text-sm" id="{{ id }}-tableau">
+        <caption class="sr-only">Valeurs en {{ g.unite }}</caption>
+        <thead><tr class="border-b border-slate-200 text-slate-600"><th scope="col" class="py-1 pr-3 font-medium">Mois</th>{% for e in g.tableau.entetes %}<th scope="col" class="py-1 pl-3 text-right font-medium">{{ e }}</th>{% endfor %}</tr></thead>
+        <tbody>
+          {% for l in g.tableau.lignes %}
+            <tr class="border-b border-slate-100"><th scope="row" class="py-1 pr-3 font-medium text-slate-800">{{ l.libelle }}</th>{% for v in l.valeurs %}<td class="py-1 pl-3 text-right tabular-nums text-slate-800">{{ v }}</td>{% endfor %}</tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+{% endif %}
+```
+
+#### `templates/components/_suivi_direct.html`
+
+*19 lignes* — Voyant du suivi en direct + annonce pour lecteurs d'écran + bandeau « actualiser » (static/js/suivi-missions.js).
+
+```django
+{# Voyant du suivi en direct + annonce pour lecteurs d'écran + bandeau « actualiser » (static/js/suivi-missions.js). #}
+<div class="flex flex-wrap items-center gap-3">
+  <p id="suivi-voyant" class="text-xs">
+    <span data-etat="connecte" class="hidden items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 font-medium text-emerald-800 ring-1 ring-emerald-200">
+      <span class="h-2 w-2 rounded-full bg-emerald-600" aria-hidden="true"></span>En direct
+    </span>
+    <span data-etat="reconnexion" class="hidden items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 font-medium text-amber-900 ring-1 ring-amber-300">
+      <span class="h-2 w-2 rounded-full bg-amber-500" aria-hidden="true"></span>Reconnexion…
+    </span>
+    <span data-etat="hors_ligne" class="hidden items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 font-medium text-slate-700 ring-1 ring-slate-300">
+      <span class="h-2 w-2 rounded-full bg-slate-400" aria-hidden="true"></span>Suivi en direct indisponible : actualisez la page pour voir les changements
+    </span>
+  </p>
+  <div id="suivi-bandeau" class="hidden items-center gap-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs text-amber-900" role="status">
+    Cette page vient de changer.
+    <button type="button" id="suivi-actualiser" class="font-semibold underline underline-offset-2 hover:text-amber-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-700">Actualiser</button>
+  </div>
+  <div id="suivi-annonce" class="sr-only" aria-live="polite"></div>
+</div>
+```
+
+#### `templates/rapports/_entete_impression.html`
+
+*17 lignes*
+
+```django
+{% load static %}{# En-tête commune des rapports imprimables : logo, entreprise, titre, sous-titre, bouton Imprimer. #}
+<div class="actions"><button type="button" data-imprimer><i class="fa-solid fa-print" aria-hidden="true"></i> Imprimer ou enregistrer en PDF</button></div>
+
+<div class="rapport-entete">
+  <div class="rapport-marque">
+    <img src="{% static 'img/logo-emblem.jpg' %}" alt="" class="rapport-logo">
+    <div>
+      <strong class="rapport-nom">{{ entreprise.nom }}</strong><br>
+      {% if entreprise.adresse %}<span class="petit">{{ entreprise.adresse|linebreaksbr }}</span><br>{% endif %}
+      {% if entreprise.ncc %}<span class="petit">NCC {{ entreprise.ncc }}</span>{% endif %}
+    </div>
+  </div>
+  <div style="text-align:right">
+    <h1>{{ titre }}</h1>
+    {% if sous_titre %}<div class="petit">{{ sous_titre }}</div>{% endif %}
+  </div>
+</div>
+```
+
+#### `templates/rapports/_pied_impression.html`
+
+*2 lignes* — Pied commun des rapports imprimables : qui l'a généré, quand.
+
+```django
+{# Pied commun des rapports imprimables : qui l'a généré, quand. #}
+<p class="rapport-pied">Généré le {{ genere_le|date:"d/m/Y à H:i" }} par {{ genere_par }} — DEN Source ERP</p>
+```
+
+#### `templates/rapports/_style_impression.html`
+
+*28 lignes*
+
+```django
+<style>
+  :root { --marque: #8b0319; --accent: #f28a14; } /* couleurs du logo DEN Source Group (frontend/tailwind.config.js) */
+  body { font-family: Arial, Helvetica, sans-serif; color: #111; margin: 2rem auto; max-width: 960px; padding: 0 1rem; font-size: 13px; }
+  h1 { font-size: 1.5rem; margin: 0; color: var(--marque); }
+  h2 { font-size: 1.05rem; margin: 1.75rem 0 .5rem; padding-top: .75rem; border-top: 2px solid var(--accent); color: var(--marque); }
+  table { width: 100%; border-collapse: collapse; margin-top: .75rem; }
+  th, td { padding: .4rem .6rem; border-bottom: 1px solid #ccc; text-align: left; vertical-align: top; }
+  th { background: #fdf2f3; color: var(--marque); font-size: .75rem; text-transform: uppercase; letter-spacing: .03em; }
+  td.droite, th.droite { text-align: right; white-space: nowrap; }
+  .rapport-entete { display: flex; justify-content: space-between; gap: 2rem; align-items: flex-start; padding-bottom: .75rem; border-bottom: 3px solid var(--accent); }
+  .rapport-marque { display: flex; align-items: center; gap: .85rem; }
+  .rapport-logo { height: 48px; width: 48px; object-fit: contain; flex-shrink: 0; }
+  .rapport-nom { color: var(--marque); font-size: 1.15rem; }
+  .petit { color: #555; font-size: .85rem; }
+  .cartouche { display: flex; flex-wrap: wrap; gap: 1.5rem; margin-top: 1rem; }
+  .cartouche > div { min-width: 9rem; }
+  .cartouche dt { color: #555; font-size: .78rem; }
+  .cartouche dd { margin: 0; font-size: 1.15rem; font-weight: bold; color: var(--marque); }
+  .actions { margin-bottom: 1rem; }
+  .actions button { display: inline-flex; align-items: center; gap: .5rem; border: 1px solid var(--marque); background: var(--marque); color: #fff; border-radius: .5rem; padding: .5rem 1rem; font: inherit; font-weight: 600; cursor: pointer; }
+  .rapport-pied { margin-top: 2rem; padding-top: .5rem; border-top: 1px solid #ddd; color: #777; font-size: .78rem; }
+  @media print {
+    .actions { display: none; }
+    body { margin: 0; }
+    h2 { break-after: avoid; }
+    tr { break-inside: avoid; }
+  }
+</style>
+```
+
+#### `templates/rapports/liste_impression.html`
+
+*32 lignes*
+
+```django
+{% load static %}<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ titre }} · {{ entreprise.nom }}</title>
+  {% include "rapports/_style_impression.html" %}
+</head>
+<body>
+  {% include "rapports/_entete_impression.html" %}
+
+  <p class="petit">
+    {{ nombre }} ligne{{ nombre|pluralize }}{% if tronque %} — limité aux {{ nombre }} premières ; affinez la recherche pour voir le reste{% endif %}
+  </p>
+
+  {% if lignes %}
+    <table>
+      <thead><tr>{% for entete in entetes %}<th>{{ entete }}</th>{% endfor %}</tr></thead>
+      <tbody>
+        {% for ligne in lignes %}
+          <tr>{% for valeur in ligne %}<td>{{ valeur }}</td>{% endfor %}</tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p>Aucune ligne pour ces critères.</p>
+  {% endif %}
+
+  {% include "rapports/_pied_impression.html" %}
+  <script src="{% static 'js/app.js' %}" defer></script>
+</body>
+</html>
+```
+
+#### `templates/registration/password_reset_complete.html`
+
+*21 lignes*
+
+```django
+{% extends "base.html" %}
+{% load static %}
+{% block titre %}Mot de passe changé{% endblock %}
+
+{% block layout %}
+<div class="flex min-h-full items-center justify-center bg-gradient-to-b from-marque-50 via-white to-white px-4 py-12">
+  <div class="w-full max-w-md">
+    <div class="mb-8 text-center">
+      <span class="mx-auto inline-block rounded-2xl bg-white p-3 shadow-md ring-1 ring-marque-100"><img src="{% static 'img/logo-emblem.jpg' %}" alt="DEN Source Group" class="h-24 w-auto"></span>
+    </div>
+    <div class="rounded-2xl border border-slate-200 border-t-4 border-t-accent-500 bg-white p-6 text-center shadow-sm">
+      <h1 class="text-xl font-bold text-slate-900">Mot de passe changé</h1>
+      <p class="mt-3 text-sm text-slate-600">Vous pouvez vous connecter avec votre nouveau mot de passe.</p>
+      <a href="{% url 'accounts:login' %}"
+         class="mt-6 inline-block rounded-lg bg-marque-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-marque-700">
+        Se connecter
+      </a>
+    </div>
+  </div>
+</div>
+{% endblock %}
+```
+
+#### `templates/registration/password_reset_confirm.html`
+
+*52 lignes*
+
+```django
+{% extends "base.html" %}
+{% load static %}
+{% block titre %}Nouveau mot de passe{% endblock %}
+
+{% block layout %}
+<div class="flex min-h-full items-center justify-center bg-gradient-to-b from-marque-50 via-white to-white px-4 py-12">
+  <div class="w-full max-w-md">
+    <div class="mb-8 text-center">
+      <span class="mx-auto inline-block rounded-2xl bg-white p-3 shadow-md ring-1 ring-marque-100"><img src="{% static 'img/logo-emblem.jpg' %}" alt="DEN Source Group" class="h-24 w-auto"></span>
+      <h1 class="mt-3 text-2xl font-bold text-slate-900">Nouveau mot de passe</h1>
+    </div>
+
+    {% if validlink %}
+      <form method="post" class="space-y-5 rounded-2xl border border-slate-200 border-t-4 border-t-accent-500 bg-white p-6 shadow-sm">
+        {% csrf_token %}
+        {% if form.non_field_errors %}
+          <div role="alert" class="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">
+            {% for erreur in form.non_field_errors %}<p>{{ erreur }}</p>{% endfor %}
+          </div>
+        {% endif %}
+
+        <div>
+          <label for="{{ form.new_password1.id_for_label }}" class="block text-sm font-medium text-slate-800">Nouveau mot de passe</label>
+          <input type="password" name="new_password1" id="{{ form.new_password1.id_for_label }}" required autofocus
+                 autocomplete="new-password"
+                 class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-marque-600 focus:outline-none focus:ring-2 focus:ring-marque-600/30">
+          <p class="mt-1 text-xs text-slate-500">Au moins 10 caractères, ni trop simple ni proche de votre identifiant.</p>
+          {% for erreur in form.new_password1.errors %}<p class="mt-1 text-sm text-red-700">{{ erreur }}</p>{% endfor %}
+        </div>
+        <div>
+          <label for="{{ form.new_password2.id_for_label }}" class="block text-sm font-medium text-slate-800">Confirmer le mot de passe</label>
+          <input type="password" name="new_password2" id="{{ form.new_password2.id_for_label }}" required
+                 autocomplete="new-password"
+                 class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-marque-600 focus:outline-none focus:ring-2 focus:ring-marque-600/30">
+          {% for erreur in form.new_password2.errors %}<p class="mt-1 text-sm text-red-700">{{ erreur }}</p>{% endfor %}
+        </div>
+        <button type="submit"
+                class="w-full rounded-lg bg-marque-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">
+          Enregistrer le nouveau mot de passe
+        </button>
+      </form>
+    {% else %}
+      <div class="rounded-2xl border border-slate-200 border-t-4 border-t-red-500 bg-white p-6 text-center shadow-sm">
+        <p class="text-sm text-slate-700">
+          Ce lien n'est plus valable : il a déjà servi, ou il a expiré. Demandez-en un nouveau.
+        </p>
+        <a href="{% url 'accounts:password_reset' %}" class="mt-6 inline-block font-medium text-marque-700 hover:underline">Redemander un lien</a>
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+```
+
+#### `templates/registration/password_reset_done.html`
+
+*24 lignes*
+
+```django
+{% extends "base.html" %}
+{% load static %}
+{% block titre %}Mot de passe oublié{% endblock %}
+
+{% block layout %}
+<div class="flex min-h-full items-center justify-center bg-gradient-to-b from-marque-50 via-white to-white px-4 py-12">
+  <div class="w-full max-w-md">
+    <div class="mb-8 text-center">
+      <span class="mx-auto inline-block rounded-2xl bg-white p-3 shadow-md ring-1 ring-marque-100"><img src="{% static 'img/logo-emblem.jpg' %}" alt="DEN Source Group" class="h-24 w-auto"></span>
+    </div>
+    <div class="rounded-2xl border border-slate-200 border-t-4 border-t-accent-500 bg-white p-6 text-center shadow-sm">
+      <h1 class="text-xl font-bold text-slate-900">E-mail envoyé</h1>
+      <p class="mt-3 text-sm text-slate-600">
+        Si cette adresse correspond à un compte, un e-mail vient d'être envoyé avec un lien pour
+        choisir un nouveau mot de passe. Il reste valable quelques jours.
+      </p>
+      <p class="mt-3 text-sm text-slate-600">
+        Rien reçu ? Vérifiez le dossier indésirable, ou réessayez avec la bonne adresse.
+      </p>
+      <a href="{% url 'accounts:login' %}" class="mt-6 inline-block font-medium text-marque-700 hover:underline">Retour à la connexion</a>
+    </div>
+  </div>
+</div>
+{% endblock %}
+```
+
+#### `templates/registration/password_reset_email.txt`
+
+*12 lignes*
+
+```text
+Bonjour {{ user.get_full_name|default:user.username }},
+
+Une demande de réinitialisation de mot de passe a été faite pour votre compte sur l'ERP DEN Source Group
+({{ domain }}). Si vous n'êtes pas à l'origine de cette demande, ignorez cet e-mail : votre mot de passe
+ne change pas tant que vous n'ouvrez pas le lien ci-dessous.
+
+Pour choisir un nouveau mot de passe :
+{{ protocol }}://{{ domain }}{% url 'accounts:password_reset_confirm' uidb64=uid token=token %}
+
+Ce lien n'est valable qu'une fois, pendant quelques jours.
+
+— ERP DEN Source Group
+```
+
+#### `templates/registration/password_reset_form.html`
+
+*42 lignes*
+
+```django
+{% extends "base.html" %}
+{% load static %}
+{% block titre %}Mot de passe oublié{% endblock %}
+
+{% block layout %}
+<div class="flex min-h-full items-center justify-center bg-gradient-to-b from-marque-50 via-white to-white px-4 py-12">
+  <div class="w-full max-w-md">
+    <div class="mb-8 text-center">
+      <span class="mx-auto inline-block rounded-2xl bg-white p-3 shadow-md ring-1 ring-marque-100"><img src="{% static 'img/logo-emblem.jpg' %}" alt="DEN Source Group" class="h-24 w-auto"></span>
+      <h1 class="mt-3 text-2xl font-bold text-slate-900">Mot de passe oublié</h1>
+      <p class="mt-2 text-sm text-slate-600">
+        Indiquez l'adresse e-mail de votre compte : si elle y est rattachée, un lien pour choisir un
+        nouveau mot de passe vous sera envoyé.
+      </p>
+    </div>
+
+    <form method="post" class="space-y-5 rounded-2xl border border-slate-200 border-t-4 border-t-accent-500 bg-white p-6 shadow-sm">
+      {% csrf_token %}
+      {% if form.non_field_errors %}
+        <div role="alert" class="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">
+          {% for erreur in form.non_field_errors %}<p>{{ erreur }}</p>{% endfor %}
+        </div>
+      {% endif %}
+
+      <div>
+        <label for="{{ form.email.id_for_label }}" class="block text-sm font-medium text-slate-800">Adresse e-mail</label>
+        <input type="email" name="email" id="{{ form.email.id_for_label }}" required autofocus
+               autocomplete="email" value="{{ form.email.value|default:'' }}"
+               class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-marque-600 focus:outline-none focus:ring-2 focus:ring-marque-600/30">
+        {% for erreur in form.email.errors %}<p class="mt-1 text-sm text-red-700">{{ erreur }}</p>{% endfor %}
+      </div>
+      <button type="submit"
+              class="w-full rounded-lg bg-marque-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">
+        Envoyer le lien
+      </button>
+      <p class="text-center text-sm text-slate-600">
+        <a href="{% url 'accounts:login' %}" class="font-medium text-marque-700 hover:underline">Retour à la connexion</a>
+      </p>
+    </form>
+  </div>
+</div>
+{% endblock %}
+```
+
+#### `templates/registration/password_reset_subject.txt`
+
+*1 ligne*
+
+```text
+Réinitialisation de votre mot de passe — ERP DEN Source Group
+```
+
+#### `apps/audit/forms.py`
+
+*42 lignes* — Filtres du journal d'audit.
+
+```python
+"""Filtres du journal d'audit."""
+
+from django import forms
+
+from apps.core.forms import StyleTailwindMixin
+
+from .models import ActionChoices, StatutChoices
+
+
+class FiltreJournalForm(StyleTailwindMixin, forms.Form):
+    """Filtres de la liste ; un paramètre invalide est ignoré."""
+
+    q = forms.CharField(label="Rechercher", required=False, help_text="Utilisateur, entité, adresse IP…")
+    module = forms.ChoiceField(label="Module", choices=[("", "Tous")], required=False)
+    action = forms.ChoiceField(label="Action", choices=[("", "Toutes")] + ActionChoices.choices, required=False)
+    statut = forms.ChoiceField(label="Statut", choices=[("", "Tous")] + StatutChoices.choices, required=False)
+    date_debut = forms.DateField(label="Du", required=False, widget=forms.DateInput(attrs={"type": "date"}))
+    date_fin = forms.DateField(label="Au", required=False, widget=forms.DateInput(attrs={"type": "date"}))
+
+    def __init__(self, *args, modules=(), **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["module"].choices = [("", "Tous")] + [(m, m) for m in modules]
+
+    def clean(self):
+        donnees = super().clean()
+        debut, fin = donnees.get("date_debut"), donnees.get("date_fin")
+        if debut and fin and debut > fin:
+            self.add_error("date_fin", "La date de fin précède la date de début : période ignorée.")
+            donnees.pop("date_debut", None)
+        return donnees
+
+    def criteres(self) -> dict:
+        self.is_valid()
+        donnees = getattr(self, "cleaned_data", {})
+        return {
+            "recherche": donnees.get("q") or "",
+            "module": donnees.get("module") or "",
+            "action": donnees.get("action") or "",
+            "statut": donnees.get("statut") or "",
+            "date_debut": donnees.get("date_debut"),
+            "date_fin": donnees.get("date_fin"),
+        }
+```
+
+#### `apps/audit/urls.py`
+
+*11 lignes*
+
+```python
+from django.urls import path
+
+from . import views
+
+app_name = "audit"
+
+urlpatterns = [
+    path("", views.JournalListView.as_view(), name="journal"),
+    path("imprimer/", views.JournalImprimerView.as_view(), name="imprimer"),
+    path("export.csv", views.JournalExporterCsvView.as_view(), name="export_csv"),
+]
+```
+
+#### `apps/core/templatetags/graphiques.py`
+
+*17 lignes* — Balises des graphiques du tableau de bord (données préparées par ``apps.core.graphiques``).
+
+```python
+"""Balises des graphiques du tableau de bord (données préparées par ``apps.core.graphiques``)."""
+
+from django import template
+
+register = template.Library()
+
+
+@register.inclusion_tag("components/_graphique_barres.html")
+def graphique_barres(donnees, vide="Aucune donnée pour le moment."):
+    """Barres horizontales : ``{% graphique_barres graphique %}``."""
+    return {"g": donnees, "vide": vide}
+
+
+@register.inclusion_tag("components/_graphique_colonnes.html")
+def graphique_colonnes(donnees, identifiant, vide="Aucune donnée sur la période."):
+    """Colonnes groupées : ``{% graphique_colonnes graphique "id-unique" %}``."""
+    return {"g": donnees, "id": identifiant, "vide": vide}
+```
+
+#### `apps/audit/templates/audit/journal_list.html`
+
+*80 lignes*
+
+```django
+{% extends "base.html" %}
+{% load ui %}
+{% block titre %}Journal d'audit{% endblock %}
+{% block entete %}Journal d'audit{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-7xl">
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <div>
+      <h1 class="text-2xl font-bold text-slate-900">Journal d'audit</h1>
+      <p class="mt-1 text-sm text-slate-600">
+        {{ paginator.count|default:0 }} entrée{{ paginator.count|pluralize }} · immuable : créations, modifications,
+        suppressions, connexions/déconnexions et validations, conservées au moins 5 ans.
+      </p>
+    </div>
+    <div class="flex flex-wrap items-center gap-2">
+      <a href="{% url 'audit:export_csv' %}?{{ request.GET.urlencode }}"
+         class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+        <i class="fa-solid fa-file-csv" aria-hidden="true"></i> Exporter en CSV
+      </a>
+      <a href="{% url 'audit:imprimer' %}?{{ request.GET.urlencode }}" target="_blank" rel="noopener"
+         class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+        <i class="fa-solid fa-print" aria-hidden="true"></i> Imprimer
+      </a>
+    </div>
+  </div>
+
+  <form method="get" class="mt-5 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div class="min-w-[14rem] flex-1">{% include "components/_champ.html" with champ=filtre.q %}</div>
+    <div class="min-w-[10rem]">{% include "components/_champ.html" with champ=filtre.module %}</div>
+    <div class="min-w-[10rem]">{% include "components/_champ.html" with champ=filtre.action %}</div>
+    <div class="min-w-[10rem]">{% include "components/_champ.html" with champ=filtre.statut %}</div>
+    {% include "components/_champ.html" with champ=filtre.date_debut %}
+    {% include "components/_champ.html" with champ=filtre.date_fin %}
+    <button type="submit" class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2">Filtrer</button>
+    {% if filtres_actifs %}
+      <a href="{% url 'audit:journal' %}" class="px-2 py-2 text-sm font-medium text-slate-700 underline hover:text-slate-900">Réinitialiser</a>
+    {% endif %}
+  </form>
+
+  {% if lignes %}
+    <div class="mt-5 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+      <table class="min-w-full divide-y divide-slate-200 text-sm">
+        <caption class="sr-only">Journal d'audit</caption>
+        <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+          <tr>
+            <th scope="col" class="px-4 py-3">Date/heure</th>
+            <th scope="col" class="px-4 py-3">Utilisateur</th>
+            <th scope="col" class="px-4 py-3">Action</th>
+            <th scope="col" class="px-4 py-3">Module</th>
+            <th scope="col" class="px-4 py-3">Entité</th>
+            <th scope="col" class="hidden px-4 py-3 xl:table-cell">Adresse IP</th>
+            <th scope="col" class="px-4 py-3">Statut</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          {% for e in lignes %}
+            <tr class="hover:bg-slate-50">
+              <td class="whitespace-nowrap px-4 py-3 text-slate-700">{{ e.date_heure|date:"d/m/Y H:i:s" }}</td>
+              <td class="whitespace-nowrap px-4 py-3 text-slate-900">{{ e.utilisateur_nom|default:"—" }}<span class="block text-xs text-slate-600">{{ e.role|default:"—" }}</span></td>
+              <td class="whitespace-nowrap px-4 py-3">{% badge e.action e.get_action_display %}</td>
+              <td class="whitespace-nowrap px-4 py-3 text-slate-700">{{ e.module }}</td>
+              <td class="px-4 py-3 text-slate-700">{{ e.entite }}{% if e.entite_id %} #{{ e.entite_id }}{% endif %}</td>
+              <td class="hidden whitespace-nowrap px-4 py-3 text-slate-700 xl:table-cell">{{ e.adresse_ip|default:"—" }}</td>
+              <td class="whitespace-nowrap px-4 py-3">{% if e.statut == "FAILED" %}{% badge "URGENT" e.get_statut_display %}{% else %}{{ e.get_statut_display }}{% endif %}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% include "components/_pagination.html" %}
+  {% else %}
+    <div class="mt-5 rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center">
+      <span class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-600"><i class="fa-solid fa-clipboard-list" aria-hidden="true"></i></span>
+      <p class="mt-3 font-semibold text-slate-900">Aucune entrée</p>
+      <p class="mt-1 text-sm text-slate-600">{% if filtres_actifs %}Aucun résultat pour ces critères.{% else %}Les actions du journal apparaîtront ici.{% endif %}</p>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}
+```
+
+#### `apps/accounts/tests/test_password_reset.py`
+
+*170 lignes* — Mot de passe oublié : les 4 étapes, sans jamais révéler si une adresse a un compte.
+
+```python
+"""Mot de passe oublié : les 4 étapes, sans jamais révéler si une adresse a un compte."""
+
+import re
+
+import pytest
+from django.contrib.auth.tokens import default_token_generator
+from django.core import mail
+from django.urls import reverse
+from django.utils.encoding import force_bytes
+from django.utils.http import urlsafe_base64_encode
+
+from apps.accounts.models import Role, User
+from apps.audit.models import ActionChoices, AuditLog
+
+from .factories import UserFactory
+
+pytestmark = pytest.mark.django_db
+
+NOUVEAU_MOT_DE_PASSE = "Un-Nouveau-Mot-2-Passe"
+
+
+def _lien_confirmation(compte):
+    """Construit l'URL de confirmation directement (sans dépendre du format de l'e-mail)."""
+    uid = urlsafe_base64_encode(force_bytes(compte.pk))
+    token = default_token_generator.make_token(compte)
+    return reverse("accounts:password_reset_confirm", kwargs={"uidb64": uid, "token": token})
+
+
+def _page_confirmation(client, compte):
+    """Ouvre le lien (GET) : Django range le jeton en session et redirige vers l'URL réellement
+    soumise par le formulaire (le jeton n'apparaît plus dans l'adresse). Un navigateur fait la
+    même chose avant de pouvoir poster le nouveau mot de passe."""
+    reponse = client.get(_lien_confirmation(compte), follow=True)
+    return reponse.redirect_chain[-1][0]
+
+
+# --- demande ---
+
+
+def test_la_page_de_demande_est_ouverte_a_tous(client):
+    assert client.get(reverse("accounts:password_reset")).status_code == 200
+
+
+def test_une_adresse_existante_recoit_un_e_mail(client):
+    UserFactory(role=Role.RH, email="marie@densourcegroup.ci")
+
+    reponse = client.post(
+        reverse("accounts:password_reset"), {"email": "marie@densourcegroup.ci"}, follow=True
+    )
+
+    assert reponse.redirect_chain[-1][0] == reverse("accounts:password_reset_done")
+    assert len(mail.outbox) == 1
+    assert mail.outbox[0].to == ["marie@densourcegroup.ci"]
+    assert "mot de passe" in mail.outbox[0].subject.lower()
+
+
+def test_une_adresse_inconnue_ne_revele_rien(client):
+    reponse = client.post(
+        reverse("accounts:password_reset"), {"email": "personne@densourcegroup.ci"}, follow=True
+    )
+
+    assert reponse.redirect_chain[-1][0] == reverse("accounts:password_reset_done")
+    assert len(mail.outbox) == 0
+
+
+def test_l_e_mail_contient_un_lien_qui_fonctionne(client):
+    UserFactory(role=Role.RH, email="marie@densourcegroup.ci", username="marie")
+
+    client.post(reverse("accounts:password_reset"), {"email": "marie@densourcegroup.ci"})
+
+    lien = re.search(r"https?://\S+/mot-de-passe/confirmer/\S+/", mail.outbox[0].body)
+    assert lien is not None
+    chemin = lien.group(0).split("://", 1)[1].split("/", 1)[1]
+    reponse = client.get("/" + chemin, follow=True)
+    assert reponse.status_code == 200
+    assert reponse.context["validlink"] is True
+
+
+# --- confirmation ---
+
+
+def test_un_nouveau_mot_de_passe_valide_fonctionne_ensuite(client):
+    compte = UserFactory(role=Role.RH)
+    page = _page_confirmation(client, compte)
+
+    reponse = client.post(
+        page,
+        {"new_password1": NOUVEAU_MOT_DE_PASSE, "new_password2": NOUVEAU_MOT_DE_PASSE},
+        follow=True,
+    )
+
+    compte.refresh_from_db()
+    assert reponse.redirect_chain[-1][0] == reverse("accounts:password_reset_complete")
+    assert compte.check_password(NOUVEAU_MOT_DE_PASSE)
+
+
+def test_deux_mots_de_passe_differents_sont_refuses(client):
+    compte = UserFactory(role=Role.RH)
+    page = _page_confirmation(client, compte)
+
+    reponse = client.post(
+        page, {"new_password1": NOUVEAU_MOT_DE_PASSE, "new_password2": "Autre-Chose-2026"}
+    )
+
+    assert reponse.status_code == 200
+    compte.refresh_from_db()
+    assert not compte.check_password(NOUVEAU_MOT_DE_PASSE)
+
+
+def test_un_mot_de_passe_trop_court_est_refuse_comme_a_la_creation(client):
+    compte = UserFactory(role=Role.RH)
+    page = _page_confirmation(client, compte)
+
+    reponse = client.post(page, {"new_password1": "court1", "new_password2": "court1"})
+
+    assert reponse.status_code == 200
+    compte.refresh_from_db()
+    assert not compte.check_password("court1")
+
+
+def test_un_lien_deja_utilise_est_refuse(client):
+    compte = UserFactory(role=Role.RH)
+    lien = _lien_confirmation(compte)
+    page = _page_confirmation(client, compte)
+    client.post(page, {"new_password1": NOUVEAU_MOT_DE_PASSE, "new_password2": NOUVEAU_MOT_DE_PASSE})
+
+    reponse = client.get(lien, follow=True)
+
+    assert reponse.context["validlink"] is False
+    assert "plus valable" in reponse.content.decode()
+
+
+def test_un_lien_invalide_affiche_l_erreur_sans_planter(client):
+    reponse = client.get(
+        reverse("accounts:password_reset_confirm", kwargs={"uidb64": "invalide", "token": "invalide"})
+    )
+
+    assert reponse.status_code == 200
+    assert reponse.context["validlink"] is False
+
+
+def test_la_reinitialisation_est_tracee_au_journal_d_audit(client):
+    compte = UserFactory(role=Role.RH)
+    page = _page_confirmation(client, compte)
+
+    client.post(page, {"new_password1": NOUVEAU_MOT_DE_PASSE, "new_password2": NOUVEAU_MOT_DE_PASSE})
+
+    entree = AuditLog.objects.filter(entite="User", entite_id=compte.pk, action=ActionChoices.UPDATE).first()
+    assert entree is not None
+    assert entree.utilisateur_id == compte.pk
+
+
+def test_un_administrateur_peut_aussi_reinitialiser_son_mot_de_passe(client):
+    """La MFA (ADMIN/DIRECTION) ne bloque pas ce parcours : la personne n'est pas encore connectée."""
+    compte = UserFactory(role=Role.ADMIN)
+    page = _page_confirmation(client, compte)
+
+    reponse = client.post(
+        page,
+        {"new_password1": NOUVEAU_MOT_DE_PASSE, "new_password2": NOUVEAU_MOT_DE_PASSE},
+        follow=True,
+    )
+
+    assert reponse.redirect_chain[-1][0] == reverse("accounts:password_reset_complete")
+
+
+def test_le_lien_mot_de_passe_oublie_est_sur_la_page_de_connexion(client):
+    reponse = client.get(reverse("accounts:login"))
+
+    assert reverse("accounts:password_reset") in reponse.content.decode()
+```
 
 #### `apps/audit/tests/test_services.py`
 
@@ -1577,6 +2647,275 @@ def test_failed_login_creates_audit_entry_with_failed_status():
     ).exists()
 ```
 
+#### `apps/audit/tests/test_views.py`
+
+*152 lignes* — Écran du journal d'audit : accès, filtres, export CSV, rapport imprimable.
+
+```python
+"""Écran du journal d'audit : accès, filtres, export CSV, rapport imprimable."""
+
+from datetime import date, datetime
+from datetime import timezone as dt_timezone
+
+import pytest
+from django.urls import reverse
+
+from apps.accounts.models import Role
+from apps.accounts.tests.factories import UserFactory
+from apps.audit import services
+from apps.audit.models import ActionChoices, AuditLog, StatutChoices
+
+pytestmark = pytest.mark.django_db
+
+
+def _texte(reponse) -> str:
+    return reponse.content.decode()
+
+
+def _entree(**surcharges):
+    donnees = dict(
+        action=ActionChoices.UPDATE, module="FLEET", entite="Vehicule", entite_id=1,
+        utilisateur_nom="Awa Koné", role=Role.PARCAUTO, adresse_ip="10.0.0.1",
+    )
+    donnees.update(surcharges)
+    entree = AuditLog.objects.create(**donnees)
+    if "date_heure" in surcharges:
+        AuditLog.objects.filter(pk=entree.pk).update(date_heure=surcharges["date_heure"])
+        entree.refresh_from_db()
+    return entree
+
+
+# --- accès ---
+
+
+@pytest.mark.parametrize("role", [Role.ADMIN, Role.DIRECTION])
+def test_le_journal_est_accessible_a_admin_et_direction(client, role):
+    client.force_login(UserFactory(role=role))
+
+    assert client.get(reverse("audit:journal")).status_code == 200
+
+
+@pytest.mark.parametrize("role", [Role.RH, Role.FINANCES, Role.PARCAUTO, Role.CHARGE_CLIENTELE])
+def test_le_journal_est_interdit_aux_autres_roles(client, role):
+    client.force_login(UserFactory(role=role))
+
+    assert client.get(reverse("audit:journal")).status_code == 403
+
+
+# --- filtres ---
+
+
+def test_la_recherche_porte_sur_l_utilisateur_l_entite_et_l_ip(client):
+    client.force_login(UserFactory(role=Role.ADMIN))
+    _entree(utilisateur_nom="Fatou Diallo", entite="Facture", adresse_ip="41.1.1.1")
+    _entree(utilisateur_nom="Ibrahim Sanogo", entite="Vehicule", adresse_ip="41.2.2.2")
+
+    reponse = client.get(reverse("audit:journal"), {"q": "Fatou"})
+
+    assert "Fatou Diallo" in _texte(reponse) and "Ibrahim Sanogo" not in _texte(reponse)
+
+
+def test_le_filtre_module_et_action_se_combinent(client):
+    client.force_login(UserFactory(role=Role.ADMIN))
+    _entree(module="RH", action=ActionChoices.CREATE)
+    _entree(module="RH", action=ActionChoices.DELETE)
+    _entree(module="FLEET", action=ActionChoices.CREATE)
+
+    reponse = services.rechercher(module="RH", action=ActionChoices.CREATE)
+
+    assert reponse.count() == 1
+
+
+def test_le_filtre_de_periode_borne_la_date(client):
+    client.force_login(UserFactory(role=Role.ADMIN))
+    dans_la_periode = _entree(date_heure=datetime(2026, 9, 10, tzinfo=dt_timezone.utc))
+    hors_periode = _entree(date_heure=datetime(2026, 8, 1, tzinfo=dt_timezone.utc))
+
+    resultat = services.rechercher(date_debut=date(2026, 9, 1), date_fin=date(2026, 9, 30))
+
+    assert dans_la_periode in resultat and hors_periode not in resultat
+
+
+def test_le_statut_echec_est_filtrable(client):
+    client.force_login(UserFactory(role=Role.ADMIN))
+    _entree(statut=StatutChoices.FAILED, module="AUTH")
+    _entree(statut=StatutChoices.SUCCESS, module="AUTH")
+
+    assert services.rechercher(statut=StatutChoices.FAILED).count() == 1
+
+
+def test_le_filtre_module_liste_les_modules_deja_presents():
+    _entree(module="RH")
+    _entree(module="FLEET")
+
+    assert services.modules_utilises() == ["FLEET", "RH"]
+
+
+# --- export CSV ---
+
+
+def test_export_csv_reprend_les_filtres_et_contient_les_colonnes(client):
+    client.force_login(UserFactory(role=Role.ADMIN))
+    _entree(utilisateur_nom="Awa Koné", module="RH", entite="Personnel", entite_id=7)
+    _entree(utilisateur_nom="Fatou Diallo", module="FINANCES")
+
+    reponse = client.get(reverse("audit:export_csv"), {"module": "RH"})
+
+    assert reponse["Content-Type"].startswith("text/csv")
+    contenu = reponse.content.decode("utf-8-sig")
+    assert "Awa Koné" in contenu and "Fatou Diallo" not in contenu
+    assert "Date/heure;Utilisateur;Rôle;Action;Module;Entité;ID entité;Statut;Adresse IP" in contenu
+
+
+def test_export_csv_interdit_hors_role(client):
+    client.force_login(UserFactory(role=Role.RH))
+
+    assert client.get(reverse("audit:export_csv")).status_code == 403
+
+
+# --- rapport imprimable ---
+
+
+def test_impression_du_journal(client):
+    client.force_login(UserFactory(role=Role.DIRECTION))
+    _entree(utilisateur_nom="Awa Koné", module="RH", action=ActionChoices.VALIDATE)
+
+    texte = _texte(client.get(reverse("audit:imprimer"), {"module": "RH"}))
+
+    assert "Journal d" in texte and "audit</h1>" in texte  # apostrophe échappée en HTML (&#x27;)
+    assert "Awa Koné" in texte and "module : RH" in texte
+
+
+def test_le_lien_imprimer_et_l_export_sont_sur_la_liste(client):
+    client.force_login(UserFactory(role=Role.ADMIN))
+
+    page = client.get(reverse("audit:journal"), {"module": "RH"}).content.decode()
+
+    assert reverse("audit:imprimer") in page and reverse("audit:export_csv") in page
+    assert "module%3DRH" in page or "module=RH" in page
+
+
+# --- menu ---
+
+
+def test_le_journal_apparait_dans_le_menu_de_l_admin_et_de_la_direction():
+    from apps.accounts.navigation import entrees_pour
+
+    for role in (Role.ADMIN, Role.DIRECTION):
+        assert any(e["url"] == reverse("audit:journal") for e in entrees_pour(role, "/"))
+    assert not any(e["url"] == reverse("audit:journal") for e in entrees_pour(Role.RH, "/"))
+```
+
+#### `apps/core/tests/test_rapports.py`
+
+*103 lignes* — Infrastructure commune aux rapports imprimables : en-tête et mixin de liste.
+
+```python
+"""Infrastructure commune aux rapports imprimables : en-tête et mixin de liste."""
+
+from datetime import datetime
+from datetime import timezone as dt_timezone
+
+import pytest
+from django.template import Context, Template
+
+from apps.accounts.models import Role
+from apps.accounts.tests.factories import UserFactory
+from apps.core.rapports import contexte_entreprise, contexte_rapport
+from apps.core.views import ImpressionListeMixin
+
+pytestmark = pytest.mark.django_db
+
+
+class _Requete:
+    def __init__(self, user):
+        self.user = user
+
+
+def test_contexte_entreprise_reprend_les_reglages(settings):
+    settings.ENTREPRISE_NOM = "DEN Source Group"
+    settings.ENTREPRISE_ADRESSE = "Abidjan"
+    settings.ENTREPRISE_NCC = "CI-123"
+
+    assert contexte_entreprise() == {"nom": "DEN Source Group", "adresse": "Abidjan", "ncc": "CI-123"}
+
+
+def test_contexte_rapport_identifie_qui_l_a_genere():
+    utilisateur = UserFactory(role=Role.ADMIN, first_name="Awa", last_name="Koné")
+
+    contexte = contexte_rapport(_Requete(utilisateur), titre="Missions", sous_titre="6 lignes")
+
+    assert contexte["titre"] == "Missions" and contexte["sous_titre"] == "6 lignes"
+    assert contexte["genere_par"] == "Awa Koné"
+    assert (datetime.now(dt_timezone.utc) - contexte["genere_le"]).total_seconds() < 5
+
+
+def test_sans_nom_le_genere_par_retombe_sur_l_identifiant():
+    utilisateur = UserFactory(role=Role.ADMIN, first_name="", last_name="", username="demo_admin")
+
+    contexte = contexte_rapport(_Requete(utilisateur), titre="x")
+
+    assert contexte["genere_par"] == "demo_admin"
+
+
+# --- ImpressionListeMixin._valeur ---
+
+
+class _Sous:
+    def __init__(self, nom):
+        self.nom = nom
+
+
+class _Objet:
+    def __init__(self, libelle, sous=None):
+        self.libelle = libelle
+        self.sous = sous
+
+    def get_libelle_display(self):
+        return f"« {self.libelle} »"
+
+
+def test_valeur_resout_un_attribut_simple():
+    assert ImpressionListeMixin._valeur(_Objet("Abidjan"), "libelle") == "Abidjan"
+
+
+def test_valeur_resout_une_methode_get_display():
+    assert ImpressionListeMixin._valeur(_Objet("Abidjan"), "get_libelle_display") == "« Abidjan »"
+
+
+def test_valeur_resout_un_chemin_en_pointilles():
+    assert ImpressionListeMixin._valeur(_Objet("x", sous=_Sous("Bolloré")), "sous.nom") == "Bolloré"
+
+
+def test_valeur_vide_ou_chemin_casse_donne_un_tiret():
+    assert ImpressionListeMixin._valeur(_Objet(""), "libelle") == "—"
+    assert ImpressionListeMixin._valeur(_Objet("x", sous=None), "sous.nom") == "—"
+    assert ImpressionListeMixin._valeur(_Objet("x"), "inconnu") == "—"
+
+
+def test_valeur_accepte_un_callable_pour_une_colonne_composee():
+    colonne = lambda o: f"{o.libelle}!"  # noqa: E731
+
+    assert ImpressionListeMixin._valeur(_Objet("Abidjan"), colonne) == "Abidjan!"
+
+
+def test_le_rendu_echappe_les_libelles():
+    html = Template(
+        '{% include "rapports/liste_impression.html" %}'
+    ).render(
+        Context(
+            {
+                "entreprise": {"nom": "DEN"}, "titre": "T", "sous_titre": "",
+                "genere_par": "x", "genere_le": datetime.now(dt_timezone.utc),
+                "entetes": ["Client"], "lignes": [["<script>alert(1)</script>"]],
+                "nombre": 1, "tronque": False,
+            }
+        )
+    )
+
+    assert "<script>" not in html and "&lt;script&gt;" in html
+```
+
 ## Étape 7 — Brancher tout cela dans les réglages
 
 #### `config/settings/base.py` — modifications
@@ -1586,7 +2925,7 @@ def test_failed_login_creates_audit_entry_with_failed_status():
 ```diff
 --- config/settings/base.py (avant)
 +++ config/settings/base.py (après)
-@@ -105,4 +105,6 @@
+@@ -113,4 +113,6 @@
                  "django.contrib.auth.context_processors.auth",
                  "django.contrib.messages.context_processors.messages",
 +                "apps.accounts.context_processors.menu",
@@ -1602,7 +2941,7 @@ def test_failed_login_creates_audit_entry_with_failed_status():
 ```diff
 --- config/urls.py (avant)
 +++ config/urls.py (après)
-@@ -8,10 +8,13 @@
+@@ -8,12 +8,15 @@
  from django.contrib import admin
  from django.urls import include, path
 -from django.views.generic import RedirectView
@@ -1611,9 +2950,11 @@ def test_failed_login_creates_audit_entry_with_failed_status():
  
  urlpatterns = [
 +    path("", TemplateView.as_view(template_name="accueil_provisoire.html"), name="home"),
+     path("imprimer/", DashboardImprimerView.as_view(), name="home_imprimer"),
      # Les navigateurs (et l'administration Django) réclament /favicon.ico : on renvoie vers l'icône du site.
      path("favicon.ico", RedirectView.as_view(url=settings.STATIC_URL + "img/favicon.png", permanent=True)),
 +    path("", include("apps.accounts.urls")),
+     path("audit/", include("apps.audit.urls")),
 +    path("notifications/", include("apps.notifications.urls")),
      path("admin/", admin.site.urls),
  ]
@@ -1650,7 +2991,7 @@ python manage.py check
 ```
 
 ```bash
-python -m pytest apps/audit/tests/test_services.py apps/audit/tests/test_signals.py -q --no-cov
+python -m pytest apps/accounts/tests/test_password_reset.py apps/audit/tests/test_services.py apps/audit/tests/test_signals.py apps/audit/tests/test_views.py apps/core/tests/test_rapports.py -q --no-cov
 ```
 
 **Résultat attendu :** `7 passed` (pour les 2 fichier(s) de tests présentés dans ce chapitre).

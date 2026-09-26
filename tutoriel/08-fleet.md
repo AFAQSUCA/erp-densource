@@ -1,6 +1,6 @@
 # Chapitre 8 — Les camions : l'app fleet
 
-> 14 fichier(s) dans ce chapitre, 1189 lignes de code.
+> 14 fichier(s) dans ce chapitre, 1191 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -694,7 +694,7 @@ class DocumentReglementaireFactory(factory.django.DjangoModelFactory):
 
 #### `apps/fleet/README.md`
 
-*22 lignes* — fleet
+*24 lignes* — fleet
 
 ```markdown
 # fleet
@@ -719,6 +719,8 @@ Reste à faire : marquer un camion Immobilisé / Hors service et le remettre en 
 La fiche d'un camion accueille des blocs enregistrés par d'autres apps
 (`sections.DETAIL_VEHICULE`) : `garage` y ajoute la maintenance et les actions
 d'immobilisation / remise en service.
+
+Rapport imprimable de la flotte (bouton « Imprimer » sur la liste, mêmes filtres) : voir `apps/core/README.md` (`ImpressionListeMixin`).
 ```
 
 #### `apps/fleet/tests/test_fiche.py`
@@ -1347,7 +1349,7 @@ def test_vehicules_disponibles_exclut_les_autres_statuts():
 ```diff
 --- config/settings/base.py (avant)
 +++ config/settings/base.py (après)
-@@ -55,4 +55,5 @@
+@@ -58,4 +58,5 @@
      "apps.drivers",
      "apps.customers",
 +    "apps.fleet",

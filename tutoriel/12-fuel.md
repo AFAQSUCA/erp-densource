@@ -1,6 +1,6 @@
 # Chapitre 12 — Le carburant : l'app fuel
 
-> 14 fichier(s) dans ce chapitre, 1229 lignes de code.
+> 14 fichier(s) dans ce chapitre, 1240 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -226,7 +226,7 @@ class SaisieSuspecte(CarburantError):
 
 #### `apps/fuel/services.py`
 
-*348 lignes* — Logique métier du carburant — cahier-des-charges.md:147-157.
+*349 lignes* — Logique métier du carburant — cahier-des-charges.md:147-157.
 
 ```python
 """Logique métier du carburant — cahier-des-charges.md:147-157.
@@ -260,7 +260,7 @@ from .exceptions import (
     TicketDejaEnregistre,
 )
 from .models import NiveauAlerte, Plein
-from .signals import alerte_consommation
+from .signals import alerte_consommation, plein_enregistre
 
 CENTIME = Decimal("0.01")
 NB_PLEINS_REFERENCE = 3
@@ -405,6 +405,7 @@ def enregistrer_plein(
     )
     if km_compteur > vehicule.kilometrage:
         fleet_services.enregistrer_kilometrage(vehicule, km_compteur)
+    plein_enregistre.send(sender=Plein, plein=plein)
     if (
         plein.niveau_alerte != NiveauAlerte.AUCUNE
         or plein.anomalie
@@ -593,7 +594,7 @@ Lisez les fonctions dans cet ordre, elles se lisent comme la spécification :
 
 #### `apps/fuel/signals.py`
 
-*7 lignes* — Événements du carburant (souscrits par ``notifications``).
+*12 lignes* — Événements du carburant (souscrits par ``notifications``).
 
 ```python
 """Événements du carburant (souscrits par ``notifications``)."""
@@ -603,25 +604,33 @@ from django.dispatch import Signal
 # Un plein vient d'être enregistré avec une alerte de surconsommation (jaune ou rouge), une
 # anomalie ou une saisie suspecte confirmée. Argument : ``plein`` (instance enregistrée).
 alerte_consommation = Signal()
+
+# Un plein vient d'être enregistré (dans la transaction de la saisie). Argument : ``plein``. Souscrit par
+# ``finance``, qui en fait une dépense : émis avec ``send`` (pas ``send_robust``) pour qu'une erreur annule
+# la saisie plutôt que de laisser une dépense non comptée.
+plein_enregistre = Signal()
 ```
 
 #### `apps/fuel/permissions.py`
 
-*12 lignes* — Qui peut consulter et saisir les pleins.
+*15 lignes* — Qui peut consulter et saisir les pleins.
 
 ```python
 """Qui peut consulter et saisir les pleins.
 
 Le CDC réserve la saisie du carburant au CHAUFFEUR depuis l'espace mobile
 (cahier-des-charges.md:54, étape 6). Côté back-office, le suivi de la consommation
-relève du parc auto : PARCAUTO et ADMIN saisissent (à partir des tickets), la
-DIRECTION consulte en « lecture seule sur Parc Auto » (cahier-des-charges.md:49).
+relève du parc auto : PARCAUTO et ADMIN saisissent (à partir des tickets). La
+DIRECTION, à l'origine en « lecture seule sur Parc Auto » (cahier-des-charges.md:49),
+saisit désormais aussi : retour d'une réunion entreprise, elle a la même largeur que
+l'ADMIN sur la saisie/modification (jamais sur un rôle exclusivement validateur).
 """
 
 from apps.accounts.models import Role
 
 CONSULTATION = frozenset({Role.ADMIN, Role.DIRECTION, Role.PARCAUTO})
-MODIFICATION = frozenset({Role.ADMIN, Role.PARCAUTO})
+# Retour réunion : la DIRECTION a la même largeur que l'ADMIN pour la saisie/modification.
+MODIFICATION = frozenset({Role.ADMIN, Role.DIRECTION, Role.PARCAUTO})
 ```
 
 Le CDC réserve la saisie au **chauffeur** (depuis son téléphone, chapitre 27). Côté bureau, le **Parc Auto** et
@@ -724,7 +733,7 @@ class PleinFactory(factory.django.DjangoModelFactory):
 
 #### `apps/fuel/README.md`
 
-*44 lignes* — fuel
+*46 lignes* — fuel
 
 ```markdown
 # fuel
@@ -771,6 +780,8 @@ Affichage des nombres : `core/formats.py` (`nombre`, `pourcentage_signe`) et le 
 dans un message avec `f"{valeur}"` (point décimal).
 
 Recherche : `filtrer_par_texte` (core) — insensible aux accents et à la casse.
+
+Rapport imprimable des pleins (bouton « Imprimer » sur la liste, mêmes filtres) : voir `apps/core/README.md` (`ImpressionListeMixin`).
 ```
 
 #### `apps/fuel/tests/test_lecture.py`
@@ -1386,7 +1397,7 @@ def test_pleins_a_surveiller_liste_alertes_anomalies_et_saisies_suspectes(camion
 ```diff
 --- config/settings/base.py (avant)
 +++ config/settings/base.py (après)
-@@ -59,4 +59,5 @@
+@@ -62,4 +62,5 @@
      "apps.garage",
      "apps.inventory",
 +    "apps.fuel",

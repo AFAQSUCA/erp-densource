@@ -1,6 +1,6 @@
 # Chapitre 6 — Les chauffeurs : l'app drivers
 
-> 18 fichier(s) dans ce chapitre, 1701 lignes de code.
+> 19 fichier(s) dans ce chapitre, 1984 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -53,7 +53,7 @@ touch apps/drivers/tests/__init__.py
 
 #### `apps/drivers/models.py`
 
-*84 lignes*
+*128 lignes*
 
 ```python
 from django.core.exceptions import ValidationError
@@ -140,6 +140,50 @@ class Chauffeur(BaseModel):
             raise ValidationError(
                 {"categories_permis": _("Catégories autorisées : C, E.")}
             )
+
+
+class Copilote(BaseModel):
+    """Assistant du chauffeur pendant le trajet, pour les missions qui l'exigent.
+
+    Fonction distincte du chauffeur (jamais chauffeur principal), extension 1-1 d'une fiche
+    Personnel comme ``Chauffeur`` — retour de réunion entreprise. Pas de permis à suivre (il ne
+    conduit pas) ; mêmes statuts que le chauffeur pour la disponibilité (affectation, congé).
+    """
+
+    personnel = models.OneToOneField(
+        "hr.Personnel",
+        verbose_name=_("personnel"),
+        on_delete=models.PROTECT,
+        related_name="copilote",
+    )
+    telephone = models.CharField(_("téléphone"), max_length=20, blank=True)
+    contact_urgence = models.CharField(_("contact d'urgence"), max_length=150, blank=True)
+    statut = models.CharField(
+        _("statut"),
+        max_length=12,
+        choices=StatutChauffeur.choices,
+        default=StatutChauffeur.DISPONIBLE,
+    )
+
+    class Meta:
+        verbose_name = _("copilote")
+        verbose_name_plural = _("copilotes")
+        ordering = ["personnel__matricule"]
+
+    def __str__(self):
+        return str(self.personnel)
+
+    @property
+    def matricule(self) -> str:
+        return self.personnel.matricule
+
+    @property
+    def nom(self) -> str:
+        return self.personnel.nom
+
+    @property
+    def prenom(self) -> str:
+        return self.personnel.prenom
 ```
 
 - **Pas de doublon d'identité.** Le matricule, le nom et le prénom ne sont *pas* recopiés : ce sont des
@@ -168,7 +212,7 @@ class StatutNonModifiable(ChauffeurError):
 
 #### `apps/drivers/services.py`
 
-*240 lignes* — Logique métier des chauffeurs — conventions.md §2.
+*293 lignes* — Logique métier des chauffeurs — conventions.md §2.
 
 ```python
 """Logique métier des chauffeurs — conventions.md §2."""
@@ -187,7 +231,7 @@ from apps.core.services import etat_echeance
 from apps.hr.models import Personnel
 
 from .exceptions import CategorieInvalide, StatutNonModifiable
-from .models import CategoriePermis, Chauffeur, StatutChauffeur
+from .models import CategoriePermis, Chauffeur, Copilote, StatutChauffeur
 
 
 @transaction.atomic
@@ -256,6 +300,59 @@ def rappeler_de_conge(chauffeur: Chauffeur) -> Chauffeur:
     if chauffeur.statut == StatutChauffeur.EN_CONGE:
         return changer_statut(chauffeur, StatutChauffeur.DISPONIBLE)
     return chauffeur
+
+
+# --- copilotes (assistants du chauffeur, missions qui l'exigent) ---
+
+
+@transaction.atomic
+def assurer_fiche_copilote(personnel: Personnel) -> tuple[Copilote, bool]:
+    """Garantit qu'un employé « Copilote » a une fiche liée (même principe que le chauffeur)."""
+    fiche, creee = Copilote.all_objects.get_or_create(personnel=personnel)
+    if fiche.is_deleted:
+        fiche.restore()
+    return fiche, creee
+
+
+def changer_statut_copilote(copilote: Copilote, statut: str) -> Copilote:
+    if statut not in StatutChauffeur.values:
+        raise ValueError(f"Statut copilote inconnu : {statut!r}")
+    copilote.statut = statut
+    copilote.save(update_fields=["statut", "updated_at"])
+    return copilote
+
+
+def copilotes_actifs() -> QuerySet[Copilote]:
+    return (
+        Copilote.objects.select_related("personnel")
+        .exclude(statut=StatutChauffeur.INACTIF)
+        .order_by("personnel__nom", "personnel__prenom")
+    )
+
+
+def copilotes_disponibles() -> QuerySet[Copilote]:
+    """Copilotes au statut « Disponible », pour l'affectation d'une mission."""
+    return Copilote.objects.select_related("personnel").filter(statut=StatutChauffeur.DISPONIBLE)
+
+
+def mettre_en_mission_copilote(copilote: Copilote) -> Copilote:
+    return changer_statut_copilote(copilote, StatutChauffeur.EN_MISSION)
+
+
+def rappeler_copilote_de_mission(copilote: Copilote) -> Copilote:
+    if copilote.statut == StatutChauffeur.EN_MISSION:
+        return changer_statut_copilote(copilote, StatutChauffeur.DISPONIBLE)
+    return copilote
+
+
+def mettre_copilote_en_conge(copilote: Copilote) -> Copilote:
+    return changer_statut_copilote(copilote, StatutChauffeur.EN_CONGE)
+
+
+def rappeler_copilote_de_conge(copilote: Copilote) -> Copilote:
+    if copilote.statut == StatutChauffeur.EN_CONGE:
+        return changer_statut_copilote(copilote, StatutChauffeur.DISPONIBLE)
+    return copilote
 
 
 def chauffeurs_a_renouveler(
@@ -426,7 +523,7 @@ Lisez en particulier :
 
 #### `apps/drivers/signals.py`
 
-*38 lignes*
+*52 lignes*
 
 ```python
 from django.db.models.signals import post_save
@@ -435,7 +532,7 @@ from django.dispatch import receiver
 from apps.hr.models import Conge, Personnel, StatutConge
 
 from . import services
-from .models import Chauffeur
+from .models import Chauffeur, Copilote
 
 
 @receiver(post_save, sender=Personnel)
@@ -451,6 +548,15 @@ def creer_fiche_chauffeur(sender, instance, raw=False, **kwargs):
         services.assurer_fiche_chauffeur(instance)
 
 
+@receiver(post_save, sender=Personnel)
+def creer_fiche_copilote(sender, instance, raw=False, **kwargs):
+    """Poste « Copilote » → fiche copilote créée, même principe que le chauffeur."""
+    if raw or instance.is_deleted:
+        return
+    if instance.est_copilote:
+        services.assurer_fiche_copilote(instance)
+
+
 @receiver(post_save, sender=Conge)
 def aligner_statut_chauffeur_sur_conge(sender, instance, raw=False, **kwargs):
     """Congé d'un chauffeur en cours → « En congé » (cahier-des-charges.md:216).
@@ -461,12 +567,17 @@ def aligner_statut_chauffeur_sur_conge(sender, instance, raw=False, **kwargs):
     if raw or instance.statut not in (StatutConge.EN_COURS, StatutConge.TERMINE):
         return
     fiche = Chauffeur.objects.filter(personnel_id=instance.employe_id).first()
-    if fiche is None:
-        return
-    if instance.statut == StatutConge.EN_COURS:
-        services.mettre_en_conge(fiche)
-    else:
-        services.rappeler_de_conge(fiche)
+    if fiche is not None:
+        if instance.statut == StatutConge.EN_COURS:
+            services.mettre_en_conge(fiche)
+        else:
+            services.rappeler_de_conge(fiche)
+    copilote = Copilote.objects.filter(personnel_id=instance.employe_id).first()
+    if copilote is not None:
+        if instance.statut == StatutConge.EN_COURS:
+            services.mettre_copilote_en_conge(copilote)
+        else:
+            services.rappeler_copilote_de_conge(copilote)
 ```
 
 Les deux abonnements sont la raison d'être de ce fichier. Notez le commentaire : c'est **`drivers` qui écoute
@@ -497,12 +608,12 @@ MODIFICATION = frozenset({Role.ADMIN, Role.DIRECTION, Role.RH})
 
 #### `apps/drivers/admin.py`
 
-*13 lignes*
+*23 lignes*
 
 ```python
 from django.contrib import admin
 
-from .models import Chauffeur
+from .models import Chauffeur, Copilote
 
 
 @admin.register(Chauffeur)
@@ -513,6 +624,16 @@ class ChauffeurAdmin(admin.ModelAdmin):
 
     def get_queryset(self, request):
         return Chauffeur.objects.select_related("personnel")
+
+
+@admin.register(Copilote)
+class CopiloteAdmin(admin.ModelAdmin):
+    list_display = ("personnel", "statut")
+    list_filter = ("statut",)
+    search_fields = ("personnel__matricule", "personnel__nom")
+
+    def get_queryset(self, request):
+        return Copilote.objects.select_related("personnel")
 ```
 
 #### `apps/drivers/apps.py`
@@ -548,12 +669,12 @@ de Django.
 
 #### `apps/drivers/tests/factories.py`
 
-*26 lignes*
+*44 lignes*
 
 ```python
 import factory
 
-from apps.drivers.models import Chauffeur
+from apps.drivers.models import Chauffeur, Copilote
 from apps.hr.tests.factories import PersonnelFactory
 
 
@@ -577,11 +698,29 @@ class ChauffeurFactory(factory.django.DjangoModelFactory):
             setattr(fiche, champ, valeur)
         fiche.save()
         return fiche
+
+
+class CopiloteFactory(factory.django.DjangoModelFactory):
+    """Crée un Personnel « Copilote » puis récupère la fiche (même principe que ChauffeurFactory)."""
+
+    class Meta:
+        model = Copilote
+
+    personnel = factory.SubFactory(PersonnelFactory, poste="Copilote")
+
+    @classmethod
+    def _create(cls, model_class, *args, **kwargs):
+        personnel = kwargs.pop("personnel")
+        fiche, _ = model_class.all_objects.get_or_create(personnel=personnel)
+        for champ, valeur in kwargs.items():
+            setattr(fiche, champ, valeur)
+        fiche.save()
+        return fiche
 ```
 
 #### `apps/drivers/README.md`
 
-*17 lignes* — drivers
+*30 lignes* — drivers
 
 ```markdown
 # drivers
@@ -593,6 +732,17 @@ Dépend de `hr` (jamais l'inverse).
 Entités : `Chauffeur`. Services : `assurer_fiche_chauffeur`, `changer_statut`,
 `chauffeurs_a_renouveler` (alerte 30 jours permis / visite médicale).
 
+Entité `Copilote` (retour d'une réunion entreprise) : assistant du chauffeur pendant le
+trajet, exigé sur certains voyages — fonction/fiche distincte du chauffeur (jamais chauffeur
+principal), même mécanisme d'auto-création (poste « Copilote » sur `Personnel`) et mêmes
+statuts de disponibilité (`StatutChauffeur`, y compris la synchronisation avec les congés).
+Aucune règle automatique ne décide qu'une mission exige un copilote : c'est une décision
+humaine du Parc Auto au moment de l'affectation (`missions.forms.AffectationForm`).
+Services : `assurer_fiche_copilote`, `changer_statut_copilote`, `copilotes_disponibles`,
+`copilotes_actifs`, `mettre_en_mission_copilote` / `rappeler_copilote_de_mission`,
+`mettre_copilote_en_conge` / `rappeler_copilote_de_conge`. Géré pour l'instant via l'admin
+Django (`CopiloteAdmin`) — pas d'écran dédié, contrairement au chauffeur.
+
 Interface (`views.py`, `templates/drivers/`) : liste filtrée (statut, texte, permis ou
 visite à renouveler), fiche avec l'état du permis et de la visite médicale (alerte à
 30 jours), modification des informations propres au chauffeur, suspension / désactivation
@@ -601,6 +751,96 @@ prénom viennent de la fiche du personnel et ne se modifient pas ici ; « En mis
 « En congé » sont posés par les missions et les congés et ne se changent pas à la main.
 Services ajoutés : `rechercher_chauffeurs`, `etat_echeances`, `modifier_chauffeur`,
 `changer_statut_manuel`, `chauffeurs_avec_echeance_proche`.
+
+Rapport imprimable des chauffeurs (bouton « Imprimer » sur la liste, mêmes filtres) : voir `apps/core/README.md` (`ImpressionListeMixin`).
+```
+
+#### `apps/drivers/tests/test_copilote.py`
+
+*81 lignes* — Fiche copilote : création automatique, statuts (retour réunion — avenant § R... copilotes).
+
+```python
+"""Fiche copilote : création automatique, statuts (retour réunion — avenant § R... copilotes)."""
+
+import pytest
+
+from apps.drivers import services
+from apps.drivers.models import Copilote, StatutChauffeur
+from apps.hr.tests.factories import PersonnelFactory
+
+from .factories import CopiloteFactory
+
+pytestmark = pytest.mark.django_db
+
+
+def test_un_employe_copilote_recoit_automatiquement_une_fiche():
+    personnel = PersonnelFactory(poste="Copilote")
+
+    fiche = Copilote.objects.get(personnel=personnel)
+    assert fiche.statut == StatutChauffeur.DISPONIBLE
+
+
+def test_un_employe_non_copilote_ne_recoit_pas_de_fiche():
+    PersonnelFactory(poste="Comptable")
+
+    assert not Copilote.objects.exists()
+
+
+def test_assurer_fiche_copilote_est_idempotent():
+    personnel = PersonnelFactory(poste="Copilote")
+
+    fiche, creee = services.assurer_fiche_copilote(personnel)
+
+    assert creee is False
+    assert Copilote.objects.filter(personnel=personnel).count() == 1
+
+
+def test_copilotes_disponibles_ne_retourne_que_les_disponibles():
+    libre = CopiloteFactory()
+    CopiloteFactory(statut=StatutChauffeur.SUSPENDU)
+    CopiloteFactory(statut=StatutChauffeur.EN_MISSION)
+
+    assert list(services.copilotes_disponibles()) == [libre]
+
+
+def test_copilotes_actifs_exclut_les_inactifs():
+    actif = CopiloteFactory()
+    CopiloteFactory(statut=StatutChauffeur.INACTIF)
+
+    assert list(services.copilotes_actifs()) == [actif]
+
+
+def test_mettre_en_mission_puis_rappeler_de_mission():
+    fiche = CopiloteFactory()
+
+    services.mettre_en_mission_copilote(fiche)
+    fiche.refresh_from_db()
+    assert fiche.statut == StatutChauffeur.EN_MISSION
+
+    services.rappeler_copilote_de_mission(fiche)
+    fiche.refresh_from_db()
+    assert fiche.statut == StatutChauffeur.DISPONIBLE
+
+
+def test_rappeler_de_mission_conserve_un_statut_change_entre_temps():
+    fiche = CopiloteFactory(statut=StatutChauffeur.SUSPENDU)
+
+    services.rappeler_copilote_de_mission(fiche)
+
+    fiche.refresh_from_db()
+    assert fiche.statut == StatutChauffeur.SUSPENDU
+
+
+def test_mettre_en_conge_puis_rappeler_de_conge():
+    fiche = CopiloteFactory()
+
+    services.mettre_copilote_en_conge(fiche)
+    fiche.refresh_from_db()
+    assert fiche.statut == StatutChauffeur.EN_CONGE
+
+    services.rappeler_copilote_de_conge(fiche)
+    fiche.refresh_from_db()
+    assert fiche.statut == StatutChauffeur.DISPONIBLE
 ```
 
 #### `apps/drivers/tests/test_fiche.py`
@@ -1134,25 +1374,27 @@ def test_le_workflow_de_conges_fonctionne_avec_ces_comptes(settings):
 
 #### `apps/hr/tests/test_conges.py`
 
-*468 lignes* — Workflow de congés en 3 niveaux — cahier-des-charges.md:211-221.
+*496 lignes* — Workflow de congés en 3 niveaux — cahier-des-charges.md:211-221.
 
 ```python
 """Workflow de congés en 3 niveaux — cahier-des-charges.md:211-221.
 
 N1 = supérieur hiérarchique direct de l'employé ; N2 = RH ; décompte en jours
-ouvrables (lundi-samedi, hors jours fériés) sur un droit annuel de 12 jours.
+ouvrés (lundi-vendredi, hors jours fériés) sur un droit annuel de 26 jours
+(avenant-separation-des-taches.md § R7).
 """
 
 from datetime import date, datetime, timedelta
 from datetime import timezone as dt_timezone
 
 import pytest
+from django.utils import timezone
 
 from apps.accounts.models import Role
 from apps.accounts.tests.factories import UserFactory
 from apps.audit.models import ActionChoices, AuditLog
 from apps.drivers import services as drivers_services
-from apps.drivers.models import Chauffeur, StatutChauffeur
+from apps.drivers.models import Chauffeur, Copilote, StatutChauffeur
 from apps.hr import services
 from apps.hr.exceptions import (
     ActionNonAutorisee,
@@ -1167,7 +1409,7 @@ from .factories import PersonnelFactory
 pytestmark = pytest.mark.django_db
 
 MAINTENANT = datetime(2026, 9, 1, 8, 0, tzinfo=dt_timezone.utc)
-DEBUT, FIN = date(2026, 10, 5), date(2026, 10, 9)  # lundi-vendredi = 5 jours ouvrables
+DEBUT, FIN = date(2026, 10, 5), date(2026, 10, 9)  # lundi-vendredi = 5 jours ouvrés
 
 
 def _hierarchie(poste="Dispatcheur"):
@@ -1198,6 +1440,12 @@ def _demande(hierarchie=None, debut=DEBUT, fin=FIN):
     return conge, superieur
 
 
+def _delai_en_cours(conge):
+    """Le délai de décision n'est pas dépassé (la Direction ne peut donc pas se substituer au validateur)."""
+    Conge.objects.filter(pk=conge.pk).update(date_limite_n1=timezone.now() + timedelta(hours=24))
+    conge.refresh_from_db()
+
+
 def _approuve(hierarchie=None, debut=DEBUT, fin=FIN):
     conge, superieur = _demande(hierarchie, debut, fin)
     services.valider_n1(conge, superieur)
@@ -1212,7 +1460,7 @@ def _disponible(employe, annee=2026):
 # --- étape 1 : demande ---
 
 
-def test_demande_cree_un_conge_au_statut_demande_en_jours_ouvrables():
+def test_demande_cree_un_conge_au_statut_demande_en_jours_ouvres():
     conge, _ = _demande()
 
     assert conge.statut == StatutConge.DEMANDE
@@ -1226,19 +1474,19 @@ def test_demande_fixe_l_echeance_n1_a_48_heures():
     assert conge.date_limite_n2 is None
 
 
-def test_demande_bloquee_au_dela_de_12_jours_ouvrables_par_an():
+def test_demande_bloquee_au_dela_de_26_jours_ouvres_par_an():
     hierarchie = _hierarchie()
 
     with pytest.raises(SoldeInsuffisant):
-        _demande(hierarchie, date(2026, 10, 5), date(2026, 10, 19))  # 13 jours
+        _demande(hierarchie, date(2026, 10, 5), date(2026, 11, 10))  # 27 jours ouvrés
 
     assert not Conge.objects.exists()
 
 
-def test_demande_acceptee_pour_exactement_2_semaines():
+def test_demande_acceptee_sur_deux_semaines_calendaires():
     conge, _ = _demande(debut=date(2026, 10, 5), fin=date(2026, 10, 17))
 
-    assert conge.jours == 12
+    assert conge.jours == 10  # 2 x 5 jours ouvrés (les samedis 10 et 17, le dimanche 11, ne comptent pas)
 
 
 def test_demande_refusee_si_fin_avant_debut():
@@ -1253,8 +1501,8 @@ def test_demande_refusee_sans_superieur_hierarchique():
         services.demander_conge(employe, date_debut=DEBUT, date_fin=FIN, motif="x")
 
 
-def test_demande_refusee_si_la_periode_ne_contient_aucun_jour_ouvrable():
-    with pytest.raises(CongeError, match="jour ouvrable"):
+def test_demande_refusee_si_la_periode_ne_contient_aucun_jour_ouvre():
+    with pytest.raises(CongeError, match="jour ouvré"):
         _demande(debut=date(2026, 10, 11), fin=date(2026, 10, 11))  # un dimanche
 
 
@@ -1292,6 +1540,7 @@ def test_valider_n1_refuse_pour_le_superieur_du_superieur():
     chef.superieur = PersonnelFactory(utilisateur=directeur)
     chef.save()
     conge, _ = _demande((employe, superieur))
+    _delai_en_cours(conge)
 
     with pytest.raises(ActionNonAutorisee):
         services.valider_n1(conge, directeur)
@@ -1343,7 +1592,7 @@ def test_valider_n2_par_la_rh_approuve_et_decompte_le_droit_annuel():
 
     conge.refresh_from_db()
     assert conge.statut == StatutConge.APPROUVE
-    assert _disponible(conge.employe) == 7
+    assert _disponible(conge.employe) == 21
     assert conge.validations.filter(niveau=2, decision="APPROUVE").exists()
 
 
@@ -1364,8 +1613,8 @@ def test_valider_n2_impossible_sans_validation_n1():
 
 def test_valider_n2_recontrole_le_droit_quand_deux_demandes_etaient_en_attente():
     hierarchie = _hierarchie()
-    premiere, superieur = _demande(hierarchie, date(2026, 10, 5), date(2026, 10, 13))  # 8 j
-    seconde, _ = _demande(hierarchie, date(2026, 11, 2), date(2026, 11, 10))  # 8 j
+    premiere, superieur = _demande(hierarchie, date(2026, 10, 5), date(2026, 10, 26))  # 16 j
+    seconde, _ = _demande(hierarchie, date(2026, 11, 2), date(2026, 11, 23))  # 16 j : 32 > 26 ensemble
     services.valider_n1(premiere, superieur)
     services.valider_n1(seconde, superieur)
     rh = _rh()
@@ -1410,7 +1659,7 @@ def test_refus_n2_par_la_rh_ne_decompte_rien():
 
     services.refuser(conge, _rh())
 
-    assert _disponible(conge.employe) == 12
+    assert _disponible(conge.employe) == 26
     assert Conge.objects.get().statut == StatutConge.REFUSE
 
 
@@ -1431,12 +1680,12 @@ def test_refus_impossible_sur_un_conge_deja_approuve():
 
 def test_annulation_par_la_rh_restitue_les_jours():
     conge = _approuve()
-    assert _disponible(conge.employe) == 7
+    assert _disponible(conge.employe) == 21
 
     services.annuler_conge_approuve(conge, _rh(), motif="Urgence client")
 
     conge.refresh_from_db()
-    assert _disponible(conge.employe) == 12
+    assert _disponible(conge.employe) == 26
     assert conge.statut == StatutConge.REFUSE
     assert conge.motif_decision == "Urgence client"
 
@@ -1520,6 +1769,24 @@ def test_conge_d_un_non_chauffeur_ne_touche_aucune_fiche_chauffeur():
     assert not Chauffeur.objects.exists()
 
 
+def test_copilote_passe_en_conge_au_demarrage_puis_redevient_disponible():
+    """Retour réunion : le copilote suit le même cycle de statut que le chauffeur."""
+    hierarchie = _hierarchie(poste="Copilote")
+    fiche = Copilote.objects.get(personnel=hierarchie[0])
+    _approuve(hierarchie)
+
+    fiche.refresh_from_db()
+    assert fiche.statut == StatutChauffeur.DISPONIBLE  # pas avant le départ effectif
+
+    services.synchroniser_statuts_conges(aujourd_hui=DEBUT)
+    fiche.refresh_from_db()
+    assert fiche.statut == StatutChauffeur.EN_CONGE
+
+    services.synchroniser_statuts_conges(aujourd_hui=FIN + timedelta(days=1))
+    fiche.refresh_from_db()
+    assert fiche.statut == StatutChauffeur.DISPONIBLE
+
+
 # --- audit ---
 
 
@@ -1584,6 +1851,7 @@ def test_un_directeur_sans_compte_utilisateur_ne_peut_pas_demander():
 def test_un_autre_utilisateur_direction_ne_valide_pas_le_n1_du_directeur():
     fiche, compte = _directeur()
     conge, _ = _demande((fiche, compte))
+    _delai_en_cours(conge)
 
     with pytest.raises(ActionNonAutorisee):
         services.valider_n1(conge, UserFactory(role=Role.DIRECTION))
@@ -1609,10 +1877,10 @@ def test_valider_n1_sans_acteur_est_refuse():
 
 #### `apps/hr/tests/test_droits_conges.py`
 
-*197 lignes* — Droit annuel (2 semaines = 12 jours ouvrables) et exceptions accordées par la RH.
+*197 lignes* — Droit annuel (26 jours ouvrés) et exceptions accordées par la RH.
 
 ```python
-"""Droit annuel (2 semaines = 12 jours ouvrables) et exceptions accordées par la RH."""
+"""Droit annuel (26 jours ouvrés) et exceptions accordées par la RH."""
 
 from datetime import date
 
@@ -1638,14 +1906,14 @@ def _droits(employe, annee=2026):
 # --- droit de base ---
 
 
-def test_droit_de_base_12_jours_ouvrables_sans_exception_ni_conge():
+def test_droit_de_base_26_jours_ouvres_sans_exception_ni_conge():
     employe = PersonnelFactory()
 
     assert _droits(employe) == {
-        "droit_annuel": 12,
+        "droit_annuel": 26,
         "exceptionnels": 0,
         "consommes": 0,
-        "disponible": 12,
+        "disponible": 26,
     }
 
 
@@ -1659,10 +1927,10 @@ def test_un_conge_approuve_est_decompte():
     conge = _approuve()
 
     assert _droits(conge.employe) == {
-        "droit_annuel": 12,
+        "droit_annuel": 26,
         "exceptionnels": 0,
         "consommes": 5,
-        "disponible": 7,
+        "disponible": 21,
     }
 
 
@@ -1677,22 +1945,22 @@ def test_un_conge_termine_reste_decompte():
 
 def test_le_droit_est_calcule_par_annee_de_debut_du_conge():
     hierarchie = _hierarchie()
-    _approuve(hierarchie, date(2026, 12, 7), date(2026, 12, 12))  # 6 jours en 2026
+    _approuve(hierarchie, date(2026, 12, 7), date(2026, 12, 12))  # lun-sam : 5 jours ouvrés (pas le samedi)
     employe = hierarchie[0]
 
-    assert _droits(employe, 2026)["disponible"] == 6
-    assert _droits(employe, 2027)["disponible"] == 12
+    assert _droits(employe, 2026)["disponible"] == 21
+    assert _droits(employe, 2027)["disponible"] == 26
 
 
-def test_apres_avoir_pris_5_jours_une_demande_de_8_jours_est_refusee_mais_7_passe():
+def test_apres_avoir_pris_5_jours_une_demande_de_22_jours_est_refusee_mais_21_passe():
     hierarchie = _hierarchie()
-    _approuve(hierarchie)  # 5 jours
+    _approuve(hierarchie)  # 5 jours, solde restant 21
 
     with pytest.raises(SoldeInsuffisant):
-        _demande(hierarchie, date(2026, 11, 2), date(2026, 11, 10))  # 8 jours
-    conge, _ = _demande(hierarchie, date(2026, 11, 2), date(2026, 11, 9))  # 7 jours
+        _demande(hierarchie, date(2026, 11, 2), date(2026, 12, 1))  # 22 jours ouvrés
+    conge, _ = _demande(hierarchie, date(2026, 11, 2), date(2026, 11, 30))  # 21 jours ouvrés
 
-    assert conge.jours == 7
+    assert conge.jours == 21
 
 
 # --- exceptions accordées par la RH ---
@@ -1707,10 +1975,10 @@ def test_la_rh_peut_accorder_des_jours_exceptionnels():
 
     assert attribution.motif == "Mariage"
     assert _droits(employe) == {
-        "droit_annuel": 12,
+        "droit_annuel": 26,
         "exceptionnels": 5,
         "consommes": 0,
-        "disponible": 17,
+        "disponible": 31,
     }
 
 
@@ -1721,9 +1989,9 @@ def test_les_jours_exceptionnels_permettent_de_depasser_le_droit_de_base():
         employe, _rh(), annee=2026, jours=3, motif="Décès d'un proche"
     )
 
-    conge, _ = _demande(hierarchie, date(2026, 10, 5), date(2026, 10, 19))  # 13 jours
+    conge, _ = _demande(hierarchie, date(2026, 11, 2), date(2026, 12, 4))  # 25 jours ouvrés (26 + 3 - 4 de marge)
 
-    assert conge.jours == 13
+    assert conge.jours == 25
 
 
 def test_les_jours_exceptionnels_d_une_autre_annee_ne_comptent_pas():
@@ -1732,7 +2000,7 @@ def test_les_jours_exceptionnels_d_une_autre_annee_ne_comptent_pas():
         employe, _rh(), annee=2025, jours=5, motif="Mariage"
     )
 
-    assert _droits(employe, 2026)["disponible"] == 12
+    assert _droits(employe, 2026)["disponible"] == 26
 
 
 def test_attribution_refusee_hors_rh():
@@ -1781,39 +2049,39 @@ def test_attribution_exceptionnelle_est_auditee():
     assert entree.nouvelle_valeur["jours"] == 2
 
 
-# --- jours ouvrables (droit ivoirien : hors dimanches et jours fériés) ---
+# --- jours ouvrés (avenant-separation-des-taches.md § R7 : lundi-vendredi, hors jours fériés) ---
 
 
 @pytest.mark.parametrize(
     ("debut", "fin", "attendu"),
     [
         (date(2026, 10, 5), date(2026, 10, 9), 5),  # lundi-vendredi
-        (date(2026, 10, 5), date(2026, 10, 10), 6),  # le samedi compte
-        (date(2026, 10, 5), date(2026, 10, 11), 6),  # le dimanche ne compte pas
-        (date(2026, 10, 11), date(2026, 10, 11), 0),  # un seul dimanche
+        (date(2026, 10, 5), date(2026, 10, 10), 5),  # le samedi ne compte pas
+        (date(2026, 10, 5), date(2026, 10, 11), 5),  # ni le dimanche
+        (date(2026, 10, 10), date(2026, 10, 11), 0),  # un week-end complet
         (date(2026, 10, 5), date(2026, 10, 5), 1),  # un seul jour
     ],
 )
-def test_calculer_jours_exclut_les_dimanches(debut, fin, attendu):
+def test_calculer_jours_exclut_le_samedi_et_le_dimanche(debut, fin, attendu):
     assert services.calculer_jours(debut, fin) == attendu
 
 
 def test_calculer_jours_exclut_les_jours_feries_enregistres():
-    JourFerie.objects.create(date=date(2026, 8, 7), libelle="Fête de l'Indépendance")
+    JourFerie.objects.create(date=date(2026, 8, 7), libelle="Fête de l'Indépendance")  # un vendredi
 
-    assert services.calculer_jours(date(2026, 8, 3), date(2026, 8, 8)) == 5
+    assert services.calculer_jours(date(2026, 8, 3), date(2026, 8, 8)) == 4  # lun-jeu (ven férié, sam exclu)
 
 
-def test_un_jour_ferie_supprime_logiquement_redevient_ouvrable():
+def test_un_jour_ferie_supprime_logiquement_redevient_ouvre():
     ferie = JourFerie.objects.create(date=date(2026, 8, 7), libelle="Indépendance")
     ferie.delete()
 
-    assert services.calculer_jours(date(2026, 8, 3), date(2026, 8, 8)) == 6
+    assert services.calculer_jours(date(2026, 8, 3), date(2026, 8, 8)) == 5  # lun-ven (sam toujours exclu)
 ```
 
 #### `apps/hr/tests/test_recrutement.py`
 
-*54 lignes*
+*75 lignes*
 
 ```python
 from datetime import date
@@ -1870,6 +2138,27 @@ def test_recruter_un_autre_poste_ne_cree_pas_de_fiche_chauffeur():
     personnel = services.recruter(**_donnees())
 
     assert not Chauffeur.objects.filter(personnel=personnel).exists()
+
+
+def test_recruter_sans_matricule_en_genere_un_automatiquement():
+    donnees = _donnees()
+    del donnees["matricule"]
+
+    personnel = services.recruter(**donnees)
+
+    annee = date.today().year
+    assert personnel.matricule == f"PERS-{annee}-0001"
+
+
+def test_recruter_sans_matricule_incremente_a_chaque_recrutement():
+    donnees = _donnees()
+    del donnees["matricule"]
+
+    premier = services.recruter(**donnees)
+    second = services.recruter(**{**donnees, "nom": "Koné"})
+
+    annee = date.today().year
+    assert (premier.matricule, second.matricule) == (f"PERS-{annee}-0001", f"PERS-{annee}-0002")
 ```
 
 Ce chapitre présente aussi quatre fichiers de tests de `hr` (`test_conges.py`, `test_droits_conges.py`,
@@ -1885,7 +2174,7 @@ Ce chapitre présente aussi quatre fichiers de tests de `hr` (`test_conges.py`, 
 ```diff
 --- config/settings/base.py (avant)
 +++ config/settings/base.py (après)
-@@ -53,4 +53,5 @@
+@@ -56,4 +56,5 @@
      "apps.audit",
      "apps.hr",
 +    "apps.drivers",
@@ -1907,7 +2196,7 @@ python manage.py check
 ```
 
 ```bash
-python -m pytest apps/drivers/tests/test_fiche.py apps/drivers/tests/test_models.py apps/drivers/tests/test_services.py apps/hr/tests/test_comptes_demo.py apps/hr/tests/test_conges.py apps/hr/tests/test_droits_conges.py apps/hr/tests/test_recrutement.py -q --no-cov
+python -m pytest apps/drivers/tests/test_copilote.py apps/drivers/tests/test_fiche.py apps/drivers/tests/test_models.py apps/drivers/tests/test_services.py apps/hr/tests/test_comptes_demo.py apps/hr/tests/test_conges.py apps/hr/tests/test_droits_conges.py apps/hr/tests/test_recrutement.py -q --no-cov
 ```
 
 **Résultat attendu :** `114 passed` (pour les 7 fichier(s) de tests présentés dans ce chapitre).
