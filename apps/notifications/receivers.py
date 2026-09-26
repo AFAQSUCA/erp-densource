@@ -19,6 +19,8 @@ from django.utils import timezone
 from apps.accounts.models import Role
 from apps.billing import signals as billing_signals
 from apps.core.formats import nombre, pourcentage_signe
+from apps.finance import signals as finance_signals
+from apps.finance.models import OrigineDemande, StatutDemandeDepense
 from apps.fuel.models import NiveauAlerte
 from apps.fuel.signals import alerte_consommation
 from apps.garage import signals as garage_signals
@@ -349,4 +351,78 @@ def prevenir_d_une_anomalie_de_checklist(sender, checklist, **kwargs):
         titre=f"Check-list : {len(ko)} point{'s' if len(ko) > 1 else ''} KO sur {checklist.vehicule.immatriculation}",
         message=f"Mission {checklist.mission.numero} : " + ", ".join(ko) + ".",
         url=reverse("garage:checklists"),
+    )
+
+
+# --- dépenses du parc auto pré-approuvées (R2) ---
+
+
+def _lien_demande(demande) -> str:
+    return reverse("finance:demande", args=[demande.pk])
+
+
+@receiver(finance_signals.demande_soumise)
+def prevenir_la_direction_d_une_demande(sender, demande, **kwargs):
+    if demande.origine == OrigineDemande.DEPASSEMENT_ENVELOPPE:
+        titre = f"Enveloppe dépassée : {demande.get_categorie_display()}"
+        message = f"{nombre(demande.montant_estime)} FCFA au-delà du plafond. Aucune autre dépense de ce type tant que ce n'est pas décidé."
+    else:
+        titre = f"Demande de dépense : {demande.get_categorie_display()}"
+        message = f"{demande.demandeur or 'Le Parc Auto'} demande {nombre(demande.montant_estime)} FCFA. {demande.motif}"
+    notifier(
+        utilisateurs_du_role(Role.DIRECTION),
+        categorie=CategorieNotification.DEMANDE_DEPENSE,
+        niveau=NiveauNotification.ATTENTION,
+        titre=titre,
+        message=message,
+        url=_lien_demande(demande),
+        action="Examiner",
+    )
+
+
+@receiver(finance_signals.demande_decidee)
+def prevenir_de_la_decision_d_une_demande(sender, demande, **kwargs):
+    if demande.origine == OrigineDemande.DEPASSEMENT_ENVELOPPE:
+        destinataires = utilisateurs_du_role(Role.PARCAUTO)
+    elif demande.demandeur:
+        destinataires = [demande.demandeur]
+    else:
+        destinataires = utilisateurs_du_role(Role.PARCAUTO)
+    valide = demande.statut == StatutDemandeDepense.VALIDEE
+    notifier(
+        destinataires,
+        categorie=CategorieNotification.DEMANDE_DEPENSE,
+        niveau=NiveauNotification.INFO if valide else NiveauNotification.ATTENTION,
+        titre=f"Demande {demande.numero} {'validée' if valide else 'refusée'}",
+        message=demande.motif_refus if not valide else "Le mécanisme automatique reprend pour cette catégorie.",
+        url=_lien_demande(demande),
+    )
+
+
+@receiver(finance_signals.ordre_a_executer)
+def prevenir_la_finance_d_un_ordre(sender, ordre, **kwargs):
+    notifier(
+        utilisateurs_du_role(Role.FINANCES),
+        categorie=CategorieNotification.DEMANDE_DEPENSE,
+        niveau=NiveauNotification.ATTENTION,
+        titre=f"Ordre à exécuter : {ordre.numero}",
+        message=f"{nombre(ordre.montant_valide)} FCFA validés par la direction.",
+        url=_lien_demande(ordre.demande),
+        action="Exécuter",
+    )
+
+
+@receiver(finance_signals.ordre_depassement)
+def prevenir_la_direction_d_un_depassement(sender, ordre, **kwargs):
+    notifier(
+        utilisateurs_du_role(Role.DIRECTION),
+        categorie=CategorieNotification.DEMANDE_DEPENSE,
+        niveau=NiveauNotification.URGENT,
+        titre=f"Dépassement de plus de 10 % : {ordre.numero}",
+        message=(
+            f"Montant réel {nombre(ordre.montant_reel)} FCFA contre {nombre(ordre.montant_valide)} FCFA validés. "
+            "Revalidation attendue avant exécution."
+        ),
+        url=_lien_demande(ordre.demande),
+        action="Revalider",
     )
