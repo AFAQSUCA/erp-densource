@@ -10,14 +10,17 @@ l'image Docker, contrairement à WeasyPrint — cahier-des-charges.md:252).
 from __future__ import annotations
 
 import io
+from xml.sax.saxutils import escape
 
 from django.conf import settings
 from django.contrib.staticfiles import finders
 from django.utils import timezone
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas
+from reportlab.platypus import Paragraph
 
 from . import services
 from .models import Conge, NiveauValidation
@@ -28,6 +31,10 @@ GRIS = colors.HexColor("#475569")
 ENCRE = colors.HexColor("#0f172a")
 MARGE = 20 * mm
 LARGEUR, HAUTEUR = A4
+
+STYLE_ATTESTATION = ParagraphStyle(
+    "attestation", fontName="Helvetica", fontSize=11, leading=16, textColor=ENCRE
+)
 
 
 def _entete(c: canvas.Canvas, entreprise: str, titre: str) -> float:
@@ -68,9 +75,35 @@ def _ligne(c: canvas.Canvas, libelle: str, valeur: str, y: float) -> float:
     return y - 7 * mm
 
 
+def _paragraphe(c: canvas.Canvas, texte: str, style: ParagraphStyle, y: float) -> float:
+    paragraphe = Paragraph(texte, style)
+    _, hauteur = paragraphe.wrap(LARGEUR - 2 * MARGE, HAUTEUR)
+    paragraphe.drawOn(c, MARGE, y - hauteur)
+    return y - hauteur
+
+
+def _phrase_attestation(conge: Conge, entreprise: str, *, report_approuve: bool) -> str:
+    """Formule d'attestation (identité, dates, motif) : le détail administratif (n°, validateurs,
+    report, solde) reste en liste ci-dessous, moins naturel à lire en phrase."""
+    employe = conge.employe
+    jours = f"{conge.jours} jour{'s' if conge.jours > 1 else ''} ouvré{'s' if conge.jours > 1 else ''}"
+    phrase = (
+        f"Nous soussignés, <b>{escape(entreprise)}</b>, attestons que "
+        f"<b>{escape(employe.prenom)} {escape(employe.nom)}</b> (matricule {escape(employe.matricule)}), "
+        f"{escape(employe.poste)}, est autorisé(e) à s'absenter du "
+        f"<b>{conge.date_debut.strftime('%d/%m/%Y')}</b> au "
+        f"<b>{conge.date_fin.strftime('%d/%m/%Y')}</b> inclus, soit {jours}, "
+        f"au titre de : « {escape(conge.motif[:200])} »."
+    )
+    if report_approuve:
+        phrase += " Un report du solde restant a été approuvé ; il est détaillé ci-dessous."
+    return phrase
+
+
 def generer_pdf_autorisation(conge: Conge) -> bytes:
-    """PDF de l'autorisation de congé : n°, employé, dates, jours, solde restant, validateurs, et le
-    report s'il y en a un d'approuvé. ``ValueError`` si le congé n'a jamais été approuvé (N2)."""
+    """PDF de l'autorisation de congé : une phrase d'attestation (identité, dates, motif), puis le
+    détail administratif (n°, validateurs, report, solde) en liste, plus lisible que la prose.
+    ``ValueError`` si le congé n'a jamais été approuvé (N2)."""
     if conge.statut not in services.STATUTS_DECOMPTES:
         raise ValueError("Ce congé n'a pas (encore) été approuvé : pas d'autorisation à délivrer.")
 
@@ -87,13 +120,10 @@ def generer_pdf_autorisation(conge: Conge) -> bytes:
     c.setAuthor(entreprise)
 
     y = _entete(c, entreprise, "Autorisation de congé")
+    y = _paragraphe(c, _phrase_attestation(conge, entreprise, report_approuve=bool(report)), STYLE_ATTESTATION, y)
+    y -= 8 * mm
+
     y = _ligne(c, "N° de congé", f"CONGE-{conge.pk:06d}", y)
-    y = _ligne(c, "Employé", f"{employe.prenom} {employe.nom} ({employe.matricule})", y)
-    y = _ligne(c, "Poste", employe.poste, y)
-    y = _ligne(c, "Du", conge.date_debut.strftime("%d/%m/%Y"), y)
-    y = _ligne(c, "Au", conge.date_fin.strftime("%d/%m/%Y") + (" (reporté)" if report else ""), y)
-    y = _ligne(c, "Jours décomptés", f"{conge.jours} jour{'s' if conge.jours > 1 else ''} ouvré{'s' if conge.jours > 1 else ''}", y)
-    y = _ligne(c, "Motif", conge.motif[:80], y)
     y -= 3 * mm
 
     if validation_n1:
