@@ -16,10 +16,19 @@ de paiement par défaut : espèces (Caisse) ; la Finance le corrige sur la ligne
 change le compte débité. Les pièces sont comptées **à l'achat** : leur sortie vers un OR ne l'est pas (pas de double
 compte), si bien qu'un OR n'ajoute que sa main-d'œuvre. Les apps d'origine émettent un signal (`plein_enregistre`,
 `entree_stock_enregistree`, `or_cloture`) émis avec `send` : si la dépense ne peut pas être écrite, l'opération est
-annulée. La saisie manuelle de ces trois catégories est refusée (double compte). Reprise de l'existant :
-migration `billing.0003` (pleins, achats et OR déjà enregistrés, en espèces). **À vérifier avant de la déployer** :
-elle rétro-débite la trésorerie ; si un « solde d'ouverture » a été saisi à une date, les dépenses antérieures sont
-déjà comprises dedans.
+annulée. La saisie manuelle de ces trois catégories est refusée (double compte).
+
+Reprise de l'historique (pleins, achats et OR déjà enregistrés avant la mise en service de ce mécanisme) :
+`services.reprendre_depenses_parc_auto()` / commande `comptabiliser_historique_parc_auto` — **volontairement pas
+une migration automatique**, pour ne jamais rétro-débiter la trésorerie sans décision explicite. Elle rejoue
+`billing.comptabiliser_depense_automatique` pour chaque source manquante (idempotent, rejouable sans double
+compte) et rapporte le nombre créé par catégorie. À exécuter une fois, après vérification :
+```
+python manage.py comptabiliser_historique_parc_auto --dry-run   # prévisualiser, rien n'est écrit
+python manage.py comptabiliser_historique_parc_auto              # tout l'historique
+python manage.py comptabiliser_historique_parc_auto --depuis 2026-09-01   # si un solde d'ouverture au
+    # 31/08/2026 comprend déjà les mouvements antérieurs (sinon ils seraient comptés deux fois)
+```
 
 ## Dépenses pré-approuvées du parc auto (`demandes.py`, R2 — avenant-separation-des-taches.md)
 

@@ -19,6 +19,9 @@ CONSULTATION = frozenset({Role.ADMIN, Role.DIRECTION, Role.CHARGE_CLIENTELE})
 CREATION = frozenset({Role.ADMIN, Role.DIRECTION, Role.CHARGE_CLIENTELE})
 PLANIFICATION = frozenset({Role.ADMIN, Role.DIRECTION, Role.CHARGE_CLIENTELE})
 AFFECTATION = frozenset({Role.ADMIN, Role.DIRECTION})
+# Séparation des tâches (avenant-separation-des-taches.md § R3) : modifier une mission déjà créée est
+# plus restreint que la créer — le chargé clientèle crée, seules DIRECTION et ADMIN modifient ensuite.
+MODIFICATION = frozenset({Role.ADMIN, Role.DIRECTION})
 # Le départ peut être lancé depuis le back-office (suivi) ; le chauffeur le fait lui-même depuis le mobile.
 SUIVI_TERRAIN = frozenset({Role.ADMIN, Role.DIRECTION})
 # Récupération et livraison se confirment par un code secret que seul le chauffeur affecté saisit ou

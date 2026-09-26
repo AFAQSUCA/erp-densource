@@ -7,7 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('billing', '0003_reprise_depenses_parc_auto'),
+        ('billing', '0002_depenses_automatiques_parc_auto'),
         ('fleet', '0001_initial'),
     ]
 

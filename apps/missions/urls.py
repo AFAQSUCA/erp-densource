@@ -9,6 +9,7 @@ urlpatterns = [
     path("imprimer/", views.MissionImprimerView.as_view(), name="imprimer"),
     path("nouvelle/", views.MissionCreateView.as_view(), name="creer"),
     path("<int:pk>/", views.MissionDetailView.as_view(), name="detail"),
+    path("<int:pk>/modifier/", views.MissionUpdateView.as_view(), name="modifier"),
     path("<int:pk>/planifier/", views.PlanifierView.as_view(), name="planifier"),
     path("<int:pk>/affecter/", views.AffecterView.as_view(), name="affecter"),
     path("<int:pk>/demarrer/", views.DemarrerView.as_view(), name="demarrer"),

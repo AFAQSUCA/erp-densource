@@ -20,8 +20,8 @@ from apps.core.views import ImpressionListeMixin, PaginationTolerante
 
 from . import documents, permissions, services
 from .exceptions import MissionError
-from .forms import AffectationForm, CodeForm, LivraisonForm, MissionForm
-from .models import StatutMission
+from .forms import AffectationForm, CodeForm, LivraisonForm, MissionForm, ModificationForm
+from .models import STATUTS_MODIFIABLES, StatutMission
 
 ETAPES = [
     (StatutMission.BROUILLON, "Brouillon"),
@@ -111,6 +111,10 @@ class MissionDetailView(RoleRequiredMixin, DetailView):
             form_affectation=AffectationForm() if actions["affecter"] else None,
             form_recuperation=CodeForm() if actions["recuperation"] else None,
             form_livraison=LivraisonForm() if actions["livraison"] else None,
+            peut_modifier=(
+                utilisateur.role_effectif in permissions.MODIFICATION
+                and mission.statut in STATUTS_MODIFIABLES
+            ),
         )
         return contexte
 
@@ -135,6 +139,69 @@ class MissionCreateView(RoleRequiredMixin, FormView):
             "l'expéditeur et au destinataire se télécharge ci-dessous.",
         )
         return redirect("missions:detail", pk=mission.pk)
+
+
+class MissionUpdateView(RoleRequiredMixin, FormView):
+    """Modification d'une mission (avenant-separation-des-taches.md § R3) : DIRECTION et ADMIN
+    seulement, tant que le colis n'est pas encore récupéré (``STATUTS_MODIFIABLES``)."""
+
+    roles = permissions.MODIFICATION
+    form_class = ModificationForm
+    template_name = "missions/mission_modifier.html"
+
+    def dispatch(self, request, *args, **kwargs):
+        self.mission = get_object_or_404(services.missions_queryset(), pk=kwargs["pk"])
+        return super().dispatch(request, *args, **kwargs)
+
+    def get(self, request, *args, **kwargs):
+        if self.mission.statut not in STATUTS_MODIFIABLES:
+            messages.info(
+                request,
+                f"La mission {self.mission.numero} n'est plus modifiable "
+                f"({self.mission.get_statut_display()}).",
+            )
+            return redirect("missions:detail", pk=self.mission.pk)
+        return super().get(request, *args, **kwargs)
+
+    @property
+    def reaffectation(self) -> bool:
+        return self.mission.statut == StatutMission.AFFECTEE
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["reaffectation"] = self.reaffectation
+        return kwargs
+
+    def get_initial(self):
+        initial = {
+            "lieu_chargement": self.mission.lieu_chargement,
+            "lieu_livraison": self.mission.lieu_livraison,
+            "nature_marchandise": self.mission.nature_marchandise,
+            "poids_t": self.mission.poids_t,
+            "prix_convenu": self.mission.prix_convenu,
+            "date_depart_prevue": self.mission.date_depart_prevue,
+        }
+        if self.reaffectation:
+            initial.update(vehicule=self.mission.vehicule_id, chauffeur=self.mission.chauffeur_id)
+        return initial
+
+    def get_context_data(self, **kwargs):
+        return super().get_context_data(
+            mission=self.mission, lieux=services.lieux_deja_utilises(), **kwargs
+        )
+
+    def form_valid(self, form):
+        donnees = dict(form.cleaned_data)
+        if not self.reaffectation:
+            donnees.pop("vehicule", None)
+            donnees.pop("chauffeur", None)
+        try:
+            services.modifier_mission(self.mission, **donnees)
+        except MissionError as erreur:
+            form.add_error(None, str(erreur))
+            return self.form_invalid(form)
+        messages.success(self.request, f"Mission {self.mission.numero} modifiée.")
+        return redirect("missions:detail", pk=self.mission.pk)
 
 
 class ActionMissionView(RoleRequiredMixin, View):

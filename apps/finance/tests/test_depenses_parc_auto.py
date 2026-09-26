@@ -1,12 +1,10 @@
 """Les dépenses du parc auto (plein, achat de pièces, main-d'œuvre d'OR) sont comptabilisées toutes seules :
 page Dépenses, trésorerie et charges donnent le même total."""
 
-import importlib
 from datetime import date
 from decimal import Decimal
 
 import pytest
-from django.apps import apps as registre
 from django.urls import reverse
 from django.utils import timezone
 
@@ -245,25 +243,81 @@ def test_la_direction_voit_les_lignes_sans_pouvoir_changer_le_mode(client):
     assert client.post(reverse("billing:depense_mode", args=[depense.pk]), {"mode": "WAVE"}).status_code == 403
 
 
-# --- reprise de l'existant (migration billing.0003) ---
+# --- reprise de l'historique (commande comptabiliser_historique_parc_auto, pas une migration :
+#     sur une base avec un solde d'ouverture, reprendre sans --depuis compterait deux fois les
+#     mouvements déjà compris dedans) ---
 
 
-def test_la_reprise_de_l_existant_cree_les_depenses_manquantes_une_seule_fois():
-    migration = importlib.import_module("apps.billing.migrations.0003_reprise_depenses_parc_auto")
+def _etat_avant_comptabilisation():
+    """Des pleins, un achat et un OR déjà enregistrés, comme avant la mise en service de la
+    comptabilisation automatique (``Depense`` vidée après coup, comme sur une base existante)."""
     PleinFactory(date_plein=date(2026, 8, 3), quantite_litres=Decimal("100"), prix_unitaire=Decimal("600"), numero_ticket="OLD-1")
+    PleinFactory(date_plein=date(2026, 9, 10), quantite_litres=Decimal("50"), prix_unitaire=Decimal("700"), numero_ticket="OLD-2")
     article = ArticleFactory(quantite=0)
-    Depense.objects.all().delete()  # l'état d'avant : des pleins et des achats sans dépense
     stock.enregistrer_entree(article, quantite=3, prix_unitaire=Decimal("1000"))
     ordre = garage.ouvrir_or(VehiculeFactory(), type_or=TypeOr.CURATIF, lieu=LieuReparation.INTERNE, motif="x")
     garage.cloturer_or(ordre, cout_main_oeuvre=Decimal("8000"))
     Depense.objects.all().delete()
 
-    migration.reprendre(registre, None)
-    migration.reprendre(registre, None)  # rejouable
 
-    assert Depense.objects.count() == 3
-    plein = _auto(OrigineDepense.PLEIN).get()
-    assert plein.montant == Decimal("60000.00") and plein.date_depense == date(2026, 8, 3) and plein.reference == "OLD-1"
+def test_la_reprise_de_l_existant_cree_les_depenses_manquantes_une_seule_fois():
+    _etat_avant_comptabilisation()
+
+    premiere = services.reprendre_depenses_parc_auto()
+    seconde = services.reprendre_depenses_parc_auto()  # rejouable
+
+    assert premiere == {"carburant": 2, "pieces": 1, "main_oeuvre": 1, "deja_comptabilisees": 0}
+    assert seconde == {"carburant": 0, "pieces": 0, "main_oeuvre": 0, "deja_comptabilisees": 4}
+    assert Depense.objects.count() == 4
+    plein = _auto(OrigineDepense.PLEIN).filter(reference="OLD-1").get()
+    assert plein.montant == Decimal("60000.00") and plein.date_depense == date(2026, 8, 3)
     assert _auto(OrigineDepense.ACHAT_STOCK).get().montant == Decimal("3000.00")
     assert _auto(OrigineDepense.MAIN_OEUVRE_OR).get().montant == Decimal("8000.00")
     assert set(Depense.objects.values_list("mode", flat=True)) == {ModePaiement.ESPECES}
+
+
+def test_depuis_ignore_ce_qui_precede_un_solde_d_ouverture():
+    """Un solde d'ouverture saisi au 01/09/2026 comprend déjà les mouvements antérieurs : ne pas les reprendre."""
+    from apps.garage.models import OrdreReparation
+    from apps.inventory.models import MouvementStock
+
+    _etat_avant_comptabilisation()
+    ancien = timezone.now().replace(year=2026, month=8, day=15)
+    MouvementStock.objects.update(date_mouvement=ancien)
+    OrdreReparation.objects.update(date_cloture=ancien)
+
+    compteurs = services.reprendre_depenses_parc_auto(depuis=date(2026, 9, 1))
+
+    assert compteurs["carburant"] == 1  # seulement OLD-2 (10/09), pas OLD-1 (03/08)
+    assert compteurs["pieces"] == 0 and compteurs["main_oeuvre"] == 0  # l'achat et l'OR sont d'avant
+    assert Depense.objects.count() == 1
+    assert _auto(OrigineDepense.PLEIN).get().reference == "OLD-2"
+
+
+def test_la_commande_de_gestion_rapporte_les_compteurs(capsys):
+    from django.core.management import call_command
+
+    _etat_avant_comptabilisation()
+
+    call_command("comptabiliser_historique_parc_auto")
+
+    assert Depense.objects.count() == 4
+    assert "Carburant : 2" in capsys.readouterr().out
+
+
+def test_dry_run_n_ecrit_rien(capsys):
+    from django.core.management import call_command
+
+    _etat_avant_comptabilisation()
+
+    call_command("comptabiliser_historique_parc_auto", "--dry-run")
+
+    assert Depense.objects.count() == 0
+    assert "Simulation" in capsys.readouterr().out
+
+
+def test_la_commande_refuse_une_date_invalide():
+    from django.core.management import CommandError, call_command
+
+    with pytest.raises(CommandError):
+        call_command("comptabiliser_historique_parc_auto", "--depuis", "pas-une-date")

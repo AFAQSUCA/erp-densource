@@ -8,11 +8,11 @@ les services), documentée dans le README de son app, puis fusionnée séparéme
 |---|---|---|
 | R1 | Validation des prix et devis | Fusionnée dans R5 (seuil DIRECTION à 500 000 FCFA TTC) |
 | R2 | Dépenses du parc auto (pré-approbation + enveloppe) | ✅ Fusionnée |
-| R3 | Modification d'une mission | En attente de fusion (PR #12, branche `feat/reprise-manuelle-et-modification-mission`) |
+| R3 | Modification d'une mission | **✅ Ce lot** — voir ci-dessous |
 | R4 | Prévision de trésorerie des missions | En attente de fusion (PR #15, branche `feat/prevision-tresorerie-missions-r4`) |
 | R5 | Facture proforma (devis) | En attente de fusion (PR #14, branche `feat/proforma-devis-r5-r6`) |
 | R6 | Mission créée depuis une proforma acceptée | En attente de fusion (PR #14, branche `feat/proforma-devis-r5-r6`) |
-| R7 | Congés : 26 jours ouvrés + report | **✅ Ce lot** — voir ci-dessous |
+| R7 | Congés : 26 jours ouvrés + report | ✅ Fusionnée |
 
 ## R2 — Dépenses du parc auto pré-approuvées
 
@@ -107,7 +107,6 @@ demande (décision, exécution, revalidation selon le rôle et l'état), `/finan
 
 **Implémentation** : `apps.missions.services.modifier_mission`, `permissions.MODIFICATION`,
 écran `/missions/<id>/modifier/`. Détails : `apps/missions/README.md` § Modification.
-*(Livrée sur sa propre branche, PR #12 — pas encore fusionnée à ce stade.)*
 
 ## R7 — Congés : 26 jours ouvrés, report du solde d'un congé en cours
 
