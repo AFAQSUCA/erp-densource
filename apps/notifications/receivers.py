@@ -7,7 +7,9 @@ Qui est prévenu de quoi (les destinataires suivent les rôles du cahier-des-cha
 - stock au seuil → PARCAUTO ; surconsommation ou anomalie → PARCAUTO et DIRECTION ;
 - mission partie → chargé clientèle attitré du client (à défaut, tous les chargés clientèle) ;
 - incident signalé → PARCAUTO et DIRECTION ; check-list avec point KO → PARCAUTO ;
-- facture soumise → DIRECTION ; validée → FINANCES et son auteur ; renvoyée → son auteur.
+- facture soumise → DIRECTION ; validée → FINANCES et son auteur ; renvoyée → son auteur ;
+- devis soumis → FINANCES ; en attente de la direction (montant > seuil) → DIRECTION ;
+  validé ou contre-proposé → son auteur ; expiré → son auteur.
 
 Les domaines métier ne connaissent pas ce module : ils émettent des signaux.
 """
@@ -18,6 +20,7 @@ from django.utils import timezone
 
 from apps.accounts.models import Role
 from apps.billing import signals as billing_signals
+from apps.billing.models import SEUIL_VALIDATION_DIRECTION
 from apps.core.formats import nombre, pourcentage_signe
 from apps.finance import signals as finance_signals
 from apps.finance.models import OrigineDemande, StatutDemandeDepense
@@ -383,6 +386,88 @@ def prevenir_du_refus_d_une_facture(sender, facture, motif, **kwargs):
         titre=f"Facture renvoyée par la direction : {facture.client.raison_sociale}",
         message=f"Motif : {motif}",
         url=_lien_facture(facture),
+    )
+
+
+# --- devis ---
+
+
+def _lien_proforma(proforma) -> str:
+    return reverse("billing:proforma", args=[proforma.pk])
+
+
+@receiver(billing_signals.proforma_a_valider)
+def prevenir_la_finance_d_un_devis(sender, proforma, **kwargs):
+    notifier(
+        utilisateurs_du_role(Role.FINANCES),
+        categorie=CategorieNotification.PROFORMA,
+        niveau=NiveauNotification.ATTENTION,
+        titre=f"Devis à valider : {proforma.client.raison_sociale}",
+        message=(
+            f"{nombre(proforma.montant_ttc)} FCFA TTC pour {proforma.lieu_chargement} → "
+            f"{proforma.lieu_livraison}, préparé par {proforma.cree_par or 'un compte supprimé'}."
+        ),
+        url=_lien_proforma(proforma),
+        action="Examiner et valider",
+    )
+
+
+@receiver(billing_signals.proforma_en_attente_direction)
+def prevenir_la_direction_d_un_devis(sender, proforma, **kwargs):
+    notifier(
+        utilisateurs_du_role(Role.DIRECTION),
+        categorie=CategorieNotification.PROFORMA,
+        niveau=NiveauNotification.ATTENTION,
+        titre=f"Devis à valider (montant élevé) : {proforma.client.raison_sociale}",
+        message=(
+            f"{nombre(proforma.montant_ttc)} FCFA TTC, déjà validé par la finance : "
+            f"votre validation est requise au-delà de {nombre(SEUIL_VALIDATION_DIRECTION)} FCFA."
+        ),
+        url=_lien_proforma(proforma),
+        action="Examiner et valider",
+    )
+
+
+@receiver(billing_signals.proforma_validee)
+def prevenir_de_la_validation_d_un_devis(sender, proforma, **kwargs):
+    if proforma.cree_par is None:
+        return
+    notifier(
+        [proforma.cree_par],
+        categorie=CategorieNotification.PROFORMA,
+        niveau=NiveauNotification.INFO,
+        titre=f"Devis {proforma.numero} validé",
+        message=f"{proforma.client.raison_sociale} : {nombre(proforma.montant_ttc)} FCFA TTC. Vous pouvez l'envoyer au client.",
+        url=_lien_proforma(proforma),
+        action="Envoyer au client",
+    )
+
+
+@receiver(billing_signals.proforma_contre_proposee)
+def prevenir_de_la_contre_proposition_d_un_devis(sender, proforma, motif, **kwargs):
+    if proforma.cree_par is None:
+        return
+    notifier(
+        [proforma.cree_par],
+        categorie=CategorieNotification.PROFORMA,
+        niveau=NiveauNotification.ATTENTION,
+        titre=f"Devis contesté : {proforma.client.raison_sociale}",
+        message=f"Motif : {motif}",
+        url=_lien_proforma(proforma),
+    )
+
+
+@receiver(billing_signals.proforma_expiree)
+def prevenir_de_l_expiration_d_un_devis(sender, proforma, **kwargs):
+    if proforma.cree_par is None:
+        return
+    notifier(
+        [proforma.cree_par],
+        categorie=CategorieNotification.PROFORMA,
+        niveau=NiveauNotification.ATTENTION,
+        titre=f"Devis expiré : {proforma.client.raison_sociale}",
+        message=f"Le devis {proforma.numero} n'a pas eu de réponse dans les 30 jours.",
+        url=_lien_proforma(proforma),
     )
 
 

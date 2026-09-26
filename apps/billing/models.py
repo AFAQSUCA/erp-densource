@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.conf import settings
 from django.db import models
 from django.db.models import F, Q
@@ -208,6 +210,137 @@ class Reglement(BaseModel):
 
     def __str__(self):
         return f"{self.facture} : {self.montant} ({self.get_mode_display()})"
+
+
+class StatutProforma(models.TextChoices):
+    """Cycle de vie du devis — avenant-separation-des-taches.md (R5).
+
+    Le chargé clientèle prépare et soumet ; la FINANCES valide le prix (ou le
+    conteste), et la DIRECTION valide en plus au-delà de :data:`SEUIL_VALIDATION_DIRECTION`
+    (fusion de R1). Le numéro ``PRO-AAAA-XXXX`` n'est attribué qu'à la validation finale,
+    comme pour :class:`Facture`.
+    """
+
+    BROUILLON = "BROUILLON", _("Brouillon")
+    SOUMISE = "SOUMISE", _("Soumise")
+    CONTRE_PROPOSEE = "CONTRE_PROPOSEE", _("Contre-proposée")
+    EN_ATTENTE_DIRECTION = "EN_ATTENTE_DIRECTION", _("En attente de la direction")
+    VALIDEE = "VALIDEE", _("Validée")
+    ENVOYEE_CLIENT = "ENVOYEE_CLIENT", _("Envoyée au client")
+    ACCEPTEE = "ACCEPTEE", _("Acceptée par le client")
+    REFUSEE = "REFUSEE", _("Refusée par le client")
+    EXPIREE = "EXPIREE", _("Expirée")
+    CONVERTIE = "CONVERTIE", _("Convertie en mission")
+
+
+# R1 fusionnée dans R5 : la DIRECTION valide en plus de la FINANCES au-delà de ce montant TTC.
+SEUIL_VALIDATION_DIRECTION = Decimal("500000")
+
+STATUTS_PROFORMA_MODIFIABLES = (StatutProforma.BROUILLON, StatutProforma.CONTRE_PROPOSEE)
+DUREE_VALIDITE_PROFORMA_JOURS = 30
+
+
+class Proforma(BaseModel):
+    """Devis pour une future mission — avenant-separation-des-taches.md (R5).
+
+    Reprend les champs d'une mission (trajet, marchandise, poids, prix) plutôt que des
+    lignes comme :class:`Facture` : à l'acceptation du client, R6 les recopie tels quels
+    dans la mission créée. La TVA suit les mêmes 3 niveaux qu'une facture.
+    """
+
+    numero = models.CharField(_("numéro"), max_length=20, blank=True)
+    client = models.ForeignKey(
+        "customers.Client",
+        verbose_name=_("client"),
+        on_delete=models.PROTECT,
+        related_name="proformas",
+    )
+    statut = models.CharField(
+        _("statut"),
+        max_length=20,
+        choices=StatutProforma.choices,
+        default=StatutProforma.BROUILLON,
+    )
+    lieu_chargement = models.CharField(_("lieu de chargement"), max_length=200)
+    lieu_livraison = models.CharField(_("lieu de livraison"), max_length=200)
+    nature_marchandise = models.CharField(_("nature de la marchandise"), max_length=200)
+    poids_t = models.DecimalField(_("poids (t)"), max_digits=8, decimal_places=2)
+    date_depart_souhaitee = models.DateField(_("départ souhaité"), null=True, blank=True)
+    prix_convenu = models.DecimalField(_("prix convenu HT (FCFA)"), max_digits=12, decimal_places=2)
+    taux_tva = models.DecimalField(_("taux de TVA (%)"), max_digits=5, decimal_places=2)
+    motif_exoneration = models.CharField(
+        _("motif d'exonération"), max_length=12, choices=MotifExoneration.choices, blank=True
+    )
+    montant_ht = models.DecimalField(_("total HT (FCFA)"), max_digits=14, decimal_places=2, default=0)
+    montant_tva = models.DecimalField(_("TVA (FCFA)"), max_digits=14, decimal_places=2, default=0)
+    montant_ttc = models.DecimalField(_("total TTC (FCFA)"), max_digits=14, decimal_places=2, default=0)
+    motif_contre_proposition = models.TextField(_("motif de la dernière contre-proposition"), blank=True)
+    motif_refus_client = models.TextField(_("motif du refus du client"), blank=True)
+    date_envoi = models.DateField(_("envoyée au client le"), null=True, blank=True)
+    date_validite = models.DateField(_("valable jusqu'au"), null=True, blank=True)
+    cree_par = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name=_("préparé par"),
+        null=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+    valide_par_finances = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name=_("validé par la finance"),
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+    date_validation_finances = models.DateTimeField(_("validé par la finance le"), null=True, blank=True)
+    valide_par_direction = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name=_("validé par la direction"),
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+    date_validation_direction = models.DateTimeField(_("validé par la direction le"), null=True, blank=True)
+
+    class Meta:
+        verbose_name = _("devis")
+        verbose_name_plural = _("devis")
+        ordering = ["-created_at", "-pk"]
+        indexes = [models.Index(fields=["statut", "date_validite"])]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["numero"], condition=~Q(numero=""), name="proforma_numero_unique"
+            ),
+            models.CheckConstraint(condition=Q(poids_t__gt=0), name="proforma_poids_positif"),
+            models.CheckConstraint(
+                condition=Q(prix_convenu__gte=0), name="proforma_prix_positif_ou_nul"
+            ),
+            models.CheckConstraint(
+                condition=Q(taux_tva__gt=0) | ~Q(motif_exoneration=""),
+                name="proforma_tva_zero_requiert_motif",
+            ),
+            models.CheckConstraint(
+                condition=Q(taux_tva__gte=0) & Q(taux_tva__lte=100),
+                name="proforma_taux_tva_entre_0_et_100",
+            ),
+            models.CheckConstraint(
+                condition=Q(montant_ttc=F("montant_ht") + F("montant_tva")),
+                name="proforma_ttc_egal_ht_plus_tva",
+            ),
+        ]
+
+    def __str__(self):
+        return self.numero or f"Devis brouillon ({self.client})"
+
+    @property
+    def est_modifiable(self) -> bool:
+        return self.statut in STATUTS_PROFORMA_MODIFIABLES
+
+    @property
+    def requiert_direction(self) -> bool:
+        return self.montant_ttc > SEUIL_VALIDATION_DIRECTION
 
 
 class CategorieDepense(models.TextChoices):

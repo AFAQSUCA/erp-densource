@@ -17,10 +17,12 @@ from django.db.models import F, Q, QuerySet, Sum, Value
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 
+from apps.audit import services as audit_services
 from apps.core.search import filtrer_par_texte
 from apps.core.services import prochain_numero, total_par_mois
 from apps.customers.models import Client
 from apps.fleet.models import Vehicule
+from apps.missions import services as missions_services
 from apps.missions.models import Mission, StatutMission
 
 from . import permissions, signals
@@ -32,16 +34,20 @@ from .exceptions import (
     TransitionFactureInterdite,
 )
 from .models import (
+    DUREE_VALIDITE_PROFORMA_JOURS,
     STATUTS_A_RECOUVRER,
     STATUTS_EMIS,
+    STATUTS_PROFORMA_MODIFIABLES,
     CATEGORIES_AUTOMATIQUES,
     CategorieDepense,
     Depense,
     Facture,
     LigneFacture,
     ModePaiement,
+    Proforma,
     Reglement,
     StatutFacture,
+    StatutProforma,
 )
 
 ZERO = Decimal("0")
@@ -621,3 +627,295 @@ def enregistrer_depense(
         mission=mission,
         saisi_par=acteur,
     )
+
+
+# --- devis (R5 : le chargé clientèle fixe le prix, la FINANCES et, au-delà d'un seuil,
+# la DIRECTION le valident — R1 fusionnée) ---
+
+
+def _recalculer_proforma(proforma: Proforma) -> Proforma:
+    """HT = prix convenu ; TVA arrondie au franc ; TTC = HT + TVA."""
+    ht = arrondir_franc(proforma.prix_convenu)
+    tva = arrondir_franc(ht * proforma.taux_tva / 100)
+    proforma.montant_ht, proforma.montant_tva, proforma.montant_ttc = ht, tva, ht + tva
+    proforma.save(update_fields=["montant_ht", "montant_tva", "montant_ttc", "updated_at"])
+    return proforma
+
+
+def proformas_queryset() -> QuerySet[Proforma]:
+    return Proforma.objects.select_related("client", "cree_par")
+
+
+def rechercher_proformas(
+    *, recherche: str = "", statut: str = "", client: Client | None = None
+) -> QuerySet[Proforma]:
+    resultat = proformas_queryset()
+    if statut in StatutProforma.values:
+        resultat = resultat.filter(statut=statut)
+    if client is not None:
+        resultat = resultat.filter(client=client)
+    return filtrer_par_texte(
+        resultat, recherche, "numero", "client__raison_sociale", "lieu_chargement", "lieu_livraison"
+    )
+
+
+def historique_proforma(proforma: Proforma) -> QuerySet:
+    """Historique des modifications (préparation, contre-propositions, validations)."""
+    return audit_services.historique("Proforma", proforma.pk)
+
+
+@transaction.atomic
+def creer_proforma(
+    acteur,
+    *,
+    client: Client,
+    lieu_chargement: str,
+    lieu_livraison: str,
+    nature_marchandise: str,
+    poids_t: Decimal,
+    prix_convenu: Decimal,
+    date_depart_souhaitee: date | None = None,
+) -> Proforma:
+    """Brouillon de devis : trajet et prix fixés par le chargé clientèle, TVA reprise du client."""
+    _exiger_role(acteur, permissions.PROFORMA_SAISIE, "préparer un devis")
+    poids_t, prix_convenu = Decimal(poids_t), Decimal(prix_convenu)
+    if poids_t <= 0:
+        raise MontantInvalide("Le poids doit être strictement positif.")
+    if prix_convenu < 0:
+        raise MontantInvalide("Le prix convenu ne peut pas être négatif.")
+    proforma = Proforma.objects.create(
+        client=client,
+        lieu_chargement=lieu_chargement,
+        lieu_livraison=lieu_livraison,
+        nature_marchandise=nature_marchandise,
+        poids_t=poids_t,
+        prix_convenu=prix_convenu,
+        date_depart_souhaitee=date_depart_souhaitee,
+        taux_tva=client.taux_tva,
+        motif_exoneration=client.motif_exoneration,
+        cree_par=acteur,
+    )
+    return _recalculer_proforma(proforma)
+
+
+@transaction.atomic
+def modifier_proforma(
+    proforma: Proforma,
+    acteur,
+    *,
+    lieu_chargement: str,
+    lieu_livraison: str,
+    nature_marchandise: str,
+    poids_t: Decimal,
+    prix_convenu: Decimal,
+    taux_tva: Decimal,
+    motif_exoneration: str = "",
+    date_depart_souhaitee: date | None = None,
+) -> Proforma:
+    """Trajet, marchandise, prix et TVA, tant que le devis est modifiable (brouillon ou contre-proposé)."""
+    _exiger_role(acteur, permissions.PROFORMA_SAISIE, "modifier un devis")
+    _verrouiller(proforma)
+    _exiger_statut(proforma, STATUTS_PROFORMA_MODIFIABLES, "modifier le devis")
+    poids_t, prix_convenu, taux = Decimal(poids_t), Decimal(prix_convenu), Decimal(taux_tva)
+    if poids_t <= 0:
+        raise MontantInvalide("Le poids doit être strictement positif.")
+    if prix_convenu < 0:
+        raise MontantInvalide("Le prix convenu ne peut pas être négatif.")
+    if not ZERO <= taux <= Decimal(100):
+        raise MontantInvalide("Le taux de TVA doit être compris entre 0 et 100 %.")
+    if taux == 0 and not motif_exoneration:
+        raise MontantInvalide("Un motif d'exonération est obligatoire quand la TVA est à 0 %.")
+    proforma.lieu_chargement = lieu_chargement
+    proforma.lieu_livraison = lieu_livraison
+    proforma.nature_marchandise = nature_marchandise
+    proforma.poids_t = poids_t
+    proforma.prix_convenu = prix_convenu
+    proforma.date_depart_souhaitee = date_depart_souhaitee
+    proforma.taux_tva = taux
+    proforma.motif_exoneration = motif_exoneration if taux == 0 else ""
+    proforma.save(
+        update_fields=[
+            "lieu_chargement", "lieu_livraison", "nature_marchandise", "poids_t", "prix_convenu",
+            "date_depart_souhaitee", "taux_tva", "motif_exoneration", "updated_at",
+        ]
+    )
+    return _recalculer_proforma(proforma)
+
+
+@transaction.atomic
+def abandonner_proforma(proforma: Proforma, acteur) -> None:
+    """Supprime (logiquement) un devis pas encore soumis à la validation."""
+    _exiger_role(acteur, permissions.PROFORMA_SAISIE, "abandonner un devis")
+    _verrouiller(proforma)
+    _exiger_statut(proforma, STATUTS_PROFORMA_MODIFIABLES, "abandonner le devis")
+    proforma.delete(deleted_by=acteur)
+
+
+@transaction.atomic
+def soumettre_proforma(proforma: Proforma, acteur) -> Proforma:
+    """Brouillon ou contre-proposé → Soumis : envoie le devis à la FINANCES."""
+    _exiger_role(acteur, permissions.PROFORMA_SAISIE, "soumettre un devis")
+    _verrouiller(proforma)
+    _exiger_statut(proforma, STATUTS_PROFORMA_MODIFIABLES, "soumettre le devis")
+    if proforma.montant_ttc <= 0:
+        raise MontantInvalide("Un devis à 0 FCFA ne peut pas être soumis.")
+    proforma.statut = StatutProforma.SOUMISE
+    proforma.motif_contre_proposition = ""
+    proforma.save(update_fields=["statut", "motif_contre_proposition", "updated_at"])
+    signals.emettre(signals.proforma_a_valider, sender=Proforma, proforma=proforma)
+    return proforma
+
+
+def _emettre_proforma(proforma: Proforma, aujourd_hui: date) -> Proforma:
+    """Attribue le numéro et passe le devis en Validée (dernière étape des deux parcours)."""
+    proforma.numero = prochain_numero("PRO", aujourd_hui.year)
+    proforma.statut = StatutProforma.VALIDEE
+    proforma.save(
+        update_fields=[
+            "numero", "statut", "valide_par_finances", "date_validation_finances",
+            "valide_par_direction", "date_validation_direction", "updated_at",
+        ]
+    )
+    signals.emettre(signals.proforma_validee, sender=Proforma, proforma=proforma)
+    return proforma
+
+
+@transaction.atomic
+def valider_proforma(proforma: Proforma, acteur, *, aujourd_hui: date | None = None) -> Proforma:
+    """La FINANCES valide le prix : émission directe sous le seuil, sinon transmission à la DIRECTION."""
+    _exiger_role(acteur, permissions.PROFORMA_VALIDATION_FINANCES, "valider un devis", strict=True)
+    _verrouiller(proforma)
+    _exiger_statut(proforma, (StatutProforma.SOUMISE,), "valider le devis")
+    proforma.valide_par_finances = acteur
+    proforma.date_validation_finances = timezone.now()
+    if proforma.requiert_direction:
+        proforma.statut = StatutProforma.EN_ATTENTE_DIRECTION
+        proforma.save(
+            update_fields=["statut", "valide_par_finances", "date_validation_finances", "updated_at"]
+        )
+        signals.emettre(signals.proforma_en_attente_direction, sender=Proforma, proforma=proforma)
+        return proforma
+    return _emettre_proforma(proforma, aujourd_hui or timezone.localdate())
+
+
+@transaction.atomic
+def valider_proforma_direction(proforma: Proforma, acteur, *, aujourd_hui: date | None = None) -> Proforma:
+    """La DIRECTION valide un devis dont le montant dépasse le seuil (R1 fusionnée)."""
+    _exiger_role(acteur, permissions.PROFORMA_VALIDATION_DIRECTION, "valider un devis", strict=True)
+    _verrouiller(proforma)
+    _exiger_statut(proforma, (StatutProforma.EN_ATTENTE_DIRECTION,), "valider le devis")
+    proforma.valide_par_direction = acteur
+    proforma.date_validation_direction = timezone.now()
+    return _emettre_proforma(proforma, aujourd_hui or timezone.localdate())
+
+
+_ROLE_CONTRE_PROPOSITION = {
+    StatutProforma.SOUMISE: permissions.PROFORMA_VALIDATION_FINANCES,
+    StatutProforma.EN_ATTENTE_DIRECTION: permissions.PROFORMA_VALIDATION_DIRECTION,
+}
+
+
+@transaction.atomic
+def contre_proposer_proforma(proforma: Proforma, acteur, *, motif: str) -> Proforma:
+    """La FINANCES (devis soumis) ou la DIRECTION (devis en attente) conteste le prix.
+
+    Renvoie le devis au chargé clientèle avec un motif plutôt que de le refuser
+    définitivement : il ajuste le prix puis le soumet à nouveau.
+    """
+    _verrouiller(proforma)
+    _exiger_statut(
+        proforma,
+        (StatutProforma.SOUMISE, StatutProforma.EN_ATTENTE_DIRECTION),
+        "contre-proposer sur le devis",
+    )
+    _exiger_role(
+        acteur, _ROLE_CONTRE_PROPOSITION[proforma.statut], "contre-proposer un devis", strict=True
+    )
+    if not motif.strip():
+        raise MontantInvalide("Le motif de la contre-proposition est obligatoire.")
+    proforma.statut = StatutProforma.CONTRE_PROPOSEE
+    proforma.motif_contre_proposition = motif.strip()
+    proforma.save(update_fields=["statut", "motif_contre_proposition", "updated_at"])
+    signals.emettre(
+        signals.proforma_contre_proposee,
+        sender=Proforma,
+        proforma=proforma,
+        motif=proforma.motif_contre_proposition,
+    )
+    return proforma
+
+
+@transaction.atomic
+def envoyer_proforma_au_client(
+    proforma: Proforma, acteur, *, aujourd_hui: date | None = None
+) -> Proforma:
+    """Devis validé → envoyé au client : la validité de 30 jours court à partir de l'envoi."""
+    _exiger_role(acteur, permissions.PROFORMA_SAISIE, "envoyer un devis au client")
+    _verrouiller(proforma)
+    _exiger_statut(proforma, (StatutProforma.VALIDEE,), "envoyer le devis au client")
+    aujourd_hui = aujourd_hui or timezone.localdate()
+    proforma.statut = StatutProforma.ENVOYEE_CLIENT
+    proforma.date_envoi = aujourd_hui
+    proforma.date_validite = aujourd_hui + timedelta(days=DUREE_VALIDITE_PROFORMA_JOURS)
+    proforma.save(update_fields=["statut", "date_envoi", "date_validite", "updated_at"])
+    return proforma
+
+
+@transaction.atomic
+def enregistrer_decision_client(
+    proforma: Proforma, acteur, *, acceptee: bool, motif: str = ""
+) -> Proforma:
+    """Le chargé clientèle enregistre la réponse du client à un devis envoyé."""
+    _exiger_role(acteur, permissions.PROFORMA_SAISIE, "enregistrer la décision du client")
+    _verrouiller(proforma)
+    _exiger_statut(proforma, (StatutProforma.ENVOYEE_CLIENT,), "enregistrer la décision du client")
+    if not acceptee and not motif.strip():
+        raise MontantInvalide("Le motif du refus du client est obligatoire.")
+    proforma.statut = StatutProforma.ACCEPTEE if acceptee else StatutProforma.REFUSEE
+    proforma.motif_refus_client = motif.strip() if not acceptee else ""
+    proforma.save(update_fields=["statut", "motif_refus_client", "updated_at"])
+    return proforma
+
+
+@transaction.atomic
+def convertir_en_mission(proforma: Proforma) -> Mission:
+    """Mission créée depuis un devis accepté (R6) : trajet, marchandise, poids et prix recopiés
+    tels quels ; le devis devient une archive figée (« 1 devis = 1 mission »).
+
+    Le prix repris est le HT du devis, comme celui d'une mission créée à la main : la facture
+    calculera la TVA à son tour, avec le taux du client en vigueur au moment de la facturation.
+    Le contrôle de rôle relève de la création de la mission (``missions.permissions.CREATION``),
+    pas de ce module : cette fonction n'est appelée que depuis ce flux déjà autorisé. Orchestrée
+    ici (et non dans ``missions``) car le graphe de dépendance des apps interdit à ``missions``
+    de dépendre de ``billing`` (architecture.md:95-163) — l'inverse est permis.
+    """
+    _verrouiller(proforma)
+    _exiger_statut(proforma, (StatutProforma.ACCEPTEE,), "convertir le devis en mission")
+    mission = missions_services.creer_mission(
+        client=proforma.client,
+        lieu_chargement=proforma.lieu_chargement,
+        lieu_livraison=proforma.lieu_livraison,
+        nature_marchandise=proforma.nature_marchandise,
+        poids_t=proforma.poids_t,
+        prix_convenu=proforma.prix_convenu,
+        date_depart_prevue=proforma.date_depart_souhaitee,
+    )
+    mission.proforma = proforma
+    mission.save(update_fields=["proforma", "updated_at"])
+    proforma.statut = StatutProforma.CONVERTIE
+    proforma.save(update_fields=["statut", "updated_at"])
+    return mission
+
+
+def expirer_proformas(aujourd_hui: date | None = None) -> int:
+    """Devis envoyés au client dont la validité de 30 jours est dépassée sans réponse."""
+    aujourd_hui = aujourd_hui or timezone.localdate()
+    expirees = 0
+    for proforma in Proforma.objects.filter(
+        statut=StatutProforma.ENVOYEE_CLIENT, date_validite__lt=aujourd_hui
+    ):
+        proforma.statut = StatutProforma.EXPIREE
+        proforma.save(update_fields=["statut", "updated_at"])
+        signals.emettre(signals.proforma_expiree, sender=Proforma, proforma=proforma)
+        expirees += 1
+    return expirees

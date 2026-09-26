@@ -73,6 +73,18 @@ Le formulaire de création propose (liste `datalist`) les lieux de chargement et
 les plus fréquents d'abord, dès les premières lettres (`services.lieux_deja_utilises`) ; un lieu écrit avec
 une autre casse ou sans accent ne compte qu'une fois. La saisie libre reste possible.
 
+### Mission créée depuis un devis accepté (R6)
+
+`Mission.proforma` (`OneToOneField` vers `billing.Proforma`, PROTECT) garantit **1 devis = 1
+mission** au niveau base. `billing.services.convertir_en_mission(proforma)` (pas `missions` :
+le graphe de dépendance des apps, architecture.md:95-163, interdit à `missions` de dépendre de
+`billing` — l'inverse est permis, `billing` appelle donc `missions.services.creer_mission`)
+recopie tel quel le trajet, la marchandise, le poids et le **prix HT** du devis (la facture
+recalculera la TVA plus tard, avec le taux du client en vigueur ce jour-là) ; le devis passe à
+`CONVERTIE`. Déclenché sur `POST /facturation/devis/<id>/creer-mission/`, réservé au rôle
+`missions.permissions.CREATION`. Refusé si le devis n'est pas `ACCEPTEE` (y compris s'il l'a
+déjà été converti).
+
 ### Prévision de trésorerie des missions (`terrain.py`, R4 — avenant-separation-des-taches.md)
 
 Séparation des tâches : celui qui déclare ou planifie un frais n'est jamais celui qui le valide. Modèle
@@ -99,7 +111,7 @@ clientèle, qui ne voit déjà pas le prix convenu côté chauffeur). Rapport de
 (`/missions/<id>/frais/imprimer/`) : lignes et totaux (sorties confirmées, encaissé, solde).
 
 **Limite connue** : la modification d'une mission (R3) ne verrouille pas encore son prix une fois des
-frais confirmés dessus.
+frais confirmés dessus, ni une fois créée depuis un devis accepté (R6).
 
 Reste à faire :
 - Notification « en cours de route (départ) » : signal `mission_demarree`, abonné par `notifications` (fait, étape 5).

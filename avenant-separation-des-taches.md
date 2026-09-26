@@ -9,10 +9,12 @@ les services), documentée dans le README de son app, puis fusionnée séparéme
 | R1 | Validation des prix et devis | Fusionnée dans R5 (seuil DIRECTION à 500 000 FCFA TTC) |
 | R2 | Dépenses du parc auto (pré-approbation + enveloppe) | ✅ Fusionnée |
 | R3 | Modification d'une mission | ✅ Fusionnée |
-| R4 | Prévision de trésorerie des missions | **✅ Ce lot** — voir ci-dessous |
-| R5 | Facture proforma (devis) | En attente de fusion (PR #14, branche `feat/proforma-devis-r5-r6`) |
-| R6 | Mission créée depuis une proforma acceptée | En attente de fusion (PR #14, branche `feat/proforma-devis-r5-r6`) |
+| R4 | Prévision de trésorerie des missions | ✅ Fusionnée |
+| R5 | Facture proforma (devis) | **✅ Ce lot** — voir ci-dessous |
+| R6 | Mission créée depuis une proforma acceptée | **✅ Ce lot** — voir ci-dessous |
 | R7 | Congés : 26 jours ouvrés + report | ✅ Fusionnée |
+
+Les 7 règles sont maintenant toutes fusionnées.
 
 ## R2 — Dépenses du parc auto pré-approuvées
 
@@ -31,7 +33,11 @@ sans aucune approbation préalable :
    c'est aussi le comportement par défaut, sans enveloppe définie (illimité, comme avant R2). La
    dépense qui fait franchir le plafond reste comptabilisée (l'argent est déjà sorti — un plein ne
    se refuse pas après coup) mais ouvre une demande a posteriori qui bloque la dépense automatique
-   *suivante* de cette catégorie tant que la DIRECTION ne l'a pas décidée.
+   *suivante* de cette catégorie tant que la DIRECTION ne l'a pas décidée. Volontairement plus
+   restreint que `billing.CATEGORIES_AUTOMATIQUES` (qui inclut aussi `FRAIS_MISSION`, R4) : une
+   constante dédiée `finance.demandes.CATEGORIES_PARC_AUTO` scope l'enveloppe aux 3 catégories
+   d'origine — un frais de mission a déjà sa propre double validation, il ne passe pas en plus par
+   une enveloppe.
 
 **Modèles** (`apps/finance/models.py`, cohérent avec `MouvementManuel` déjà là et
 `finance/receivers.py` qui dépend déjà de `garage`/`inventory`/`fuel` — le graphe de dépendance des
@@ -102,6 +108,9 @@ demande (décision, exécution, revalidation selon le rôle et l'état), `/finan
 **Implémentation** : `apps.missions.services.modifier_mission`, `permissions.MODIFICATION`,
 écran `/missions/<id>/modifier/`. Détails : `apps/missions/README.md` § Modification.
 
+**Limite connue** : une mission créée depuis un devis accepté (R6) reste modifiable comme une
+autre — son prix n'est pas verrouillé du fait d'avoir été accepté par le client sur le devis.
+
 ## R4 — Prévision de trésorerie des missions
 
 **Séparation des tâches.** Celui qui déclare ou planifie un frais n'est jamais celui qui le valide :
@@ -156,15 +165,88 @@ convenu côté chauffeur) ; `FRAIS_SAISIE_PREVISION` (ADMIN, PARCAUTO) ; `FRAIS_
 totaux). Côté mobile (`/chauffeur/imprevu/` et `POST /api/v1/mobile/imprevus/`) : formulaire tactile
 avec upload de preuve, mêmes règles que le signalement d'un incident (mission du chauffeur uniquement).
 
-**Limite connue** : une mission créée par R6 (proforma acceptée, à venir) reste modifiable comme une
-autre une fois des frais confirmés dessus (R3 ne verrouille pas encore son prix dans ce cas) ; à
-reconsidérer quand R5/R6 seront fusionnées.
+## R5 — Facture proforma (et R1 fusionnée)
 
-**Effet de bord découvert en cours de route (rencontré indépendamment aussi sur la branche R2,
-corrigé de la même façon)** : `audit.registry._snapshot` ne savait pas sérialiser un `FileField`
-(`FieldFile` n'est pas JSON-sérialisable) — `FraisMission.justificatif` est le premier champ fichier
-de cette branche. Corrigé une fois pour toutes (`_valeur()` normalise en son chemin, ou une chaîne
-vide sans fichier).
+**Séparation des tâches.** Le **chargé clientèle** fixe le trajet et le prix d'un devis ; il
+n'est jamais celui qui le valide. La **FINANCES** valide toujours le prix ; la **DIRECTION**
+valide en plus quand le montant TTC dépasse `SEUIL_VALIDATION_DIRECTION` (500 000 FCFA — c'est la
+fusion de R1, qui demandait exactement cette règle pour « la validation des prix et devis »).
+
+**Modèle** `apps.billing.models.Proforma` (`BaseModel`) :
+- `numero` (`PRO-AAAA-XXXX`, attribué à la validation finale seulement — comme `Facture`, pour
+  qu'un devis abandonné ou contesté ne laisse aucun trou de numérotation) ;
+- `client`, `lieu_chargement`, `lieu_livraison`, `nature_marchandise`, `poids_t`,
+  `date_depart_souhaitee` (indicatif) : les mêmes champs qu'une `Mission`, plutôt que des lignes
+  comme `Facture` — R6 les recopie tels quels dans la mission créée ;
+- `prix_convenu` (HT), `taux_tva`, `motif_exoneration`, `montant_ht`/`montant_tva`/`montant_ttc`
+  (mêmes 3 niveaux de TVA et même arrondi au franc qu'une facture) ;
+- `motif_contre_proposition`, `motif_refus_client` ;
+- `date_envoi`, `date_validite` (envoi + 30 jours) ;
+- `cree_par`, `valide_par_finances`/`date_validation_finances`,
+  `valide_par_direction`/`date_validation_direction`.
+
+Pas de modèle séparé pour l'historique des versions : la section « Historique » de la fiche lit
+directement `audit_log` (`apps.audit.services.historique`), qui journalise déjà chaque
+modification (auteur, date, champs changés) — un modèle dédié aurait dupliqué cette information.
+
+**État** (`StatutProforma`) :
+
+```
+BROUILLON → SOUMISE ⇄ CONTRE_PROPOSEE
+              │
+              ├─ (TTC ≤ seuil) FINANCES valide ──────────────► VALIDEE
+              └─ (TTC > seuil) FINANCES valide → EN_ATTENTE_DIRECTION → DIRECTION valide → VALIDEE
+
+VALIDEE → ENVOYEE_CLIENT → ACCEPTEE / REFUSEE / EXPIREE (tâche quotidienne, 30 jours sans réponse)
+ACCEPTEE → CONVERTIE (R6 : la mission est créée)
+```
+
+Le devis reste modifiable (trajet, marchandise, poids, prix, TVA) tant qu'il est `BROUILLON` ou
+`CONTRE_PROPOSEE`. Une contre-proposition renvoie systématiquement vers le chargé clientèle
+plutôt que vers un refus définitif : il ajuste puis resoumet (comme `Facture.refuser`, mais avec
+un état dédié qui distingue explicitement « à revoir » de « brouillon jamais soumis »).
+
+**Permissions** (`PROFORMA_*` dans `apps/billing/permissions.py`) :
+- `PROFORMA_CONSULTATION` : ADMIN, DIRECTION, FINANCES, CHARGE_CLIENTELE ;
+- `PROFORMA_SAISIE` (créer, modifier, abandonner, soumettre, envoyer au client, décision client) :
+  ADMIN, CHARGE_CLIENTELE ;
+- `PROFORMA_VALIDATION_FINANCES` : FINANCES seul (contrôle **strict** : un ADMIN ou un
+  superutilisateur ne valide pas, comme pour une facture) ;
+- `PROFORMA_VALIDATION_DIRECTION` : DIRECTION seule, même contrôle strict.
+
+**Notifications** (`apps.notifications.receivers`, catégorie `PROFORMA`) : devis soumis → FINANCES ;
+devis en attente (seuil dépassé) → DIRECTION ; devis validé, contre-proposé ou expiré → son
+auteur. Tâche quotidienne `expirer_proformas` ajoutée à
+`notifications.taches.executer_taches_quotidiennes` (compteur `proformas_expirees`).
+
+**Audit** : `Proforma` est journalisé (module `FINANCES`, comme `Facture`) — chaque création,
+contre-proposition, validation et changement de statut est tracée avec l'auteur et l'horodatage.
+
+## R6 — Mission créée depuis une proforma acceptée
+
+Une fois le devis `ACCEPTEE`, l'acteur qui pourrait créer une mission à la main (rôle
+`missions.permissions.CREATION` : ADMIN, DIRECTION, CHARGE_CLIENTELE) déclenche
+« Créer la mission » depuis la fiche du devis
+(`POST /facturation/devis/<id>/creer-mission/`) :
+
+- `billing.services.convertir_en_mission(proforma)` recopie tel quel le trajet, la marchandise, le
+  poids et le **prix HT** du devis dans une nouvelle `Mission` (via `missions.services.creer_mission`,
+  au statut `BROUILLON`, comme une mission créée à la main) — la facture recalculera la TVA plus
+  tard, avec le taux du client en vigueur ce jour-là, jamais celui figé sur le devis ;
+- le devis passe à `CONVERTIE` (même fonction) ;
+- **1 devis = 1 mission** est garanti au niveau base par `Mission.proforma`
+  (`OneToOneField(billing.Proforma, on_delete=PROTECT)`), pas seulement par le contrôle de
+  statut : deux tentatives concurrentes ne peuvent pas produire deux missions.
+
+Refusé (`TransitionFactureInterdite`) si le devis n'est pas `ACCEPTEE` — y compris s'il l'a déjà
+été converti une première fois. Orchestré côté `billing` et non `missions` : le graphe de
+dépendance des apps (architecture.md:95-163) interdit à `missions` (Exploitation) de dépendre de
+`billing` (Finance) — l'inverse est permis, `billing` appelle donc `missions.services.creer_mission`
+plutôt que l'inverse.
+
+**Limite connue** : une mission créée ainsi reste modifiable comme n'importe quelle autre (R3) —
+rien n'empêche aujourd'hui de changer son prix après coup, alors que le client a accepté un
+montant précis sur le devis.
 
 ## R7 — Congés : 26 jours ouvrés, report du solde d'un congé en cours
 

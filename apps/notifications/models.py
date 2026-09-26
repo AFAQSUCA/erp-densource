@@ -13,6 +13,7 @@ class CategorieNotification(models.TextChoices):
     DOCUMENT = "DOCUMENT", _("Échéance")
     MISSION = "MISSION", _("Mission")
     FACTURE = "FACTURE", _("Facturation")
+    PROFORMA = "PROFORMA", _("Devis")
     FRAIS_MISSION = "FRAIS_MISSION", _("Frais de mission")
     DEMANDE_DEPENSE = "DEMANDE_DEPENSE", _("Demande de dépense")
     INCIDENT = "INCIDENT", _("Incident")

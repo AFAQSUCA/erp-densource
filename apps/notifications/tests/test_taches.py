@@ -202,6 +202,16 @@ def test_executer_taches_quotidiennes_regroupe_alertes_et_statuts_de_conges():
     assert conge.statut == StatutConge.EN_COURS
 
 
+def test_executer_taches_quotidiennes_expire_les_devis_envoyes_au_client():
+    from apps.billing.tests.helpers import proforma_envoyee
+
+    proforma_envoyee(aujourd_hui=AUJOURD_HUI)
+
+    resultat = taches.executer_taches_quotidiennes(aujourd_hui=AUJOURD_HUI + timedelta(days=31))
+
+    assert resultat["proformas_expirees"] == 1
+
+
 def test_la_commande_affiche_les_compteurs_et_est_rejouable():
     UserFactory(role=Role.PARCAUTO)
     DocumentReglementaireFactory(date_expiration=date.today() + timedelta(days=2))

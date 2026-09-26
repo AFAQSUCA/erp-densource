@@ -49,6 +49,15 @@ class Mission(BaseModel):
         on_delete=models.PROTECT,
         related_name="missions",
     )
+    proforma = models.OneToOneField(
+        "billing.Proforma",
+        verbose_name=_("devis d'origine"),
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="mission_creee",
+        help_text=_("Devis accepté dont cette mission reprend le trajet et le prix (R6)."),
+    )
     vehicule = models.ForeignKey(
         "fleet.Vehicule",
         verbose_name=_("camion"),

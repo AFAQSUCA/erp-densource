@@ -67,6 +67,16 @@ COULEURS_STATUT = {
     "PARTIELLEMENT_PAYEE": "indigo",
     "PAYEE": "vert",
     "ECHUE": "rouge",
+    # devis
+    "SOUMISE": "ambre",
+    "CONTRE_PROPOSEE": "ambre",
+    "EN_ATTENTE_DIRECTION": "ambre",
+    "VALIDEE": "bleu",
+    "ENVOYEE_CLIENT": "indigo",
+    "ACCEPTEE": "vert",
+    "REFUSEE": "rouge",
+    "EXPIREE": "rouge",
+    "CONVERTIE": "vert",
     # notifications
     "INFO": "bleu",
     "ATTENTION": "ambre",

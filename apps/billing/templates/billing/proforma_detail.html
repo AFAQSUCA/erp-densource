@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+{% load ui humanize %}
+{% block titre %}{{ proforma.numero|default:"Devis" }}{% endblock %}
+{% block entete %}Devis{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-6xl">
+  <nav aria-label="Fil d'Ariane" class="text-sm text-slate-600">
+    <a href="{% url 'billing:proformas' %}" class="underline-offset-2 hover:underline">Devis</a>
+    <span aria-hidden="true">/</span> {{ proforma.numero|default:"Brouillon" }}
+  </nav>
+
+  <div class="mt-2 flex flex-wrap items-center justify-between gap-3">
+    <div class="flex flex-wrap items-center gap-3">
+      <h1 class="text-2xl font-bold text-slate-900">{{ proforma.numero|default:"Devis" }}</h1>
+      {% badge proforma.statut proforma.get_statut_display %}
+    </div>
+    <a href="{% url 'billing:proforma_imprimer' proforma.pk %}" target="_blank" rel="noopener"
+       class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+      <i class="fa-solid fa-print" aria-hidden="true"></i> Version imprimable
+    </a>
+  </div>
+  <p class="mt-1 text-sm text-slate-600">
+    {{ proforma.client.raison_sociale }} · {{ proforma.lieu_chargement }} → {{ proforma.lieu_livraison }}
+    {% if proforma.date_envoi %}· envoyé le {{ proforma.date_envoi|date:"d/m/Y" }}, valable jusqu'au {{ proforma.date_validite|date:"d/m/Y" }}{% endif %}
+  </p>
+
+  {% if proforma.statut == "CONTRE_PROPOSEE" and proforma.motif_contre_proposition %}
+    <div role="alert" class="mt-4 rounded-lg border border-amber-400 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+      <p class="font-semibold">Contre-proposition</p>
+      <p class="mt-1 whitespace-pre-line">{{ proforma.motif_contre_proposition }}</p>
+    </div>
+  {% endif %}
+  {% if proforma.statut == "REFUSEE" and proforma.motif_refus_client %}
+    <div role="alert" class="mt-4 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">
+      <p class="font-semibold">Refusé par le client</p>
+      <p class="mt-1 whitespace-pre-line">{{ proforma.motif_refus_client }}</p>
+    </div>
+  {% endif %}
+  {% if proforma.statut == "SOUMISE" %}
+    <p class="mt-4 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800">En attente de validation par la finance. Le devis n'est plus modifiable.</p>
+  {% endif %}
+  {% if proforma.statut == "EN_ATTENTE_DIRECTION" %}
+    <p class="mt-4 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800">Validé par la finance ; en attente de validation par la direction (montant au-delà du seuil).</p>
+  {% endif %}
+
+  {% if peut_valider_finances or peut_valider_direction %}
+    <section class="mt-4 rounded-xl border border-marque-300 bg-marque-50/40 p-5" aria-labelledby="titre-validation">
+      <h2 id="titre-validation" class="text-base font-semibold text-slate-900">Votre validation</h2>
+      <p class="mt-1 text-sm text-slate-700">
+        {% if peut_valider_finances %}La validation attribue le numéro si le montant reste sous le seuil, sinon transmet le devis à la direction.{% else %}La validation attribue le numéro et rend le devis prêt à être envoyé au client.{% endif %}
+      </p>
+      <div class="mt-4 flex flex-wrap items-start gap-4">
+        <form method="post" action="{% if peut_valider_finances %}{% url 'billing:proforma_valider_finances' proforma.pk %}{% else %}{% url 'billing:proforma_valider_direction' proforma.pk %}{% endif %}">{% csrf_token %}
+          <button type="submit" class="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:ring-offset-2"><i class="fa-solid fa-check mr-1" aria-hidden="true"></i> Valider</button>
+        </form>
+        <form method="post" action="{% url 'billing:proforma_contre_proposer' proforma.pk %}" class="flex-1 min-w-[16rem]">{% csrf_token %}
+          <label for="motif-contre-proposition" class="block text-sm font-medium text-slate-800">Motif de la contre-proposition <span class="text-red-700" aria-hidden="true">*</span></label>
+          <textarea id="motif-contre-proposition" name="motif" rows="2" required class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-marque-600 focus:outline-none focus:ring-2 focus:ring-marque-600/30"></textarea>
+          <button type="submit" class="mt-2 rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-800 hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-700 focus-visible:ring-offset-2">Contre-proposer</button>
+        </form>
+      </div>
+    </section>
+  {% endif %}
+
+  <div class="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-3">
+    <div class="space-y-6 xl:col-span-2">
+      <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-devis">
+        <div class="flex items-center justify-between">
+          <h2 id="titre-devis" class="text-base font-semibold text-slate-900">Détail du devis</h2>
+          {% if peut_modifier %}
+            <a href="{% url 'billing:proforma_modifier' proforma.pk %}" class="text-sm font-medium text-marque-700 underline-offset-2 hover:underline">Modifier</a>
+          {% endif %}
+        </div>
+        <dl class="mt-3 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+          <div><dt class="text-slate-600">Nature de la marchandise</dt><dd class="font-medium text-slate-900">{{ proforma.nature_marchandise }}</dd></div>
+          <div><dt class="text-slate-600">Poids</dt><dd class="font-medium text-slate-900">{{ proforma.poids_t|floatformat:"-2" }} t</dd></div>
+          <div><dt class="text-slate-600">Départ souhaité</dt><dd class="font-medium text-slate-900">{{ proforma.date_depart_souhaitee|date:"d/m/Y"|default:"—" }}</dd></div>
+        </dl>
+        <dl class="mt-4 space-y-1 border-t border-slate-100 pt-3 text-sm sm:ml-auto sm:max-w-xs">
+          <div class="flex justify-between"><dt class="text-slate-600">Prix convenu HT</dt><dd class="font-medium text-slate-900">{{ proforma.montant_ht|floatformat:0|intcomma }} FCFA</dd></div>
+          <div class="flex justify-between"><dt class="text-slate-600">TVA {% if proforma.taux_tva == 0 %}(exonéré : {{ proforma.get_motif_exoneration_display }}){% else %}({{ proforma.taux_tva|floatformat:"-2" }} %){% endif %}</dt><dd class="font-medium text-slate-900">{{ proforma.montant_tva|floatformat:0|intcomma }} FCFA</dd></div>
+          <div class="flex justify-between border-t border-slate-100 pt-1"><dt class="font-semibold text-slate-900">Total TTC</dt><dd class="text-lg font-bold text-slate-900">{{ proforma.montant_ttc|floatformat:0|intcomma }} FCFA</dd></div>
+        </dl>
+      </section>
+
+      {% if historique %}
+        <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-historique">
+          <h2 id="titre-historique" class="text-base font-semibold text-slate-900">Historique</h2>
+          <ul class="mt-3 space-y-2 text-sm">
+            {% for entree in historique %}
+              <li class="flex flex-wrap items-baseline justify-between gap-2 border-b border-slate-100 pb-2">
+                <span class="text-slate-800">{{ entree.get_action_display }}{% if entree.nouvelle_valeur %} — {{ entree.nouvelle_valeur|join:", " }}{% endif %}</span>
+                <span class="whitespace-nowrap text-xs text-slate-500">{{ entree.utilisateur_nom|default:"—" }} · {{ entree.date_heure|date:"d/m/Y à H:i" }}</span>
+              </li>
+            {% endfor %}
+          </ul>
+        </section>
+      {% endif %}
+    </div>
+
+    <div class="space-y-6 xl:col-span-1">
+      {% if peut_soumettre %}
+        <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-envoi">
+          <h2 id="titre-envoi" class="text-base font-semibold text-slate-900">Envoi</h2>
+          <p class="mt-1 text-sm text-slate-700">Une fois soumis, le devis ne se modifie plus : la finance le valide ou le conteste.</p>
+          <form method="post" action="{% url 'billing:proforma_soumettre' proforma.pk %}" class="mt-3">{% csrf_token %}
+            <button type="submit" class="w-full rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">Soumettre à la finance</button>
+          </form>
+          {% if peut_abandonner %}
+            <form method="post" action="{% url 'billing:proforma_abandonner' proforma.pk %}" class="mt-3" data-confirm="Abandonner ce devis ?">{% csrf_token %}
+              <button type="submit" class="w-full rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-800 hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-700 focus-visible:ring-offset-2">Abandonner le devis</button>
+            </form>
+          {% endif %}
+        </section>
+      {% endif %}
+
+      {% if peut_creer_mission %}
+        <section class="rounded-xl border border-emerald-300 bg-emerald-50/40 p-5" aria-labelledby="titre-mission">
+          <h2 id="titre-mission" class="text-base font-semibold text-slate-900">Créer la mission</h2>
+          <p class="mt-1 text-sm text-slate-700">Le client a accepté : le trajet, la marchandise, le poids et le prix sont repris tels quels dans une nouvelle mission.</p>
+          <form method="post" action="{% url 'billing:proforma_creer_mission' proforma.pk %}" class="mt-3">{% csrf_token %}
+            <button type="submit" class="w-full rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:ring-offset-2">Créer la mission</button>
+          </form>
+        </section>
+      {% endif %}
+      {% if proforma.statut == "CONVERTIE" and proforma.mission_creee %}
+        <section class="rounded-xl border border-slate-200 bg-white p-5 text-sm shadow-sm">
+          <h2 class="text-base font-semibold text-slate-900">Mission créée</h2>
+          <p class="mt-2"><a href="{% url 'missions:detail' proforma.mission_creee.pk %}" class="font-medium text-marque-700 underline-offset-2 hover:underline">{{ proforma.mission_creee.numero }}</a></p>
+        </section>
+      {% endif %}
+
+      {% if peut_envoyer_client %}
+        <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-client">
+          <h2 id="titre-client" class="text-base font-semibold text-slate-900">Envoi au client</h2>
+          <p class="mt-1 text-sm text-slate-700">Le devis est validé : la validité de 30 jours démarre à l'envoi.</p>
+          <form method="post" action="{% url 'billing:proforma_envoyer_client' proforma.pk %}" class="mt-3">{% csrf_token %}
+            <button type="submit" class="w-full rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">Envoyer au client</button>
+          </form>
+        </section>
+      {% endif %}
+
+      {% if form_decision_client %}
+        <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-decision">
+          <h2 id="titre-decision" class="text-base font-semibold text-slate-900">Décision du client</h2>
+          <form method="post" action="{% url 'billing:proforma_decision_client' proforma.pk %}" class="mt-3 space-y-3" x-data="{ decision: '' }">{% csrf_token %}
+            <div class="space-y-2">
+              {% for valeur, libelle in form_decision_client.decision.field.choices %}
+                <label class="flex items-center gap-2 text-sm text-slate-800">
+                  <input type="radio" name="decision" value="{{ valeur }}" x-model="decision" required class="h-4 w-4 border-slate-400 text-marque-700 focus:ring-marque-600"> {{ libelle }}
+                </label>
+              {% endfor %}
+            </div>
+            <div x-show="decision === 'REFUSEE'" x-cloak>
+              <label for="motif-decision" class="block text-sm font-medium text-slate-800">Motif du refus</label>
+              <textarea id="motif-decision" name="motif" rows="2" class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-marque-600 focus:outline-none focus:ring-2 focus:ring-marque-600/30"></textarea>
+            </div>
+            <button type="submit" class="w-full rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2">Enregistrer la décision</button>
+          </form>
+        </section>
+      {% endif %}
+
+      <section class="rounded-xl border border-slate-200 bg-white p-5 text-sm shadow-sm">
+        <h2 class="text-base font-semibold text-slate-900">Suivi</h2>
+        <p class="mt-2 text-slate-700">Préparé par {{ proforma.cree_par|default:"—" }}.
+          {% if proforma.valide_par_finances %}<br>Validé par la finance : {{ proforma.valide_par_finances }} le {{ proforma.date_validation_finances|date:"d/m/Y à H:i" }}.{% endif %}
+          {% if proforma.valide_par_direction %}<br>Validé par la direction : {{ proforma.valide_par_direction }} le {{ proforma.date_validation_direction|date:"d/m/Y à H:i" }}.{% endif %}
+          {% if proforma.date_envoi %}<br>Envoyé au client le {{ proforma.date_envoi|date:"d/m/Y" }}, valable jusqu'au {{ proforma.date_validite|date:"d/m/Y" }}.{% endif %}
+        </p>
+      </section>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -11,11 +11,12 @@ class BillingConfig(AppConfig):
         from apps.audit.registry import audit_model
 
         from . import permissions
-        from .models import Depense, Facture, Reglement
+        from .models import Depense, Facture, Proforma, Reglement
 
         audit_model(Facture, module="FINANCES")
         audit_model(Reglement, module="FINANCES")
         audit_model(Depense, module="FINANCES")
+        audit_model(Proforma, module="FINANCES")
         enregistrer(
             EntreeMenu(
                 "Facturation", "billing:factures", "fa-file-invoice-dollar",
@@ -25,5 +26,11 @@ class BillingConfig(AppConfig):
         enregistrer(
             EntreeMenu(
                 "Dépenses", "billing:depenses", "fa-receipt", permissions.CONSULTATION, ordre=61
+            )
+        )
+        enregistrer(
+            EntreeMenu(
+                "Devis", "billing:proformas", "fa-file-signature",
+                permissions.PROFORMA_CONSULTATION, ordre=59,
             )
         )

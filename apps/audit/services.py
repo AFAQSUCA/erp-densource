@@ -127,6 +127,11 @@ def rechercher(
     return filtrer_par_texte(resultat, recherche, "utilisateur_nom", "entite", "adresse_ip")
 
 
+def historique(entite: str, entite_id: int) -> QuerySet[AuditLog]:
+    """Historique complet d'une fiche précise (section « Historique » d'un écran de détail)."""
+    return journal_queryset().filter(entite=entite, entite_id=entite_id)
+
+
 def modules_utilises() -> list[str]:
     """Modules déjà présents dans le journal, pour peupler le filtre (ordre alphabétique)."""
     return sorted(AuditLog.objects.values_list("module", flat=True).distinct())

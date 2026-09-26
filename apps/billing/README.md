@@ -30,6 +30,32 @@ Cycle d'une facture (décision : FINANCES prépare, DIRECTION valide) :
 Droits (`permissions.py`) : consultation ADMIN, DIRECTION, FINANCES ; préparation, règlements et
 dépenses ADMIN et FINANCES ; validation DIRECTION seulement.
 
+## Devis (`Proforma`) — avenant-separation-des-taches.md, R5 (et R1 fusionnée)
+
+Séparation des tâches : le **chargé clientèle** fixe le trajet et le prix (jamais lui-même
+validateur), la **FINANCES** valide toujours le prix, et la **DIRECTION** valide en plus au-delà
+de `SEUIL_VALIDATION_DIRECTION` (500 000 FCFA TTC — fusion de R1). Reprend les champs d'une
+mission (trajet, marchandise, poids, prix) plutôt que des lignes comme `Facture` : à
+l'acceptation du client, R6 les recopie tels quels dans la mission créée.
+
+Cycle : `BROUILLON` → `SOUMISE` → (`CONTRE_PROPOSEE` ⇄ `SOUMISE`, la finance ou la direction
+conteste le prix avec un motif) → `VALIDEE` (directement si le montant reste sous le seuil,
+sinon en passant par `EN_ATTENTE_DIRECTION`) → `ENVOYEE_CLIENT` (validité 30 jours à partir de
+l'envoi) → `ACCEPTEE` / `REFUSEE` / `EXPIREE` (tâche quotidienne) → `CONVERTIE` (une fois la
+mission créée, R6).
+- Le **numéro `PRO-AAAA-XXXX`** n'est attribué qu'à la validation finale, comme pour `Facture` :
+  un devis abandonné ou contesté ne laisse aucun trou.
+- **TVA** : mêmes 3 niveaux qu'une facture (système, client, devis), reprise du client à la
+  création et modifiable tant que le devis est modifiable (`BROUILLON`/`CONTRE_PROPOSEE`).
+- **Historique** : les contre-propositions et validations successives se lisent dans la section
+  « Historique » de la fiche (`audit.services.historique`, pas un modèle dédié).
+- Droits (`PROFORMA_*` dans `permissions.py`) : consultation ADMIN, DIRECTION, FINANCES, CHARGE
+  CLIENTELE ; préparation/modification/envoi/décision client ADMIN et CHARGE CLIENTELE ;
+  validation FINANCES ou DIRECTION seulement (un ADMIN ne valide jamais un devis, comme pour une
+  facture).
+- Tâche quotidienne `expirer_proformas` (`notifications.taches.executer_taches_quotidiennes`,
+  compteur `proformas_expirees`).
+
 Version imprimable : `/facturation/<id>/imprimer/` (Ctrl+P puis « Enregistrer au format PDF »). Les
 mentions de l'émetteur viennent des variables `ENTREPRISE_NOM`, `ENTREPRISE_ADRESSE`,
 `ENTREPRISE_NCC`.

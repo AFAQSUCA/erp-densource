@@ -7,7 +7,7 @@ from apps.customers.models import MotifExoneration
 from apps.missions.models import Mission
 
 from . import services
-from .models import CATEGORIES_AUTOMATIQUES, CategorieDepense, ModePaiement, StatutFacture
+from .models import CATEGORIES_AUTOMATIQUES, CategorieDepense, ModePaiement, StatutFacture, StatutProforma
 
 
 def _libelle_mission(m: Mission) -> str:
@@ -155,4 +155,99 @@ class FiltreDepensesForm(StyleTailwindMixin, forms.Form):
             "categorie": donnees.get("categorie") or "",
             "date_debut": donnees.get("date_debut"),
             "date_fin": donnees.get("date_fin"),
+        }
+
+
+# --- devis (R5) ---
+
+
+class ProformaNouveauForm(StyleTailwindMixin, forms.Form):
+    """Trajet, marchandise, poids et prix d'un nouveau devis ; la TVA reprend celle du client."""
+
+    client = forms.ModelChoiceField(label="Client", queryset=None)
+    lieu_chargement = forms.CharField(label="Lieu de chargement", max_length=200)
+    lieu_livraison = forms.CharField(label="Lieu de livraison", max_length=200)
+    nature_marchandise = forms.CharField(label="Nature de la marchandise", max_length=200)
+    poids_t = forms.DecimalField(label="Poids (t)", min_value=0.01, decimal_places=2, max_digits=8)
+    date_depart_souhaitee = forms.DateField(
+        label="Départ souhaité", required=False, widget=forms.DateInput(attrs={"type": "date"})
+    )
+    prix_convenu = forms.DecimalField(
+        label="Prix convenu HT (FCFA)", min_value=0, decimal_places=2, max_digits=12
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["client"].queryset = customers_services.clients_pour_selection()
+
+
+class ProformaModifierForm(StyleTailwindMixin, forms.Form):
+    """Trajet, marchandise, poids, prix et TVA d'un devis modifiable (brouillon ou contre-proposé)."""
+
+    lieu_chargement = forms.CharField(label="Lieu de chargement", max_length=200)
+    lieu_livraison = forms.CharField(label="Lieu de livraison", max_length=200)
+    nature_marchandise = forms.CharField(label="Nature de la marchandise", max_length=200)
+    poids_t = forms.DecimalField(label="Poids (t)", min_value=0.01, decimal_places=2, max_digits=8)
+    date_depart_souhaitee = forms.DateField(
+        label="Départ souhaité", required=False, widget=forms.DateInput(attrs={"type": "date"})
+    )
+    prix_convenu = forms.DecimalField(
+        label="Prix convenu HT (FCFA)", min_value=0, decimal_places=2, max_digits=12
+    )
+    taux_tva = forms.DecimalField(
+        label="Taux de TVA (%)", min_value=0, max_value=100, decimal_places=2, max_digits=5
+    )
+    motif_exoneration = forms.ChoiceField(
+        label="Motif d'exonération",
+        choices=[("", "—")] + MotifExoneration.choices,
+        required=False,
+    )
+
+    def clean(self):
+        donnees = super().clean()
+        taux = donnees.get("taux_tva")
+        if taux is not None and taux == 0 and not donnees.get("motif_exoneration"):
+            self.add_error("motif_exoneration", "Motif obligatoire quand la TVA est à 0 %.")
+        return donnees
+
+
+class DecisionClientProformaForm(StyleTailwindMixin, forms.Form):
+    """Réponse du client à un devis envoyé, saisie par le chargé clientèle."""
+
+    decision = forms.ChoiceField(
+        label="Décision du client",
+        choices=[("ACCEPTEE", "Le client accepte"), ("REFUSEE", "Le client refuse")],
+        widget=forms.RadioSelect,
+    )
+    motif = forms.CharField(
+        label="Motif du refus", widget=forms.Textarea(attrs={"rows": 2}), required=False
+    )
+
+    def clean(self):
+        donnees = super().clean()
+        if donnees.get("decision") == "REFUSEE" and not donnees.get("motif", "").strip():
+            self.add_error("motif", "Motif obligatoire en cas de refus.")
+        return donnees
+
+
+class FiltreProformasForm(StyleTailwindMixin, forms.Form):
+    """Filtres de la liste des devis ; un paramètre invalide est ignoré."""
+
+    q = forms.CharField(label="Rechercher", required=False)
+    statut = forms.ChoiceField(
+        label="Statut", choices=[("", "Tous les statuts")] + StatutProforma.choices, required=False
+    )
+    client = forms.ModelChoiceField(label="Client", queryset=None, required=False, empty_label="Tous")
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["client"].queryset = customers_services.clients_pour_selection()
+
+    def criteres(self) -> dict:
+        self.is_valid()
+        donnees = getattr(self, "cleaned_data", {})
+        return {
+            "recherche": donnees.get("q") or "",
+            "statut": donnees.get("statut") or "",
+            "client": donnees.get("client"),
         }
