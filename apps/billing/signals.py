@@ -34,6 +34,12 @@ proforma_expiree = Signal()
 # facturée, sans double saisie.
 reglement_enregistre = Signal()
 
+# La facture vient d'être validée : à comptabiliser (écriture équilibrée, cahier-des-charges.md:340).
+# Argument : ``facture``. Émis en ``send()`` **brut**, pas ``emettre()``/``send_robust`` : contrairement
+# aux signaux ci-dessus (notifications), une écriture qui échoue à s'équilibrer doit annuler la
+# validation plutôt que d'être silencieusement absente du grand livre.
+facture_a_comptabiliser = Signal()
+
 
 def emettre(signal: Signal, *, sender: type | None = None, **arguments) -> None:
     """Émet un signal en journalisant (sans propager) les erreurs des récepteurs."""
