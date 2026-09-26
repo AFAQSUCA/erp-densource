@@ -1,6 +1,6 @@
 # Chapitre 13 — La facturation : l'app billing
 
-> 11 fichier(s) dans ce chapitre, 1535 lignes de code.
+> 13 fichier(s) dans ce chapitre, 2684 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -62,9 +62,11 @@ touch apps/billing/tests/__init__.py
 
 #### `apps/billing/models.py`
 
-*252 lignes*
+*433 lignes*
 
 ```python
+from decimal import Decimal
+
 from django.conf import settings
 from django.db import models
 from django.db.models import F, Q
@@ -277,6 +279,137 @@ class Reglement(BaseModel):
         return f"{self.facture} : {self.montant} ({self.get_mode_display()})"
 
 
+class StatutProforma(models.TextChoices):
+    """Cycle de vie du devis — avenant-separation-des-taches.md (R5).
+
+    Le chargé clientèle prépare et soumet ; la FINANCES valide le prix (ou le
+    conteste), et la DIRECTION valide en plus au-delà de :data:`SEUIL_VALIDATION_DIRECTION`
+    (fusion de R1). Le numéro ``PRO-AAAA-XXXX`` n'est attribué qu'à la validation finale,
+    comme pour :class:`Facture`.
+    """
+
+    BROUILLON = "BROUILLON", _("Brouillon")
+    SOUMISE = "SOUMISE", _("Soumise")
+    CONTRE_PROPOSEE = "CONTRE_PROPOSEE", _("Contre-proposée")
+    EN_ATTENTE_DIRECTION = "EN_ATTENTE_DIRECTION", _("En attente de la direction")
+    VALIDEE = "VALIDEE", _("Validée")
+    ENVOYEE_CLIENT = "ENVOYEE_CLIENT", _("Envoyée au client")
+    ACCEPTEE = "ACCEPTEE", _("Acceptée par le client")
+    REFUSEE = "REFUSEE", _("Refusée par le client")
+    EXPIREE = "EXPIREE", _("Expirée")
+    CONVERTIE = "CONVERTIE", _("Convertie en mission")
+
+
+# R1 fusionnée dans R5 : la DIRECTION valide en plus de la FINANCES au-delà de ce montant TTC.
+SEUIL_VALIDATION_DIRECTION = Decimal("500000")
+
+STATUTS_PROFORMA_MODIFIABLES = (StatutProforma.BROUILLON, StatutProforma.CONTRE_PROPOSEE)
+DUREE_VALIDITE_PROFORMA_JOURS = 30
+
+
+class Proforma(BaseModel):
+    """Devis pour une future mission — avenant-separation-des-taches.md (R5).
+
+    Reprend les champs d'une mission (trajet, marchandise, poids, prix) plutôt que des
+    lignes comme :class:`Facture` : à l'acceptation du client, R6 les recopie tels quels
+    dans la mission créée. La TVA suit les mêmes 3 niveaux qu'une facture.
+    """
+
+    numero = models.CharField(_("numéro"), max_length=20, blank=True)
+    client = models.ForeignKey(
+        "customers.Client",
+        verbose_name=_("client"),
+        on_delete=models.PROTECT,
+        related_name="proformas",
+    )
+    statut = models.CharField(
+        _("statut"),
+        max_length=20,
+        choices=StatutProforma.choices,
+        default=StatutProforma.BROUILLON,
+    )
+    lieu_chargement = models.CharField(_("lieu de chargement"), max_length=200)
+    lieu_livraison = models.CharField(_("lieu de livraison"), max_length=200)
+    nature_marchandise = models.CharField(_("nature de la marchandise"), max_length=200)
+    poids_t = models.DecimalField(_("poids (t)"), max_digits=8, decimal_places=2)
+    date_depart_souhaitee = models.DateField(_("départ souhaité"), null=True, blank=True)
+    prix_convenu = models.DecimalField(_("prix convenu HT (FCFA)"), max_digits=12, decimal_places=2)
+    taux_tva = models.DecimalField(_("taux de TVA (%)"), max_digits=5, decimal_places=2)
+    motif_exoneration = models.CharField(
+        _("motif d'exonération"), max_length=12, choices=MotifExoneration.choices, blank=True
+    )
+    montant_ht = models.DecimalField(_("total HT (FCFA)"), max_digits=14, decimal_places=2, default=0)
+    montant_tva = models.DecimalField(_("TVA (FCFA)"), max_digits=14, decimal_places=2, default=0)
+    montant_ttc = models.DecimalField(_("total TTC (FCFA)"), max_digits=14, decimal_places=2, default=0)
+    motif_contre_proposition = models.TextField(_("motif de la dernière contre-proposition"), blank=True)
+    motif_refus_client = models.TextField(_("motif du refus du client"), blank=True)
+    date_envoi = models.DateField(_("envoyée au client le"), null=True, blank=True)
+    date_validite = models.DateField(_("valable jusqu'au"), null=True, blank=True)
+    cree_par = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name=_("préparé par"),
+        null=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+    valide_par_finances = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name=_("validé par la finance"),
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+    date_validation_finances = models.DateTimeField(_("validé par la finance le"), null=True, blank=True)
+    valide_par_direction = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name=_("validé par la direction"),
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+    date_validation_direction = models.DateTimeField(_("validé par la direction le"), null=True, blank=True)
+
+    class Meta:
+        verbose_name = _("devis")
+        verbose_name_plural = _("devis")
+        ordering = ["-created_at", "-pk"]
+        indexes = [models.Index(fields=["statut", "date_validite"])]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["numero"], condition=~Q(numero=""), name="proforma_numero_unique"
+            ),
+            models.CheckConstraint(condition=Q(poids_t__gt=0), name="proforma_poids_positif"),
+            models.CheckConstraint(
+                condition=Q(prix_convenu__gte=0), name="proforma_prix_positif_ou_nul"
+            ),
+            models.CheckConstraint(
+                condition=Q(taux_tva__gt=0) | ~Q(motif_exoneration=""),
+                name="proforma_tva_zero_requiert_motif",
+            ),
+            models.CheckConstraint(
+                condition=Q(taux_tva__gte=0) & Q(taux_tva__lte=100),
+                name="proforma_taux_tva_entre_0_et_100",
+            ),
+            models.CheckConstraint(
+                condition=Q(montant_ttc=F("montant_ht") + F("montant_tva")),
+                name="proforma_ttc_egal_ht_plus_tva",
+            ),
+        ]
+
+    def __str__(self):
+        return self.numero or f"Devis brouillon ({self.client})"
+
+    @property
+    def est_modifiable(self) -> bool:
+        return self.statut in STATUTS_PROFORMA_MODIFIABLES
+
+    @property
+    def requiert_direction(self) -> bool:
+        return self.montant_ttc > SEUIL_VALIDATION_DIRECTION
+
+
 class CategorieDepense(models.TextChoices):
     """Catégories du CDC (cahier-des-charges.md:192) ; « Autre » pour le reste."""
 
@@ -284,12 +417,35 @@ class CategorieDepense(models.TextChoices):
     ENTRETIEN = "ENTRETIEN", _("Entretien")
     FRAIS_ADMIN = "FRAIS_ADMIN", _("Frais administratifs")
     AUTRE = "AUTRE", _("Autre")
+    # Catégories créées automatiquement (voir OrigineDepense), pas proposées à la saisie manuelle.
+    CARBURANT = "CARBURANT", _("Carburant")
+    PIECES = "PIECES", _("Pièces détachées")
+    MAINTENANCE = "MAINTENANCE", _("Main-d'œuvre des réparations")
+    FRAIS_MISSION = "FRAIS_MISSION", _("Frais de mission (avance, imprévu)")
+
+
+CATEGORIES_AUTOMATIQUES = (
+    CategorieDepense.CARBURANT,
+    CategorieDepense.PIECES,
+    CategorieDepense.MAINTENANCE,
+    CategorieDepense.FRAIS_MISSION,
+)
+
+
+class OrigineDepense(models.TextChoices):
+    """D'où vient une dépense créée automatiquement (vide : saisie à la main)."""
+
+    PLEIN = "PLEIN", _("Plein de carburant")
+    ACHAT_STOCK = "ACHAT_STOCK", _("Achat de pièces")
+    MAIN_OEUVRE_OR = "MAIN_OEUVRE_OR", _("Main-d'œuvre d'un OR")
+    FRAIS_MISSION = "FRAIS_MISSION", _("Frais de mission confirmé")
+    ORDRE_DECAISSEMENT = "ORDRE_DECAISSEMENT", _("Ordre de décaissement exécuté")
 
 
 class Depense(BaseModel):
     """Dépense de l'entreprise, par catégorie, éventuellement rattachée à une mission."""
 
-    categorie = models.CharField(_("catégorie"), max_length=12, choices=CategorieDepense.choices)
+    categorie = models.CharField(_("catégorie"), max_length=14, choices=CategorieDepense.choices)
     date_depense = models.DateField(_("date"))
     libelle = models.CharField(_("libellé"), max_length=200)
     montant = models.DecimalField(_("montant (FCFA)"), max_digits=14, decimal_places=2)
@@ -306,6 +462,23 @@ class Depense(BaseModel):
     saisi_par = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="+"
     )
+    origine = models.CharField(
+        _("origine"), max_length=20, choices=OrigineDepense.choices, blank=True,
+        help_text=_("Renseignée pour une dépense créée automatiquement (plein, achat de pièces, OR)."),
+    )
+    origine_id = models.PositiveBigIntegerField(
+        _("identifiant de l'origine"), null=True, blank=True,
+        help_text=_("Numéro du plein, du mouvement de stock ou de l'OR à l'origine de la dépense."),
+    )
+    vehicule = models.ForeignKey(
+        "fleet.Vehicule",
+        verbose_name=_("camion"),
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="depenses",
+        help_text=_("Renseigné pour un plein, une main-d'œuvre d'OR ou un ordre de décaissement lié à un camion."),
+    )
 
     class Meta:
         verbose_name = _("dépense")
@@ -313,7 +486,15 @@ class Depense(BaseModel):
         ordering = ["-date_depense", "-pk"]
         constraints = [
             models.CheckConstraint(condition=Q(montant__gt=0), name="depense_montant_positif"),
+            # Une source (un plein, un achat, un OR) ne donne jamais deux dépenses.
+            models.UniqueConstraint(
+                fields=["origine", "origine_id"], condition=~Q(origine=""), name="depense_une_par_origine"
+            ),
         ]
+
+    @property
+    def est_automatique(self) -> bool:
+        return bool(self.origine)
 
     def __str__(self):
         return f"{self.libelle} ({self.montant})"
@@ -356,7 +537,7 @@ class ReglementInvalide(BillingError):
 
 #### `apps/billing/permissions.py`
 
-*15 lignes* — Qui peut consulter, préparer et valider les factures.
+*27 lignes* — Qui peut consulter, préparer et valider les factures.
 
 ```python
 """Qui peut consulter, préparer et valider les factures.
@@ -371,9 +552,21 @@ PARCAUTO, le chargé clientèle et le chauffeur n'ont pas accès.
 
 from apps.accounts.models import Role
 
-CONSULTATION = frozenset({Role.ADMIN, Role.DIRECTION, Role.FINANCES})
-SAISIE = frozenset({Role.ADMIN, Role.FINANCES})  # préparer, règlements, dépenses
+# Retour réunion (avenant) : la DIRECTION a la même largeur que l'ADMIN pour la préparation
+# (mais ne remplace jamais la FINANCES sur ORDRE_EXECUTION, cf. finance/permissions.py) ; la RH
+# fait tout ce que fait la FINANCES, y compris sur les ensembles stricts.
+CONSULTATION = frozenset({Role.ADMIN, Role.DIRECTION, Role.FINANCES, Role.RH})
+SAISIE = frozenset({Role.ADMIN, Role.DIRECTION, Role.FINANCES, Role.RH})  # préparer, règlements, dépenses
 VALIDATION = frozenset({Role.DIRECTION})
+
+# Devis (R5) : le chargé clientèle fixe le prix, la FINANCES (et la DIRECTION au-delà d'un
+# seuil, R1 fusionnée) le valide — jamais la même personne des deux côtés.
+PROFORMA_CONSULTATION = frozenset(
+    {Role.ADMIN, Role.DIRECTION, Role.FINANCES, Role.RH, Role.CHARGE_CLIENTELE}
+)
+PROFORMA_SAISIE = frozenset({Role.ADMIN, Role.DIRECTION, Role.CHARGE_CLIENTELE})
+PROFORMA_VALIDATION_FINANCES = frozenset({Role.FINANCES, Role.RH})
+PROFORMA_VALIDATION_DIRECTION = frozenset({Role.DIRECTION})
 ```
 
 Trois ensembles : `CONSULTATION` (ADMIN, DIRECTION, FINANCES), `SAISIE` (ADMIN, FINANCES : préparer, encaisser,
@@ -381,7 +574,7 @@ saisir) et `VALIDATION` (**DIRECTION seule**).
 
 #### `apps/billing/services.py`
 
-*520 lignes* — Logique métier de la facturation : factures, TVA, règlements, dépenses.
+*921 lignes* — Logique métier de la facturation : factures, TVA, règlements, dépenses.
 
 ```python
 """Logique métier de la facturation : factures, TVA, règlements, dépenses.
@@ -403,9 +596,12 @@ from django.db.models import F, Q, QuerySet, Sum, Value
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 
+from apps.audit import services as audit_services
 from apps.core.search import filtrer_par_texte
-from apps.core.services import prochain_numero
+from apps.core.services import prochain_numero, total_par_mois
 from apps.customers.models import Client
+from apps.fleet.models import Vehicule
+from apps.missions import services as missions_services
 from apps.missions.models import Mission, StatutMission
 
 from . import permissions, signals
@@ -417,14 +613,20 @@ from .exceptions import (
     TransitionFactureInterdite,
 )
 from .models import (
+    DUREE_VALIDITE_PROFORMA_JOURS,
     STATUTS_A_RECOUVRER,
     STATUTS_EMIS,
+    STATUTS_PROFORMA_MODIFIABLES,
+    CATEGORIES_AUTOMATIQUES,
     CategorieDepense,
     Depense,
     Facture,
     LigneFacture,
+    ModePaiement,
+    Proforma,
     Reglement,
     StatutFacture,
+    StatutProforma,
 )
 
 ZERO = Decimal("0")
@@ -552,6 +754,44 @@ def chiffre_affaires(debut: date, fin: date) -> Decimal:
     return Facture.objects.filter(
         statut__in=STATUTS_EMIS, date_emission__range=(debut, fin)
     ).aggregate(total=Sum("montant_ht"))["total"] or ZERO
+
+
+def chiffre_affaires_par_mois(debut: date, fin: date) -> dict[tuple[int, int], Decimal]:
+    """CA HT des factures émises, par mois (``(année, mois)``), sur la période, en une requête."""
+    return total_par_mois(
+        Facture.objects.filter(statut__in=STATUTS_EMIS, date_emission__range=(debut, fin)),
+        "date_emission",
+        "montant_ht",
+    )
+
+
+def encaissements_par_mois(debut: date, fin: date) -> dict[tuple[int, int], Decimal]:
+    return total_par_mois(Reglement.objects.filter(date_reglement__range=(debut, fin)), "date_reglement")
+
+
+def depenses_par_mois(debut: date, fin: date) -> dict[tuple[int, int], Decimal]:
+    return total_par_mois(Depense.objects.filter(date_depense__range=(debut, fin)), "date_depense")
+
+
+def creances_par_anciennete(aujourd_hui: date | None = None) -> list[dict]:
+    """Reste à recouvrer réparti selon le retard de paiement : pas encore échu, puis 1-30 j, 31-60 j, plus de 60 j.
+
+    Chaque tranche : ``libelle``, ``montant``, ``nombre``, ``echu`` (bool). Toutes les tranches sont
+    présentes, même à 0.
+    """
+    aujourd_hui = aujourd_hui or timezone.localdate()
+    tranches = [
+        {"libelle": "Pas encore échu", "montant": ZERO, "nombre": 0, "echu": False},
+        {"libelle": "En retard de 1 à 30 jours", "montant": ZERO, "nombre": 0, "echu": True},
+        {"libelle": "En retard de 31 à 60 jours", "montant": ZERO, "nombre": 0, "echu": True},
+        {"libelle": "En retard de plus de 60 jours", "montant": ZERO, "nombre": 0, "echu": True},
+    ]
+    for facture in factures_queryset().filter(statut__in=STATUTS_A_RECOUVRER):
+        retard = (aujourd_hui - facture.date_echeance).days if facture.date_echeance else 0
+        rang = 0 if retard <= 0 else 1 if retard <= 30 else 2 if retard <= 60 else 3
+        tranches[rang]["montant"] += facture.reste
+        tranches[rang]["nombre"] += 1
+    return tranches
 
 
 def encaissements(debut: date, fin: date) -> Decimal:
@@ -810,6 +1050,7 @@ def enregistrer_reglement(
     )
     facture.statut = _statut_selon_reste(facture)
     facture.save(update_fields=["statut", "updated_at"])
+    signals.emettre(signals.reglement_enregistre, reglement=reglement)
     return reglement
 
 
@@ -873,6 +1114,62 @@ def depenses_par_categorie(debut: date, fin: date) -> list[dict]:
 
 
 @transaction.atomic
+def comptabiliser_depense_automatique(
+    *,
+    origine: str,
+    origine_id: int,
+    categorie: str,
+    date_depense: date,
+    libelle: str,
+    montant: Decimal,
+    reference: str = "",
+    mode: str = ModePaiement.ESPECES,
+    mission: Mission | None = None,
+    vehicule: Vehicule | None = None,
+) -> Depense | None:
+    """Crée la dépense d'un plein, d'un achat de pièces, d'une main-d'œuvre d'OR, d'un frais de
+    mission confirmé ou d'un ordre de décaissement exécuté (une seule fois par source).
+
+    Appelée par les récepteurs de ``finance`` dans la transaction de l'opération d'origine : si la dépense
+    ne peut pas être écrite, l'opération est annulée plutôt que de laisser une sortie d'argent non comptée.
+    Mode de paiement par défaut : espèces (caisse), que la Finance corrige ensuite si besoin
+    (:func:`changer_mode_depense`). Un montant nul ne crée rien. Idempotent : rejouer la même source
+    renvoie la dépense existante. ``mission`` relie la dépense à la mission d'origine (frais de mission,
+    R4) ; ``vehicule`` (plein, main-d'œuvre d'OR) sert au suivi par enveloppe (R2).
+    """
+    montant = Decimal(montant).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    if montant <= 0:
+        return None
+    depense, _ = Depense.objects.get_or_create(
+        origine=origine,
+        origine_id=origine_id,
+        defaults={
+            "categorie": categorie,
+            "date_depense": date_depense,
+            "libelle": libelle[:200],
+            "montant": montant,
+            "mode": mode,
+            "reference": reference[:100],
+            "mission": mission,
+            "vehicule": vehicule,
+        },
+    )
+    return depense
+
+
+def changer_mode_depense(depense: Depense, acteur, *, mode: str) -> Depense:
+    """La Finance corrige le mode de paiement d'une dépense automatique (elle en déduit le compte débité)."""
+    _exiger_role(acteur, permissions.SAISIE, "modifier une dépense")
+    if not depense.est_automatique:
+        raise ActionFactureNonAutorisee("Seules les dépenses créées automatiquement se corrigent ici.")
+    if mode not in ModePaiement.values:
+        raise MontantInvalide("Mode de paiement inconnu.")
+    depense.mode = mode
+    depense.save(update_fields=["mode", "updated_at"])
+    return depense
+
+
+@transaction.atomic
 def enregistrer_depense(
     acteur,
     *,
@@ -886,6 +1183,11 @@ def enregistrer_depense(
 ) -> Depense:
     """Saisie d'une dépense (cahier-des-charges.md:192) ; la date ne peut pas être future."""
     _exiger_role(acteur, permissions.SAISIE, "saisir une dépense")
+    if categorie in CATEGORIES_AUTOMATIQUES:
+        raise MontantInvalide(
+            "Le carburant, les pièces et la main-d'œuvre des réparations se comptabilisent tout seuls "
+            "(plein, entrée de stock, clôture d'OR) : ne les saisissez pas ici."
+        )
     libelle = libelle.strip()
     if not libelle:
         raise MontantInvalide("Le libellé est obligatoire.")
@@ -904,6 +1206,298 @@ def enregistrer_depense(
         mission=mission,
         saisi_par=acteur,
     )
+
+
+# --- devis (R5 : le chargé clientèle fixe le prix, la FINANCES et, au-delà d'un seuil,
+# la DIRECTION le valident — R1 fusionnée) ---
+
+
+def _recalculer_proforma(proforma: Proforma) -> Proforma:
+    """HT = prix convenu ; TVA arrondie au franc ; TTC = HT + TVA."""
+    ht = arrondir_franc(proforma.prix_convenu)
+    tva = arrondir_franc(ht * proforma.taux_tva / 100)
+    proforma.montant_ht, proforma.montant_tva, proforma.montant_ttc = ht, tva, ht + tva
+    proforma.save(update_fields=["montant_ht", "montant_tva", "montant_ttc", "updated_at"])
+    return proforma
+
+
+def proformas_queryset() -> QuerySet[Proforma]:
+    return Proforma.objects.select_related("client", "cree_par")
+
+
+def rechercher_proformas(
+    *, recherche: str = "", statut: str = "", client: Client | None = None
+) -> QuerySet[Proforma]:
+    resultat = proformas_queryset()
+    if statut in StatutProforma.values:
+        resultat = resultat.filter(statut=statut)
+    if client is not None:
+        resultat = resultat.filter(client=client)
+    return filtrer_par_texte(
+        resultat, recherche, "numero", "client__raison_sociale", "lieu_chargement", "lieu_livraison"
+    )
+
+
+def historique_proforma(proforma: Proforma) -> QuerySet:
+    """Historique des modifications (préparation, contre-propositions, validations)."""
+    return audit_services.historique("Proforma", proforma.pk)
+
+
+@transaction.atomic
+def creer_proforma(
+    acteur,
+    *,
+    client: Client,
+    lieu_chargement: str,
+    lieu_livraison: str,
+    nature_marchandise: str,
+    poids_t: Decimal,
+    prix_convenu: Decimal,
+    date_depart_souhaitee: date | None = None,
+) -> Proforma:
+    """Brouillon de devis : trajet et prix fixés par le chargé clientèle, TVA reprise du client."""
+    _exiger_role(acteur, permissions.PROFORMA_SAISIE, "préparer un devis")
+    poids_t, prix_convenu = Decimal(poids_t), Decimal(prix_convenu)
+    if poids_t <= 0:
+        raise MontantInvalide("Le poids doit être strictement positif.")
+    if prix_convenu < 0:
+        raise MontantInvalide("Le prix convenu ne peut pas être négatif.")
+    proforma = Proforma.objects.create(
+        client=client,
+        lieu_chargement=lieu_chargement,
+        lieu_livraison=lieu_livraison,
+        nature_marchandise=nature_marchandise,
+        poids_t=poids_t,
+        prix_convenu=prix_convenu,
+        date_depart_souhaitee=date_depart_souhaitee,
+        taux_tva=client.taux_tva,
+        motif_exoneration=client.motif_exoneration,
+        cree_par=acteur,
+    )
+    return _recalculer_proforma(proforma)
+
+
+@transaction.atomic
+def modifier_proforma(
+    proforma: Proforma,
+    acteur,
+    *,
+    lieu_chargement: str,
+    lieu_livraison: str,
+    nature_marchandise: str,
+    poids_t: Decimal,
+    prix_convenu: Decimal,
+    taux_tva: Decimal,
+    motif_exoneration: str = "",
+    date_depart_souhaitee: date | None = None,
+) -> Proforma:
+    """Trajet, marchandise, prix et TVA, tant que le devis est modifiable (brouillon ou contre-proposé)."""
+    _exiger_role(acteur, permissions.PROFORMA_SAISIE, "modifier un devis")
+    _verrouiller(proforma)
+    _exiger_statut(proforma, STATUTS_PROFORMA_MODIFIABLES, "modifier le devis")
+    poids_t, prix_convenu, taux = Decimal(poids_t), Decimal(prix_convenu), Decimal(taux_tva)
+    if poids_t <= 0:
+        raise MontantInvalide("Le poids doit être strictement positif.")
+    if prix_convenu < 0:
+        raise MontantInvalide("Le prix convenu ne peut pas être négatif.")
+    if not ZERO <= taux <= Decimal(100):
+        raise MontantInvalide("Le taux de TVA doit être compris entre 0 et 100 %.")
+    if taux == 0 and not motif_exoneration:
+        raise MontantInvalide("Un motif d'exonération est obligatoire quand la TVA est à 0 %.")
+    proforma.lieu_chargement = lieu_chargement
+    proforma.lieu_livraison = lieu_livraison
+    proforma.nature_marchandise = nature_marchandise
+    proforma.poids_t = poids_t
+    proforma.prix_convenu = prix_convenu
+    proforma.date_depart_souhaitee = date_depart_souhaitee
+    proforma.taux_tva = taux
+    proforma.motif_exoneration = motif_exoneration if taux == 0 else ""
+    proforma.save(
+        update_fields=[
+            "lieu_chargement", "lieu_livraison", "nature_marchandise", "poids_t", "prix_convenu",
+            "date_depart_souhaitee", "taux_tva", "motif_exoneration", "updated_at",
+        ]
+    )
+    return _recalculer_proforma(proforma)
+
+
+@transaction.atomic
+def abandonner_proforma(proforma: Proforma, acteur) -> None:
+    """Supprime (logiquement) un devis pas encore soumis à la validation."""
+    _exiger_role(acteur, permissions.PROFORMA_SAISIE, "abandonner un devis")
+    _verrouiller(proforma)
+    _exiger_statut(proforma, STATUTS_PROFORMA_MODIFIABLES, "abandonner le devis")
+    proforma.delete(deleted_by=acteur)
+
+
+@transaction.atomic
+def soumettre_proforma(proforma: Proforma, acteur) -> Proforma:
+    """Brouillon ou contre-proposé → Soumis : envoie le devis à la FINANCES."""
+    _exiger_role(acteur, permissions.PROFORMA_SAISIE, "soumettre un devis")
+    _verrouiller(proforma)
+    _exiger_statut(proforma, STATUTS_PROFORMA_MODIFIABLES, "soumettre le devis")
+    if proforma.montant_ttc <= 0:
+        raise MontantInvalide("Un devis à 0 FCFA ne peut pas être soumis.")
+    proforma.statut = StatutProforma.SOUMISE
+    proforma.motif_contre_proposition = ""
+    proforma.save(update_fields=["statut", "motif_contre_proposition", "updated_at"])
+    signals.emettre(signals.proforma_a_valider, sender=Proforma, proforma=proforma)
+    return proforma
+
+
+def _emettre_proforma(proforma: Proforma, aujourd_hui: date) -> Proforma:
+    """Attribue le numéro et passe le devis en Validée (dernière étape des deux parcours)."""
+    proforma.numero = prochain_numero("PRO", aujourd_hui.year)
+    proforma.statut = StatutProforma.VALIDEE
+    proforma.save(
+        update_fields=[
+            "numero", "statut", "valide_par_finances", "date_validation_finances",
+            "valide_par_direction", "date_validation_direction", "updated_at",
+        ]
+    )
+    signals.emettre(signals.proforma_validee, sender=Proforma, proforma=proforma)
+    return proforma
+
+
+@transaction.atomic
+def valider_proforma(proforma: Proforma, acteur, *, aujourd_hui: date | None = None) -> Proforma:
+    """La FINANCES valide le prix : émission directe sous le seuil, sinon transmission à la DIRECTION."""
+    _exiger_role(acteur, permissions.PROFORMA_VALIDATION_FINANCES, "valider un devis", strict=True)
+    _verrouiller(proforma)
+    _exiger_statut(proforma, (StatutProforma.SOUMISE,), "valider le devis")
+    proforma.valide_par_finances = acteur
+    proforma.date_validation_finances = timezone.now()
+    if proforma.requiert_direction:
+        proforma.statut = StatutProforma.EN_ATTENTE_DIRECTION
+        proforma.save(
+            update_fields=["statut", "valide_par_finances", "date_validation_finances", "updated_at"]
+        )
+        signals.emettre(signals.proforma_en_attente_direction, sender=Proforma, proforma=proforma)
+        return proforma
+    return _emettre_proforma(proforma, aujourd_hui or timezone.localdate())
+
+
+@transaction.atomic
+def valider_proforma_direction(proforma: Proforma, acteur, *, aujourd_hui: date | None = None) -> Proforma:
+    """La DIRECTION valide un devis dont le montant dépasse le seuil (R1 fusionnée)."""
+    _exiger_role(acteur, permissions.PROFORMA_VALIDATION_DIRECTION, "valider un devis", strict=True)
+    _verrouiller(proforma)
+    _exiger_statut(proforma, (StatutProforma.EN_ATTENTE_DIRECTION,), "valider le devis")
+    proforma.valide_par_direction = acteur
+    proforma.date_validation_direction = timezone.now()
+    return _emettre_proforma(proforma, aujourd_hui or timezone.localdate())
+
+
+_ROLE_CONTRE_PROPOSITION = {
+    StatutProforma.SOUMISE: permissions.PROFORMA_VALIDATION_FINANCES,
+    StatutProforma.EN_ATTENTE_DIRECTION: permissions.PROFORMA_VALIDATION_DIRECTION,
+}
+
+
+@transaction.atomic
+def contre_proposer_proforma(proforma: Proforma, acteur, *, motif: str) -> Proforma:
+    """La FINANCES (devis soumis) ou la DIRECTION (devis en attente) conteste le prix.
+
+    Renvoie le devis au chargé clientèle avec un motif plutôt que de le refuser
+    définitivement : il ajuste le prix puis le soumet à nouveau.
+    """
+    _verrouiller(proforma)
+    _exiger_statut(
+        proforma,
+        (StatutProforma.SOUMISE, StatutProforma.EN_ATTENTE_DIRECTION),
+        "contre-proposer sur le devis",
+    )
+    _exiger_role(
+        acteur, _ROLE_CONTRE_PROPOSITION[proforma.statut], "contre-proposer un devis", strict=True
+    )
+    if not motif.strip():
+        raise MontantInvalide("Le motif de la contre-proposition est obligatoire.")
+    proforma.statut = StatutProforma.CONTRE_PROPOSEE
+    proforma.motif_contre_proposition = motif.strip()
+    proforma.save(update_fields=["statut", "motif_contre_proposition", "updated_at"])
+    signals.emettre(
+        signals.proforma_contre_proposee,
+        sender=Proforma,
+        proforma=proforma,
+        motif=proforma.motif_contre_proposition,
+    )
+    return proforma
+
+
+@transaction.atomic
+def envoyer_proforma_au_client(
+    proforma: Proforma, acteur, *, aujourd_hui: date | None = None
+) -> Proforma:
+    """Devis validé → envoyé au client : la validité de 30 jours court à partir de l'envoi."""
+    _exiger_role(acteur, permissions.PROFORMA_SAISIE, "envoyer un devis au client")
+    _verrouiller(proforma)
+    _exiger_statut(proforma, (StatutProforma.VALIDEE,), "envoyer le devis au client")
+    aujourd_hui = aujourd_hui or timezone.localdate()
+    proforma.statut = StatutProforma.ENVOYEE_CLIENT
+    proforma.date_envoi = aujourd_hui
+    proforma.date_validite = aujourd_hui + timedelta(days=DUREE_VALIDITE_PROFORMA_JOURS)
+    proforma.save(update_fields=["statut", "date_envoi", "date_validite", "updated_at"])
+    return proforma
+
+
+@transaction.atomic
+def enregistrer_decision_client(
+    proforma: Proforma, acteur, *, acceptee: bool, motif: str = ""
+) -> Proforma:
+    """Le chargé clientèle enregistre la réponse du client à un devis envoyé."""
+    _exiger_role(acteur, permissions.PROFORMA_SAISIE, "enregistrer la décision du client")
+    _verrouiller(proforma)
+    _exiger_statut(proforma, (StatutProforma.ENVOYEE_CLIENT,), "enregistrer la décision du client")
+    if not acceptee and not motif.strip():
+        raise MontantInvalide("Le motif du refus du client est obligatoire.")
+    proforma.statut = StatutProforma.ACCEPTEE if acceptee else StatutProforma.REFUSEE
+    proforma.motif_refus_client = motif.strip() if not acceptee else ""
+    proforma.save(update_fields=["statut", "motif_refus_client", "updated_at"])
+    return proforma
+
+
+@transaction.atomic
+def convertir_en_mission(proforma: Proforma) -> Mission:
+    """Mission créée depuis un devis accepté (R6) : trajet, marchandise, poids et prix recopiés
+    tels quels ; le devis devient une archive figée (« 1 devis = 1 mission »).
+
+    Le prix repris est le HT du devis, comme celui d'une mission créée à la main : la facture
+    calculera la TVA à son tour, avec le taux du client en vigueur au moment de la facturation.
+    Le contrôle de rôle relève de la création de la mission (``missions.permissions.CREATION``),
+    pas de ce module : cette fonction n'est appelée que depuis ce flux déjà autorisé. Orchestrée
+    ici (et non dans ``missions``) car le graphe de dépendance des apps interdit à ``missions``
+    de dépendre de ``billing`` (architecture.md:95-163) — l'inverse est permis.
+    """
+    _verrouiller(proforma)
+    _exiger_statut(proforma, (StatutProforma.ACCEPTEE,), "convertir le devis en mission")
+    mission = missions_services.creer_mission(
+        client=proforma.client,
+        lieu_chargement=proforma.lieu_chargement,
+        lieu_livraison=proforma.lieu_livraison,
+        nature_marchandise=proforma.nature_marchandise,
+        poids_t=proforma.poids_t,
+        prix_convenu=proforma.prix_convenu,
+        date_depart_prevue=proforma.date_depart_souhaitee,
+    )
+    mission.proforma = proforma
+    mission.save(update_fields=["proforma", "updated_at"])
+    proforma.statut = StatutProforma.CONVERTIE
+    proforma.save(update_fields=["statut", "updated_at"])
+    return mission
+
+
+def expirer_proformas(aujourd_hui: date | None = None) -> int:
+    """Devis envoyés au client dont la validité de 30 jours est dépassée sans réponse."""
+    aujourd_hui = aujourd_hui or timezone.localdate()
+    expirees = 0
+    for proforma in Proforma.objects.filter(
+        statut=StatutProforma.ENVOYEE_CLIENT, date_validite__lt=aujourd_hui
+    ):
+        proforma.statut = StatutProforma.EXPIREE
+        proforma.save(update_fields=["statut", "updated_at"])
+        signals.emettre(signals.proforma_expiree, sender=Proforma, proforma=proforma)
+        expirees += 1
+    return expirees
 ```
 
 À lire dans cet ordre :
@@ -923,7 +1517,7 @@ def enregistrer_depense(
 
 #### `apps/billing/signals.py`
 
-*27 lignes* — Événements du cycle de facturation (souscrits par ``notifications``).
+*44 lignes* — Événements du cycle de facturation (souscrits par ``notifications``).
 
 ```python
 """Événements du cycle de facturation (souscrits par ``notifications``).
@@ -945,12 +1539,29 @@ facture_validee = Signal()
 # La DIRECTION a refusé la facture (retour en brouillon). Arguments : ``facture``, ``motif``.
 facture_refusee = Signal()
 
+# Le devis vient d'être soumis à la FINANCES. Argument : ``proforma``.
+proforma_a_valider = Signal()
+# La FINANCES a validé le devis mais le montant dépasse le seuil : la DIRECTION doit
+# valider en plus. Argument : ``proforma``.
+proforma_en_attente_direction = Signal()
+# Le devis est validé (par la FINANCES seule, ou en plus par la DIRECTION). Argument : ``proforma``.
+proforma_validee = Signal()
+# Contre-proposition de la FINANCES ou de la DIRECTION. Arguments : ``proforma``, ``motif``.
+proforma_contre_proposee = Signal()
+# Le devis envoyé au client a dépassé sa date de validité sans réponse. Argument : ``proforma``.
+proforma_expiree = Signal()
 
-def emettre(signal: Signal, **arguments) -> None:
+# Un règlement vient d'être enregistré (entrée de trésorerie). Argument : ``reglement``. Utile à
+# ``missions`` (R4) pour refléter l'encaissement dans la prévision de trésorerie de la mission
+# facturée, sans double saisie.
+reglement_enregistre = Signal()
+
+
+def emettre(signal: Signal, *, sender: type | None = None, **arguments) -> None:
     """Émet un signal en journalisant (sans propager) les erreurs des récepteurs."""
     from .models import Facture
 
-    for recepteur, resultat in signal.send_robust(sender=Facture, **arguments):
+    for recepteur, resultat in signal.send_robust(sender=sender or Facture, **arguments):
         if isinstance(resultat, Exception):
             logger.error("Récepteur %r en erreur", recepteur, exc_info=resultat)
 ```
@@ -959,7 +1570,7 @@ def emettre(signal: Signal, **arguments) -> None:
 
 #### `apps/billing/apps.py`
 
-*29 lignes*
+*36 lignes*
 
 ```python
 from django.apps import AppConfig
@@ -975,11 +1586,12 @@ class BillingConfig(AppConfig):
         from apps.audit.registry import audit_model
 
         from . import permissions
-        from .models import Depense, Facture, Reglement
+        from .models import Depense, Facture, Proforma, Reglement
 
         audit_model(Facture, module="FINANCES")
         audit_model(Reglement, module="FINANCES")
         audit_model(Depense, module="FINANCES")
+        audit_model(Proforma, module="FINANCES")
         enregistrer(
             EntreeMenu(
                 "Facturation", "billing:factures", "fa-file-invoice-dollar",
@@ -991,6 +1603,12 @@ class BillingConfig(AppConfig):
                 "Dépenses", "billing:depenses", "fa-receipt", permissions.CONSULTATION, ordre=61
             )
         )
+        enregistrer(
+            EntreeMenu(
+                "Devis", "billing:proformas", "fa-file-signature",
+                permissions.PROFORMA_CONSULTATION, ordre=59,
+            )
+        )
 ```
 
 Dans `ready()`, on branche l'audit (module `FINANCES`) sur les factures, les règlements et les dépenses, et on
@@ -998,7 +1616,7 @@ déclare les entrées de menu « Facturation » et « Dépenses ».
 
 #### `apps/billing/tests/helpers.py`
 
-*50 lignes* — Aides de test : missions livrées, factures à tous les stades, comptes par rôle.
+*90 lignes* — Aides de test : missions livrées, factures à tous les stades, comptes par rôle.
 
 ```python
 """Aides de test : missions livrées, factures à tous les stades, comptes par rôle."""
@@ -1051,6 +1669,46 @@ def emise(*, aujourd_hui=JOUR, **surcharges):
     facture = a_valider(**surcharges)
     services.valider(facture, direction(), aujourd_hui=aujourd_hui)
     return facture
+
+
+# --- devis (R5) ---
+
+
+def charge_clientele():
+    return UserFactory(role=Role.CHARGE_CLIENTELE)
+
+
+def proforma_brouillon(*, prix="300000", acteur=None, client=None, **surcharges):
+    """Prix HT par défaut sous le seuil de validation direction (TTC 354 000 < 500 000)."""
+    return services.creer_proforma(
+        acteur or charge_clientele(),
+        client=client or ClientFactory(),
+        lieu_chargement=surcharges.pop("lieu_chargement", "Abidjan"),
+        lieu_livraison=surcharges.pop("lieu_livraison", "Bouaké"),
+        nature_marchandise=surcharges.pop("nature_marchandise", "Ciment"),
+        poids_t=surcharges.pop("poids_t", Decimal("20")),
+        prix_convenu=Decimal(prix),
+        **surcharges,
+    )
+
+
+def proforma_soumise(**surcharges):
+    proforma = proforma_brouillon(**surcharges)
+    services.soumettre_proforma(proforma, charge_clientele())
+    return proforma
+
+
+def proforma_validee(*, aujourd_hui=JOUR, **surcharges):
+    """Validée par la seule finance (montant sous le seuil par défaut : 1 000 000 FCFA)."""
+    proforma = proforma_soumise(**surcharges)
+    services.valider_proforma(proforma, finances(), aujourd_hui=aujourd_hui)
+    return proforma
+
+
+def proforma_envoyee(*, aujourd_hui=JOUR, **surcharges):
+    proforma = proforma_validee(aujourd_hui=aujourd_hui, **surcharges)
+    services.envoyer_proforma_au_client(proforma, charge_clientele(), aujourd_hui=aujourd_hui)
+    return proforma
 ```
 
 Ce fichier n'est pas un test : c'est une **bibliothèque d'aides** (`mission_livree`, `direction`, `finances`,
@@ -1058,7 +1716,7 @@ Ce fichier n'est pas un test : c'est une **bibliothèque d'aides** (`mission_liv
 
 #### `apps/billing/README.md`
 
-*39 lignes* — billing
+*71 lignes* — billing
 
 ```markdown
 # billing
@@ -1084,10 +1742,40 @@ Cycle d'une facture (décision : FINANCES prépare, DIRECTION valide) :
   antérieure à l'émission. Un règlement erroné s'annule avec un motif (annulation logique) ; le
   reste à recouvrer et le statut se recalculent.
 - **Échue** = émise, non soldée, échéance dépassée : alerte au tableau de bord et notification.
-- **Dépenses** : Péages, Entretien, Frais administratifs (+ « Autre », ajout à notre initiative).
+- **Dépenses** : Péages, Entretien, Frais administratifs (+ « Autre », ajout à notre initiative), plus Carburant, Pièces
+  détachées et Main-d'œuvre des réparations **créées automatiquement** par `finance` (voir `apps/finance/README.md`) :
+  `Depense.origine` / `origine_id` identifient la source (une dépense par plein, achat, OR ou ordre de décaissement
+  exécuté — R2), `Depense.vehicule` (facultatif) sert au suivi par enveloppe, `changer_mode_depense` corrige le mode
+  de paiement.
 
 Droits (`permissions.py`) : consultation ADMIN, DIRECTION, FINANCES ; préparation, règlements et
 dépenses ADMIN et FINANCES ; validation DIRECTION seulement.
+
+## Devis (`Proforma`) — avenant-separation-des-taches.md, R5 (et R1 fusionnée)
+
+Séparation des tâches : le **chargé clientèle** fixe le trajet et le prix (jamais lui-même
+validateur), la **FINANCES** valide toujours le prix, et la **DIRECTION** valide en plus au-delà
+de `SEUIL_VALIDATION_DIRECTION` (500 000 FCFA TTC — fusion de R1). Reprend les champs d'une
+mission (trajet, marchandise, poids, prix) plutôt que des lignes comme `Facture` : à
+l'acceptation du client, R6 les recopie tels quels dans la mission créée.
+
+Cycle : `BROUILLON` → `SOUMISE` → (`CONTRE_PROPOSEE` ⇄ `SOUMISE`, la finance ou la direction
+conteste le prix avec un motif) → `VALIDEE` (directement si le montant reste sous le seuil,
+sinon en passant par `EN_ATTENTE_DIRECTION`) → `ENVOYEE_CLIENT` (validité 30 jours à partir de
+l'envoi) → `ACCEPTEE` / `REFUSEE` / `EXPIREE` (tâche quotidienne) → `CONVERTIE` (une fois la
+mission créée, R6).
+- Le **numéro `PRO-AAAA-XXXX`** n'est attribué qu'à la validation finale, comme pour `Facture` :
+  un devis abandonné ou contesté ne laisse aucun trou.
+- **TVA** : mêmes 3 niveaux qu'une facture (système, client, devis), reprise du client à la
+  création et modifiable tant que le devis est modifiable (`BROUILLON`/`CONTRE_PROPOSEE`).
+- **Historique** : les contre-propositions et validations successives se lisent dans la section
+  « Historique » de la fiche (`audit.services.historique`, pas un modèle dédié).
+- Droits (`PROFORMA_*` dans `permissions.py`) : consultation ADMIN, DIRECTION, FINANCES, CHARGE
+  CLIENTELE ; préparation/modification/envoi/décision client ADMIN et CHARGE CLIENTELE ;
+  validation FINANCES ou DIRECTION seulement (un ADMIN ne valide jamais un devis, comme pour une
+  facture).
+- Tâche quotidienne `expirer_proformas` (`notifications.taches.executer_taches_quotidiennes`,
+  compteur `proformas_expirees`).
 
 Version imprimable : `/facturation/<id>/imprimer/` (Ctrl+P puis « Enregistrer au format PDF »). Les
 mentions de l'émetteur viennent des variables `ENTREPRISE_NOM`, `ENTREPRISE_ADRESSE`,
@@ -1100,11 +1788,475 @@ Pas encore fait :
   modifie ni ne se supprime.
 - Génération de PDF côté serveur (Celery, étape 7) ; paiement initié par Mobile Money.
 - Accès du chargé clientèle aux factures de ses clients.
+
+Rapports imprimables des factures et des dépenses (bouton « Imprimer » sur chaque liste, mêmes filtres) : voir `apps/core/README.md` (`ImpressionListeMixin`).
+```
+
+#### `apps/billing/tests/test_proforma.py`
+
+*379 lignes* — Devis (R5) : préparation par le chargé clientèle, validation finance/direction, cycle client.
+
+```python
+"""Devis (R5) : préparation par le chargé clientèle, validation finance/direction, cycle client.
+
+Séparation des tâches (avenant-separation-des-taches.md) : celui qui fixe le prix (chargé
+clientèle) n'est jamais celui qui le valide (finance, et direction au-delà du seuil).
+"""
+
+from datetime import date, timedelta
+from decimal import Decimal
+
+import pytest
+
+from apps.accounts.models import Role
+from apps.accounts.tests.factories import UserFactory
+from apps.audit.models import AuditLog
+from apps.billing import services
+from apps.billing.exceptions import (
+    ActionFactureNonAutorisee,
+    MontantInvalide,
+    TransitionFactureInterdite,
+)
+from apps.billing.models import STATUTS_PROFORMA_MODIFIABLES, Proforma, SEUIL_VALIDATION_DIRECTION, StatutProforma
+from apps.customers.tests.factories import ClientFactory
+
+from .helpers import (
+    JOUR,
+    charge_clientele,
+    direction,
+    finances,
+    proforma_brouillon,
+    proforma_envoyee,
+    proforma_soumise,
+    proforma_validee,
+)
+
+pytestmark = pytest.mark.django_db
+
+
+# --- préparation ---
+
+
+def test_seuls_charge_clientele_admin_et_direction_preparent_un_devis():
+    for role in (Role.RH, Role.PARCAUTO, Role.FINANCES, Role.CHAUFFEUR):
+        with pytest.raises(ActionFactureNonAutorisee):
+            proforma_brouillon(acteur=UserFactory(role=role))
+    assert proforma_brouillon(acteur=UserFactory(role=Role.ADMIN)).pk
+    # Retour réunion : la DIRECTION a la même largeur que l'ADMIN pour la saisie.
+    assert proforma_brouillon(acteur=UserFactory(role=Role.DIRECTION)).pk
+    superutilisateur = UserFactory(role="", is_superuser=True)
+    assert proforma_brouillon(acteur=superutilisateur).pk
+
+
+def test_le_brouillon_reprend_le_client_et_sa_tva():
+    client = ClientFactory(taux_tva=Decimal("0"), motif_exoneration="EXPORT")
+
+    proforma = proforma_brouillon(client=client, prix="500000")
+
+    assert proforma.statut == StatutProforma.BROUILLON and proforma.numero == ""
+    assert proforma.client == client
+    assert proforma.taux_tva == 0 and proforma.motif_exoneration == "EXPORT"
+    assert proforma.montant_ht == Decimal("500000")
+    assert proforma.montant_tva == 0 and proforma.montant_ttc == Decimal("500000")
+
+
+def test_la_tva_du_client_par_defaut_se_calcule():
+    proforma = proforma_brouillon(prix="300000")  # TVA client par défaut 18 %
+
+    assert (proforma.montant_ht, proforma.montant_tva, proforma.montant_ttc) == (
+        Decimal("300000"), Decimal("54000"), Decimal("354000"),
+    )
+
+
+@pytest.mark.parametrize("poids", [Decimal("0"), Decimal("-1")])
+def test_poids_positif_obligatoire(poids):
+    with pytest.raises(MontantInvalide, match="poids"):
+        proforma_brouillon(poids_t=poids)
+
+
+def test_prix_negatif_refuse():
+    with pytest.raises(MontantInvalide, match="négatif"):
+        proforma_brouillon(prix="-1")
+
+
+# --- modification ---
+
+
+def test_modification_recalcule_les_montants():
+    proforma = proforma_brouillon(prix="300000")
+
+    services.modifier_proforma(
+        proforma, charge_clientele(),
+        lieu_chargement="San-Pédro", lieu_livraison="Yamoussoukro", nature_marchandise="Bois",
+        poids_t=Decimal("15"), prix_convenu=Decimal("400000"),
+        taux_tva=Decimal("10"), motif_exoneration="",
+    )
+
+    proforma.refresh_from_db()
+    assert proforma.lieu_chargement == "San-Pédro" and proforma.lieu_livraison == "Yamoussoukro"
+    assert (proforma.montant_ht, proforma.montant_tva, proforma.montant_ttc) == (
+        Decimal("400000"), Decimal("40000"), Decimal("440000"),
+    )
+
+
+def test_modification_impossible_une_fois_soumis():
+    proforma = proforma_soumise()
+
+    with pytest.raises(TransitionFactureInterdite):
+        services.modifier_proforma(
+            proforma, charge_clientele(),
+            lieu_chargement="X", lieu_livraison="Y", nature_marchandise="Z",
+            poids_t=Decimal("1"), prix_convenu=Decimal("1"), taux_tva=Decimal("18"),
+        )
+
+
+def test_modification_tva_zero_exige_un_motif():
+    proforma = proforma_brouillon()
+
+    with pytest.raises(MontantInvalide, match="motif d'exonération"):
+        services.modifier_proforma(
+            proforma, charge_clientele(),
+            lieu_chargement=proforma.lieu_chargement, lieu_livraison=proforma.lieu_livraison,
+            nature_marchandise=proforma.nature_marchandise, poids_t=proforma.poids_t,
+            prix_convenu=proforma.prix_convenu, taux_tva=Decimal("0"),
+        )
+
+
+def test_contre_proposee_reste_modifiable():
+    assert StatutProforma.CONTRE_PROPOSEE in STATUTS_PROFORMA_MODIFIABLES
+
+
+# --- abandon ---
+
+
+def test_abandonner_un_brouillon_le_supprime_logiquement():
+    proforma = proforma_brouillon()
+
+    services.abandonner_proforma(proforma, charge_clientele())
+
+    assert not Proforma.objects.filter(pk=proforma.pk).exists()
+    assert Proforma.all_objects.get(pk=proforma.pk).is_deleted
+
+
+def test_abandonner_refuse_une_fois_soumis():
+    proforma = proforma_soumise()
+
+    with pytest.raises(TransitionFactureInterdite):
+        services.abandonner_proforma(proforma, charge_clientele())
+
+
+# --- soumission ---
+
+
+def test_soumettre_depuis_brouillon():
+    proforma = proforma_brouillon()
+
+    services.soumettre_proforma(proforma, charge_clientele())
+
+    assert proforma.statut == StatutProforma.SOUMISE
+
+
+def test_soumettre_un_devis_a_zero_franc_refuse():
+    proforma = proforma_brouillon(prix="0")
+
+    with pytest.raises(MontantInvalide, match="0 FCFA"):
+        services.soumettre_proforma(proforma, charge_clientele())
+
+
+def test_resoumission_efface_le_motif_de_contre_proposition():
+    proforma = proforma_soumise()
+    services.contre_proposer_proforma(proforma, finances(), motif="Prix trop bas")
+    assert proforma.motif_contre_proposition
+
+    services.soumettre_proforma(proforma, charge_clientele())
+
+    assert proforma.statut == StatutProforma.SOUMISE and proforma.motif_contre_proposition == ""
+
+
+# --- validation finance / direction ---
+
+
+def test_seule_la_finance_valide_en_premier_lieu():
+    proforma = proforma_soumise()
+    for acteur in (charge_clientele(), direction(), UserFactory(role=Role.ADMIN)):
+        with pytest.raises(ActionFactureNonAutorisee):
+            services.valider_proforma(proforma, acteur)
+
+
+def test_validation_sous_le_seuil_emet_directement():
+    proforma = proforma_soumise(prix="300000")  # TTC 354 000 < seuil
+
+    services.valider_proforma(proforma, finances(), aujourd_hui=JOUR)
+
+    assert proforma.statut == StatutProforma.VALIDEE
+    assert proforma.numero.startswith(f"PRO-{JOUR.year}-")
+    assert proforma.valide_par_finances is not None and proforma.date_validation_finances is not None
+    assert proforma.valide_par_direction is None
+
+
+def test_validation_au_dela_du_seuil_transmet_a_la_direction():
+    prix_ht = SEUIL_VALIDATION_DIRECTION  # TTC = 1,18x le seuil HT, donc > seuil après TVA
+    proforma = proforma_soumise(prix=str(prix_ht))
+
+    services.valider_proforma(proforma, finances(), aujourd_hui=JOUR)
+
+    assert proforma.statut == StatutProforma.EN_ATTENTE_DIRECTION
+    assert proforma.numero == ""
+    assert proforma.valide_par_finances is not None
+
+
+def test_seule_la_direction_valide_au_dela_du_seuil():
+    proforma = proforma_soumise(prix=str(SEUIL_VALIDATION_DIRECTION))
+    services.valider_proforma(proforma, finances(), aujourd_hui=JOUR)
+
+    for acteur in (charge_clientele(), finances(), UserFactory(role=Role.ADMIN)):
+        with pytest.raises(ActionFactureNonAutorisee):
+            services.valider_proforma_direction(proforma, acteur)
+
+    services.valider_proforma_direction(proforma, direction(), aujourd_hui=JOUR)
+    assert proforma.statut == StatutProforma.VALIDEE
+    assert proforma.numero.startswith(f"PRO-{JOUR.year}-")
+    assert proforma.valide_par_direction is not None
+
+
+def test_validation_direction_impossible_hors_attente_direction():
+    proforma = proforma_soumise()  # sous le seuil : jamais passé par EN_ATTENTE_DIRECTION
+
+    with pytest.raises(TransitionFactureInterdite):
+        services.valider_proforma_direction(proforma, direction())
+
+
+def test_numeros_incrementent_par_annee():
+    p1 = proforma_soumise()
+    p2 = proforma_soumise()
+    services.valider_proforma(p1, finances(), aujourd_hui=JOUR)
+    services.valider_proforma(p2, finances(), aujourd_hui=JOUR)
+
+    n1, n2 = int(p1.numero.rsplit("-", 1)[1]), int(p2.numero.rsplit("-", 1)[1])
+    assert n2 == n1 + 1
+
+
+# --- contre-proposition ---
+
+
+def test_finance_contre_propose_un_devis_soumis():
+    proforma = proforma_soumise()
+
+    services.contre_proposer_proforma(proforma, finances(), motif="Le tarif au km est trop bas.")
+
+    assert proforma.statut == StatutProforma.CONTRE_PROPOSEE
+    assert proforma.motif_contre_proposition == "Le tarif au km est trop bas."
+
+
+def test_direction_contre_propose_un_devis_en_attente():
+    proforma = proforma_soumise(prix=str(SEUIL_VALIDATION_DIRECTION))
+    services.valider_proforma(proforma, finances(), aujourd_hui=JOUR)
+
+    services.contre_proposer_proforma(proforma, direction(), motif="Trop risqué pour ce client.")
+
+    assert proforma.statut == StatutProforma.CONTRE_PROPOSEE
+
+
+def test_contre_proposition_refusee_hors_etats_valides():
+    proforma = proforma_brouillon()
+
+    with pytest.raises(TransitionFactureInterdite):
+        services.contre_proposer_proforma(proforma, finances(), motif="x")
+
+
+def test_contre_proposition_le_mauvais_role_est_refuse():
+    proforma = proforma_soumise()
+
+    with pytest.raises(ActionFactureNonAutorisee):
+        services.contre_proposer_proforma(proforma, direction(), motif="x")
+
+
+def test_motif_de_contre_proposition_obligatoire():
+    proforma = proforma_soumise()
+
+    with pytest.raises(MontantInvalide, match="motif"):
+        services.contre_proposer_proforma(proforma, finances(), motif="   ")
+
+
+# --- envoi et décision du client ---
+
+
+def test_envoyer_au_client_depuis_valide_seulement():
+    proforma = proforma_soumise()
+
+    with pytest.raises(TransitionFactureInterdite):
+        services.envoyer_proforma_au_client(proforma, charge_clientele())
+
+
+def test_envoi_fixe_la_validite_a_30_jours():
+    proforma = proforma_validee(aujourd_hui=JOUR)
+
+    services.envoyer_proforma_au_client(proforma, charge_clientele(), aujourd_hui=JOUR)
+
+    assert proforma.statut == StatutProforma.ENVOYEE_CLIENT
+    assert proforma.date_envoi == JOUR
+    assert proforma.date_validite == JOUR + timedelta(days=30)
+
+
+def test_decision_client_acceptee():
+    proforma = proforma_envoyee(aujourd_hui=JOUR)
+
+    services.enregistrer_decision_client(proforma, charge_clientele(), acceptee=True)
+
+    assert proforma.statut == StatutProforma.ACCEPTEE
+
+
+def test_decision_client_refusee_exige_un_motif():
+    proforma = proforma_envoyee(aujourd_hui=JOUR)
+
+    with pytest.raises(MontantInvalide, match="motif"):
+        services.enregistrer_decision_client(proforma, charge_clientele(), acceptee=False)
+
+    services.enregistrer_decision_client(
+        proforma, charge_clientele(), acceptee=False, motif="Trop cher"
+    )
+    assert proforma.statut == StatutProforma.REFUSEE and proforma.motif_refus_client == "Trop cher"
+
+
+def test_decision_client_impossible_avant_envoi():
+    proforma = proforma_validee(aujourd_hui=JOUR)
+
+    with pytest.raises(TransitionFactureInterdite):
+        services.enregistrer_decision_client(proforma, charge_clientele(), acceptee=True)
+
+
+# --- expiration (tâche quotidienne) ---
+
+
+def test_expirer_proformas_au_dela_de_30_jours():
+    proforma = proforma_envoyee(aujourd_hui=JOUR)
+
+    nombre = services.expirer_proformas(aujourd_hui=JOUR + timedelta(days=31))
+
+    proforma.refresh_from_db()
+    assert nombre == 1 and proforma.statut == StatutProforma.EXPIREE
+
+
+def test_expirer_proformas_ignore_celles_encore_valides():
+    proforma_envoyee(aujourd_hui=JOUR)
+
+    assert services.expirer_proformas(aujourd_hui=JOUR + timedelta(days=10)) == 0
+
+
+def test_expirer_proformas_ignore_les_autres_statuts():
+    proforma_validee(aujourd_hui=JOUR)  # jamais envoyée, pas de date de validité
+
+    assert services.expirer_proformas(aujourd_hui=JOUR + timedelta(days=60)) == 0
+
+
+# --- consultation ---
+
+
+def test_rechercher_proformas_par_statut_et_client():
+    client = ClientFactory()
+    cible = proforma_brouillon(client=client)
+    proforma_soumise()
+
+    resultat = services.rechercher_proformas(statut=StatutProforma.BROUILLON, client=client)
+
+    assert set(resultat) == {cible}
+
+
+def test_historique_proforma_trace_creation_et_modifications():
+    proforma = proforma_brouillon(prix="300000")
+    services.modifier_proforma(
+        proforma, charge_clientele(),
+        lieu_chargement=proforma.lieu_chargement, lieu_livraison=proforma.lieu_livraison,
+        nature_marchandise=proforma.nature_marchandise, poids_t=proforma.poids_t,
+        prix_convenu=Decimal("350000"), taux_tva=proforma.taux_tva,
+    )
+
+    historique = list(services.historique_proforma(proforma))
+
+    assert any(h.action == "CREATE" for h in historique)
+    assert any(h.action == "UPDATE" and "prix_convenu" in h.nouvelle_valeur for h in historique)
+    assert all(isinstance(h, AuditLog) and h.entite == "Proforma" for h in historique)
+```
+
+#### `apps/billing/tests/test_r6_creer_mission.py`
+
+*69 lignes* — Mission créée depuis un devis accepté (R6) : recopie du trajet, du prix HT, et « 1 devis = 1 mission ».
+
+```python
+"""Mission créée depuis un devis accepté (R6) : recopie du trajet, du prix HT, et « 1 devis = 1 mission ».
+
+Orchestré dans ``billing.services`` (pas dans ``missions``) : le graphe de dépendance des apps
+(architecture.md:95-163) interdit à ``missions`` de dépendre de ``billing`` — l'inverse est permis.
+"""
+
+from decimal import Decimal
+
+import pytest
+
+from apps.billing import services
+from apps.billing.exceptions import TransitionFactureInterdite
+from apps.billing.models import StatutProforma
+from apps.billing.tests.helpers import JOUR, charge_clientele, proforma_envoyee
+from apps.missions.models import StatutMission
+
+pytestmark = pytest.mark.django_db
+
+
+def _acceptee(**surcharges):
+    proforma = proforma_envoyee(aujourd_hui=JOUR, **surcharges)
+    services.enregistrer_decision_client(proforma, charge_clientele(), acceptee=True)
+    return proforma
+
+
+def test_la_mission_recopie_le_trajet_la_marchandise_le_poids_et_le_prix_ht():
+    proforma = _acceptee(prix="350000")
+
+    mission = services.convertir_en_mission(proforma)
+
+    assert mission.client == proforma.client
+    assert mission.lieu_chargement == proforma.lieu_chargement
+    assert mission.lieu_livraison == proforma.lieu_livraison
+    assert mission.nature_marchandise == proforma.nature_marchandise
+    assert mission.poids_t == proforma.poids_t
+    assert mission.prix_convenu == Decimal("350000")  # HT du devis, pas le TTC
+    assert mission.statut == StatutMission.BROUILLON
+
+
+def test_le_devis_devient_convertie_et_reference_la_mission():
+    proforma = _acceptee()
+
+    mission = services.convertir_en_mission(proforma)
+
+    proforma.refresh_from_db()
+    assert proforma.statut == StatutProforma.CONVERTIE
+    assert mission.proforma_id == proforma.pk
+    assert proforma.mission_creee == mission
+
+
+@pytest.mark.parametrize(
+    "statut",
+    [StatutProforma.BROUILLON, StatutProforma.SOUMISE, StatutProforma.VALIDEE, StatutProforma.ENVOYEE_CLIENT],
+)
+def test_creation_impossible_hors_devis_accepte(statut):
+    proforma = _acceptee()
+    proforma.statut = statut
+    proforma.save(update_fields=["statut"])
+
+    with pytest.raises(TransitionFactureInterdite):
+        services.convertir_en_mission(proforma)
+
+
+def test_un_devis_deja_converti_ne_recree_pas_de_seconde_mission():
+    proforma = _acceptee()
+    services.convertir_en_mission(proforma)
+
+    with pytest.raises(TransitionFactureInterdite):
+        services.convertir_en_mission(proforma)
 ```
 
 #### `apps/billing/tests/test_services.py`
 
-*570 lignes* — Facturation : préparation, TVA à 3 niveaux, validation, numérotation, règlements.
+*579 lignes* — Facturation : préparation, TVA à 3 niveaux, validation, numérotation, règlements.
 
 ```python
 """Facturation : préparation, TVA à 3 niveaux, validation, numérotation, règlements."""
@@ -1164,11 +2316,15 @@ def test_une_mission_ne_peut_avoir_qu_une_facture():
         services.creer_facture(mission, finances())
 
 
-def test_seuls_finances_et_admin_preparent_une_facture():
-    for role in (Role.DIRECTION, Role.RH, Role.PARCAUTO, Role.CHARGE_CLIENTELE, Role.CHAUFFEUR):
+def test_seuls_finances_admin_direction_et_rh_preparent_une_facture():
+    for role in (Role.PARCAUTO, Role.CHARGE_CLIENTELE, Role.CHAUFFEUR):
         with pytest.raises(ActionFactureNonAutorisee):
             services.creer_facture(mission_livree(), UserFactory(role=role))
     assert services.creer_facture(mission_livree(), UserFactory(role=Role.ADMIN)).pk
+    # Retour réunion : la DIRECTION (même largeur que l'ADMIN) et la RH (tout ce que fait
+    # la FINANCES) peuvent désormais aussi préparer une facture.
+    assert services.creer_facture(mission_livree(), UserFactory(role=Role.DIRECTION)).pk
+    assert services.creer_facture(mission_livree(), UserFactory(role=Role.RH)).pk
     superutilisateur = UserFactory(role="", is_superuser=True)
     assert services.creer_facture(mission_livree(), superutilisateur).pk
 
@@ -1298,7 +2454,9 @@ def test_seul_un_brouillon_se_modifie():
         services.abandonner_brouillon(facture, acteur)
 
 
-def test_les_modifications_sont_reservees_a_finances_et_admin():
+def test_les_modifications_sont_reservees_a_la_saisie_facturation():
+    """Retour réunion : la DIRECTION et la RH sont désormais dans la SAISIE facturation
+    (même largeur que l'ADMIN / tout ce que fait la FINANCES) ; le Parc Auto reste exclu."""
     facture = brouillon()
     ligne = facture.lignes.first()
 
@@ -1310,7 +2468,7 @@ def test_les_modifications_sont_reservees_a_finances_et_admin():
         lambda u: services.abandonner_brouillon(facture, u),
     ):
         with pytest.raises(ActionFactureNonAutorisee):
-            action(direction())
+            action(UserFactory(role=Role.PARCAUTO))
 
 
 def test_abandonner_un_brouillon_libere_la_mission_sans_trou_de_numerotation():
@@ -1485,11 +2643,11 @@ def test_pas_de_reglement_sur_un_brouillon_ni_une_facture_a_valider_ni_soldee():
         _regler(soldee, "1")
 
 
-def test_les_reglements_sont_reserves_a_finances_et_admin():
+def test_les_reglements_sont_reserves_a_la_saisie_facturation():
     facture = emise()
 
     with pytest.raises(ActionFactureNonAutorisee):
-        _regler(facture, "1000", acteur=direction())
+        _regler(facture, "1000", acteur=UserFactory(role=Role.PARCAUTO))
     assert _regler(facture, "1000", acteur=UserFactory(role=Role.ADMIN)).pk
 
 
@@ -1525,7 +2683,7 @@ def test_annulation_de_reglement_exige_un_motif_et_le_bon_role():
     with pytest.raises(ReglementInvalide, match="motif"):
         services.annuler_reglement(reglement, finances(), motif=" ")
     with pytest.raises(ActionFactureNonAutorisee):
-        services.annuler_reglement(reglement, direction(), motif="Test")
+        services.annuler_reglement(reglement, UserFactory(role=Role.PARCAUTO), motif="Test")
 
 
 # --- lecture et recherche ---
@@ -1609,7 +2767,10 @@ def test_enregistrer_une_depense_et_totaux_par_categorie():
 
     par_categorie = {c["code"]: c["total"] for c in services.depenses_par_categorie(date(2026, 9, 1), date(2026, 9, 30))}
 
-    assert par_categorie == {"PEAGES": 20000, "ENTRETIEN": 80000, "FRAIS_ADMIN": 0, "AUTRE": 0}
+    assert par_categorie == {
+        "PEAGES": 20000, "ENTRETIEN": 80000, "FRAIS_ADMIN": 0, "AUTRE": 0, "CARBURANT": 0, "PIECES": 0,
+        "MAINTENANCE": 0, "FRAIS_MISSION": 0,
+    }
     assert services.total_depenses(date(2026, 9, 1), date(2026, 9, 30)) == Decimal("100000")
     assert services.total_depenses(date(2026, 10, 1), date(2026, 10, 31)) == 0
 
@@ -1630,10 +2791,10 @@ def test_depenses_invalides(libelle, montant, jour, message):
         )
 
 
-def test_les_depenses_sont_reservees_a_finances_et_admin():
+def test_les_depenses_sont_reservees_a_la_saisie_facturation():
     with pytest.raises(ActionFactureNonAutorisee):
         services.enregistrer_depense(
-            direction(), categorie="PEAGES", date_depense=date(2026, 9, 1), libelle="x",
+            UserFactory(role=Role.PARCAUTO), categorie="PEAGES", date_depense=date(2026, 9, 1), libelle="x",
             montant=Decimal("1"), mode=ModePaiement.ESPECES,
         )
 
@@ -1688,7 +2849,7 @@ def test_un_recepteur_en_erreur_ne_bloque_jamais_la_facturation(caplog):
 ```diff
 --- config/settings/base.py (avant)
 +++ config/settings/base.py (après)
-@@ -60,4 +60,5 @@
+@@ -63,4 +63,5 @@
      "apps.inventory",
      "apps.fuel",
 +    "apps.billing",
@@ -1711,7 +2872,7 @@ python manage.py check
 ```
 
 ```bash
-python -m pytest apps/billing/tests/test_services.py -q --no-cov
+python -m pytest apps/billing/tests/test_proforma.py apps/billing/tests/test_r6_creer_mission.py apps/billing/tests/test_services.py -q --no-cov
 ```
 
 **Résultat attendu :** `52 passed` (pour les 1 fichier(s) de tests présentés dans ce chapitre).

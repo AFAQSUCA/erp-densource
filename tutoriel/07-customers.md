@@ -1,6 +1,6 @@
 # Chapitre 7 — Les clients : l'app customers
 
-> 11 fichier(s) dans ce chapitre, 397 lignes de code.
+> 11 fichier(s) dans ce chapitre, 402 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -370,22 +370,25 @@ def reclamations_recentes(*, jours: int = 30, maintenant: datetime | None = None
 
 #### `apps/customers/permissions.py`
 
-*13 lignes* — Qui peut consulter et gérer les clients.
+*16 lignes* — Qui peut consulter et gérer les clients.
 
 ```python
 """Qui peut consulter et gérer les clients.
 
 Cahier-des-charges.md:44-55 : le CHARGE_CLIENTELE tient le « portefeuille clients,
-historique, devis, réclamations, notes d'échange » ; la DIRECTION a une « lecture seule
-sur RH/Clientèle » ; l'ADMIN a tous les droits. La RH n'a « pas d'accès clients » ; le
-PARCAUTO et le CHAUFFEUR n'y ont pas accès non plus. L'accès des FINANCES (factures) se
-décidera avec la facturation (étape 4).
+historique, devis, réclamations, notes d'échange » ; l'ADMIN a tous les droits. La
+DIRECTION, à l'origine en « lecture seule sur RH/Clientèle », modifie désormais aussi :
+retour d'une réunion entreprise, elle a la même largeur que l'ADMIN sur la
+saisie/modification. La RH n'a « pas d'accès clients » ; le PARCAUTO et le CHAUFFEUR
+n'y ont pas accès non plus. L'accès des FINANCES (factures) se décidera avec la
+facturation (étape 4).
 """
 
 from apps.accounts.models import Role
 
 CONSULTATION = frozenset({Role.ADMIN, Role.DIRECTION, Role.CHARGE_CLIENTELE})
-MODIFICATION = frozenset({Role.ADMIN, Role.CHARGE_CLIENTELE})
+# Retour réunion : la DIRECTION a la même largeur que l'ADMIN pour la saisie/modification.
+MODIFICATION = frozenset({Role.ADMIN, Role.DIRECTION, Role.CHARGE_CLIENTELE})
 ```
 
 Le CDC donne la **gestion** des clients à l'ADMIN et au CHARGE_CLIENTELE, et la **lecture seule** à la
@@ -464,7 +467,7 @@ class CustomersConfig(AppConfig):
 
 #### `apps/customers/README.md`
 
-*24 lignes* — customers
+*26 lignes* — customers
 
 ```markdown
 # customers
@@ -491,6 +494,8 @@ Les missions du client s'affichent dans sa fiche via `customers.sections.DETAIL_
 
 Pas encore de gestion des devis ni des contrats à renouveler (indicateurs du tableau de
 bord chargé clientèle, étape 5) ; les FINANCES ont accès à la facturation, pas à la fiche client.
+
+Rapport imprimable des clients (bouton « Imprimer » sur la liste, mêmes filtres) : voir `apps/core/README.md` (`ImpressionListeMixin`).
 ```
 
 #### `apps/customers/tests/factories.py`
@@ -523,7 +528,7 @@ class ClientFactory(factory.django.DjangoModelFactory):
 ```diff
 --- config/settings/base.py (avant)
 +++ config/settings/base.py (après)
-@@ -54,4 +54,5 @@
+@@ -57,4 +57,5 @@
      "apps.hr",
      "apps.drivers",
 +    "apps.customers",

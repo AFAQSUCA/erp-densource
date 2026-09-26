@@ -1,6 +1,6 @@
 # Chapitre 4 — Le journal d'audit : l'app audit
 
-> 10 fichier(s) dans ce chapitre, 422 lignes de code.
+> 11 fichier(s) dans ce chapitre, 513 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -147,7 +147,7 @@ Points clés :
 
 #### `apps/audit/services.py`
 
-*89 lignes* — Logique métier du journal d'audit — conventions.md §2.
+*137 lignes* — Logique métier du journal d'audit — conventions.md §2.
 
 ```python
 """Logique métier du journal d'audit — conventions.md §2.
@@ -161,9 +161,13 @@ ou middleware").
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Any
 
+from django.db.models import QuerySet
+
 from apps.core.middleware import get_client_ip
+from apps.core.search import filtrer_par_texte
 
 from .models import ActionChoices, AuditLog, StatutChoices
 
@@ -239,6 +243,50 @@ def log_login_failed(username: str, request) -> AuditLog:
         request=request,
         statut=StatutChoices.FAILED,
     )
+
+
+# --- consultation (écran du journal, ADMIN et DIRECTION — cahier-des-charges.md:81) ---
+
+
+def journal_queryset() -> QuerySet[AuditLog]:
+    return AuditLog.objects.select_related("utilisateur")
+
+
+def rechercher(
+    *,
+    recherche: str = "",
+    module: str = "",
+    action: str = "",
+    statut: str = "",
+    date_debut: date | None = None,
+    date_fin: date | None = None,
+) -> QuerySet[AuditLog]:
+    """Journal filtré par texte (utilisateur, entité), module, action, statut et période.
+
+    ``date_debut``/``date_fin`` bornent ``date_heure`` (jour local, bornes incluses).
+    """
+    resultat = journal_queryset()
+    if module:
+        resultat = resultat.filter(module=module)
+    if action in ActionChoices.values:
+        resultat = resultat.filter(action=action)
+    if statut in StatutChoices.values:
+        resultat = resultat.filter(statut=statut)
+    if date_debut:
+        resultat = resultat.filter(date_heure__date__gte=date_debut)
+    if date_fin:
+        resultat = resultat.filter(date_heure__date__lte=date_fin)
+    return filtrer_par_texte(resultat, recherche, "utilisateur_nom", "entite", "adresse_ip")
+
+
+def historique(entite: str, entite_id: int) -> QuerySet[AuditLog]:
+    """Historique complet d'une fiche précise (section « Historique » d'un écran de détail)."""
+    return journal_queryset().filter(entite=entite, entite_id=entite_id)
+
+
+def modules_utilises() -> list[str]:
+    """Modules déjà présents dans le journal, pour peupler le filtre (ordre alphabétique)."""
+    return sorted(AuditLog.objects.values_list("module", flat=True).distinct())
 ```
 
 `log_action` est **l'unique porte d'entrée** pour écrire dans le journal. Elle extrait toute seule l'adresse
@@ -246,7 +294,7 @@ IP et le navigateur de la requête courante.
 
 #### `apps/audit/registry.py`
 
-*104 lignes* — Branchement de l'audit automatique sur les modèles sensibles.
+*108 lignes* — Branchement de l'audit automatique sur les modèles sensibles.
 
 ```python
 """Branchement de l'audit automatique sur les modèles sensibles.
@@ -263,7 +311,7 @@ import json
 from decimal import Decimal
 
 from django.core.serializers.json import DjangoJSONEncoder
-from django.db.models import DecimalField, Model
+from django.db.models import DecimalField, FileField, Model
 from django.db.models.signals import post_save, pre_save
 
 from apps.core.middleware import get_current_request, get_current_user
@@ -280,9 +328,13 @@ def _valeur(field, valeur):
 
     Sans cela, l'instance en mémoire (Decimal("250000")) et la ligne relue
     en base (Decimal("250000.00")) paraîtraient différentes à chaque save().
+    Un fichier (``FileField``/``ImageField``) n'est pas sérialisable tel quel : seul son chemin
+    (ou une chaîne vide, sans fichier) a une valeur d'audit.
     """
     if isinstance(field, DecimalField) and valeur is not None:
         return Decimal(valeur).quantize(Decimal(1).scaleb(-field.decimal_places))
+    if isinstance(field, FileField):
+        return valeur.name if valeur else ""
     return valeur
 
 
@@ -367,7 +419,7 @@ savoir *qui* a modifié, même depuis un service qui ne reçoit pas la requête.
 
 #### `apps/audit/signals.py`
 
-*49 lignes* — Signaux LOGIN/LOGOUT/LOGIN_FAILED — cahier-des-charges.md:78-79, ADR-003.
+*63 lignes* — Signaux LOGIN/LOGOUT/LOGIN_FAILED — cahier-des-charges.md:78-79, ADR-003.
 
 ```python
 """Signaux LOGIN/LOGOUT/LOGIN_FAILED — cahier-des-charges.md:78-79, ADR-003.
@@ -385,7 +437,7 @@ from django.contrib.auth.signals import (
 )
 from django.dispatch import receiver
 
-from apps.accounts.signals import mfa_evenement
+from apps.accounts.signals import mfa_evenement, mot_de_passe_reinitialise
 
 from . import services
 from .models import ActionChoices, StatutChoices
@@ -418,6 +470,20 @@ def on_mfa_evenement(sender, request, utilisateur, evenement, succes, **kwargs):
         nouvelle_valeur={"evenement": evenement},
         request=request,
         statut=StatutChoices.SUCCESS if succes else StatutChoices.FAILED,
+    )
+
+
+@receiver(mot_de_passe_reinitialise)
+def on_mot_de_passe_reinitialise(sender, request, utilisateur, **kwargs):
+    """« Mot de passe oublié » mené à son terme : tracé, sans jamais inscrire le mot de passe."""
+    services.log_action(
+        action=ActionChoices.UPDATE,
+        module="AUTH",
+        entite="User",
+        entite_id=utilisateur.pk,
+        utilisateur=utilisateur,
+        nouvelle_valeur={"evenement": "mot_de_passe_reinitialise"},
+        request=request,
     )
 ```
 
@@ -480,7 +546,7 @@ DIRECTION doit en plus avoir l'accès à l'administration (case « statut équip
 
 #### `apps/audit/apps.py`
 
-*10 lignes*
+*18 lignes*
 
 ```python
 from django.apps import AppConfig
@@ -492,14 +558,22 @@ class AuditConfig(AppConfig):
     label = 'audit'
 
     def ready(self):
-        from . import signals  # noqa: F401
+        from apps.accounts.navigation import EntreeMenu, enregistrer
+
+        from . import permissions, signals  # noqa: F401
+
+        enregistrer(
+            EntreeMenu(
+                "Journal d'audit", "audit:journal", "fa-clipboard-list", permissions.CONSULTATION, ordre=90
+            )
+        )
 ```
 
 ## Étape 5 — README et test
 
 #### `apps/audit/README.md`
 
-*13 lignes* — audit
+*19 lignes* — audit
 
 ```markdown
 # audit
@@ -509,12 +583,35 @@ cahier-des-charges.md:56-82. Capture LOGIN/LOGOUT/CREATE/UPDATE/DELETE/
 VALIDATE via middleware + signals `post_save` (ADR-003, architecture.md:488-493).
 Dépend de `core` (architecture.md:135).
 
-Entités principales : `AuditLog`. `registry.audit_model()` branche l'audit automatique (CREATE/UPDATE/DELETE avant/après) sur un modèle.
+Entités principales : `AuditLog`. `registry.audit_model()` branche l'audit automatique (CREATE/UPDATE/DELETE avant/après) sur un modèle. Un champ fichier (`FileField`/`ImageField`, ex. `missions.FraisMission.justificatif` (R4), `finance.DemandeDepense.piece_jointe`/`finance.OrdreDecaissement.justificatif` (R2)) est normalisé en son chemin (chaîne vide sans fichier) avant l'écriture JSON : la valeur brute (`FieldFile`) n'est pas sérialisable telle quelle.
 
 Règles :
 - Immuabilité stricte : aucun `update()`/`delete()` autorisé sur ce modèle.
 - Conservation ≥ 5 ans.
-- Consultation : ADMIN (complet), DIRECTION (lecture seule).
+- Consultation : ADMIN (complet), DIRECTION (lecture seule). En pratique les deux ont le même accès en
+  lecture (`permissions.CONSULTATION`) : il n'y a de toute façon aucune écriture possible depuis l'écran.
+
+Écran (`/audit/`, menu « Journal d'audit ») : liste filtrable (texte sur utilisateur/entité/IP, module,
+action, statut, période), `services.rechercher()`. Export PDF/CSV pour les audits externes
+(cahier-des-charges.md:82) : bouton « Imprimer » (rapport HTML, voir `apps/core/rapports.py`) et bouton
+« Exporter en CSV » (`JournalExporterCsvView`, mêmes filtres, `;` en séparateur pour Excel).
+```
+
+#### `apps/audit/permissions.py`
+
+*10 lignes* — Qui peut consulter le journal d'audit.
+
+```python
+"""Qui peut consulter le journal d'audit.
+
+Cahier-des-charges.md:81 : « Consultation ADMIN, lecture seule DIRECTION » — l'ADMIN et la DIRECTION
+consultent tous deux le journal complet ; il n'y a de toute façon aucune écriture possible depuis
+l'écran (append-only, ``AuditLog.save``/``delete`` verrouillés). Les autres rôles n'y ont pas accès.
+"""
+
+from apps.accounts.models import Role
+
+CONSULTATION = frozenset({Role.ADMIN, Role.DIRECTION})
 ```
 
 #### `apps/audit/tests/test_models.py`
@@ -565,7 +662,7 @@ def test_audit_log_delete_is_forbidden():
 ```diff
 --- config/settings/base.py (avant)
 +++ config/settings/base.py (après)
-@@ -51,4 +51,5 @@
+@@ -54,4 +54,5 @@
      "apps.core",
      "apps.accounts",
 +    "apps.audit",

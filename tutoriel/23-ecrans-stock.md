@@ -1,6 +1,6 @@
 # Chapitre 23 — Écrans : stock de pièces
 
-> 11 fichier(s) dans ce chapitre, 1821 lignes de code.
+> 11 fichier(s) dans ce chapitre, 1850 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -35,7 +35,7 @@ Les **écrans du stock de pièces** (Parc Auto : gestion ; Direction : lecture s
 
 #### `apps/inventory/views.py`
 
-*247 lignes* — Écrans du stock : articles, fiche, entrées, ajustements, journal, sorties pour OR.
+*269 lignes* — Écrans du stock : articles, fiche, entrées, ajustements, journal, sorties pour OR.
 
 ```python
 """Écrans du stock : articles, fiche, entrées, ajustements, journal, sorties pour OR.
@@ -51,7 +51,7 @@ from django.views.generic import DetailView, FormView, ListView
 
 from apps.accounts.mixins import RoleRequiredMixin
 from apps.core.formats import nombre
-from apps.core.views import PaginationTolerante
+from apps.core.views import ImpressionListeMixin, PaginationTolerante
 from apps.garage import services as garage_services
 
 from . import permissions, services
@@ -107,6 +107,28 @@ class ArticleListView(PaginationTolerante, RoleRequiredMixin, ListView):
             peut_modifier=self.request.user.role_effectif in permissions.MODIFICATION,
         )
         return contexte
+
+
+class ArticleImprimerView(ImpressionListeMixin, ArticleListView):
+    """Rapport imprimable du stock (mêmes recherche, catégorie et alerte que la liste)."""
+
+    titre_impression = "Stock de pièces détachées"
+    colonnes = (
+        ("Référence", "reference"), ("Désignation", "designation"), ("Catégorie", "categorie"),
+        ("Emplacement", "emplacement"), ("Quantité", "quantite"), ("Seuil minimal", "seuil_minimal"),
+        ("PUMP", lambda a: f"{nombre(a.pump)} FCFA"),
+        ("Valeur en stock", lambda a: f"{nombre(a.quantite * a.pump)} FCFA"),
+    )
+
+    def get_sous_titre_impression(self):
+        morceaux = []
+        if self.request.GET.get("categorie", ""):
+            morceaux.append(f"catégorie : {self.request.GET['categorie']}")
+        if self.request.GET.get("alerte") == "1":
+            morceaux.append("sous le seuil minimal")
+        if self.request.GET.get("q", ""):
+            morceaux.append(f"recherche : « {self.request.GET['q']} »")
+        return " · ".join(morceaux)
 
 
 class ArticleDetailView(RoleRequiredMixin, DetailView):
@@ -289,7 +311,7 @@ class SortieOrView(RoleRequiredMixin, View):
 
 #### `apps/inventory/urls.py`
 
-*16 lignes*
+*17 lignes*
 
 ```python
 from django.urls import path
@@ -300,6 +322,7 @@ app_name = "inventory"
 
 urlpatterns = [
     path("", views.ArticleListView.as_view(), name="articles"),
+    path("imprimer/", views.ArticleImprimerView.as_view(), name="articles_imprimer"),
     path("articles/nouveau/", views.ArticleCreateView.as_view(), name="article_creer"),
     path("articles/<int:pk>/", views.ArticleDetailView.as_view(), name="article_detail"),
     path("articles/<int:pk>/modifier/", views.ArticleUpdateView.as_view(), name="article_modifier"),
@@ -317,12 +340,12 @@ urlpatterns = [
 ```diff
 --- config/urls.py (avant)
 +++ config/urls.py (après)
-@@ -22,4 +22,5 @@
+@@ -23,4 +23,5 @@
      path("chauffeurs/", include("apps.drivers.urls")),
      path("garage/", include("apps.garage.urls")),
 +    path("stock/", include("apps.inventory.urls")),
+     path("audit/", include("apps.audit.urls")),
      path("notifications/", include("apps.notifications.urls")),
-     path("admin/", admin.site.urls),
 ```
 
 ## Étape 2 — Gabarits
@@ -333,7 +356,7 @@ mkdir -p apps/inventory/templates/inventory
 
 #### `apps/inventory/templates/inventory/article_list.html`
 
-*118 lignes*
+*122 lignes*
 
 ```django
 {% extends "base.html" %}
@@ -349,6 +372,10 @@ mkdir -p apps/inventory/templates/inventory
       <p class="mt-1 text-sm text-slate-600">{{ paginator.count|default:0 }} article{{ paginator.count|pluralize }}</p>
     </div>
     <div class="flex flex-wrap gap-3">
+      <a href="{% url 'inventory:articles_imprimer' %}?{{ request.GET.urlencode }}" target="_blank" rel="noopener"
+         class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+        <i class="fa-solid fa-print" aria-hidden="true"></i> Imprimer
+      </a>
       <a href="{% url 'inventory:mouvements' %}"
          class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
         <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> Journal des mouvements
@@ -362,7 +389,7 @@ mkdir -p apps/inventory/templates/inventory
     </div>
   </div>
 
-  <dl class="mt-5 grid gap-4 sm:grid-cols-2">
+  <dl class="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
     <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <dt class="text-sm text-slate-600">Valeur du stock (au PUMP)</dt>
       <dd class="mt-1 text-2xl font-bold text-slate-900">{{ valeur_totale|floatformat:0|intcomma }} FCFA</dd>
@@ -489,18 +516,18 @@ mkdir -p apps/inventory/templates/inventory
   </div>
   <p class="mt-1 text-sm text-slate-600">{{ article.designation }}</p>
 
-  <dl class="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+  <dl class="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
     <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">En stock</dt><dd class="mt-1 text-2xl font-bold text-slate-900">{{ article.quantite }}</dd></div>
     <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Seuil minimal</dt><dd class="mt-1 text-2xl font-bold text-slate-900">{% if article.seuil_minimal %}{{ article.seuil_minimal }}{% else %}<span class="text-base font-medium text-slate-600">Aucun</span>{% endif %}</dd></div>
     <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">PUMP</dt><dd class="mt-1 text-2xl font-bold text-slate-900">{{ article.pump|floatformat:0|intcomma }} <span class="text-sm font-medium text-slate-600">FCFA</span></dd></div>
     <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Valeur</dt><dd class="mt-1 text-2xl font-bold text-slate-900">{{ article.valeur_stock|floatformat:0|intcomma }} <span class="text-sm font-medium text-slate-600">FCFA</span></dd></div>
   </dl>
 
-  <div class="mt-6 grid gap-6 xl:grid-cols-3">
+  <div class="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-3">
     <div class="space-y-6 xl:col-span-2">
       <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-fiche">
         <h2 id="titre-fiche" class="text-base font-semibold text-slate-900">Fiche</h2>
-        <dl class="mt-4 grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
+        <dl class="mt-4 grid grid-cols-1 gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
           <div><dt class="text-slate-600">Catégorie</dt><dd class="mt-0.5 font-medium text-slate-900">{{ article.categorie|default:"—" }}</dd></div>
           <div><dt class="text-slate-600">Emplacement</dt><dd class="mt-0.5 font-medium text-slate-900">{{ article.emplacement|default:"—" }}</dd></div>
         </dl>
@@ -608,7 +635,7 @@ mkdir -p apps/inventory/templates/inventory
         {% for erreur in form.non_field_errors %}<p>{{ erreur }}</p>{% endfor %}
       </div>
     {% endif %}
-    <div class="grid gap-5 sm:grid-cols-2">
+    <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
       {% if form.reference %}{% include "components/_champ.html" with champ=form.reference %}{% endif %}
       <div class="{% if not form.reference %}sm:col-span-2{% endif %}">{% include "components/_champ.html" with champ=form.designation %}</div>
       {% include "components/_champ.html" with champ=form.categorie %}
@@ -754,7 +781,7 @@ mkdir -p apps/inventory/templates/inventory
   </dl>
 
   {% if section.contexte.form_sortie %}
-    <form method="post" action="{% url 'inventory:sortie_or' ordre.pk %}" class="mt-5 grid gap-4 border-t border-slate-100 pt-4 sm:grid-cols-3">
+    <form method="post" action="{% url 'inventory:sortie_or' ordre.pk %}" class="mt-5 grid grid-cols-1 gap-4 border-t border-slate-100 pt-4 sm:grid-cols-3">
       {% csrf_token %}
       <div class="sm:col-span-2">{% include "components/_champ.html" with champ=section.contexte.form_sortie.article %}</div>
       {% include "components/_champ.html" with champ=section.contexte.form_sortie.quantite %}
@@ -770,7 +797,7 @@ mkdir -p apps/inventory/templates/inventory
 
 #### `apps/inventory/tests/test_stock_views.py`
 
-*549 lignes* — Écrans du stock : articles, fiche, entrées, ajustements, journal.
+*551 lignes* — Écrans du stock : articles, fiche, entrées, ajustements, journal.
 
 ```python
 """Écrans du stock : articles, fiche, entrées, ajustements, journal."""
@@ -849,20 +876,21 @@ def test_le_stock_est_interdit_aux_autres_roles(client, role):
         assert client.get(reverse(nom, args=args)).status_code == 403, nom
 
 
-def test_la_direction_est_en_lecture_seule_sur_le_stock(client):
+def test_la_direction_peut_desormais_agir_sur_le_stock(client):
+    """Retour réunion : la DIRECTION a la même largeur que l'ADMIN pour la saisie/modification."""
     _connecte(client, Role.DIRECTION)
     article = _approvisionne(10)
 
-    assert client.get(reverse("inventory:article_creer")).status_code == 403
-    assert client.get(reverse("inventory:article_modifier", args=[article.pk])).status_code == 403
+    assert client.get(reverse("inventory:article_creer")).status_code == 200
+    assert client.get(reverse("inventory:article_modifier", args=[article.pk])).status_code == 200
     assert client.post(
         reverse("inventory:entree", args=[article.pk]), {"quantite": "5", "prix_unitaire": "900"}
-    ).status_code == 403
+    ).status_code == 302
     assert client.post(
         reverse("inventory:ajustement", args=[article.pk]), {"variation": "-3", "motif": "x"}
-    ).status_code == 403
+    ).status_code == 302
     article.refresh_from_db()
-    assert article.quantite == 10
+    assert article.quantite == 12
 
 
 def test_un_visiteur_non_connecte_est_renvoye_vers_la_connexion(client):
@@ -977,7 +1005,8 @@ def test_la_fiche_affiche_les_indicateurs_et_le_journal(client):
     assert [m.variation for m in reponse.context["mouvements"]] == [-1, -3, 10]
 
 
-def test_la_fiche_propose_les_formulaires_au_parc_auto_seulement(client):
+def test_la_fiche_propose_les_formulaires_au_parc_auto_et_a_la_direction(client):
+    """Retour réunion : la DIRECTION a désormais la même largeur que l'ADMIN (MODIFICATION)."""
     article = _approvisionne(10)
     _connecte(client, Role.PARCAUTO)
     page = client.get(_detail(article)).content.decode()
@@ -987,8 +1016,8 @@ def test_la_fiche_propose_les_formulaires_au_parc_auto_seulement(client):
     direction = Client()
     _connecte(direction, Role.DIRECTION)
     page = direction.get(_detail(article)).content.decode()
-    assert reverse("inventory:entree", args=[article.pk]) not in page
-    assert reverse("inventory:article_modifier", args=[article.pk]) not in page
+    assert reverse("inventory:entree", args=[article.pk]) in page
+    assert reverse("inventory:article_modifier", args=[article.pk]) in page
 
 
 def test_la_fiche_d_un_article_inconnu_est_introuvable(client):
@@ -1432,7 +1461,8 @@ def test_la_fiche_sans_sortie_le_dit(client):
     assert "Aucune pièce sortie du stock" in _detail(client, ordre).content.decode()
 
 
-def test_le_formulaire_de_sortie_n_est_propose_qu_au_parc_auto_sur_un_or_ouvert(client):
+def test_le_formulaire_de_sortie_est_propose_au_parc_auto_et_a_la_direction_sur_un_or_ouvert(client):
+    """Retour réunion : la DIRECTION a désormais la même largeur que l'ADMIN (MODIFICATION)."""
     ordre = _ordre()
     _article()
     _connecte(client, Role.PARCAUTO)
@@ -1441,8 +1471,7 @@ def test_le_formulaire_de_sortie_n_est_propose_qu_au_parc_auto_sur_un_or_ouvert(
 
     direction = Client()
     _connecte(direction, Role.DIRECTION)
-    assert url not in _detail(direction, ordre).content.decode()
-    assert "Pièces utilisées" in _detail(direction, ordre).content.decode()  # lecture seule
+    assert url in _detail(direction, ordre).content.decode()
 
     garage_services.cloturer_or(ordre)
     assert url not in _detail(client, ordre).content.decode()
@@ -1538,8 +1567,8 @@ def test_un_article_epuise_ne_peut_pas_etre_sorti(client):
     assert MouvementStock.objects.count() == 0
 
 
-@pytest.mark.parametrize("role", [Role.DIRECTION, Role.RH, Role.FINANCES, Role.CHARGE_CLIENTELE, Role.CHAUFFEUR])
-def test_la_sortie_est_interdite_hors_parc_auto(client, role):
+@pytest.mark.parametrize("role", [Role.RH, Role.FINANCES, Role.CHARGE_CLIENTELE, Role.CHAUFFEUR])
+def test_la_sortie_est_interdite_hors_parc_auto_et_direction(client, role):
     _connecte(client, role)
     article = _article()
     ordre = _ordre()

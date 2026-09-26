@@ -1,6 +1,6 @@
 # Chapitre 17 — Écrans : personnel et congés
 
-> 10 fichier(s) dans ce chapitre, 1482 lignes de code.
+> 14 fichier(s) dans ce chapitre, 2513 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -47,7 +47,7 @@ n'est vérifié dans la vue que pour l'*accès à l'écran*.
 
 #### `apps/hr/forms.py`
 
-*119 lignes*
+*191 lignes*
 
 ```python
 from django import forms
@@ -56,7 +56,9 @@ from django.utils import timezone
 from apps.core.forms import StyleTailwindMixin
 
 from . import services
-from .models import Departement, Personnel
+from .models import Departement, Personnel, POSTES_COURANTS
+
+POSTE_AUTRE = "AUTRE"
 
 
 class CongeForm(StyleTailwindMixin, forms.Form):
@@ -104,6 +106,34 @@ class DecisionForm(StyleTailwindMixin, forms.Form):
         return donnees
 
 
+class ReportForm(StyleTailwindMixin, forms.Form):
+    """Demande de report du solde non pris d'un congé en cours (avenant § R7)."""
+
+    nouvelle_date_fin = forms.DateField(
+        label="Je reprends le travail le", widget=forms.DateInput(attrs={"type": "date"}),
+        help_text="Dernier jour de congé réellement pris ; les jours ouvrés restants jusqu'à la fin "
+        "initialement prévue vous sont reversés une fois la RH d'accord.",
+    )
+    motif = forms.CharField(label="Motif", widget=forms.Textarea(attrs={"rows": 3}))
+
+
+class DecisionReportForm(StyleTailwindMixin, forms.Form):
+    """Décision de la RH sur une demande de report : valider ou refuser (motif obligatoire)."""
+
+    action = forms.ChoiceField(
+        choices=[("valider", "Valider"), ("refuser", "Refuser")], widget=forms.HiddenInput,
+    )
+    commentaire = forms.CharField(
+        label="Commentaire", required=False, widget=forms.Textarea(attrs={"rows": 2})
+    )
+
+    def clean(self):
+        donnees = super().clean()
+        if donnees.get("action") == "refuser" and not donnees.get("commentaire", "").strip():
+            self.add_error("commentaire", "Indiquez le motif du refus : il sera visible par l'employé.")
+        return donnees
+
+
 class AttributionForm(StyleTailwindMixin, forms.Form):
     """Jours de congé exceptionnels accordés par la RH (motif obligatoire)."""
 
@@ -127,13 +157,24 @@ def _libelle_compte(u) -> str:
 class PersonnelForm(StyleTailwindMixin, forms.Form):
     """Recrutement ou modification d'une fiche (cahier-des-charges.md:206-210).
 
-    À la modification, le matricule et la date d'embauche ne se changent pas.
+    Le matricule n'est jamais un champ du formulaire : ``services.recruter`` le génère
+    automatiquement (``PERS-AAAA-XXXX``). À la modification, la date d'embauche ne change pas non
+    plus (champ retiré ci-dessous).
     """
 
-    matricule = forms.CharField(label="Matricule", max_length=20)
     nom = forms.CharField(label="Nom", max_length=100)
     prenom = forms.CharField(label="Prénom", max_length=100)
-    poste = forms.CharField(label="Poste", max_length=100)
+    poste = forms.ChoiceField(
+        label="Poste",
+        choices=[(p, p) for p in POSTES_COURANTS] + [(POSTE_AUTRE, "Autre…")],
+        widget=forms.Select(attrs={"x-ref": "poste", "x-model": "poste", "@change": "poste = $event.target.value"}),
+    )
+    poste_autre = forms.CharField(
+        label="Préciser le poste",
+        max_length=100,
+        required=False,
+        help_text="Le poste n'apparaît pas dans la liste ci-dessus.",
+    )
     departement = forms.ChoiceField(label="Département", choices=Departement.choices)
     type_contrat = forms.CharField(
         label="Type de contrat", max_length=30, required=False, help_text="Ex. : CDI, CDD, stage."
@@ -163,12 +204,43 @@ class PersonnelForm(StyleTailwindMixin, forms.Form):
         superieurs = services.personnel_queryset().order_by("nom", "prenom")
         if personnel is not None:
             superieurs = superieurs.exclude(pk=personnel.pk)
-            del self.fields["matricule"]
             del self.fields["date_embauche"]
+            if personnel.poste not in POSTES_COURANTS:
+                # Poste antérieur hors liste (saisi avant l'existence de la liste, ou via « Autre ») :
+                # préremplir « Autre » + son intitulé, plutôt que de perdre la valeur ou de refuser
+                # la fiche à la prochaine modification qui ne touche pas ce champ.
+                self.initial["poste"] = POSTE_AUTRE
+                self.initial["poste_autre"] = personnel.poste
         self.fields["superieur"].queryset = superieurs
         self.fields["superieur"].label_from_instance = _libelle_employe
         self.fields["utilisateur"].queryset = services.comptes_disponibles(garder=personnel)
         self.fields["utilisateur"].label_from_instance = _libelle_compte
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned.get("poste") == POSTE_AUTRE:
+            autre = cleaned.get("poste_autre", "").strip()
+            if not autre:
+                self.add_error("poste_autre", "Précisez le poste.")
+            else:
+                cleaned["poste"] = autre
+        cleaned.pop("poste_autre", None)  # jamais transmis à services.recruter/modifier_personnel
+        return cleaned
+
+
+class ImportPersonnelForm(StyleTailwindMixin, forms.Form):
+    """Recrutement en masse : un classeur Excel (.xlsx), colonnes voir services.COLONNES_IMPORT."""
+
+    fichier = forms.FileField(
+        label="Fichier Excel (.xlsx)",
+        help_text="Téléchargez le modèle ci-dessous, remplissez-le, puis déposez-le ici.",
+    )
+
+    def clean_fichier(self):
+        fichier = self.cleaned_data["fichier"]
+        if not fichier.name.lower().endswith(".xlsx"):
+            raise forms.ValidationError("Le fichier doit être un classeur Excel (.xlsx).")
+        return fichier
 ```
 
 `StyleTailwindMixin` (chapitre 2) donne à chaque champ le même aspect. Les formulaires n'ont **aucune règle
@@ -178,7 +250,7 @@ métier** : « ce congé dépasse-t-il le solde ? » se décide dans `services.d
 
 #### `apps/hr/views.py`
 
-*371 lignes* — Écrans RH : congés (demande, validation N1/N2, annulation) et fiche du personnel.
+*565 lignes* — Écrans RH : congés (demande, validation N1/N2, annulation) et fiche du personnel.
 
 ```python
 """Écrans RH : congés (demande, validation N1/N2, annulation) et fiche du personnel.
@@ -188,8 +260,10 @@ délèguent à ``services.py`` (conventions.md:19-23). Le droit de valider dépe
 hiérarchie et non du seul rôle : c'est ``services.py`` qui le tranche.
 """
 
+import openpyxl
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied
+from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.utils import timezone
 from django.views import View
@@ -197,12 +271,20 @@ from django.views.generic import DetailView, FormView, ListView
 
 from apps.accounts.mixins import RoleRequiredMixin
 from apps.core.formats import nombre
-from apps.core.views import PaginationTolerante
+from apps.core.views import ImpressionListeMixin, PaginationTolerante
 
-from . import permissions, sections, services
-from .exceptions import CongeError, PersonnelError
-from .forms import AttributionForm, CongeForm, DecisionForm, PersonnelForm
-from .models import AttributionConge, Departement, StatutConge
+from . import documents, permissions, sections, services
+from .exceptions import CongeError, ImportPersonnelError, PersonnelError
+from .forms import (
+    AttributionForm,
+    CongeForm,
+    DecisionForm,
+    DecisionReportForm,
+    ImportPersonnelForm,
+    PersonnelForm,
+    ReportForm,
+)
+from .models import AttributionConge, Departement, ReportConge, StatutConge
 
 VUE_MES, VUE_A_VALIDER, VUE_TOUS = "mes", "a_valider", "tous"
 
@@ -278,11 +360,36 @@ class CongeListView(PaginationTolerante, RoleRequiredMixin, ListView):
             annee=annee,
             droits=services.droits_conges(self.fiche, annee) if self.fiche else None,
             lignes=[
-                {"conge": c, "echeance": services.echeance_en_attente(c)}
+                {
+                    "conge": c,
+                    "echeance": services.echeance_en_attente(c),
+                    # Équivalent à services.peut_demander_report(c, utilisateur), sans requête
+                    # supplémentaire par ligne : self.fiche est déjà mise en cache pour la page.
+                    "peut_reporter": c.statut == StatutConge.EN_COURS and self.fiche is not None and self.fiche.pk == c.employe_id,
+                }
                 for c in contexte["page_obj"]
             ],
         )
         return contexte
+
+
+class CongeImprimerView(ImpressionListeMixin, CongeListView):
+    """Rapport imprimable des congés (même vue — mes demandes / à valider / tous — et même statut)."""
+
+    titre_impression = "Congés"
+    colonnes = (
+        ("Employé", lambda c: f"{c.employe.prenom} {c.employe.nom}"),
+        ("Du", lambda c: c.date_debut.strftime("%d/%m/%Y")), ("Au", lambda c: c.date_fin.strftime("%d/%m/%Y")),
+        ("Jours", "jours"), ("Motif", "motif"), ("Statut", "get_statut_display"),
+    )
+
+    LIBELLES_VUE = {VUE_MES: "mes demandes", VUE_A_VALIDER: "à valider", VUE_TOUS: "tous les congés"}
+
+    def get_sous_titre_impression(self):
+        morceaux = [self.LIBELLES_VUE.get(self.get_vue(), "")]
+        if self.request.GET.get("statut", "") in StatutConge.values:
+            morceaux.append(f"statut : {StatutConge(self.request.GET['statut']).label}")
+        return " · ".join(m for m in morceaux if m)
 
 
 class CongeCreateView(RoleRequiredMixin, FormView):
@@ -352,13 +459,20 @@ class CongeDetailView(RoleRequiredMixin, DetailView):
     def get_context_data(self, **kwargs):
         contexte = super().get_context_data(**kwargs)
         conge, utilisateur = self.object, self.request.user
+        report = services.report_en_attente(conge)
         contexte.update(
             validations=conge.validations.select_related("validateur"),
             droits=services.droits_conges(conge.employe, conge.date_debut.year),
             echeance=services.echeance_en_attente(conge),
             actions=services.actions_disponibles(conge, utilisateur),
+            en_remplacement=services.decide_en_remplacement(conge, utilisateur),
             sections=sections.DETAIL_CONGE.sections(conge, utilisateur),
             peut_voir_employe=utilisateur.role_effectif in permissions.PERSONNEL_CONSULTATION,
+            peut_reporter=services.peut_demander_report(conge, utilisateur),
+            report_en_attente=report,
+            peut_decider_report=bool(report) and services.peut_decider_report(report, utilisateur),
+            reports_decides=conge.reports.exclude(pk=getattr(report, "pk", None)).select_related("valide_par"),
+            peut_telecharger_autorisation=conge.statut in services.STATUTS_DECOMPTES,
         )
         return contexte
 
@@ -409,6 +523,93 @@ class CongeDecisionView(RoleRequiredMixin, View):
         )
 
 
+# --- report du solde d'un congé en cours (avenant-separation-des-taches.md § R7) ---
+
+
+class ReportCreateView(RoleRequiredMixin, FormView):
+    """Demande de report, par l'employé actuellement en congé (bouton sur sa ligne du tableau)."""
+
+    roles = permissions.CONGES_ACCES
+    form_class = ReportForm
+    template_name = "hr/report_form.html"
+
+    def dispatch(self, request, *args, **kwargs):
+        self.conge = get_object_or_404(services.conges_queryset(), pk=kwargs["pk"])
+        return super().dispatch(request, *args, **kwargs)
+
+    def get(self, request, *args, **kwargs):
+        if not services.peut_demander_report(self.conge, request.user):
+            messages.error(request, "Le report n'est possible que pour votre propre congé, pendant que vous y êtes.")
+            return redirect("hr:conges_detail", pk=self.conge.pk)
+        return super().get(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        return super().get_context_data(conge=self.conge, **kwargs)
+
+    def form_valid(self, form):
+        try:
+            services.demander_report(self.conge, self.request.user, **form.cleaned_data)
+        except CongeError as erreur:
+            form.add_error(None, str(erreur))
+            return self.form_invalid(form)
+        messages.success(
+            self.request,
+            "Demande de report envoyée à la RH : sans sa validation, votre congé continue normalement.",
+        )
+        return redirect("hr:conges_detail", pk=self.conge.pk)
+
+
+class ReportDecisionView(RoleRequiredMixin, View):
+    """Valide ou refuse une demande de report (POST, RH uniquement — contrôlé par le service)."""
+
+    roles = permissions.CONGES_ACCES
+    http_method_names = ["post"]
+
+    def post(self, request, pk):
+        report = get_object_or_404(ReportConge.objects.select_related("conge"), pk=pk)
+        form = DecisionReportForm(request.POST)
+        if not form.is_valid():
+            _erreurs_en_messages(request, form)
+            return redirect("hr:conges_detail", pk=report.conge_id)
+        action, commentaire = form.cleaned_data["action"], form.cleaned_data["commentaire"]
+        try:
+            if action == "valider":
+                services.approuver_report(report, request.user, commentaire=commentaire)
+                messages.success(
+                    request,
+                    f"Report validé : {report.jours_restants} jour(s) reversé(s) au solde de l'employé.",
+                )
+            else:
+                services.refuser_report(report, request.user, motif=commentaire)
+                messages.success(request, "Report refusé : le congé continue jusqu'à sa fin initiale.")
+        except CongeError as erreur:
+            messages.error(request, str(erreur))
+        return redirect("hr:conges_detail", pk=report.conge_id)
+
+
+class AutorisationCongePdfView(RoleRequiredMixin, View):
+    """PDF de l'autorisation de congé, produit à la demande (jamais stocké)."""
+
+    roles = permissions.CONGES_ACCES
+    http_method_names = ["get"]
+
+    def get(self, request, pk):
+        conge = get_object_or_404(services.conges_queryset(), pk=pk)
+        if (
+            request.user.role_effectif not in permissions.CONGES_TOUS
+            and not services.est_concerne_par(conge, request.user)
+        ):
+            raise PermissionDenied
+        try:
+            contenu = documents.generer_pdf_autorisation(conge)
+        except ValueError:
+            raise Http404
+        reponse = HttpResponse(contenu, content_type="application/pdf")
+        reponse["Content-Disposition"] = f'attachment; filename="autorisation-conge-{conge.pk}.pdf"'
+        reponse["Cache-Control"] = "no-store, private"
+        return reponse
+
+
 # --- personnel ---
 
 
@@ -433,6 +634,27 @@ class PersonnelListView(PaginationTolerante, RoleRequiredMixin, ListView):
             peut_modifier=self.request.user.role_effectif in permissions.PERSONNEL_MODIFICATION,
         )
         return contexte
+
+
+class PersonnelImprimerView(ImpressionListeMixin, PersonnelListView):
+    """Rapport imprimable du personnel (mêmes recherche et département que la liste ; sans le salaire,
+    comme la liste elle-même)."""
+
+    titre_impression = "Personnel"
+    colonnes = (
+        ("Matricule", "matricule"), ("Nom", "nom"), ("Prénom", "prenom"), ("Poste", "poste"),
+        ("Département", "get_departement_display"),
+        ("Date d'embauche", lambda p: p.date_embauche.strftime("%d/%m/%Y")),
+        ("Supérieur", lambda p: f"{p.superieur.prenom} {p.superieur.nom}" if p.superieur_id and p.superieur_id != p.pk else "—"),
+    )
+
+    def get_sous_titre_impression(self):
+        morceaux = []
+        if self.request.GET.get("departement", "") in Departement.values:
+            morceaux.append(f"département : {Departement(self.request.GET['departement']).label}")
+        if self.request.GET.get("q", ""):
+            morceaux.append(f"recherche : « {self.request.GET['q']} »")
+        return " · ".join(morceaux)
 
 
 class PersonnelDetailView(RoleRequiredMixin, DetailView):
@@ -478,9 +700,53 @@ class PersonnelCreateView(RoleRequiredMixin, FormView):
             " Sa fiche chauffeur a été créée automatiquement." if personnel.est_chauffeur else ""
         )
         messages.success(
-            self.request, f"{personnel.prenom} {personnel.nom} est enregistré(e).{suite}"
+            self.request,
+            f"{personnel.prenom} {personnel.nom} est enregistré(e) sous le matricule "
+            f"{personnel.matricule}.{suite}",
         )
         return redirect("hr:personnel_detail", pk=personnel.pk)
+
+
+class PersonnelImportView(RoleRequiredMixin, FormView):
+    """Recrutement en masse depuis un classeur Excel — voir services.importer_personnel."""
+
+    roles = permissions.PERSONNEL_MODIFICATION
+    form_class = ImportPersonnelForm
+    template_name = "hr/personnel_import.html"
+
+    def get_context_data(self, **kwargs):
+        return super().get_context_data(colonnes=services.COLONNES_IMPORT, **kwargs)
+
+    def form_valid(self, form):
+        try:
+            crees = services.importer_personnel(form.cleaned_data["fichier"])
+        except ImportPersonnelError as erreur:
+            return self.render_to_response(self.get_context_data(form=form, erreurs=erreur.erreurs))
+        messages.success(
+            self.request,
+            f"{len(crees)} employé(s) importé(s) : "
+            + ", ".join(f"{p.prenom} {p.nom} ({p.matricule})" for p in crees) + ".",
+        )
+        return redirect("hr:personnel_liste")
+
+
+class PersonnelModeleImportView(RoleRequiredMixin, View):
+    """Modèle de fichier à télécharger avant l'import en masse (colonnes attendues, un exemple)."""
+
+    roles = permissions.PERSONNEL_MODIFICATION
+
+    def get(self, request):
+        classeur = openpyxl.Workbook()
+        feuille = classeur.active
+        feuille.title = "Personnel"
+        feuille.append(services.COLONNES_IMPORT)
+        feuille.append(["Traoré", "Awa", "Comptable", "Comptabilité", "CDI", "01/09/2026", "250000"])
+        reponse = HttpResponse(
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+        reponse["Content-Disposition"] = "attachment; filename=modele-import-personnel.xlsx"
+        classeur.save(reponse)
+        return reponse
 
 
 class PersonnelUpdateView(RoleRequiredMixin, FormView):
@@ -567,7 +833,7 @@ class AttributionView(RoleRequiredMixin, View):
 
 #### `apps/hr/urls.py`
 
-*25 lignes*
+*44 lignes*
 
 ```python
 from django.urls import path
@@ -578,11 +844,30 @@ app_name = "hr"
 
 urlpatterns = [
     path("conges/", views.CongeListView.as_view(), name="conges_liste"),
+    path("conges/imprimer/", views.CongeImprimerView.as_view(), name="conges_imprimer"),
     path("conges/nouveau/", views.CongeCreateView.as_view(), name="conges_nouveau"),
     path("conges/<int:pk>/", views.CongeDetailView.as_view(), name="conges_detail"),
     path("conges/<int:pk>/decision/", views.CongeDecisionView.as_view(), name="conges_decision"),
+    path("conges/<int:pk>/reporter/", views.ReportCreateView.as_view(), name="conges_reporter"),
+    path(
+        "conges/<int:pk>/autorisation.pdf",
+        views.AutorisationCongePdfView.as_view(),
+        name="conges_autorisation_pdf",
+    ),
+    path(
+        "conges/report/<int:pk>/decision/",
+        views.ReportDecisionView.as_view(),
+        name="conges_report_decision",
+    ),
     path("personnel/", views.PersonnelListView.as_view(), name="personnel_liste"),
+    path("personnel/imprimer/", views.PersonnelImprimerView.as_view(), name="personnel_imprimer"),
     path("personnel/nouveau/", views.PersonnelCreateView.as_view(), name="personnel_nouveau"),
+    path("personnel/importer/", views.PersonnelImportView.as_view(), name="personnel_importer"),
+    path(
+        "personnel/importer/modele.xlsx",
+        views.PersonnelModeleImportView.as_view(),
+        name="personnel_import_modele",
+    ),
     path("personnel/<int:pk>/", views.PersonnelDetailView.as_view(), name="personnel_detail"),
     path(
         "personnel/<int:pk>/modifier/",
@@ -609,12 +894,12 @@ Montez ces adresses : voici la modification à faire dans `config/urls.py` :
 ```diff
 --- config/urls.py (avant)
 +++ config/urls.py (après)
-@@ -16,4 +16,5 @@
+@@ -17,4 +17,5 @@
      path("favicon.ico", RedirectView.as_view(url=settings.STATIC_URL + "img/favicon.png", permanent=True)),
      path("", include("apps.accounts.urls")),
 +    path("rh/", include("apps.hr.urls")),
+     path("audit/", include("apps.audit.urls")),
      path("notifications/", include("apps.notifications.urls")),
-     path("admin/", admin.site.urls),
 ```
 
 ## Étape 4 — Les gabarits
@@ -627,7 +912,7 @@ Chaque gabarit **hérite de `base.html`**. Lisez d'abord la liste des congés : 
 
 #### `apps/hr/templates/hr/conge_list.html`
 
-*103 lignes*
+*117 lignes*
 
 ```django
 {% extends "base.html" %}
@@ -644,17 +929,23 @@ Chaque gabarit **hérite de `base.html`**. Lisez d'abord la liste des congés : 
         Trois étapes : la demande, la validation de votre supérieur hiérarchique (48 h), puis celle de la RH (24 h).
       </p>
     </div>
-    {% if fiche %}
-      <a href="{% url 'hr:conges_nouveau' %}"
-         class="inline-flex items-center gap-2 rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">
-        <i class="fa-solid fa-plus" aria-hidden="true"></i> Demander un congé
+    <div class="flex flex-wrap items-center gap-2">
+      <a href="{% url 'hr:conges_imprimer' %}?{{ request.GET.urlencode }}" target="_blank" rel="noopener"
+         class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+        <i class="fa-solid fa-print" aria-hidden="true"></i> Imprimer
       </a>
-    {% endif %}
+      {% if fiche %}
+        <a href="{% url 'hr:conges_nouveau' %}"
+           class="inline-flex items-center gap-2 rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">
+          <i class="fa-solid fa-plus" aria-hidden="true"></i> Demander un congé
+        </a>
+      {% endif %}
+    </div>
   </div>
 
   {% if droits %}
-    <dl class="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-      <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Droit annuel {{ annee }}</dt><dd class="mt-1 text-2xl font-bold text-slate-900">{{ droits.droit_annuel }} <span class="text-sm font-medium text-slate-600">jours ouvrables</span></dd></div>
+    <dl class="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Droit annuel {{ annee }}</dt><dd class="mt-1 text-2xl font-bold text-slate-900">{{ droits.droit_annuel }} <span class="text-sm font-medium text-slate-600">jours ouvrés</span></dd></div>
       <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Jours exceptionnels</dt><dd class="mt-1 text-2xl font-bold text-slate-900">{{ droits.exceptionnels }}</dd></div>
       <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Déjà pris ou approuvés</dt><dd class="mt-1 text-2xl font-bold text-slate-900">{{ droits.consommes }}</dd></div>
       <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Solde disponible</dt><dd class="mt-1 text-2xl font-bold {% if droits.disponible <= 0 %}text-red-700{% else %}text-emerald-800{% endif %}">{{ droits.disponible }}</dd></div>
@@ -695,6 +986,7 @@ Chaque gabarit **hérite de `base.html`**. Lisez d'abord la liste des congés : 
             <th scope="col" class="px-4 py-3 text-right">Jours</th>
             <th scope="col" class="px-4 py-3">Statut</th>
             <th scope="col" class="hidden px-4 py-3 xl:table-cell">Décision attendue avant</th>
+            <th scope="col" class="px-4 py-3"><span class="sr-only">Actions</span></th>
           </tr>
         </thead>
         <tbody class="divide-y divide-slate-100">
@@ -712,6 +1004,13 @@ Chaque gabarit **hérite de `base.html`**. Lisez d'abord la liste des congés : 
                     <span class="text-slate-700">{{ e.1|date:"d/m/Y H:i" }}</span>
                     {% if e.2 %}<span class="ml-2 text-xs font-semibold text-red-700">en retard</span>{% endif %}
                   {% else %}<span class="text-slate-500">—</span>{% endif %}
+                </td>
+                <td class="whitespace-nowrap px-4 py-3">
+                  {% if ligne.peut_reporter %}
+                    <a href="{% url 'hr:conges_reporter' c.pk %}" class="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+                      <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> Reporter
+                    </a>
+                  {% endif %}
                 </td>
               </tr>
             {% endwith %}
@@ -752,7 +1051,7 @@ Chaque gabarit **hérite de `base.html`**. Lisez d'abord la liste des congés : 
   </nav>
   <h1 class="mt-2 text-2xl font-bold text-slate-900">Demander un congé</h1>
   <p class="mt-1 text-sm text-slate-600">
-    Les jours sont comptés en jours ouvrables : tous les jours sauf les dimanches et les jours fériés.
+    Les jours sont comptés en jours ouvrés : du lundi au vendredi, hors jours fériés.
     Votre solde {{ annee }} est de <strong class="{% if droits.disponible <= 0 %}text-red-700{% else %}text-emerald-800{% endif %}">{{ droits.disponible }} jour{{ droits.disponible|pluralize }}</strong>
     ({{ droits.droit_annuel }} de droit annuel{% if droits.exceptionnels %} + {{ droits.exceptionnels }} exceptionnel{{ droits.exceptionnels|pluralize }}{% endif %}, {{ droits.consommes }} déjà approuvé{{ droits.consommes|pluralize }}).
   </p>
@@ -764,7 +1063,7 @@ Chaque gabarit **hérite de `base.html`**. Lisez d'abord la liste des congés : 
         {% for erreur in form.non_field_errors %}<p>{{ erreur }}</p>{% endfor %}
       </div>
     {% endif %}
-    <div class="grid gap-5 sm:grid-cols-2">
+    <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
       {% include "components/_champ.html" with champ=form.date_debut %}
       {% include "components/_champ.html" with champ=form.date_fin %}
     </div>
@@ -780,7 +1079,7 @@ Chaque gabarit **hérite de `base.html`**. Lisez d'abord la liste des congés : 
 
 #### `apps/hr/templates/hr/conge_detail.html`
 
-*106 lignes*
+*156 lignes*
 
 ```django
 {% extends "base.html" %}
@@ -801,7 +1100,10 @@ Chaque gabarit **hérite de `base.html`**. Lisez d'abord la liste des congés : 
   </div>
   <p class="mt-1 text-sm text-slate-600">
     du {{ conge.date_debut|date:"l j F Y" }} au {{ conge.date_fin|date:"l j F Y" }}
-    · {{ conge.jours }} jour{{ conge.jours|pluralize }} ouvrable{{ conge.jours|pluralize }}
+    · {{ conge.jours }} jour{{ conge.jours|pluralize }} ouvré{{ conge.jours|pluralize }}
+    {% if peut_telecharger_autorisation %}
+      · <a href="{% url 'hr:conges_autorisation_pdf' conge.pk %}" class="text-marque-700 underline-offset-2 hover:underline"><i class="fa-solid fa-file-pdf mr-1" aria-hidden="true"></i>Autorisation de congé (PDF)</a>
+    {% endif %}
   </p>
 
   {% for section in sections %}{% include section.template with section=section %}{% endfor %}
@@ -812,7 +1114,7 @@ Chaque gabarit **hérite de `base.html`**. Lisez d'abord la liste des congés : 
     </p>
   {% endif %}
 
-  <div class="mt-6 grid gap-6 xl:grid-cols-3">
+  <div class="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-3">
     <div class="space-y-6 xl:col-span-2">
       <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-demande">
         <h2 id="titre-demande" class="text-base font-semibold text-slate-900">Demande</h2>
@@ -859,6 +1161,9 @@ Chaque gabarit **hérite de `base.html`**. Lisez d'abord la liste des congés : 
       {% if actions %}
         <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-decision">
           <h2 id="titre-decision" class="text-base font-semibold text-slate-900">Votre décision</h2>
+          {% if en_remplacement %}
+            <p class="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">Le délai de décision est dépassé : en tant que Direction, vous pouvez décider à la place du validateur habituel.</p>
+          {% endif %}
           {% if "valider" in actions %}
             <form method="post" action="{% url 'hr:conges_decision' conge.pk %}" class="mt-4">
               {% csrf_token %}
@@ -885,6 +1190,50 @@ Chaque gabarit **hérite de `base.html`**. Lisez d'abord la liste des congés : 
           {% endif %}
         </section>
       {% endif %}
+
+      {% if peut_reporter or report_en_attente or reports_decides %}
+        <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-report">
+          <h2 id="titre-report" class="text-base font-semibold text-slate-900">Report du solde</h2>
+          <p class="mt-1 text-xs text-slate-600">Écourter ce congé et garder les jours non pris pour plus tard. Sans validation de la RH, rien ne change.</p>
+
+          {% if report_en_attente %}
+            <div class="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+              <p>Demande envoyée le {{ report_en_attente.created_at|date:"d/m/Y à H:i" }} : reprise le <strong>{{ report_en_attente.nouvelle_date_fin|date:"d/m/Y" }}</strong>, {{ report_en_attente.jours_restants }} jour{{ report_en_attente.jours_restants|pluralize }} ouvré{{ report_en_attente.jours_restants|pluralize }} à reverser au solde.</p>
+              <p class="mt-1">« {{ report_en_attente.motif }} »</p>
+            </div>
+            {% if peut_decider_report %}
+              <form method="post" action="{% url 'hr:conges_report_decision' report_en_attente.pk %}" class="mt-3">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="valider">
+                <button type="submit" class="w-full rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:ring-offset-2">
+                  <i class="fa-solid fa-check mr-1" aria-hidden="true"></i> Valider le report
+                </button>
+              </form>
+              <form method="post" action="{% url 'hr:conges_report_decision' report_en_attente.pk %}" class="mt-2" data-confirm="Refuser ce report ?">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="refuser">
+                <label for="commentaire-report-refus" class="block text-sm font-medium text-slate-800">Motif du refus <span class="text-red-700" aria-hidden="true">*</span></label>
+                <textarea id="commentaire-report-refus" name="commentaire" rows="2" required class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-marque-600 focus:outline-none focus:ring-2 focus:ring-marque-600/30"></textarea>
+                <button type="submit" class="mt-2 w-full rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-800 hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-700 focus-visible:ring-offset-2">Refuser</button>
+              </form>
+            {% endif %}
+          {% elif peut_reporter %}
+            <a href="{% url 'hr:conges_reporter' conge.pk %}" class="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+              <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> Demander un report
+            </a>
+          {% endif %}
+
+          {% for r in reports_decides %}
+            <div class="mt-3 border-t border-slate-100 pt-3 text-sm">
+              {% if r.statut == "APPROUVE" %}
+                <p class="text-emerald-800"><i class="fa-solid fa-check mr-1" aria-hidden="true"></i>Report validé par {{ r.valide_par|default:"un compte supprimé" }} le {{ r.date_decision|date:"d/m/Y" }} : {{ r.jours_restants }} jour{{ r.jours_restants|pluralize }} reversé{{ r.jours_restants|pluralize }} au solde.</p>
+              {% else %}
+                <p class="text-red-800"><i class="fa-solid fa-xmark mr-1" aria-hidden="true"></i>Report refusé par {{ r.valide_par|default:"un compte supprimé" }} le {{ r.date_decision|date:"d/m/Y" }}{% if r.motif_decision %} : « {{ r.motif_decision }} »{% endif %}.</p>
+              {% endif %}
+            </div>
+          {% endfor %}
+        </section>
+      {% endif %}
     </div>
   </div>
 </div>
@@ -898,7 +1247,7 @@ le formulaire de refus/annulation porte `data-confirm` : `app.js` demande confir
 
 #### `apps/hr/templates/hr/personnel_list.html`
 
-*78 lignes*
+*88 lignes*
 
 ```django
 {% extends "base.html" %}
@@ -912,11 +1261,21 @@ le formulaire de refus/annulation porte `data-confirm` : `app.js` demande confir
       <h1 class="text-2xl font-bold text-slate-900">Personnel</h1>
       <p class="mt-1 text-sm text-slate-600">{{ paginator.count|default:0 }} employé{{ paginator.count|pluralize }}</p>
     </div>
-    {% if peut_modifier %}
-      <a href="{% url 'hr:personnel_nouveau' %}"
-         class="inline-flex items-center gap-2 rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">
-        <i class="fa-solid fa-user-plus" aria-hidden="true"></i> Nouveau recrutement
+    <div class="flex flex-wrap gap-2">
+      <a href="{% url 'hr:personnel_imprimer' %}?{{ request.GET.urlencode }}" target="_blank" rel="noopener"
+         class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+        <i class="fa-solid fa-print" aria-hidden="true"></i> Imprimer
       </a>
+      {% if peut_modifier %}
+        <a href="{% url 'hr:personnel_importer' %}"
+           class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">
+          <i class="fa-solid fa-file-excel" aria-hidden="true"></i> Importer depuis Excel
+        </a>
+        <a href="{% url 'hr:personnel_nouveau' %}"
+           class="inline-flex items-center gap-2 rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">
+          <i class="fa-solid fa-user-plus" aria-hidden="true"></i> Nouveau recrutement
+        </a>
+      </div>
     {% endif %}
   </div>
 
@@ -983,7 +1342,7 @@ le formulaire de refus/annulation porte `data-confirm` : `app.js` demande confir
 
 #### `apps/hr/templates/hr/personnel_form.html`
 
-*63 lignes*
+*65 lignes*
 
 ```django
 {% extends "base.html" %}
@@ -991,7 +1350,7 @@ le formulaire de refus/annulation porte `data-confirm` : `app.js` demande confir
 {% block entete %}Personnel{% endblock %}
 
 {% block contenu %}
-<div class="mx-auto max-w-3xl">
+<div class="mx-auto max-w-3xl" x-data="{ poste: '' }" x-init="poste = $refs.poste.value">
   <nav aria-label="Fil d'Ariane" class="text-sm text-slate-600">
     <a href="{% url 'hr:personnel_liste' %}" class="underline-offset-2 hover:underline">Personnel</a>
     <span aria-hidden="true">/</span>
@@ -1003,7 +1362,7 @@ le formulaire de refus/annulation porte `data-confirm` : `app.js` demande confir
   <h1 class="mt-2 text-2xl font-bold text-slate-900">{% if employe %}Modifier {{ employe.prenom }} {{ employe.nom }}{% else %}Nouveau recrutement{% endif %}</h1>
   <p class="mt-1 text-sm text-slate-600">
     {% if employe %}Le matricule ({{ employe.matricule }}) et la date d'embauche ne se modifient pas.
-    {% else %}Un employé au poste « Chauffeur » reçoit automatiquement sa fiche chauffeur.{% endif %}
+    {% else %}Le matricule est attribué automatiquement à l'enregistrement. Un employé au poste « Chauffeur » reçoit automatiquement sa fiche chauffeur.{% endif %}
   </p>
 
   <form method="post" novalidate class="mt-6 space-y-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -1016,8 +1375,7 @@ le formulaire de refus/annulation porte `data-confirm` : `app.js` demande confir
 
     <fieldset>
       <legend class="text-sm font-semibold text-slate-900">Identité</legend>
-      <div class="mt-3 grid gap-5 sm:grid-cols-2">
-        {% if not employe %}{% include "components/_champ.html" with champ=form.matricule %}{% endif %}
+      <div class="mt-3 grid grid-cols-1 gap-5 sm:grid-cols-2">
         {% include "components/_champ.html" with champ=form.nom %}
         {% include "components/_champ.html" with champ=form.prenom %}
       </div>
@@ -1025,8 +1383,11 @@ le formulaire de refus/annulation porte `data-confirm` : `app.js` demande confir
 
     <fieldset class="border-t border-slate-100 pt-5">
       <legend class="text-sm font-semibold text-slate-900">Poste et contrat</legend>
-      <div class="mt-3 grid gap-5 sm:grid-cols-2">
+      <div class="mt-3 grid grid-cols-1 gap-5 sm:grid-cols-2">
         {% include "components/_champ.html" with champ=form.poste %}
+        <div x-show="poste === 'AUTRE'" x-cloak>
+          {% include "components/_champ.html" with champ=form.poste_autre %}
+        </div>
         {% include "components/_champ.html" with champ=form.departement %}
         {% include "components/_champ.html" with champ=form.type_contrat %}
         {% if not employe %}{% include "components/_champ.html" with champ=form.date_embauche %}{% endif %}
@@ -1036,7 +1397,7 @@ le formulaire de refus/annulation porte `data-confirm` : `app.js` demande confir
 
     <fieldset class="border-t border-slate-100 pt-5">
       <legend class="text-sm font-semibold text-slate-900">Hiérarchie et accès</legend>
-      <div class="mt-3 grid gap-5 sm:grid-cols-2">
+      <div class="mt-3 grid grid-cols-1 gap-5 sm:grid-cols-2">
         {% include "components/_champ.html" with champ=form.superieur %}
         {% include "components/_champ.html" with champ=form.utilisateur %}
       </div>
@@ -1079,7 +1440,7 @@ le formulaire de refus/annulation porte `data-confirm` : `app.js` demande confir
   </div>
   <p class="mt-1 text-sm text-slate-600">Matricule {{ employe.matricule }} · {{ employe.poste }}</p>
 
-  <div class="mt-6 grid gap-6 xl:grid-cols-3">
+  <div class="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-3">
     <div class="space-y-6 xl:col-span-1">
       <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-fiche">
         <h2 id="titre-fiche" class="text-base font-semibold text-slate-900">Fiche</h2>
@@ -1107,13 +1468,13 @@ le formulaire de refus/annulation porte `data-confirm` : `app.js` demande confir
     <div class="space-y-6 xl:col-span-2">
       <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-droits">
         <h2 id="titre-droits" class="text-base font-semibold text-slate-900">Droits à congé {{ annee }}</h2>
-        <dl class="mt-4 grid gap-4 sm:grid-cols-4">
+        <dl class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-4">
           <div><dt class="text-sm text-slate-600">Droit annuel</dt><dd class="mt-1 text-xl font-bold text-slate-900">{{ droits.droit_annuel }}</dd></div>
           <div><dt class="text-sm text-slate-600">Exceptionnels</dt><dd class="mt-1 text-xl font-bold text-slate-900">{{ droits.exceptionnels }}</dd></div>
           <div><dt class="text-sm text-slate-600">Approuvés</dt><dd class="mt-1 text-xl font-bold text-slate-900">{{ droits.consommes }}</dd></div>
           <div><dt class="text-sm text-slate-600">Disponible</dt><dd class="mt-1 text-xl font-bold {% if droits.disponible <= 0 %}text-red-700{% else %}text-emerald-800{% endif %}">{{ droits.disponible }}</dd></div>
         </dl>
-        <p class="mt-2 text-xs text-slate-600">En jours ouvrables (hors dimanches et jours fériés).</p>
+        <p class="mt-2 text-xs text-slate-600">En jours ouvrés (lundi-vendredi, hors jours fériés).</p>
 
         {% if attributions %}
           <h3 class="mt-5 text-sm font-semibold text-slate-900">Jours exceptionnels accordés</h3>
@@ -1129,7 +1490,7 @@ le formulaire de refus/annulation porte `data-confirm` : `app.js` demande confir
           <form method="post" action="{% url 'hr:personnel_attribution' employe.pk %}" class="mt-5 space-y-4 border-t border-slate-100 pt-4">
             {% csrf_token %}
             <h3 class="text-sm font-semibold text-slate-900">Accorder des jours exceptionnels</h3>
-            <div class="grid gap-4 sm:grid-cols-2">
+            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
               {% include "components/_champ.html" with champ=form_attribution.annee %}
               {% include "components/_champ.html" with champ=form_attribution.jours %}
             </div>
@@ -1171,6 +1532,700 @@ le formulaire de refus/annulation porte `data-confirm` : `app.js` demande confir
 
 ## Étape 5 — Les tests d'écrans
 
+#### `apps/hr/templates/hr/personnel_import.html`
+
+*58 lignes*
+
+```django
+{% extends "base.html" %}
+{% block titre %}Importer le personnel{% endblock %}
+{% block entete %}Personnel{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-3xl">
+  <nav aria-label="Fil d'Ariane" class="text-sm text-slate-600">
+    <a href="{% url 'hr:personnel_liste' %}" class="underline-offset-2 hover:underline">Personnel</a>
+    <span aria-hidden="true">/</span> Importer depuis Excel
+  </nav>
+  <h1 class="mt-2 text-2xl font-bold text-slate-900">Importer depuis Excel</h1>
+  <p class="mt-1 text-sm text-slate-600">
+    Recrute plusieurs employés en une fois. Le matricule est attribué automatiquement, comme pour
+    un recrutement individuel ; le supérieur hiérarchique et le compte utilisateur se règlent
+    ensuite, fiche par fiche.
+  </p>
+
+  <div class="mt-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+    <h2 class="text-sm font-semibold text-slate-900">1. Préparer le fichier</h2>
+    <p class="mt-2 text-sm text-slate-600">
+      Colonnes attendues, dans cet ordre : <strong>{{ colonnes|join:", " }}</strong>.
+      Poste et Département doivent correspondre à une valeur existante dans l'application.
+    </p>
+    <a href="{% url 'hr:personnel_import_modele' %}"
+       class="mt-3 inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50">
+      <i class="fa-solid fa-download" aria-hidden="true"></i> Télécharger le modèle
+    </a>
+  </div>
+
+  <form method="post" enctype="multipart/form-data" novalidate
+        class="mt-6 space-y-5 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+    {% csrf_token %}
+    <h2 class="text-sm font-semibold text-slate-900">2. Déposer le fichier rempli</h2>
+
+    {% if form.non_field_errors %}
+      <div role="alert" class="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">
+        {% for erreur in form.non_field_errors %}<p>{{ erreur }}</p>{% endfor %}
+      </div>
+    {% endif %}
+
+    {% if erreurs %}
+      <div role="alert" class="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">
+        <p class="font-semibold">Rien n'a été importé : corrigez ces lignes, puis déposez le fichier à nouveau.</p>
+        <ul class="mt-2 list-disc space-y-1 pl-5">
+          {% for erreur in erreurs %}<li>{{ erreur }}</li>{% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+
+    {% include "components/_champ.html" with champ=form.fichier %}
+
+    <div class="flex items-center justify-end gap-3 border-t border-slate-100 pt-5">
+      <a href="{% url 'hr:personnel_liste' %}" class="rounded-lg px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Annuler</a>
+      <button type="submit" class="rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">Importer</button>
+    </div>
+  </form>
+</div>
+{% endblock %}
+```
+
+#### `apps/hr/templates/hr/report_form.html`
+
+*38 lignes*
+
+```django
+{% extends "base.html" %}
+{% block titre %}Demander un report{% endblock %}
+{% block entete %}Congés{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-2xl">
+  <nav aria-label="Fil d'Ariane" class="text-sm text-slate-600">
+    <a href="{% url 'hr:conges_liste' %}" class="underline-offset-2 hover:underline">Congés</a>
+    <span aria-hidden="true">/</span>
+    <a href="{% url 'hr:conges_detail' conge.pk %}" class="underline-offset-2 hover:underline">{{ conge.employe.prenom }} {{ conge.employe.nom }}</a>
+    <span aria-hidden="true">/</span> Report
+  </nav>
+  <h1 class="mt-2 text-2xl font-bold text-slate-900">Demander un report</h1>
+  <p class="mt-1 text-sm text-slate-600">
+    Congé du {{ conge.date_debut|date:"d/m/Y" }} au {{ conge.date_fin|date:"d/m/Y" }}. Indiquez le jour où vous
+    reprenez réellement le travail : les jours ouvrés restants jusqu'au {{ conge.date_fin|date:"d/m/Y" }} vous
+    seront reversés au solde, une fois la RH d'accord. Sans sa validation, votre congé continue normalement.
+  </p>
+
+  <form method="post" novalidate class="mt-6 space-y-5 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+      <div role="alert" class="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">
+        {% for erreur in form.non_field_errors %}<p>{{ erreur }}</p>{% endfor %}
+      </div>
+    {% endif %}
+    {% include "components/_champ.html" with champ=form.nouvelle_date_fin %}
+    {% include "components/_champ.html" with champ=form.motif %}
+
+    <div class="flex items-center justify-end gap-3 border-t border-slate-100 pt-5">
+      <a href="{% url 'hr:conges_detail' conge.pk %}" class="rounded-lg px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Annuler</a>
+      <button type="submit" class="rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">
+        Envoyer à la RH
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}
+```
+
+#### `apps/hr/tests/test_direction_remplace.py`
+
+*149 lignes* — La DIRECTION se substitue au validateur d'un niveau dont le délai est dépassé (sinon l'alerte « validation
+
+```python
+"""La DIRECTION se substitue au validateur d'un niveau dont le délai est dépassé (sinon l'alerte « validation
+en retard » qui lui est adressée n'aurait aucune suite possible)."""
+
+from datetime import date, timedelta
+
+import pytest
+from django.urls import reverse
+from django.utils import timezone
+
+from apps.accounts.models import Role
+from apps.accounts.tests.factories import UserFactory
+from apps.hr import services
+from apps.hr.exceptions import ActionNonAutorisee
+from apps.hr.models import Conge, StatutConge
+
+from .factories import PersonnelFactory
+
+pytestmark = pytest.mark.django_db
+
+DEBUT, FIN = date(2026, 10, 5), date(2026, 10, 9)
+
+
+def _demande():
+    chef = PersonnelFactory(utilisateur=UserFactory(role=Role.PARCAUTO))
+    employe = PersonnelFactory(superieur=chef)
+    conge = services.demander_conge(employe, date_debut=DEBUT, date_fin=FIN, motif="Repos")
+    return conge, chef.utilisateur
+
+
+def _en_retard(conge, *, niveau=1, retard=True):
+    limite = timezone.now() + timedelta(hours=-1 if retard else 1)
+    Conge.objects.filter(pk=conge.pk).update(**{f"date_limite_n{niveau}": limite})
+    conge.refresh_from_db()
+
+
+def _direction():
+    return UserFactory(role=Role.DIRECTION)
+
+
+# --- N1 ---
+
+
+def test_la_direction_valide_le_n1_quand_le_delai_du_superieur_est_depasse():
+    conge, _ = _demande()
+    _en_retard(conge)
+
+    assert services.actions_disponibles(conge, _direction()) == {"valider", "refuser"}
+    services.valider_conge(conge, _direction())
+
+    conge.refresh_from_db()
+    assert conge.statut == StatutConge.VALIDATION_N1
+
+
+def test_la_direction_refuse_le_n1_en_retard():
+    conge, _ = _demande()
+    _en_retard(conge)
+
+    services.refuser(conge, _direction(), commentaire="Période de forte activité")
+
+    conge.refresh_from_db()
+    assert conge.statut == StatutConge.REFUSE
+
+
+def test_avant_l_echeance_la_direction_ne_decide_pas_a_la_place_du_superieur():
+    conge, _ = _demande()
+    _en_retard(conge, retard=False)
+
+    assert services.actions_disponibles(conge, _direction()) == frozenset()
+    with pytest.raises(ActionNonAutorisee):
+        services.valider_n1(conge, _direction())
+    with pytest.raises(ActionNonAutorisee):
+        services.refuser(conge, _direction())
+
+
+# --- N2 ---
+
+
+def test_la_direction_valide_le_n2_quand_le_delai_de_la_rh_est_depasse():
+    conge, superieur = _demande()
+    services.valider_n1(conge, superieur)
+    _en_retard(conge, niveau=2)
+
+    assert services.actions_disponibles(conge, _direction()) == {"valider", "refuser"}
+    services.valider_conge(conge, _direction())
+
+    conge.refresh_from_db()
+    assert conge.statut == StatutConge.APPROUVE
+
+
+def test_le_n2_n_est_pas_ouvert_a_la_direction_avant_l_echeance():
+    conge, superieur = _demande()
+    services.valider_n1(conge, superieur)
+    _en_retard(conge, niveau=2, retard=False)
+
+    with pytest.raises(ActionNonAutorisee):
+        services.valider_n2(conge, _direction())
+
+
+# --- limites ---
+
+
+def test_les_autres_roles_n_ont_pas_ce_pouvoir_meme_en_retard():
+    conge, _ = _demande()
+    _en_retard(conge)
+
+    for role in (Role.FINANCES, Role.CHARGE_CLIENTELE, Role.PARCAUTO, Role.ADMIN):
+        assert services.actions_disponibles(conge, UserFactory(role=role)) == frozenset()
+
+
+def test_la_direction_ne_decide_jamais_sur_sa_propre_demande_a_la_place_d_un_autre():
+    direction = _direction()
+    fiche = PersonnelFactory(utilisateur=direction, superieur=PersonnelFactory())
+    conge = services.demander_conge(fiche, date_debut=DEBUT, date_fin=FIN, motif="Repos")
+    _en_retard(conge)
+
+    assert services.actions_disponibles(conge, direction) == frozenset()
+    assert conge not in services.conges_a_valider(direction)
+
+
+def test_les_demandes_en_retard_apparaissent_dans_la_liste_a_valider_de_la_direction():
+    en_retard, _ = _demande()
+    _en_retard(en_retard)
+    dans_les_temps, _ = _demande()
+    _en_retard(dans_les_temps, retard=False)
+
+    a_valider = list(services.conges_a_valider(_direction()))
+
+    assert en_retard in a_valider and dans_les_temps not in a_valider
+
+
+def test_l_ecran_du_conge_propose_les_boutons_a_la_direction(client):
+    conge, _ = _demande()
+    _en_retard(conge)
+    client.force_login(_direction())
+
+    page = client.get(reverse("hr:conges_detail", args=[conge.pk])).content.decode()
+
+    assert "Valider" in page and "Refuser" in page
+
+
+def test_l_ecran_explique_pourquoi_la_direction_peut_decider(client):
+    conge, superieur = _demande()
+    _en_retard(conge)
+
+    client.force_login(_direction())
+    assert "à la place du validateur habituel" in client.get(reverse("hr:conges_detail", args=[conge.pk])).content.decode()
+
+    client.force_login(superieur)  # le supérieur lui-même décide normalement : pas de mention
+    assert "à la place du validateur habituel" not in client.get(reverse("hr:conges_detail", args=[conge.pk])).content.decode()
+```
+
+#### `apps/hr/tests/test_report_conge.py`
+
+*421 lignes* — Report du solde d'un congé en cours — avenant-separation-des-taches.md § R7 : l'employé écourte
+
+```python
+"""Report du solde d'un congé en cours — avenant-separation-des-taches.md § R7 : l'employé écourte
+son congé, la RH valide (sinon la demande n'a aucun effet)."""
+
+from datetime import date
+
+import pytest
+from django.urls import reverse
+
+from apps.accounts.models import Role
+from apps.accounts.tests.factories import UserFactory
+from apps.hr import services
+from apps.hr.exceptions import ActionNonAutorisee, CongeError, TransitionInterdite
+from apps.hr.models import Conge, Departement, ReportConge, StatutConge, StatutReport
+
+from .factories import PersonnelFactory
+from .test_conges import _approuve, _demande, _rh
+
+pytestmark = pytest.mark.django_db
+
+DEBUT, FIN = date(2026, 10, 5), date(2026, 10, 30)  # lundi-vendredi, 20 jours ouvrés
+
+
+def _hierarchie(poste="Dispatcheur"):
+    """Comme ``test_conges._hierarchie``, mais l'employé a aussi son propre compte : il faut pouvoir
+    se connecter comme lui pour demander le report de son propre congé."""
+    chef = PersonnelFactory(
+        poste="Chef", departement=Departement.DIRECTION, utilisateur=UserFactory(role=Role.PARCAUTO)
+    )
+    employe = PersonnelFactory(
+        poste=poste, departement=Departement.EXPLOITATION, superieur=chef,
+        utilisateur=UserFactory(role=Role.PARCAUTO),
+    )
+    return employe, chef.utilisateur
+
+
+def _en_cours(hierarchie=None, debut=DEBUT, fin=FIN):
+    conge = _approuve(hierarchie, debut, fin)
+    Conge.objects.filter(pk=conge.pk).update(statut=StatutConge.EN_COURS)
+    conge.refresh_from_db()
+    return conge
+
+
+def _connecte(client, role):
+    utilisateur = UserFactory(role=role)
+    client.force_login(utilisateur)
+    return utilisateur
+
+
+def _messages(reponse):
+    return [str(m) for m in reponse.context["messages"]]
+
+
+# --- peut_demander_report ---
+
+
+def test_seul_l_employe_en_cours_peut_demander_un_report():
+    hierarchie = _hierarchie()
+    conge = _en_cours(hierarchie)
+    employe, superieur = hierarchie
+
+    assert services.peut_demander_report(conge, employe.utilisateur) is True
+    assert services.peut_demander_report(conge, superieur) is False
+
+
+def test_pas_de_report_avant_ou_apres_en_cours():
+    hierarchie = _hierarchie()
+    employe = hierarchie[0]
+    approuve = _approuve(hierarchie)  # pas encore en cours
+
+    assert services.peut_demander_report(approuve, employe.utilisateur) is False
+
+
+# --- demander_report ---
+
+
+def test_demander_un_report_calcule_les_jours_ouvres_restants():
+    hierarchie = _hierarchie()
+    conge = _en_cours(hierarchie)  # 05/10 (lun) au 30/10 (ven)
+    employe = hierarchie[0]
+
+    # reprise le 26/10 (lun) : jours restants du 27/10 (mar) au 30/10 (ven) = 4 jours ouvrés
+    report = services.demander_report(
+        conge, employe.utilisateur, nouvelle_date_fin=date(2026, 10, 26), motif="Fin des vacances"
+    )
+
+    assert report.statut == StatutReport.DEMANDE
+    assert report.jours_restants == 4
+    assert report.motif == "Fin des vacances"
+    assert conge.jours == 20 and conge.date_fin == FIN  # rien ne change tant que ce n'est pas validé
+
+
+def test_refuse_hors_employe_concerne():
+    hierarchie = _hierarchie()
+    conge = _en_cours(hierarchie)
+    _, superieur = hierarchie
+
+    with pytest.raises(ActionNonAutorisee):
+        services.demander_report(conge, superieur, nouvelle_date_fin=date(2026, 10, 26), motif="x")
+
+
+def test_refuse_si_le_conge_n_est_pas_en_cours():
+    hierarchie = _hierarchie()
+    conge = _approuve(hierarchie)
+    employe = hierarchie[0]
+
+    with pytest.raises(ActionNonAutorisee):
+        services.demander_report(conge, employe.utilisateur, nouvelle_date_fin=date(2026, 10, 26), motif="x")
+
+
+@pytest.mark.parametrize(
+    "nouvelle_date_fin",
+    [
+        date(2026, 10, 4),  # avant le début du congé
+        date(2026, 10, 30),  # égale à la fin actuelle : rien à reporter
+        date(2026, 11, 2),  # après la fin actuelle
+    ],
+)
+def test_refuse_une_date_de_reprise_hors_de_la_periode(nouvelle_date_fin):
+    hierarchie = _hierarchie()
+    conge = _en_cours(hierarchie)
+    employe = hierarchie[0]
+
+    with pytest.raises(CongeError, match="comprise entre"):
+        services.demander_report(conge, employe.utilisateur, nouvelle_date_fin=nouvelle_date_fin, motif="x")
+
+
+def test_refuse_une_date_de_reprise_dans_le_passe():
+    hierarchie = _hierarchie()
+    conge = _en_cours(hierarchie, debut=date(2026, 9, 21), fin=date(2026, 9, 25))  # 5 jours ouvrés
+    employe = hierarchie[0]
+
+    with pytest.raises(CongeError, match="passé"):
+        services.demander_report(
+            conge, employe.utilisateur, nouvelle_date_fin=date(2026, 9, 22), motif="x",
+            aujourd_hui=date(2026, 9, 25),
+        )
+
+
+def test_refuse_sans_motif():
+    hierarchie = _hierarchie()
+    conge = _en_cours(hierarchie)
+    employe = hierarchie[0]
+
+    with pytest.raises(CongeError, match="motif"):
+        services.demander_report(conge, employe.utilisateur, nouvelle_date_fin=date(2026, 10, 26), motif="   ")
+
+
+def test_refuse_si_aucun_jour_ouvre_a_reporter():
+    # congé jusqu'au dimanche 25/10 : reprendre le vendredi 23/10 ne laisse que le week-end (24-25)
+    hierarchie = _hierarchie()
+    conge = _en_cours(hierarchie, debut=date(2026, 10, 5), fin=date(2026, 10, 25))
+    employe = hierarchie[0]
+
+    with pytest.raises(CongeError, match="Aucun jour ouvré"):
+        services.demander_report(conge, employe.utilisateur, nouvelle_date_fin=date(2026, 10, 23), motif="x")
+
+
+def test_refuse_une_deuxieme_demande_pendant_qu_une_est_en_attente():
+    hierarchie = _hierarchie()
+    conge = _en_cours(hierarchie)
+    employe = hierarchie[0]
+    services.demander_report(conge, employe.utilisateur, nouvelle_date_fin=date(2026, 10, 26), motif="x")
+
+    with pytest.raises(CongeError, match="déjà en attente"):
+        services.demander_report(conge, employe.utilisateur, nouvelle_date_fin=date(2026, 10, 27), motif="y")
+
+
+# --- approuver_report ---
+
+
+def test_approuver_raccourcit_le_conge_et_libere_le_solde():
+    hierarchie = _hierarchie()
+    conge = _en_cours(hierarchie)
+    employe = hierarchie[0]
+    avant = services.droits_conges(employe, 2026)["disponible"]
+    report = services.demander_report(
+        conge, employe.utilisateur, nouvelle_date_fin=date(2026, 10, 26), motif="Fin des vacances"
+    )
+
+    services.approuver_report(report, _rh(), commentaire="Ok")
+
+    conge.refresh_from_db()
+    report.refresh_from_db()
+    assert conge.date_fin == date(2026, 10, 26) and conge.jours == 16  # 20 - 4
+    assert report.statut == StatutReport.APPROUVE
+    assert services.droits_conges(employe, 2026)["disponible"] == avant + 4
+
+
+def test_approuver_termine_le_conge_si_la_reprise_est_deja_passee():
+    hierarchie = _hierarchie()
+    conge = _en_cours(hierarchie, debut=date(2026, 9, 1), fin=date(2026, 9, 30))  # 22 jours ouvrés
+    employe = hierarchie[0]
+    report = services.demander_report(
+        conge, employe.utilisateur, nouvelle_date_fin=date(2026, 9, 21), motif="x", aujourd_hui=date(2026, 9, 21)
+    )
+
+    services.approuver_report(report, _rh(), aujourd_hui=date(2026, 9, 25))  # décidé quelques jours plus tard
+
+    conge.refresh_from_db()
+    assert conge.date_fin == date(2026, 9, 21) and conge.statut == StatutConge.TERMINE
+
+
+def test_approuver_garde_en_cours_si_la_reprise_n_est_pas_encore_arrivee():
+    hierarchie = _hierarchie()
+    conge = _en_cours(hierarchie)  # 05/10 -> 30/10
+    employe = hierarchie[0]
+    report = services.demander_report(conge, employe.utilisateur, nouvelle_date_fin=date(2026, 10, 26), motif="x")
+
+    services.approuver_report(report, _rh(), aujourd_hui=date(2026, 9, 25))
+
+    conge.refresh_from_db()
+    assert conge.date_fin == date(2026, 10, 26) and conge.statut == StatutConge.EN_COURS
+
+
+def test_approuver_refuse_hors_rh():
+    hierarchie = _hierarchie()
+    conge = _en_cours(hierarchie)
+    employe, superieur = hierarchie
+    report = services.demander_report(conge, employe.utilisateur, nouvelle_date_fin=date(2026, 10, 26), motif="x")
+
+    with pytest.raises(ActionNonAutorisee):
+        services.approuver_report(report, superieur)
+
+
+def test_la_rh_ne_peut_pas_approuver_sa_propre_demande():
+    compte_rh = _rh()
+    superieur = PersonnelFactory(utilisateur=UserFactory(role=Role.PARCAUTO))
+    fiche_rh = PersonnelFactory(utilisateur=compte_rh, superieur=superieur)
+    conge = _en_cours((fiche_rh, superieur.utilisateur))
+    report = services.demander_report(conge, compte_rh, nouvelle_date_fin=date(2026, 10, 26), motif="x")
+
+    with pytest.raises(ActionNonAutorisee):
+        services.approuver_report(report, compte_rh)
+
+
+def test_approuver_refuse_si_deja_decide():
+    hierarchie = _hierarchie()
+    conge = _en_cours(hierarchie)
+    employe = hierarchie[0]
+    report = services.demander_report(conge, employe.utilisateur, nouvelle_date_fin=date(2026, 10, 26), motif="x")
+    services.approuver_report(report, _rh())
+
+    with pytest.raises(TransitionInterdite):
+        services.approuver_report(report, _rh())
+
+
+# --- refuser_report ---
+
+
+def test_refuser_ne_change_rien_au_conge():
+    hierarchie = _hierarchie()
+    conge = _en_cours(hierarchie)
+    employe = hierarchie[0]
+    report = services.demander_report(conge, employe.utilisateur, nouvelle_date_fin=date(2026, 10, 26), motif="x")
+
+    services.refuser_report(report, _rh(), motif="Effectif insuffisant")
+
+    conge.refresh_from_db()
+    report.refresh_from_db()
+    assert conge.jours == 20 and conge.date_fin == FIN
+    assert report.statut == StatutReport.REFUSE and report.motif_decision == "Effectif insuffisant"
+
+
+def test_refuser_exige_un_motif():
+    hierarchie = _hierarchie()
+    conge = _en_cours(hierarchie)
+    employe = hierarchie[0]
+    report = services.demander_report(conge, employe.utilisateur, nouvelle_date_fin=date(2026, 10, 26), motif="x")
+
+    with pytest.raises(CongeError, match="motif"):
+        services.refuser_report(report, _rh(), motif="  ")
+
+
+# --- report_en_attente / peut_decider_report ---
+
+
+def test_report_en_attente_et_peut_decider():
+    hierarchie = _hierarchie()
+    conge = _en_cours(hierarchie)
+    employe = hierarchie[0]
+
+    assert services.report_en_attente(conge) is None
+
+    report = services.demander_report(conge, employe.utilisateur, nouvelle_date_fin=date(2026, 10, 26), motif="x")
+
+    assert services.report_en_attente(conge) == report
+    assert services.peut_decider_report(report, _rh()) is True
+    assert services.peut_decider_report(report, employe.utilisateur) is False
+
+    services.refuser_report(report, _rh(), motif="x")
+    assert services.report_en_attente(conge) is None
+
+
+# --- écrans ---
+
+
+def test_l_employe_demande_un_report_depuis_l_ecran(client):
+    hierarchie = _hierarchie()
+    conge = _en_cours(hierarchie)
+    employe = hierarchie[0]
+    client.force_login(employe.utilisateur)
+
+    reponse = client.post(
+        reverse("hr:conges_reporter", args=[conge.pk]),
+        {"nouvelle_date_fin": "2026-10-26", "motif": "Fin des vacances"},
+        follow=True,
+    )
+
+    assert ReportConge.objects.filter(conge=conge, statut=StatutReport.DEMANDE).exists()
+    assert any("envoyée à la RH" in m for m in _messages(reponse))
+
+
+def test_un_tiers_ne_peut_pas_demander_de_report(client):
+    hierarchie = _hierarchie()
+    conge = _en_cours(hierarchie)
+    _connecte(client, Role.FINANCES)
+
+    reponse = client.get(reverse("hr:conges_reporter", args=[conge.pk]), follow=True)
+
+    assert reponse.redirect_chain[-1][0] == reverse("hr:conges_detail", args=[conge.pk])
+    assert not ReportConge.objects.exists()
+
+
+def test_la_rh_valide_le_report_depuis_l_ecran(client):
+    hierarchie = _hierarchie()
+    conge = _en_cours(hierarchie)
+    employe = hierarchie[0]
+    report = services.demander_report(conge, employe.utilisateur, nouvelle_date_fin=date(2026, 10, 26), motif="x")
+    _connecte(client, Role.RH)
+
+    reponse = client.post(
+        reverse("hr:conges_report_decision", args=[report.pk]), {"action": "valider"}, follow=True,
+    )
+
+    report.refresh_from_db()
+    assert report.statut == StatutReport.APPROUVE
+    assert any("reversé" in m for m in _messages(reponse))
+
+
+def test_la_rh_refuse_le_report_avec_motif_obligatoire(client):
+    hierarchie = _hierarchie()
+    conge = _en_cours(hierarchie)
+    employe = hierarchie[0]
+    report = services.demander_report(conge, employe.utilisateur, nouvelle_date_fin=date(2026, 10, 26), motif="x")
+    _connecte(client, Role.RH)
+
+    sans_motif = client.post(reverse("hr:conges_report_decision", args=[report.pk]), {"action": "refuser"})
+    assert "Indiquez le motif" in sans_motif.content.decode() or report.statut == StatutReport.DEMANDE
+
+    reponse = client.post(
+        reverse("hr:conges_report_decision", args=[report.pk]),
+        {"action": "refuser", "commentaire": "Effectif insuffisant"}, follow=True,
+    )
+    report.refresh_from_db()
+    assert report.statut == StatutReport.REFUSE
+
+
+def test_le_bouton_reporter_n_apparait_que_sur_sa_propre_ligne_en_cours(client):
+    hierarchie = _hierarchie()
+    conge = _en_cours(hierarchie)
+    employe = hierarchie[0]
+    client.force_login(employe.utilisateur)
+
+    page = client.get(reverse("hr:conges_liste"), {"vue": "tous"}).content.decode()
+
+    assert reverse("hr:conges_reporter", args=[conge.pk]) in page
+
+
+def test_la_section_report_apparait_sur_la_fiche(client):
+    hierarchie = _hierarchie()
+    conge = _en_cours(hierarchie)
+    employe = hierarchie[0]
+    client.force_login(employe.utilisateur)
+
+    page = client.get(reverse("hr:conges_detail", args=[conge.pk])).content.decode()
+
+    assert "Report du solde" in page
+    assert reverse("hr:conges_reporter", args=[conge.pk]) in page
+
+
+# --- PDF ---
+
+
+def test_pdf_indisponible_avant_l_approbation_n2(client):
+    hierarchie = _hierarchie()
+    conge, _ = _demande(hierarchie)
+    employe = hierarchie[0]
+    client.force_login(employe.utilisateur)
+
+    assert client.get(reverse("hr:conges_autorisation_pdf", args=[conge.pk])).status_code == 404
+
+
+def test_pdf_disponible_une_fois_approuve(client):
+    hierarchie = _hierarchie()
+    conge = _approuve(hierarchie)
+    employe = hierarchie[0]
+    client.force_login(employe.utilisateur)
+
+    reponse = client.get(reverse("hr:conges_autorisation_pdf", args=[conge.pk]))
+
+    assert reponse.status_code == 200
+    assert reponse["Content-Type"] == "application/pdf"
+
+
+def test_pdf_interdit_a_un_tiers(client):
+    hierarchie = _hierarchie()
+    conge = _approuve(hierarchie)
+    _connecte(client, Role.FINANCES)
+
+    assert client.get(reverse("hr:conges_autorisation_pdf", args=[conge.pk])).status_code == 403
+
+
+def test_le_lien_pdf_apparait_une_fois_approuve(client):
+    hierarchie = _hierarchie()
+    conge = _approuve(hierarchie)
+    employe = hierarchie[0]
+    client.force_login(employe.utilisateur)
+
+    page = client.get(reverse("hr:conges_detail", args=[conge.pk])).content.decode()
+
+    assert reverse("hr:conges_autorisation_pdf", args=[conge.pk]) in page
+```
+
 #### `apps/hr/tests/test_views_conges.py`
 
 *460 lignes* — Écrans de congés : demande, liste, fiche, décisions N1/N2, accès.
@@ -1195,7 +2250,7 @@ from .factories import PersonnelFactory
 pytestmark = pytest.mark.django_db
 
 MAINTENANT = datetime(2026, 9, 1, 8, 0, tzinfo=dt_timezone.utc)
-DEBUT, FIN = date(2026, 10, 5), date(2026, 10, 9)  # 5 jours ouvrables
+DEBUT, FIN = date(2026, 10, 5), date(2026, 10, 9)  # 5 jours ouvrés
 
 
 class Equipe:
@@ -1293,14 +2348,14 @@ def test_le_formulaire_de_demande_affiche_le_solde(client, equipe):
 
     texte = client.get(reverse("hr:conges_nouveau")).content.decode()
 
-    assert "12 jours" in texte
+    assert "26 jours" in texte
 
 
 def test_une_demande_au_dela_du_solde_est_refusee_avec_le_message_du_service(client, equipe):
     client.force_login(equipe.compte)
 
     reponse = client.post(
-        reverse("hr:conges_nouveau"), _donnees(date_debut="2026-10-05", date_fin="2026-10-31")
+        reverse("hr:conges_nouveau"), _donnees(date_debut="2026-10-05", date_fin="2026-11-10")
     )
 
     assert reponse.status_code == 200
@@ -1365,7 +2420,7 @@ def test_la_liste_montre_mes_demandes_et_le_solde(client, equipe):
 
     assert reponse.context["vue"] == "mes"
     assert [c.employe for c in reponse.context["conges"]] == [equipe.employe]
-    assert reponse.context["droits"]["disponible"] == 12
+    assert reponse.context["droits"]["disponible"] == 26
     assert reponse.context["vues"] == ["mes", "a_valider"]
 
 
@@ -1564,14 +2619,14 @@ def test_un_refus_est_enregistre_avec_son_motif(client, equipe):
 
 def test_la_rh_annule_un_conge_approuve_et_les_jours_sont_restitues(client, equipe):
     conge = equipe.approuve()
-    assert services.droits_conges(equipe.employe, 2026)["disponible"] == 7
+    assert services.droits_conges(equipe.employe, 2026)["disponible"] == 21
     client.force_login(equipe.compte_rh)
 
     reponse = _decision(client, conge, "annuler", "Besoin de service")
 
     conge.refresh_from_db()
     assert conge.statut == StatutConge.REFUSE
-    assert services.droits_conges(equipe.employe, 2026)["disponible"] == 12
+    assert services.droits_conges(equipe.employe, 2026)["disponible"] == 26
     assert any("restitués" in m for m in _messages(reponse))
 
 
@@ -1657,7 +2712,7 @@ python manage.py check
 ```
 
 ```bash
-python -m pytest apps/hr/tests/test_views_conges.py -q --no-cov
+python -m pytest apps/hr/tests/test_direction_remplace.py apps/hr/tests/test_report_conge.py apps/hr/tests/test_views_conges.py -q --no-cov
 ```
 
 **Résultat attendu :** `41 passed` (pour les 1 fichier(s) de tests présentés dans ce chapitre).

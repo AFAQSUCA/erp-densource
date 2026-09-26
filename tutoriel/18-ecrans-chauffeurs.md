@@ -1,6 +1,6 @@
 # Chapitre 18 — Écrans : chauffeurs
 
-> 7 fichier(s) dans ce chapitre, 785 lignes de code.
+> 8 fichier(s) dans ce chapitre, 1042 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -96,7 +96,7 @@ class StatutForm(StyleTailwindMixin, forms.Form):
 
 #### `apps/drivers/views.py`
 
-*133 lignes* — Écrans des chauffeurs : liste, fiche, modification, changement de statut.
+*157 lignes* — Écrans des chauffeurs : liste, fiche, modification, changement de statut.
 
 ```python
 """Écrans des chauffeurs : liste, fiche, modification, changement de statut.
@@ -111,7 +111,7 @@ from django.views import View
 from django.views.generic import DetailView, FormView, ListView
 
 from apps.accounts.mixins import RoleRequiredMixin
-from apps.core.views import PaginationTolerante
+from apps.core.views import ImpressionListeMixin, PaginationTolerante
 
 from . import permissions, services
 from .exceptions import ChauffeurError
@@ -145,6 +145,30 @@ class ChauffeurListView(PaginationTolerante, RoleRequiredMixin, ListView):
             ],
         )
         return contexte
+
+
+class ChauffeurImprimerView(ImpressionListeMixin, ChauffeurListView):
+    """Rapport imprimable des chauffeurs (mêmes recherche, statut et alerte que la liste)."""
+
+    titre_impression = "Chauffeurs"
+    colonnes = (
+        ("Nom", "personnel.nom"), ("Prénom", "personnel.prenom"), ("Téléphone", "telephone"),
+        ("N° de permis", "numero_permis"),
+        ("Permis valide jusqu'au", lambda c: c.date_expiration_permis.strftime("%d/%m/%Y") if c.date_expiration_permis else "—"),
+        ("Visite médicale jusqu'au", lambda c: c.date_expiration_visite_medicale.strftime("%d/%m/%Y") if c.date_expiration_visite_medicale else "—"),
+        ("Statut", "get_statut_display"),
+    )
+
+    def get_sous_titre_impression(self):
+        morceaux = []
+        statut = self.request.GET.get("statut", "")
+        if statut in StatutChauffeur.values:
+            morceaux.append(f"statut : {StatutChauffeur(statut).label}")
+        if self.request.GET.get("alerte") == "1":
+            morceaux.append("permis / visite médicale à renouveler")
+        if self.request.GET.get("q", ""):
+            morceaux.append(f"recherche : « {self.request.GET['q']} »")
+        return " · ".join(morceaux)
 
 
 class ChauffeurDetailView(RoleRequiredMixin, DetailView):
@@ -236,7 +260,7 @@ class StatutView(RoleRequiredMixin, View):
 
 #### `apps/drivers/urls.py`
 
-*12 lignes*
+*13 lignes*
 
 ```python
 from django.urls import path
@@ -247,6 +271,7 @@ app_name = "drivers"
 
 urlpatterns = [
     path("", views.ChauffeurListView.as_view(), name="liste"),
+    path("imprimer/", views.ChauffeurImprimerView.as_view(), name="imprimer"),
     path("<int:pk>/", views.ChauffeurDetailView.as_view(), name="detail"),
     path("<int:pk>/modifier/", views.ChauffeurUpdateView.as_view(), name="modifier"),
     path("<int:pk>/statut/", views.StatutView.as_view(), name="statut"),
@@ -262,12 +287,12 @@ Montez les adresses :
 ```diff
 --- config/urls.py (avant)
 +++ config/urls.py (après)
-@@ -17,4 +17,5 @@
+@@ -18,4 +18,5 @@
      path("", include("apps.accounts.urls")),
      path("rh/", include("apps.hr.urls")),
 +    path("chauffeurs/", include("apps.drivers.urls")),
+     path("audit/", include("apps.audit.urls")),
      path("notifications/", include("apps.notifications.urls")),
-     path("admin/", admin.site.urls),
 ```
 
 ## Étape 2 — Gabarits
@@ -278,7 +303,7 @@ mkdir -p apps/drivers/templates/drivers
 
 #### `apps/drivers/templates/drivers/chauffeur_list.html`
 
-*94 lignes*
+*100 lignes*
 
 ```django
 {% extends "base.html" %}
@@ -288,12 +313,18 @@ mkdir -p apps/drivers/templates/drivers
 
 {% block contenu %}
 <div class="mx-auto max-w-7xl">
-  <div>
-    <h1 class="text-2xl font-bold text-slate-900">Chauffeurs</h1>
-    <p class="mt-1 text-sm text-slate-600">
-      {{ paginator.count|default:0 }} chauffeur{{ paginator.count|pluralize }}
-      · les fiches sont créées automatiquement pour les employés au poste « Chauffeur ».
-    </p>
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <div>
+      <h1 class="text-2xl font-bold text-slate-900">Chauffeurs</h1>
+      <p class="mt-1 text-sm text-slate-600">
+        {{ paginator.count|default:0 }} chauffeur{{ paginator.count|pluralize }}
+        · les fiches sont créées automatiquement pour les employés au poste « Chauffeur ».
+      </p>
+    </div>
+    <a href="{% url 'drivers:imprimer' %}?{{ request.GET.urlencode }}" target="_blank" rel="noopener"
+       class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+      <i class="fa-solid fa-print" aria-hidden="true"></i> Imprimer
+    </a>
   </div>
 
   <form method="get" class="mt-5 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -408,7 +439,7 @@ mkdir -p apps/drivers/templates/drivers
   </div>
   <p class="mt-1 text-sm text-slate-600">Matricule {{ chauffeur.personnel.matricule }}</p>
 
-  <div class="mt-6 grid gap-6 xl:grid-cols-3">
+  <div class="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-3">
     <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm xl:col-span-1" aria-labelledby="titre-contact">
       <h2 id="titre-contact" class="text-base font-semibold text-slate-900">Contact</h2>
       <dl class="mt-4 space-y-3 text-sm">
@@ -421,7 +452,7 @@ mkdir -p apps/drivers/templates/drivers
       <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-permis">
         <h2 id="titre-permis" class="text-base font-semibold text-slate-900">Permis et visite médicale</h2>
         <p class="mt-1 text-xs text-slate-600">Une alerte apparaît 30 jours avant l'expiration.</p>
-        <dl class="mt-4 grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
+        <dl class="mt-4 grid grid-cols-1 gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
           <div><dt class="text-slate-600">N° de permis</dt><dd class="mt-0.5 font-medium text-slate-900">{{ chauffeur.numero_permis|default:"Non renseigné" }}</dd></div>
           <div><dt class="text-slate-600">Catégories</dt><dd class="mt-0.5 font-medium text-slate-900">{% if chauffeur.categories_permis %}{{ chauffeur.categories_permis|join:", " }}{% else %}Non renseignées{% endif %}</dd></div>
         </dl>
@@ -510,7 +541,7 @@ mkdir -p apps/drivers/templates/drivers
 
     <fieldset>
       <legend class="text-sm font-semibold text-slate-900">Contact</legend>
-      <div class="mt-3 grid gap-5 sm:grid-cols-2">
+      <div class="mt-3 grid grid-cols-1 gap-5 sm:grid-cols-2">
         {% include "components/_champ.html" with champ=form.telephone %}
         {% include "components/_champ.html" with champ=form.contact_urgence %}
       </div>
@@ -518,7 +549,7 @@ mkdir -p apps/drivers/templates/drivers
 
     <fieldset class="border-t border-slate-100 pt-5">
       <legend class="text-sm font-semibold text-slate-900">Permis et visite médicale</legend>
-      <div class="mt-3 grid gap-5 sm:grid-cols-2">
+      <div class="mt-3 grid grid-cols-1 gap-5 sm:grid-cols-2">
         {% include "components/_champ.html" with champ=form.numero_permis %}
         {% include "components/_champ.html" with champ=form.categories_permis %}
         {% include "components/_champ.html" with champ=form.date_expiration_permis %}
@@ -537,9 +568,204 @@ mkdir -p apps/drivers/templates/drivers
 
 ## Étape 3 — Tests et compilation des styles
 
+#### `apps/hr/tests/test_import_personnel.py`
+
+*188 lignes* — Recrutement en masse depuis un classeur Excel (services.importer_personnel).
+
+```python
+"""Recrutement en masse depuis un classeur Excel (services.importer_personnel)."""
+
+import io
+from datetime import date
+
+import openpyxl
+import pytest
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.urls import reverse
+
+from apps.accounts.models import Role
+from apps.accounts.tests.factories import UserFactory
+from apps.drivers.models import Chauffeur
+from apps.hr import services
+from apps.hr.exceptions import ImportPersonnelError
+from apps.hr.models import Departement, Personnel
+
+pytestmark = pytest.mark.django_db
+
+LIGNE_VALIDE = ["Traoré", "Awa", "Comptable", "Comptabilité", "CDI", "01/09/2026", "250000"]
+
+
+def _classeur(lignes, en_tete=None):
+    classeur = openpyxl.Workbook()
+    feuille = classeur.active
+    feuille.append(en_tete or services.COLONNES_IMPORT)
+    for ligne in lignes:
+        feuille.append(ligne)
+    tampon = io.BytesIO()
+    classeur.save(tampon)
+    tampon.seek(0)
+    return tampon
+
+
+def _connecte(client, role):
+    compte = UserFactory(role=role)
+    client.force_login(compte)
+    return compte
+
+
+# --- services.importer_personnel ---
+
+
+def test_importer_cree_les_fiches_valides():
+    crees = services.importer_personnel(_classeur([LIGNE_VALIDE]))
+
+    assert len(crees) == 1
+    employe = Personnel.objects.get()
+    assert (employe.nom, employe.prenom, employe.poste) == ("Traoré", "Awa", "Comptable")
+    assert employe.departement == Departement.COMPTABILITE
+    assert employe.date_embauche == date(2026, 9, 1)
+    assert employe.matricule.startswith("PERS-")
+
+
+def test_importer_accepte_le_departement_par_code_ou_par_libelle():
+    ligne_code = ["A", "B", "Comptable", "COMPTABILITE", "", "01/09/2026", "100000"]
+
+    services.importer_personnel(_classeur([ligne_code]))
+
+    assert Personnel.objects.get().departement == Departement.COMPTABILITE
+
+
+def test_importer_ignore_les_lignes_vides():
+    lignes = [LIGNE_VALIDE, [None] * 7, ["", "", "", "", "", "", ""]]
+
+    crees = services.importer_personnel(_classeur(lignes))
+
+    assert len(crees) == 1
+
+
+def test_importer_un_chauffeur_cree_sa_fiche_chauffeur():
+    ligne = ["Ouattara", "Moussa", "Chauffeur", "Exploitation", "CDI", "01/09/2026", "200000"]
+
+    services.importer_personnel(_classeur([ligne]))
+
+    assert Chauffeur.objects.filter(personnel__nom="Ouattara").exists()
+
+
+def test_importer_tout_ou_rien_si_une_ligne_est_invalide():
+    ligne_invalide = ["Kone", "Ali", "Poste inexistant", "Comptabilité", "", "01/09/2026", "100000"]
+
+    with pytest.raises(ImportPersonnelError) as exc:
+        services.importer_personnel(_classeur([LIGNE_VALIDE, ligne_invalide]))
+
+    assert not Personnel.objects.exists()  # même la ligne valide n'a pas été créée
+    assert any("Poste inexistant" in erreur for erreur in exc.value.erreurs)
+
+
+def test_importer_signale_chaque_type_d_erreur():
+    ligne = ["", "Ali", "Poste inconnu", "Département inconnu", "", "pas une date", "pas un nombre"]
+
+    with pytest.raises(ImportPersonnelError) as exc:
+        services.importer_personnel(_classeur([ligne]))
+
+    erreurs = "\n".join(exc.value.erreurs)
+    assert "nom est obligatoire" in erreurs
+    assert "Poste inconnu" in erreurs
+    assert "Département inconnu" in erreurs
+    assert "pas une date" in erreurs
+    assert "pas un nombre" in erreurs
+
+
+def test_importer_refuse_un_salaire_negatif():
+    ligne = ["Kone", "Ali", "Comptable", "Comptabilité", "", "01/09/2026", "-100"]
+
+    with pytest.raises(ImportPersonnelError) as exc:
+        services.importer_personnel(_classeur([ligne]))
+
+    assert any("salaire" in erreur for erreur in exc.value.erreurs)
+
+
+def test_importer_refuse_des_en_tetes_inattendus():
+    with pytest.raises(ImportPersonnelError) as exc:
+        services.importer_personnel(_classeur([LIGNE_VALIDE], en_tete=["A", "B"]))
+
+    assert not Personnel.objects.exists()
+    assert "En-têtes" in exc.value.erreurs[0]
+
+
+def test_importer_accepte_une_date_deja_au_format_date():
+    ligne = list(LIGNE_VALIDE)
+    ligne[5] = date(2026, 9, 1)
+
+    services.importer_personnel(_classeur([ligne]))
+
+    assert Personnel.objects.get().date_embauche == date(2026, 9, 1)
+
+
+# --- écran ---
+
+
+def test_la_page_d_import_est_accessible_a_la_rh(client):
+    _connecte(client, Role.RH)
+
+    assert client.get(reverse("hr:personnel_importer")).status_code == 200
+
+
+def test_importer_un_fichier_valide_redirige_avec_un_message(client):
+    _connecte(client, Role.RH)
+    fichier = SimpleUploadedFile(
+        "personnel.xlsx",
+        _classeur([LIGNE_VALIDE]).read(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+    reponse = client.post(reverse("hr:personnel_importer"), {"fichier": fichier}, follow=True)
+
+    assert reponse.redirect_chain[-1][0] == reverse("hr:personnel_liste")
+    assert any("1 employé(s) importé" in str(m) for m in reponse.context["messages"])
+
+
+def test_importer_un_fichier_invalide_affiche_les_erreurs_sans_rien_creer(client):
+    _connecte(client, Role.RH)
+    ligne_invalide = ["Kone", "Ali", "Poste inexistant", "Comptabilité", "", "01/09/2026", "100000"]
+    fichier = SimpleUploadedFile(
+        "personnel.xlsx",
+        _classeur([ligne_invalide]).read(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+    reponse = client.post(reverse("hr:personnel_importer"), {"fichier": fichier})
+
+    assert reponse.status_code == 200
+    assert "Poste inexistant" in reponse.content.decode()
+    assert not Personnel.objects.exists()
+
+
+def test_un_fichier_qui_n_est_pas_un_xlsx_est_refuse(client):
+    _connecte(client, Role.RH)
+    fichier = SimpleUploadedFile("personnel.txt", b"pas un classeur", content_type="text/plain")
+
+    reponse = client.post(reverse("hr:personnel_importer"), {"fichier": fichier})
+
+    assert reponse.status_code == 200
+    assert ".xlsx" in reponse.content.decode()
+    assert not Personnel.objects.exists()
+
+
+def test_le_modele_se_telecharge(client):
+    _connecte(client, Role.RH)
+
+    reponse = client.get(reverse("hr:personnel_import_modele"))
+
+    assert reponse.status_code == 200
+    assert reponse["Content-Disposition"] == "attachment; filename=modele-import-personnel.xlsx"
+    classeur = openpyxl.load_workbook(io.BytesIO(reponse.content))
+    premiere_ligne = next(classeur.active.iter_rows(min_row=1, max_row=1, values_only=True))
+    assert list(premiere_ligne) == services.COLONNES_IMPORT
+```
+
 #### `apps/hr/tests/test_views_personnel.py`
 
-*342 lignes* — Écrans du personnel : liste, fiche, recrutement, modification, jours exceptionnels.
+*379 lignes* — Écrans du personnel : liste, fiche, recrutement, modification, jours exceptionnels.
 
 ```python
 """Écrans du personnel : liste, fiche, recrutement, modification, jours exceptionnels."""
@@ -573,7 +799,6 @@ def _messages(reponse):
 
 def _donnees(**surcharges):
     donnees = {
-        "matricule": "MAT-5001",
         "nom": "Bamba",
         "prenom": "Issa",
         "poste": "Mécanicien",
@@ -590,7 +815,7 @@ def _donnees(**surcharges):
 
 def _donnees_modification(**surcharges):
     donnees = _donnees(**surcharges)
-    del donnees["matricule"], donnees["date_embauche"]
+    del donnees["date_embauche"]
     return donnees
 
 
@@ -618,15 +843,17 @@ def test_le_personnel_est_interdit_aux_autres_roles(client, role):
     assert client.get(reverse("hr:personnel_nouveau")).status_code == 403
 
 
-def test_la_direction_lit_le_personnel_sans_pouvoir_le_modifier(client):
+def test_la_direction_peut_desormais_modifier_le_personnel(client):
+    """Retour réunion : la DIRECTION a la même largeur que l'ADMIN pour la saisie/modification."""
     _connecte(client, Role.DIRECTION)
     employe = PersonnelFactory()
 
-    assert client.get(reverse("hr:personnel_nouveau")).status_code == 403
-    assert client.get(reverse("hr:personnel_modifier", args=[employe.pk])).status_code == 403
-    assert client.post(reverse("hr:personnel_attribution", args=[employe.pk]), {}).status_code == 403
+    assert client.get(reverse("hr:personnel_nouveau")).status_code == 200
+    assert client.get(reverse("hr:personnel_modifier", args=[employe.pk])).status_code == 200
+    assert client.post(reverse("hr:personnel_attribution", args=[employe.pk]), {}).status_code != 403
+    assert client.get(reverse("hr:personnel_importer")).status_code == 200
     texte = client.get(reverse("hr:personnel_detail", args=[employe.pk])).content.decode()
-    assert "Modifier" not in texte and "Accorder" not in texte
+    assert "Modifier" in texte
 
 
 # --- liste ---
@@ -670,7 +897,7 @@ def test_la_fiche_affiche_salaire_droits_et_conges(client):
     reponse = client.get(reverse("hr:personnel_detail", args=[employe.pk]))
 
     assert "1\xa0250\xa0000 FCFA" in reponse.content.decode().replace(" ", "\xa0")
-    assert reponse.context["droits"]["disponible"] == 12
+    assert reponse.context["droits"]["disponible"] == 26
     assert "Aucun congé demandé" in reponse.content.decode()
 
 
@@ -704,10 +931,11 @@ def test_la_rh_recrute_un_employe(client):
 
     reponse = client.post(reverse("hr:personnel_nouveau"), _donnees(superieur=chef.pk), follow=True)
 
-    employe = Personnel.objects.get(matricule="MAT-5001")
+    employe = Personnel.objects.get(nom="Bamba", prenom="Issa")
     assert employe.superieur == chef and employe.type_contrat == "CDI"
+    assert employe.matricule.startswith("PERS-")
     assert reponse.redirect_chain[-1][0] == reverse("hr:personnel_detail", args=[employe.pk])
-    assert any("Issa Bamba" in m for m in _messages(reponse))
+    assert any("Issa Bamba" in m and employe.matricule in m for m in _messages(reponse))
 
 
 def test_recruter_un_chauffeur_cree_sa_fiche_et_le_dit(client):
@@ -715,18 +943,8 @@ def test_recruter_un_chauffeur_cree_sa_fiche_et_le_dit(client):
 
     reponse = client.post(reverse("hr:personnel_nouveau"), _donnees(poste="Chauffeur"), follow=True)
 
-    assert Chauffeur.objects.filter(personnel__matricule="MAT-5001").exists()
+    assert Chauffeur.objects.filter(personnel__nom="Bamba").exists()
     assert any("fiche chauffeur" in m for m in _messages(reponse))
-
-
-def test_un_matricule_deja_pris_est_refuse(client):
-    _connecte(client, Role.RH)
-    PersonnelFactory(matricule="MAT-5001")
-
-    reponse = client.post(reverse("hr:personnel_nouveau"), _donnees())
-
-    assert "MAT-5001 est déjà attribué" in reponse.content.decode()
-    assert Personnel.objects.filter(matricule="MAT-5001").count() == 1
 
 
 def test_un_recrutement_incomplet_reste_sur_le_formulaire(client):
@@ -736,6 +954,49 @@ def test_un_recrutement_incomplet_reste_sur_le_formulaire(client):
 
     assert reponse.status_code == 200
     assert not Personnel.objects.exists()
+
+
+# --- poste : liste déroulante + « Autre » ---
+
+
+def test_le_poste_est_une_liste_deroulante(client):
+    _connecte(client, Role.RH)
+
+    reponse = client.get(reverse("hr:personnel_nouveau"))
+
+    valeurs = dict(reponse.context["form"].fields["poste"].choices)
+    assert "Chauffeur" in valeurs and "AUTRE" in valeurs
+
+
+def test_choisir_autre_sans_le_preciser_est_refuse(client):
+    _connecte(client, Role.RH)
+
+    reponse = client.post(reverse("hr:personnel_nouveau"), _donnees(poste="AUTRE", poste_autre=""))
+
+    assert reponse.status_code == 200
+    assert not Personnel.objects.exists()
+    assert "Précisez le poste" in reponse.content.decode()
+
+
+def test_choisir_autre_avec_un_intitule_l_enregistre_tel_quel(client):
+    _connecte(client, Role.RH)
+
+    client.post(
+        reverse("hr:personnel_nouveau"), _donnees(poste="AUTRE", poste_autre="Dispatcheur logistique")
+    )
+
+    employe = Personnel.objects.get(nom="Bamba")
+    assert employe.poste == "Dispatcheur logistique"
+
+
+def test_un_poste_hors_liste_est_prerempli_en_autre_a_la_modification(client):
+    _connecte(client, Role.RH)
+    employe = PersonnelFactory(poste="Chef d'atelier")
+
+    reponse = client.get(reverse("hr:personnel_modifier", args=[employe.pk]))
+
+    initial = reponse.context["form"].initial
+    assert (initial["poste"], initial["poste_autre"]) == ("AUTRE", "Chef d'atelier")
 
 
 def test_le_formulaire_ne_propose_que_les_comptes_libres(client):
@@ -758,7 +1019,7 @@ def test_recruter_avec_un_compte_deja_rattache_est_refuse(client):
     reponse = client.post(reverse("hr:personnel_nouveau"), _donnees(utilisateur=pris.pk))
 
     assert reponse.status_code == 200
-    assert not Personnel.objects.filter(matricule="MAT-5001").exists()
+    assert not Personnel.objects.filter(nom="Bamba").exists()
 
 
 def test_le_recrutement_exige_le_csrf():
@@ -779,7 +1040,9 @@ def test_la_rh_modifie_la_fiche(client):
 
     reponse = client.post(
         reverse("hr:personnel_modifier", args=[employe.pk]),
-        _donnees_modification(poste="Chef comptable", superieur=chef.pk, utilisateur=compte.pk),
+        _donnees_modification(
+            poste="AUTRE", poste_autre="Chef comptable", superieur=chef.pk, utilisateur=compte.pk
+        ),
         follow=True,
     )
 
@@ -839,7 +1102,7 @@ def test_la_rh_accorde_des_jours_exceptionnels(client):
 
     attribution = AttributionConge.objects.get(employe=employe)
     assert (attribution.jours, attribution.accorde_par) == (3, compte_rh)
-    assert services.droits_conges(employe, 2026)["disponible"] == 15
+    assert services.droits_conges(employe, 2026)["disponible"] == 29
     assert any("3 jour(s) exceptionnel(s)" in m for m in _messages(reponse))
     assert "Naissance" in reponse.content.decode()
 
@@ -899,7 +1162,7 @@ python manage.py check
 ```
 
 ```bash
-python -m pytest apps/hr/tests/test_views_personnel.py -q --no-cov
+python -m pytest apps/hr/tests/test_import_personnel.py apps/hr/tests/test_views_personnel.py -q --no-cov
 ```
 
 **Résultat attendu :** `29 passed` (pour les 1 fichier(s) de tests présentés dans ce chapitre).

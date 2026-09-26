@@ -1,6 +1,6 @@
 # Chapitre 20 — Écrans : flotte
 
-> 8 fichier(s) dans ce chapitre, 1127 lignes de code.
+> 8 fichier(s) dans ce chapitre, 1166 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -88,7 +88,7 @@ class DocumentForm(StyleTailwindMixin, forms.Form):
 
 #### `apps/fleet/views.py`
 
-*167 lignes* — Écrans de la flotte : liste, fiche, création, modification, documents.
+*189 lignes* — Écrans de la flotte : liste, fiche, création, modification, documents.
 
 ```python
 """Écrans de la flotte : liste, fiche, création, modification, documents.
@@ -103,7 +103,7 @@ from django.views import View
 from django.views.generic import DetailView, FormView, ListView
 
 from apps.accounts.mixins import RoleRequiredMixin
-from apps.core.views import PaginationTolerante
+from apps.core.views import ImpressionListeMixin, PaginationTolerante
 
 from . import permissions, sections, services
 from .exceptions import FlotteError
@@ -135,6 +135,28 @@ class VehiculeListView(PaginationTolerante, RoleRequiredMixin, ListView):
             peut_modifier=self.request.user.role_effectif in permissions.MODIFICATION,
         )
         return contexte
+
+
+class VehiculeImprimerView(ImpressionListeMixin, VehiculeListView):
+    """Rapport imprimable des camions (mêmes recherche, statut et alerte que la liste)."""
+
+    titre_impression = "Flotte"
+    colonnes = (
+        ("Immatriculation", "immatriculation"), ("Marque", "marque"), ("Modèle", "modele"),
+        ("Année", "annee"), ("Statut", "get_statut_display"), ("Kilométrage", lambda v: f"{v.kilometrage:,} km".replace(",", " ")),
+        ("Chauffeur habituel", lambda v: f"{v.chauffeur_habituel.prenom} {v.chauffeur_habituel.nom}" if v.chauffeur_habituel_id else "—"),
+    )
+
+    def get_sous_titre_impression(self):
+        morceaux = []
+        statut = self.request.GET.get("statut", "")
+        if statut in StatutVehicule.values:
+            morceaux.append(f"statut : {StatutVehicule(statut).label}")
+        if self.request.GET.get("alerte") == "1":
+            morceaux.append("documents à renouveler")
+        if self.request.GET.get("q", ""):
+            morceaux.append(f"recherche : « {self.request.GET['q']} »")
+        return " · ".join(morceaux)
 
 
 class VehiculeDetailView(RoleRequiredMixin, DetailView):
@@ -262,7 +284,7 @@ class DocumentView(RoleRequiredMixin, View):
 
 #### `apps/fleet/urls.py`
 
-*13 lignes*
+*14 lignes*
 
 ```python
 from django.urls import path
@@ -273,6 +295,7 @@ app_name = "fleet"
 
 urlpatterns = [
     path("", views.VehiculeListView.as_view(), name="liste"),
+    path("imprimer/", views.VehiculeImprimerView.as_view(), name="imprimer"),
     path("nouveau/", views.VehiculeCreateView.as_view(), name="creer"),
     path("<int:pk>/", views.VehiculeDetailView.as_view(), name="detail"),
     path("<int:pk>/modifier/", views.VehiculeUpdateView.as_view(), name="modifier"),
@@ -287,7 +310,7 @@ urlpatterns = [
 ```diff
 --- config/urls.py (avant)
 +++ config/urls.py (après)
-@@ -17,4 +17,5 @@
+@@ -18,4 +18,5 @@
      path("", include("apps.accounts.urls")),
      path("clients/", include("apps.customers.urls")),
 +    path("flotte/", include("apps.fleet.urls")),
@@ -303,7 +326,7 @@ mkdir -p apps/fleet/templates/fleet
 
 #### `apps/fleet/templates/fleet/vehicule_list.html`
 
-*95 lignes*
+*101 lignes*
 
 ```django
 {% extends "base.html" %}
@@ -318,12 +341,18 @@ mkdir -p apps/fleet/templates/fleet
       <h1 class="text-2xl font-bold text-slate-900">Flotte</h1>
       <p class="mt-1 text-sm text-slate-600">{{ paginator.count|default:0 }} camion{{ paginator.count|pluralize }}</p>
     </div>
-    {% if peut_modifier %}
-      <a href="{% url 'fleet:creer' %}"
-         class="inline-flex items-center gap-2 rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">
-        <i class="fa-solid fa-plus" aria-hidden="true"></i> Nouveau camion
+    <div class="flex flex-wrap items-center gap-2">
+      <a href="{% url 'fleet:imprimer' %}?{{ request.GET.urlencode }}" target="_blank" rel="noopener"
+         class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+        <i class="fa-solid fa-print" aria-hidden="true"></i> Imprimer
       </a>
-    {% endif %}
+      {% if peut_modifier %}
+        <a href="{% url 'fleet:creer' %}"
+           class="inline-flex items-center gap-2 rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">
+          <i class="fa-solid fa-plus" aria-hidden="true"></i> Nouveau camion
+        </a>
+      {% endif %}
+    </div>
   </div>
 
   <form method="get" class="mt-5 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -434,7 +463,7 @@ mkdir -p apps/fleet/templates/fleet
   </div>
   <p class="mt-1 text-sm text-slate-600">{{ vehicule.marque }} {{ vehicule.modele }} · {{ vehicule.annee }}</p>
 
-  <div class="mt-6 grid gap-6 xl:grid-cols-3">
+  <div class="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-3">
     <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm xl:col-span-1" aria-labelledby="titre-fiche">
       <h2 id="titre-fiche" class="text-base font-semibold text-slate-900">Caractéristiques</h2>
       <dl class="mt-4 space-y-3 text-sm">
@@ -493,7 +522,7 @@ mkdir -p apps/fleet/templates/fleet
         <section id="nouveau-document" class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-form-document">
           <h2 id="titre-form-document" class="text-base font-semibold text-slate-900">Enregistrer ou renouveler un document</h2>
           <p class="mt-1 text-xs text-slate-600">Un renouvellement remplace les dates ; les anciennes restent dans le journal d'audit.</p>
-          <form method="post" action="{% url 'fleet:document' vehicule.pk %}" class="mt-4 grid gap-4 sm:grid-cols-3">
+          <form method="post" action="{% url 'fleet:document' vehicule.pk %}" class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
             {% csrf_token %}
             {% include "components/_champ.html" with champ=form_document.type_document %}
             {% include "components/_champ.html" with champ=form_document.date_delivrance %}
@@ -542,7 +571,7 @@ mkdir -p apps/fleet/templates/fleet
       </div>
     {% endif %}
 
-    <div class="grid gap-5 sm:grid-cols-2">
+    <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
       {% include "components/_champ.html" with champ=form.immatriculation %}
       {% include "components/_champ.html" with champ=form.vin %}
       {% include "components/_champ.html" with champ=form.marque %}
@@ -1009,7 +1038,7 @@ def test_les_formulaires_de_la_flotte_sont_proteges_par_csrf():
 
 #### `apps/notifications/tests/test_taches.py`
 
-*214 lignes* — Tâches quotidiennes : alertes d'échéances, rappels de validation, statuts des congés.
+*224 lignes* — Tâches quotidiennes : alertes d'échéances, rappels de validation, statuts des congés.
 
 ```python
 """Tâches quotidiennes : alertes d'échéances, rappels de validation, statuts des congés."""
@@ -1214,6 +1243,16 @@ def test_executer_taches_quotidiennes_regroupe_alertes_et_statuts_de_conges():
     assert resultat["conges_demarres"] == 1 and resultat["conges_termines"] == 0
     conge.refresh_from_db()
     assert conge.statut == StatutConge.EN_COURS
+
+
+def test_executer_taches_quotidiennes_expire_les_devis_envoyes_au_client():
+    from apps.billing.tests.helpers import proforma_envoyee
+
+    proforma_envoyee(aujourd_hui=AUJOURD_HUI)
+
+    resultat = taches.executer_taches_quotidiennes(aujourd_hui=AUJOURD_HUI + timedelta(days=31))
+
+    assert resultat["proformas_expirees"] == 1
 
 
 def test_la_commande_affiche_les_compteurs_et_est_rejouable():

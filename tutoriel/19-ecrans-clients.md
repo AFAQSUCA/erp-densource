@@ -1,6 +1,6 @@
 # Chapitre 19 — Écrans : clients
 
-> 8 fichier(s) dans ce chapitre, 793 lignes de code.
+> 8 fichier(s) dans ce chapitre, 823 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -132,7 +132,7 @@ class FiltreClientsForm(forms.Form):
 
 #### `apps/customers/views.py`
 
-*146 lignes* — Écrans des clients : portefeuille, fiche, création, modification, interactions.
+*169 lignes* — Écrans des clients : portefeuille, fiche, création, modification, interactions.
 
 ```python
 """Écrans des clients : portefeuille, fiche, création, modification, interactions.
@@ -148,7 +148,7 @@ from django.views.generic import DetailView, FormView, ListView
 
 from apps.accounts.mixins import RoleRequiredMixin
 from apps.accounts.models import Role
-from apps.core.views import PaginationTolerante
+from apps.core.views import ImpressionListeMixin, PaginationTolerante
 
 from . import permissions, sections, services
 from .exceptions import ClientError
@@ -181,6 +181,29 @@ class ClientListView(PaginationTolerante, RoleRequiredMixin, ListView):
             a_un_portefeuille=utilisateur.role == Role.CHARGE_CLIENTELE,
         )
         return contexte
+
+
+class ClientImprimerView(ImpressionListeMixin, ClientListView):
+    """Rapport imprimable du portefeuille clients (mêmes filtres que la liste)."""
+
+    titre_impression = "Clients"
+    colonnes = (
+        ("Raison sociale", "raison_sociale"), ("NCC / NIF", "ncc_nif"), ("Contact", "contact_principal"),
+        ("Téléphone", "telephone"),
+        ("Chargé clientèle", lambda c: f"{c.charge_clientele.first_name} {c.charge_clientele.last_name}".strip() or c.charge_clientele.username if c.charge_clientele_id else "—"),
+        ("TVA", lambda c: f"{c.taux_tva:g} %" if c.taux_tva else "Exonérée"),
+    )
+
+    def get_sous_titre_impression(self):
+        criteres = self.get_filtre().criteres(self.request.user)
+        morceaux = []
+        if criteres.get("charge_clientele"):
+            morceaux.append("mon portefeuille")
+        if criteres.get("exonere"):
+            morceaux.append("exonérés de TVA")
+        if criteres.get("recherche"):
+            morceaux.append(f"recherche : « {criteres['recherche']} »")
+        return " · ".join(morceaux)
 
 
 class ClientDetailView(RoleRequiredMixin, DetailView):
@@ -285,7 +308,7 @@ class InteractionCreateView(RoleRequiredMixin, View):
 
 #### `apps/customers/urls.py`
 
-*13 lignes*
+*14 lignes*
 
 ```python
 from django.urls import path
@@ -296,6 +319,7 @@ app_name = "customers"
 
 urlpatterns = [
     path("", views.ClientListView.as_view(), name="liste"),
+    path("imprimer/", views.ClientImprimerView.as_view(), name="imprimer"),
     path("nouveau/", views.ClientCreateView.as_view(), name="creer"),
     path("<int:pk>/", views.ClientDetailView.as_view(), name="detail"),
     path("<int:pk>/modifier/", views.ClientUpdateView.as_view(), name="modifier"),
@@ -310,7 +334,7 @@ urlpatterns = [
 ```diff
 --- config/urls.py (avant)
 +++ config/urls.py (après)
-@@ -16,4 +16,5 @@
+@@ -17,4 +17,5 @@
      path("favicon.ico", RedirectView.as_view(url=settings.STATIC_URL + "img/favicon.png", permanent=True)),
      path("", include("apps.accounts.urls")),
 +    path("clients/", include("apps.customers.urls")),
@@ -326,7 +350,7 @@ mkdir -p apps/customers/templates/customers
 
 #### `apps/customers/templates/customers/client_list.html`
 
-*85 lignes*
+*91 lignes*
 
 ```django
 {% extends "base.html" %}
@@ -341,12 +365,18 @@ mkdir -p apps/customers/templates/customers
       <h1 class="text-2xl font-bold text-slate-900">Clients</h1>
       <p class="mt-1 text-sm text-slate-600">{{ paginator.count|default:0 }} client{{ paginator.count|pluralize }}</p>
     </div>
-    {% if peut_modifier %}
-      <a href="{% url 'customers:creer' %}"
-         class="inline-flex items-center gap-2 rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">
-        <i class="fa-solid fa-plus" aria-hidden="true"></i> Nouveau client
+    <div class="flex flex-wrap items-center gap-2">
+      <a href="{% url 'customers:imprimer' %}?{{ request.GET.urlencode }}" target="_blank" rel="noopener"
+         class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+        <i class="fa-solid fa-print" aria-hidden="true"></i> Imprimer
       </a>
-    {% endif %}
+      {% if peut_modifier %}
+        <a href="{% url 'customers:creer' %}"
+           class="inline-flex items-center gap-2 rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">
+          <i class="fa-solid fa-plus" aria-hidden="true"></i> Nouveau client
+        </a>
+      {% endif %}
+    </div>
   </div>
 
   <form method="get" class="mt-5 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -444,7 +474,7 @@ mkdir -p apps/customers/templates/customers
   </div>
   <p class="mt-1 text-sm text-slate-600">NCC / NIF {{ client.ncc_nif }}</p>
 
-  <div class="mt-6 grid gap-6 xl:grid-cols-3">
+  <div class="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-3">
     <div class="space-y-6 xl:col-span-1">
       <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-fiche">
         <h2 id="titre-fiche" class="text-base font-semibold text-slate-900">Fiche</h2>
@@ -469,7 +499,7 @@ mkdir -p apps/customers/templates/customers
           <form method="post" action="{% url 'customers:interaction' client.pk %}" class="mt-4 space-y-4 rounded-lg bg-slate-50 p-4">
             {% csrf_token %}
             <h3 class="text-sm font-semibold text-slate-900">Ajouter une interaction</h3>
-            <div class="grid gap-4 sm:grid-cols-2">
+            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
               {% include "components/_champ.html" with champ=form_interaction.type_interaction %}
               {% include "components/_champ.html" with champ=form_interaction.date_interaction %}
             </div>
@@ -536,7 +566,7 @@ mkdir -p apps/customers/templates/customers
 
     <fieldset>
       <legend class="text-sm font-semibold text-slate-900">Société</legend>
-      <div class="mt-3 grid gap-5 sm:grid-cols-2">
+      <div class="mt-3 grid grid-cols-1 gap-5 sm:grid-cols-2">
         {% include "components/_champ.html" with champ=form.raison_sociale %}
         {% include "components/_champ.html" with champ=form.ncc_nif %}
       </div>
@@ -545,7 +575,7 @@ mkdir -p apps/customers/templates/customers
 
     <fieldset class="border-t border-slate-100 pt-5">
       <legend class="text-sm font-semibold text-slate-900">Contact</legend>
-      <div class="mt-3 grid gap-5 sm:grid-cols-2">
+      <div class="mt-3 grid grid-cols-1 gap-5 sm:grid-cols-2">
         {% include "components/_champ.html" with champ=form.contact_principal %}
         {% include "components/_champ.html" with champ=form.telephone %}
         {% include "components/_champ.html" with champ=form.email %}
@@ -555,7 +585,7 @@ mkdir -p apps/customers/templates/customers
 
     <fieldset class="border-t border-slate-100 pt-5">
       <legend class="text-sm font-semibold text-slate-900">TVA</legend>
-      <div class="mt-3 grid gap-5 sm:grid-cols-2">
+      <div class="mt-3 grid grid-cols-1 gap-5 sm:grid-cols-2">
         <div>
           <label for="{{ form.taux_tva.id_for_label }}" class="block text-sm font-medium text-slate-800">{{ form.taux_tva.label }}<span class="text-red-700" aria-hidden="true"> *</span></label>
           <div class="mt-1"><input type="number" name="taux_tva" id="{{ form.taux_tva.id_for_label }}" step="0.01" min="0" max="100" required
