@@ -209,8 +209,9 @@ def test_seule_la_finance_corrige_et_seulement_les_depenses_automatiques():
         mode=ModePaiement.ESPECES,
     )
 
+    # Retour réunion : la DIRECTION a désormais la même largeur que l'ADMIN en saisie.
     with pytest.raises(ActionFactureNonAutorisee):
-        billing.changer_mode_depense(automatique, UserFactory(role=Role.DIRECTION), mode=ModePaiement.WAVE)
+        billing.changer_mode_depense(automatique, UserFactory(role=Role.PARCAUTO), mode=ModePaiement.WAVE)
     with pytest.raises(ActionFactureNonAutorisee):
         billing.changer_mode_depense(manuelle, finances(), mode=ModePaiement.WAVE)
     with pytest.raises(MontantInvalide):
@@ -232,14 +233,30 @@ def test_ecran_depenses_montre_les_lignes_automatiques_et_le_changement_de_mode(
     assert any("Wave" in str(m) for m in reponse.context["messages"])
 
 
-def test_la_direction_voit_les_lignes_sans_pouvoir_changer_le_mode(client):
+def test_la_direction_voit_les_lignes_et_peut_changer_le_mode(client):
+    """Retour réunion : la DIRECTION a la même largeur que l'ADMIN pour la saisie."""
     client.force_login(UserFactory(role=Role.DIRECTION))
     _plein()
     depense = _auto(OrigineDepense.PLEIN).get()
 
     page = client.get(reverse("billing:depenses")).content.decode()
 
-    assert "Automatique" in page and reverse("billing:depense_mode", args=[depense.pk]) not in page
+    assert "Automatique" in page and reverse("billing:depense_mode", args=[depense.pk]) in page
+    reponse = client.post(
+        reverse("billing:depense_mode", args=[depense.pk]), {"mode": "WAVE"}, follow=True
+    )
+    depense.refresh_from_db()
+    assert reponse.status_code == 200 and depense.mode == ModePaiement.WAVE
+
+
+def test_le_parc_auto_n_a_pas_acces_a_l_ecran_des_depenses(client):
+    """Le Parc Auto gère ses propres dépenses via l'écran des missions (FRAIS_CONSULTATION) ;
+    l'écran de facturation/dépenses générales reste hors de sa portée."""
+    client.force_login(UserFactory(role=Role.PARCAUTO))
+    _plein()
+    depense = _auto(OrigineDepense.PLEIN).get()
+
+    assert client.get(reverse("billing:depenses")).status_code == 403
     assert client.post(reverse("billing:depense_mode", args=[depense.pk]), {"mode": "WAVE"}).status_code == 403
 
 

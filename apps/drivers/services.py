@@ -14,7 +14,7 @@ from apps.core.services import etat_echeance
 from apps.hr.models import Personnel
 
 from .exceptions import CategorieInvalide, StatutNonModifiable
-from .models import CategoriePermis, Chauffeur, StatutChauffeur
+from .models import CategoriePermis, Chauffeur, Copilote, StatutChauffeur
 
 
 @transaction.atomic
@@ -83,6 +83,59 @@ def rappeler_de_conge(chauffeur: Chauffeur) -> Chauffeur:
     if chauffeur.statut == StatutChauffeur.EN_CONGE:
         return changer_statut(chauffeur, StatutChauffeur.DISPONIBLE)
     return chauffeur
+
+
+# --- copilotes (assistants du chauffeur, missions qui l'exigent) ---
+
+
+@transaction.atomic
+def assurer_fiche_copilote(personnel: Personnel) -> tuple[Copilote, bool]:
+    """Garantit qu'un employé « Copilote » a une fiche liée (même principe que le chauffeur)."""
+    fiche, creee = Copilote.all_objects.get_or_create(personnel=personnel)
+    if fiche.is_deleted:
+        fiche.restore()
+    return fiche, creee
+
+
+def changer_statut_copilote(copilote: Copilote, statut: str) -> Copilote:
+    if statut not in StatutChauffeur.values:
+        raise ValueError(f"Statut copilote inconnu : {statut!r}")
+    copilote.statut = statut
+    copilote.save(update_fields=["statut", "updated_at"])
+    return copilote
+
+
+def copilotes_actifs() -> QuerySet[Copilote]:
+    return (
+        Copilote.objects.select_related("personnel")
+        .exclude(statut=StatutChauffeur.INACTIF)
+        .order_by("personnel__nom", "personnel__prenom")
+    )
+
+
+def copilotes_disponibles() -> QuerySet[Copilote]:
+    """Copilotes au statut « Disponible », pour l'affectation d'une mission."""
+    return Copilote.objects.select_related("personnel").filter(statut=StatutChauffeur.DISPONIBLE)
+
+
+def mettre_en_mission_copilote(copilote: Copilote) -> Copilote:
+    return changer_statut_copilote(copilote, StatutChauffeur.EN_MISSION)
+
+
+def rappeler_copilote_de_mission(copilote: Copilote) -> Copilote:
+    if copilote.statut == StatutChauffeur.EN_MISSION:
+        return changer_statut_copilote(copilote, StatutChauffeur.DISPONIBLE)
+    return copilote
+
+
+def mettre_copilote_en_conge(copilote: Copilote) -> Copilote:
+    return changer_statut_copilote(copilote, StatutChauffeur.EN_CONGE)
+
+
+def rappeler_copilote_de_conge(copilote: Copilote) -> Copilote:
+    if copilote.statut == StatutChauffeur.EN_CONGE:
+        return changer_statut_copilote(copilote, StatutChauffeur.DISPONIBLE)
+    return copilote
 
 
 def chauffeurs_a_renouveler(

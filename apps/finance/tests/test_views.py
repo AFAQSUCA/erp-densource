@@ -42,14 +42,14 @@ def _texte(reponse):
     return reponse.content.decode().replace("\xa0", " ").replace(" ", " ")
 
 
-@pytest.mark.parametrize("role", [Role.ADMIN, Role.DIRECTION, Role.FINANCES])
-def test_la_tresorerie_est_accessible_a_admin_direction_et_finances(client, role):
+@pytest.mark.parametrize("role", [Role.ADMIN, Role.DIRECTION, Role.FINANCES, Role.RH])
+def test_la_tresorerie_est_accessible_a_admin_direction_finances_et_rh(client, role):
     _connecte(client, role)
 
     assert client.get(reverse("finance:tresorerie")).status_code == 200
 
 
-@pytest.mark.parametrize("role", [Role.RH, Role.PARCAUTO, Role.CHARGE_CLIENTELE, Role.CHAUFFEUR])
+@pytest.mark.parametrize("role", [Role.PARCAUTO, Role.CHARGE_CLIENTELE, Role.CHAUFFEUR])
 def test_la_tresorerie_est_interdite_aux_autres_roles(client, role):
     _connecte(client, role)
 
@@ -60,13 +60,14 @@ def test_la_tresorerie_exige_la_connexion(client):
     assert client.get(reverse("finance:tresorerie")).status_code == 302
 
 
-def test_la_direction_consulte_sans_saisir(client):
-    _connecte(client, Role.DIRECTION)
-
-    texte = client.get(reverse("finance:tresorerie")).content.decode()
-
-    assert "Autre mouvement" not in texte
-    assert client.post(reverse("finance:mouvement_creer"), _donnees()).status_code == 403
+def test_la_direction_et_la_rh_consultent_et_saisissent_desormais(client):
+    """Retour réunion : la DIRECTION (même largeur que l'ADMIN) et la RH (tout ce que fait
+    la FINANCES) peuvent désormais saisir un mouvement de trésorerie."""
+    for role in (Role.DIRECTION, Role.RH):
+        _connecte(client, role)
+        texte = client.get(reverse("finance:tresorerie")).content.decode()
+        assert "Autre mouvement" in texte
+        assert client.post(reverse("finance:mouvement_creer"), _donnees()).status_code == 302
 
 
 def test_soldes_et_journal_s_affichent(client):

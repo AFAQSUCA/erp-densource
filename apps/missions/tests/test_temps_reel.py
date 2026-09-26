@@ -47,12 +47,13 @@ def _se_connecte(utilisateur, session=None) -> bool:
 # --- qui peut se connecter ---
 
 
-@pytest.mark.parametrize("role", [Role.ADMIN, Role.DIRECTION, Role.CHARGE_CLIENTELE])
+@pytest.mark.parametrize("role", [Role.ADMIN, Role.DIRECTION, Role.CHARGE_CLIENTELE, Role.PARCAUTO])
 def test_les_roles_qui_consultent_les_missions_se_connectent(role):
+    # Retour réunion : le Parc Auto affecte les missions, donc les consulte désormais aussi.
     assert _se_connecte(UserFactory.build(role=role)) is True
 
 
-@pytest.mark.parametrize("role", [Role.CHAUFFEUR, Role.RH, Role.PARCAUTO, Role.FINANCES])
+@pytest.mark.parametrize("role", [Role.CHAUFFEUR, Role.RH, Role.FINANCES])
 def test_les_autres_roles_sont_refuses(role):
     assert _se_connecte(UserFactory.build(role=role)) is False
 

@@ -15,7 +15,7 @@ from apps.accounts.models import Role
 from apps.accounts.tests.factories import UserFactory
 from apps.audit.models import ActionChoices, AuditLog
 from apps.drivers import services as drivers_services
-from apps.drivers.models import Chauffeur, StatutChauffeur
+from apps.drivers.models import Chauffeur, Copilote, StatutChauffeur
 from apps.hr import services
 from apps.hr.exceptions import (
     ActionNonAutorisee,
@@ -388,6 +388,24 @@ def test_conge_d_un_non_chauffeur_ne_touche_aucune_fiche_chauffeur():
     services.synchroniser_statuts_conges(aujourd_hui=DEBUT)
 
     assert not Chauffeur.objects.exists()
+
+
+def test_copilote_passe_en_conge_au_demarrage_puis_redevient_disponible():
+    """Retour réunion : le copilote suit le même cycle de statut que le chauffeur."""
+    hierarchie = _hierarchie(poste="Copilote")
+    fiche = Copilote.objects.get(personnel=hierarchie[0])
+    _approuve(hierarchie)
+
+    fiche.refresh_from_db()
+    assert fiche.statut == StatutChauffeur.DISPONIBLE  # pas avant le départ effectif
+
+    services.synchroniser_statuts_conges(aujourd_hui=DEBUT)
+    fiche.refresh_from_db()
+    assert fiche.statut == StatutChauffeur.EN_CONGE
+
+    services.synchroniser_statuts_conges(aujourd_hui=FIN + timedelta(days=1))
+    fiche.refresh_from_db()
+    assert fiche.statut == StatutChauffeur.DISPONIBLE
 
 
 # --- audit ---

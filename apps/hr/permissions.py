@@ -13,7 +13,8 @@ mobile (étape 6).
 from apps.accounts.models import Role
 
 PERSONNEL_CONSULTATION = frozenset({Role.ADMIN, Role.DIRECTION, Role.RH})
-PERSONNEL_MODIFICATION = frozenset({Role.ADMIN, Role.RH})
+# Retour réunion : la DIRECTION a la même largeur que l'ADMIN pour la saisie/modification.
+PERSONNEL_MODIFICATION = frozenset({Role.ADMIN, Role.DIRECTION, Role.RH})
 
 # Voit les congés de tous les employés (les autres ne voient que les leurs et ceux
 # qu'ils ont à valider).

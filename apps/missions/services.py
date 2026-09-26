@@ -24,7 +24,7 @@ from apps.core.search import filtrer_par_texte, normaliser
 from apps.core.services import prochain_numero, total_par_mois
 from apps.customers.models import Client
 from apps.drivers import services as drivers_services
-from apps.drivers.models import Chauffeur, StatutChauffeur
+from apps.drivers.models import Chauffeur, Copilote, StatutChauffeur
 from apps.fleet import services as fleet_services
 from apps.fleet.models import StatutVehicule, Vehicule
 
@@ -224,6 +224,10 @@ def chauffeur_a_mission_active(chauffeur: Chauffeur) -> bool:
     return Mission.objects.filter(chauffeur=chauffeur, statut__in=STATUTS_ACTIFS).exists()
 
 
+def copilote_a_mission_active(copilote: Copilote) -> bool:
+    return Mission.objects.filter(copilote=copilote, statut__in=STATUTS_ACTIFS).exists()
+
+
 # --- cycle de vie ---
 
 
@@ -341,11 +345,13 @@ def planifier_mission(mission: Mission) -> Mission:
     return mission
 
 
-def _verifier_disponibilite(vehicule: Vehicule, chauffeur: Chauffeur, poids_t: Decimal) -> None:
+def _verifier_disponibilite(
+    vehicule: Vehicule, chauffeur: Chauffeur, poids_t: Decimal, copilote: Copilote | None = None
+) -> None:
     """Camion et chauffeur disponibles, non réservés par une autre mission active, et le camion
     capable d'emporter la charge (cahier-des-charges.md:130-131). Partagé par l'affectation et la
     réaffectation (modification d'une mission déjà affectée, cahier-des-charges.md « modification
-    mission »)."""
+    mission »). ``copilote`` facultatif : certains voyages exigent un assistant au chauffeur."""
     if vehicule.statut != StatutVehicule.DISPONIBLE:
         raise AffectationImpossible(
             f"Le camion {vehicule.immatriculation} n'est pas disponible "
@@ -369,22 +375,37 @@ def _verifier_disponibilite(vehicule: Vehicule, chauffeur: Chauffeur, poids_t: D
             f"Charge de {poids_t} t supérieure à la capacité du camion "
             f"({vehicule.capacite_charge_t} t)."
         )
+    if copilote is not None:
+        if copilote.statut != StatutChauffeur.DISPONIBLE:
+            raise AffectationImpossible(
+                f"Le copilote {copilote} n'est pas disponible ({copilote.get_statut_display()})."
+            )
+        if copilote_a_mission_active(copilote):
+            raise AffectationImpossible(
+                f"Le copilote {copilote} est déjà réservé par une autre mission."
+            )
 
 
 @transaction.atomic
-def affecter_mission(mission: Mission, *, vehicule: Vehicule, chauffeur: Chauffeur) -> Mission:
+def affecter_mission(
+    mission: Mission, *, vehicule: Vehicule, chauffeur: Chauffeur, copilote: Copilote | None = None
+) -> Mission:
     """Planifiée → Affectée : camion et chauffeur disponibles, non réservés,
-    et capable d'emporter la charge (cahier-des-charges.md:130-131)."""
+    et capable d'emporter la charge (cahier-des-charges.md:130-131). ``copilote`` facultatif,
+    pour les voyages qui l'exigent (décision du Parc Auto au moment de l'affectation)."""
     _recharger(mission)
     _exiger_statut(mission, StatutMission.PLANIFIEE, "affecter la mission")
     _recharger(vehicule)
     _recharger(chauffeur)
-    _verifier_disponibilite(vehicule, chauffeur, mission.poids_t)
+    if copilote is not None:
+        _recharger(copilote)
+    _verifier_disponibilite(vehicule, chauffeur, mission.poids_t, copilote)
 
     mission.vehicule = vehicule
     mission.chauffeur = chauffeur
+    mission.copilote = copilote
     mission.statut = StatutMission.AFFECTEE
-    mission.save(update_fields=["vehicule", "chauffeur", "statut", "updated_at"])
+    mission.save(update_fields=["vehicule", "chauffeur", "copilote", "statut", "updated_at"])
     signals.emettre(mission_affectee, mission=mission)
     return mission
 
@@ -412,9 +433,16 @@ def demarrer_mission(mission: Mission) -> Mission:
             f"Le chauffeur {chauffeur} n'est plus disponible "
             f"({chauffeur.get_statut_display()})."
         )
+    copilote = _recharger(mission.copilote) if mission.copilote_id else None
+    if copilote is not None and copilote.statut != StatutChauffeur.DISPONIBLE:
+        raise DemarrageImpossible(
+            f"Le copilote {copilote} n'est plus disponible ({copilote.get_statut_display()})."
+        )
 
     fleet_services.definir_statut(vehicule, StatutVehicule.EN_MISSION)
     drivers_services.mettre_en_mission(chauffeur)
+    if copilote is not None:
+        drivers_services.mettre_en_mission_copilote(copilote)
 
     mission.km_depart = vehicule.kilometrage
     mission.date_depart = timezone.now()
@@ -469,6 +497,8 @@ def livrer_mission(mission: Mission, *, code: str, km_arrivee: int) -> Mission:
         ) from erreur
     fleet_services.liberer_apres_mission(vehicule)
     drivers_services.rappeler_de_mission(_recharger(mission.chauffeur))
+    if mission.copilote_id:
+        drivers_services.rappeler_copilote_de_mission(_recharger(mission.copilote))
 
     mission.km_arrivee = km_arrivee
     mission.date_livraison = timezone.now()

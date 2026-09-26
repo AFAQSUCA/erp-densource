@@ -74,20 +74,21 @@ def test_le_stock_est_interdit_aux_autres_roles(client, role):
         assert client.get(reverse(nom, args=args)).status_code == 403, nom
 
 
-def test_la_direction_est_en_lecture_seule_sur_le_stock(client):
+def test_la_direction_peut_desormais_agir_sur_le_stock(client):
+    """Retour réunion : la DIRECTION a la même largeur que l'ADMIN pour la saisie/modification."""
     _connecte(client, Role.DIRECTION)
     article = _approvisionne(10)
 
-    assert client.get(reverse("inventory:article_creer")).status_code == 403
-    assert client.get(reverse("inventory:article_modifier", args=[article.pk])).status_code == 403
+    assert client.get(reverse("inventory:article_creer")).status_code == 200
+    assert client.get(reverse("inventory:article_modifier", args=[article.pk])).status_code == 200
     assert client.post(
         reverse("inventory:entree", args=[article.pk]), {"quantite": "5", "prix_unitaire": "900"}
-    ).status_code == 403
+    ).status_code == 302
     assert client.post(
         reverse("inventory:ajustement", args=[article.pk]), {"variation": "-3", "motif": "x"}
-    ).status_code == 403
+    ).status_code == 302
     article.refresh_from_db()
-    assert article.quantite == 10
+    assert article.quantite == 12
 
 
 def test_un_visiteur_non_connecte_est_renvoye_vers_la_connexion(client):
@@ -202,7 +203,8 @@ def test_la_fiche_affiche_les_indicateurs_et_le_journal(client):
     assert [m.variation for m in reponse.context["mouvements"]] == [-1, -3, 10]
 
 
-def test_la_fiche_propose_les_formulaires_au_parc_auto_seulement(client):
+def test_la_fiche_propose_les_formulaires_au_parc_auto_et_a_la_direction(client):
+    """Retour réunion : la DIRECTION a désormais la même largeur que l'ADMIN (MODIFICATION)."""
     article = _approvisionne(10)
     _connecte(client, Role.PARCAUTO)
     page = client.get(_detail(article)).content.decode()
@@ -212,8 +214,8 @@ def test_la_fiche_propose_les_formulaires_au_parc_auto_seulement(client):
     direction = Client()
     _connecte(direction, Role.DIRECTION)
     page = direction.get(_detail(article)).content.decode()
-    assert reverse("inventory:entree", args=[article.pk]) not in page
-    assert reverse("inventory:article_modifier", args=[article.pk]) not in page
+    assert reverse("inventory:entree", args=[article.pk]) in page
+    assert reverse("inventory:article_modifier", args=[article.pk]) in page
 
 
 def test_la_fiche_d_un_article_inconnu_est_introuvable(client):

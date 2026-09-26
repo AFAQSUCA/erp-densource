@@ -72,14 +72,21 @@ def test_mouvements_invalides(libelle, montant, jour, message):
         _manuel(libelle=libelle, montant=montant, jour=jour)
 
 
-def test_les_mouvements_sont_reserves_a_finances_et_admin():
+def test_les_mouvements_sont_reserves_a_la_saisie_facturation():
+    # Retour réunion : la DIRECTION (même largeur que l'ADMIN) est désormais dans la SAISIE ;
+    # le Parc Auto, lui, n'y a jamais eu accès.
     with pytest.raises(ActionFactureNonAutorisee):
-        _manuel(acteur=direction())
+        _manuel(acteur=UserFactory(role=Role.PARCAUTO))
     mouvement = _manuel()
     with pytest.raises(ActionFactureNonAutorisee):
-        services.annuler_mouvement(mouvement, direction(), motif="x")
+        services.annuler_mouvement(mouvement, UserFactory(role=Role.PARCAUTO), motif="x")
     with pytest.raises(MontantInvalide, match="motif"):
         services.annuler_mouvement(mouvement, finances(), motif=" ")
+
+
+def test_la_direction_peut_desormais_saisir_un_mouvement():
+    """Retour réunion : la DIRECTION a la même largeur que l'ADMIN pour la saisie."""
+    assert _manuel(acteur=direction()).pk
 
 
 # --- journal et soldes ---
@@ -243,6 +250,6 @@ def test_la_marge_peut_etre_negative():
     assert services.indicateurs(*SEPT)["marge_nette"] == Decimal("-300000")
 
 
-def test_un_utilisateur_de_role_rh_ne_saisit_rien():
-    with pytest.raises(ActionFactureNonAutorisee):
-        _manuel(acteur=UserFactory(role=Role.RH))
+def test_un_utilisateur_de_role_rh_saisit_desormais_comme_la_finance():
+    """Retour réunion : la RH fait tout ce que fait la FINANCES, y compris la trésorerie."""
+    assert _manuel(acteur=UserFactory(role=Role.RH)).pk

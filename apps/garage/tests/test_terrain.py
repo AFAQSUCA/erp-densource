@@ -249,14 +249,15 @@ def test_un_incident_signale_peut_etre_clos_directement_mais_pas_deux_fois():
         terrain.prendre_en_compte(incident, admin)
 
 
-def test_seuls_parc_auto_et_admin_traitent_un_incident():
+def test_seuls_parc_auto_admin_et_direction_traitent_un_incident():
+    # Retour réunion : la DIRECTION a désormais la même largeur que l'ADMIN (MODIFICATION).
     incident = _declarer()
 
-    for role in (Role.DIRECTION, Role.RH, Role.CHAUFFEUR, Role.FINANCES):
+    for role in (Role.RH, Role.CHAUFFEUR, Role.FINANCES):
         with pytest.raises(ChauffeurNonAutorise):
             terrain.prendre_en_compte(incident, UserFactory(role=role))
-    with pytest.raises(ChauffeurNonAutorise):
-        terrain.clore_incident(incident, UserFactory(role=Role.DIRECTION), note="x")
+    assert terrain.prendre_en_compte(incident, UserFactory(role=Role.DIRECTION)).pk
+    assert terrain.clore_incident(incident, UserFactory(role=Role.DIRECTION), note="x").pk
 
 
 def test_recherche_et_file_des_incidents_a_traiter():

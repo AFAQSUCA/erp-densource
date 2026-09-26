@@ -37,11 +37,13 @@ def _api(role=Role.ADMIN):
 
 
 RESSOURCES = {
-    "api:mission-list": {Role.ADMIN, Role.DIRECTION, Role.CHARGE_CLIENTELE},
+    # Retour réunion : le Parc Auto affecte les missions, donc les consulte désormais aussi.
+    "api:mission-list": {Role.ADMIN, Role.DIRECTION, Role.CHARGE_CLIENTELE, Role.PARCAUTO},
     "api:camion-list": {Role.ADMIN, Role.DIRECTION, Role.PARCAUTO},
     "api:chauffeur-list": {Role.ADMIN, Role.DIRECTION, Role.RH},
     "api:client-list": {Role.ADMIN, Role.DIRECTION, Role.CHARGE_CLIENTELE},
-    "api:facture-list": {Role.ADMIN, Role.DIRECTION, Role.FINANCES},
+    # Retour réunion : la RH fait tout ce que fait la FINANCES, y compris consulter les factures.
+    "api:facture-list": {Role.ADMIN, Role.DIRECTION, Role.FINANCES, Role.RH},
 }
 
 

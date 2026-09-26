@@ -96,7 +96,8 @@ def test_l_auteur_est_prevenu_du_refus_avec_le_motif():
 # --- factures échues ---
 
 
-def test_les_factures_echues_previennent_finances_et_direction_une_seule_fois():
+def test_les_factures_echues_previennent_finances_direction_et_rh_une_seule_fois():
+    """Retour réunion : la RH fait tout ce que fait la FINANCES, elle est donc prévenue aussi."""
     finance, chef, rh = UserFactory(role=Role.FINANCES), UserFactory(role=Role.DIRECTION), UserFactory(role=Role.RH)
     facture = emise(prix="1000000", aujourd_hui=date(2026, 7, 1))  # échéance 31/07/2026
     services.enregistrer_reglement(
@@ -107,22 +108,23 @@ def test_les_factures_echues_previennent_finances_et_direction_une_seule_fois():
     premiere = taches.alerter_factures_echues(aujourd_hui=aujourd_hui)
     seconde = taches.alerter_factures_echues(aujourd_hui=aujourd_hui + timedelta(days=1))
 
-    destinataires = User.objects.filter(role__in=[Role.FINANCES, Role.DIRECTION]).count()
-    assert premiere == destinataires >= 2 and seconde == 0  # un message par compte, jamais renvoyé
-    for compte in (finance, chef):
+    destinataires = User.objects.filter(role__in=[Role.FINANCES, Role.DIRECTION, Role.RH]).count()
+    assert premiere == destinataires >= 3 and seconde == 0  # un message par compte, jamais renvoyé
+    for compte in (finance, chef, rh):
         alerte = [n for n in _de(compte) if "échue" in n.titre][0]
         assert alerte.niveau == NiveauNotification.URGENT
         assert alerte.titre == f"Facture {facture.numero} échue : {facture.client.raison_sociale}"
         assert "1 000 000 FCFA" in alerte.message.replace("\xa0", " ").replace(" ", " ")
         assert "échue depuis 10 jours" in alerte.message
-    # La FINANCES peut confirmer le versement d'un clic ; la DIRECTION, qui ne saisit pas, consulte la facture.
-    alerte_finance = [n for n in _de(finance) if "échue" in n.titre][0]
-    assert alerte_finance.action == "Confirmer le versement"
-    assert alerte_finance.url == reverse("finance:versement_confirmer", args=[facture.pk])
+    # La FINANCES (et désormais la RH) peuvent confirmer le versement d'un clic ; la DIRECTION,
+    # qui ne saisit pas, consulte la facture.
+    for compte in (finance, rh):
+        alerte = [n for n in _de(compte) if "échue" in n.titre][0]
+        assert alerte.action == "Confirmer le versement"
+        assert alerte.url == reverse("finance:versement_confirmer", args=[facture.pk])
     alerte_direction = [n for n in _de(chef) if "échue" in n.titre][0]
     assert alerte_direction.action == ""
     assert alerte_direction.url == reverse("billing:facture", args=[facture.pk])
-    assert _de(rh) == []
 
 
 def test_pas_d_alerte_pour_une_facture_non_echue_ou_soldee():

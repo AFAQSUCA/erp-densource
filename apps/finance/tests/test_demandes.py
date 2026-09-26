@@ -188,8 +188,10 @@ def test_soumettre_une_demande_manuelle():
 
 
 def test_seul_le_parc_auto_soumet_une_demande():
+    # Retour réunion : la DIRECTION a désormais la même largeur que l'ADMIN en saisie ;
+    # la FINANCES, elle, n'a jamais eu ce droit (elle exécute, elle ne demande pas).
     with pytest.raises(ActionFactureNonAutorisee):
-        services.soumettre_demande(_direction(), categorie=CategorieDepense.PIECES, montant_estime=Decimal("1"), motif="x")
+        services.soumettre_demande(_finances(), categorie=CategorieDepense.PIECES, montant_estime=Decimal("1"), motif="x")
 
 
 @pytest.mark.parametrize("montant", [Decimal("0"), Decimal("-1")])

@@ -10,4 +10,5 @@ décidera avec la facturation (étape 4).
 from apps.accounts.models import Role
 
 CONSULTATION = frozenset({Role.ADMIN, Role.DIRECTION, Role.CHARGE_CLIENTELE})
-MODIFICATION = frozenset({Role.ADMIN, Role.CHARGE_CLIENTELE})
+# Retour réunion : la DIRECTION a la même largeur que l'ADMIN pour la saisie/modification.
+MODIFICATION = frozenset({Role.ADMIN, Role.DIRECTION, Role.CHARGE_CLIENTELE})

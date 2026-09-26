@@ -73,16 +73,17 @@ def test_le_personnel_est_interdit_aux_autres_roles(client, role):
     assert client.get(reverse("hr:personnel_nouveau")).status_code == 403
 
 
-def test_la_direction_lit_le_personnel_sans_pouvoir_le_modifier(client):
+def test_la_direction_peut_desormais_modifier_le_personnel(client):
+    """Retour réunion : la DIRECTION a la même largeur que l'ADMIN pour la saisie/modification."""
     _connecte(client, Role.DIRECTION)
     employe = PersonnelFactory()
 
-    assert client.get(reverse("hr:personnel_nouveau")).status_code == 403
-    assert client.get(reverse("hr:personnel_modifier", args=[employe.pk])).status_code == 403
-    assert client.post(reverse("hr:personnel_attribution", args=[employe.pk]), {}).status_code == 403
-    assert client.get(reverse("hr:personnel_importer")).status_code == 403
+    assert client.get(reverse("hr:personnel_nouveau")).status_code == 200
+    assert client.get(reverse("hr:personnel_modifier", args=[employe.pk])).status_code == 200
+    assert client.post(reverse("hr:personnel_attribution", args=[employe.pk]), {}).status_code != 403
+    assert client.get(reverse("hr:personnel_importer")).status_code == 200
     texte = client.get(reverse("hr:personnel_detail", args=[employe.pk])).content.decode()
-    assert "Modifier" not in texte and "Accorder" not in texte
+    assert "Modifier" in texte
 
 
 # --- liste ---

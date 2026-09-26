@@ -19,12 +19,29 @@ frise du cycle de vie, création, et une action POST par transition. Droits par 
 dans `permissions.py` (direction : affectation, suivi, clôture ; chargé clientèle :
 création et planification). Les codes ne s'affichent que tant qu'ils servent.
 
-### Saisie des codes : le chauffeur affecté (ou l'ADMIN)
+### Retour d'une réunion entreprise : Parc Auto affecte, copilote facultatif
+
+C'est le **Parc Auto** qui affecte les missions (camion, chauffeur, et éventuellement copilote) une
+fois que le chargé clientèle les a créées et planifiées (`permissions.AFFECTATION` et
+`permissions.CONSULTATION` incluent désormais `Role.PARCAUTO`, en plus d'ADMIN et DIRECTION). Le Parc
+Auto ne voit pas pour autant les codes secrets : `permissions.VOIR_CODES` reste un ensemble
+indépendant de `CONSULTATION`, réservé à ceux qui gèrent la relation client (ADMIN, DIRECTION, chargé
+clientèle).
+
+Certains voyages exigent un **copilote** (assistant du chauffeur pendant le trajet, `drivers.Copilote`
+— une fiche distincte du chauffeur, jamais un chauffeur principal). Aucune règle automatique : c'est
+une **décision humaine du Parc Auto au moment de l'affectation**, sur le même écran que le camion et
+le chauffeur (`AffectationForm.copilote`, facultatif). `affecter_mission` vérifie sa disponibilité
+comme pour le chauffeur (non déjà réservé par une autre mission active) ; `demarrer_mission` et
+`livrer_mission` le mettent « En mission » / le libèrent en parallèle du chauffeur s'il est affecté.
+
+### Saisie des codes : le chauffeur affecté (ou l'ADMIN / la DIRECTION)
 
 Les codes de récupération et de livraison ne se confirment que par le **chauffeur affecté** (saisie ou
 scan du QR depuis l'espace mobile, où une mission d'un autre chauffeur est introuvable) — ou par
-l'**ADMIN**, en correction depuis le back-office (`permissions.CODES_TERRAIN`). La DIRECTION et le
-chargé clientèle voient les codes, pour les communiquer, mais ne peuvent plus les saisir ; le
+l'**ADMIN** ou la **DIRECTION** (même largeur que l'ADMIN, retour réunion), en correction depuis le
+back-office (`permissions.CODES_TERRAIN`). Le chargé clientèle et le Parc Auto voient (pour le
+premier) ou n'ont pas accès (pour le second) aux codes, mais ne peuvent pas les saisir ; le
 « départ », lui, reste ouvert à l'ADMIN et à la DIRECTION (aucun code n'est en jeu).
 
 ### Modification (`modifier_mission`, séparation des tâches — avenant-separation-des-taches.md § R3)

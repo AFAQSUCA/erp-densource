@@ -88,10 +88,13 @@ class ModificationForm(StyleTailwindMixin, forms.Form):
 
 
 class AffectationForm(StyleTailwindMixin, forms.Form):
-    """Affectation d'un camion et d'un chauffeur disponibles."""
+    """Affectation d'un camion, d'un chauffeur disponibles et, si le voyage l'exige, d'un copilote."""
 
     vehicule = forms.ModelChoiceField(queryset=None, label="Camion disponible")
     chauffeur = forms.ModelChoiceField(queryset=None, label="Chauffeur disponible")
+    copilote = forms.ModelChoiceField(
+        queryset=None, label="Copilote", required=False, empty_label="Aucun (facultatif)"
+    )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -100,6 +103,7 @@ class AffectationForm(StyleTailwindMixin, forms.Form):
             f"{v.immatriculation} - {v.marque} {v.modele} ({v.capacite_charge_t} t)"
         )
         self.fields["chauffeur"].queryset = drivers_services.chauffeurs_disponibles()
+        self.fields["copilote"].queryset = drivers_services.copilotes_disponibles()
 
 
 class CodeForm(StyleTailwindMixin, forms.Form):

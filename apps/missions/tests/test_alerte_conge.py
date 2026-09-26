@@ -60,8 +60,10 @@ def test_le_lien_vers_la_mission_est_reserve_aux_roles_qui_y_ont_acces(client, c
     )
     lien = reverse("missions:detail", args=[mission.pk])
 
-    assert lien not in _page(client, compte_sup, conge)  # PARCAUTO n'a pas accès aux missions
+    # Retour réunion : le Parc Auto affecte les missions, donc les consulte désormais aussi.
+    assert lien in _page(client, compte_sup, conge)
     assert lien in _page(client, UserFactory(role=Role.DIRECTION), conge)
+    assert lien not in _page(client, UserFactory(role=Role.RH), conge)
 
 
 @pytest.mark.parametrize(

@@ -10,15 +10,18 @@ PARCAUTO, le chargé clientèle et le chauffeur n'ont pas accès.
 
 from apps.accounts.models import Role
 
-CONSULTATION = frozenset({Role.ADMIN, Role.DIRECTION, Role.FINANCES})
-SAISIE = frozenset({Role.ADMIN, Role.FINANCES})  # préparer, règlements, dépenses
+# Retour réunion (avenant) : la DIRECTION a la même largeur que l'ADMIN pour la préparation
+# (mais ne remplace jamais la FINANCES sur ORDRE_EXECUTION, cf. finance/permissions.py) ; la RH
+# fait tout ce que fait la FINANCES, y compris sur les ensembles stricts.
+CONSULTATION = frozenset({Role.ADMIN, Role.DIRECTION, Role.FINANCES, Role.RH})
+SAISIE = frozenset({Role.ADMIN, Role.DIRECTION, Role.FINANCES, Role.RH})  # préparer, règlements, dépenses
 VALIDATION = frozenset({Role.DIRECTION})
 
 # Devis (R5) : le chargé clientèle fixe le prix, la FINANCES (et la DIRECTION au-delà d'un
 # seuil, R1 fusionnée) le valide — jamais la même personne des deux côtés.
 PROFORMA_CONSULTATION = frozenset(
-    {Role.ADMIN, Role.DIRECTION, Role.FINANCES, Role.CHARGE_CLIENTELE}
+    {Role.ADMIN, Role.DIRECTION, Role.FINANCES, Role.RH, Role.CHARGE_CLIENTELE}
 )
-PROFORMA_SAISIE = frozenset({Role.ADMIN, Role.CHARGE_CLIENTELE})
-PROFORMA_VALIDATION_FINANCES = frozenset({Role.FINANCES})
+PROFORMA_SAISIE = frozenset({Role.ADMIN, Role.DIRECTION, Role.CHARGE_CLIENTELE})
+PROFORMA_VALIDATION_FINANCES = frozenset({Role.FINANCES, Role.RH})
 PROFORMA_VALIDATION_DIRECTION = frozenset({Role.DIRECTION})

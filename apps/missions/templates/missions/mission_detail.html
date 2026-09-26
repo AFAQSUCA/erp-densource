@@ -71,6 +71,9 @@
           <dl class="mt-4 grid grid-cols-1 gap-x-6 gap-y-4 text-sm sm:grid-cols-2">
             <div><dt class="text-slate-600">Camion</dt><dd class="mt-0.5 font-medium text-slate-900">{{ mission.vehicule.immatriculation }} — {{ mission.vehicule.marque }} {{ mission.vehicule.modele }}</dd></div>
             <div><dt class="text-slate-600">Chauffeur</dt><dd class="mt-0.5 font-medium text-slate-900">{{ mission.chauffeur.personnel.prenom }} {{ mission.chauffeur.personnel.nom }}</dd></div>
+            {% if mission.copilote %}
+              <div><dt class="text-slate-600">Copilote</dt><dd class="mt-0.5 font-medium text-slate-900">{{ mission.copilote.personnel.prenom }} {{ mission.copilote.personnel.nom }}</dd></div>
+            {% endif %}
             <div><dt class="text-slate-600">Km au départ</dt><dd class="mt-0.5 font-medium text-slate-900">{{ mission.km_depart|default_if_none:"—"|intcomma }}</dd></div>
             <div><dt class="text-slate-600">Km à l'arrivée</dt><dd class="mt-0.5 font-medium text-slate-900">{{ mission.km_arrivee|default_if_none:"—"|intcomma }}</dd></div>
           </dl>
@@ -108,6 +111,7 @@
             {% csrf_token %}
             {% include "components/_champ.html" with champ=form_affectation.vehicule %}
             {% include "components/_champ.html" with champ=form_affectation.chauffeur %}
+            {% include "components/_champ.html" with champ=form_affectation.copilote %}
             <button type="submit" class="w-full rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">Affecter</button>
           </form>
         {% endif %}

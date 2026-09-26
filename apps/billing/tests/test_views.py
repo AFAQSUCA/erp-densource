@@ -38,8 +38,8 @@ def _texte(reponse):
 # --- accès ---
 
 
-@pytest.mark.parametrize("role", [Role.ADMIN, Role.DIRECTION, Role.FINANCES])
-def test_la_facturation_est_accessible_a_admin_direction_et_finances(client, role):
+@pytest.mark.parametrize("role", [Role.ADMIN, Role.DIRECTION, Role.FINANCES, Role.RH])
+def test_la_facturation_est_accessible_a_admin_direction_finances_et_rh(client, role):
     _connecte(client, role)
     facture = brouillon()
 
@@ -52,9 +52,7 @@ def test_la_facturation_est_accessible_a_admin_direction_et_finances(client, rol
         assert client.get(url).status_code == 200, url
 
 
-@pytest.mark.parametrize(
-    "role", [Role.RH, Role.PARCAUTO, Role.CHARGE_CLIENTELE, Role.CHAUFFEUR]
-)
+@pytest.mark.parametrize("role", [Role.PARCAUTO, Role.CHARGE_CLIENTELE, Role.CHAUFFEUR])
 def test_la_facturation_est_interdite_aux_autres_roles(client, role):
     _connecte(client, role)
     facture = brouillon()
@@ -70,13 +68,15 @@ def test_la_facturation_est_interdite_aux_autres_roles(client, role):
         assert client.get(url).status_code == 403, url
 
 
-def test_la_direction_lit_sans_pouvoir_preparer(client):
-    _connecte(client, Role.DIRECTION)
-
-    assert client.get(reverse("billing:nouvelle")).status_code == 403
-    assert client.get(reverse("billing:depense_nouvelle")).status_code == 403
-    texte = client.get(reverse("billing:factures")).content.decode()
-    assert "Nouvelle facture" not in texte
+def test_la_direction_et_la_rh_preparent_aussi_la_facturation(client):
+    """Retour réunion : la DIRECTION (même largeur que l'ADMIN) et la RH (tout ce que fait
+    la FINANCES) préparent désormais aussi une facture ou une dépense."""
+    for role in (Role.DIRECTION, Role.RH):
+        _connecte(client, role)
+        assert client.get(reverse("billing:nouvelle")).status_code == 200
+        assert client.get(reverse("billing:depense_nouvelle")).status_code == 200
+        texte = client.get(reverse("billing:factures")).content.decode()
+        assert "Nouvelle facture" in texte
 
 
 def test_la_facturation_exige_la_connexion(client):
@@ -265,9 +265,9 @@ def test_finances_ne_peut_pas_valider_meme_en_postant_directement(client):
     assert facture.statut == StatutFacture.A_VALIDER
 
 
-def test_la_direction_ne_peut_pas_soumettre_ni_regler(client):
+def test_le_parc_auto_ne_peut_pas_soumettre_ni_regler(client):
     facture = emise()
-    _connecte(client, Role.DIRECTION)
+    _connecte(client, Role.PARCAUTO)
 
     assert client.post(reverse("billing:soumettre", args=[facture.pk])).status_code == 403
     assert client.post(reverse("billing:reglement_ajouter", args=[facture.pk]), {}).status_code == 403

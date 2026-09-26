@@ -259,7 +259,7 @@ def prevenir_du_depart(sender, mission, **kwargs):
 @receiver(mission_affectee)
 def prevenir_la_finance_d_une_affectation(sender, mission, **kwargs):
     notifier(
-        utilisateurs_du_role(Role.FINANCES),
+        utilisateurs_du_role(Role.FINANCES, Role.RH),
         categorie=CategorieNotification.FRAIS_MISSION,
         niveau=NiveauNotification.INFO,
         titre=f"Mission affectée : {mission.numero}",
@@ -288,7 +288,7 @@ def prevenir_le_parc_auto_d_un_imprevu(sender, frais, **kwargs):
 @receiver(frais_mission_valide_parcauto)
 def prevenir_la_finance_d_un_imprevu_valide(sender, frais, **kwargs):
     notifier(
-        utilisateurs_du_role(Role.FINANCES),
+        utilisateurs_du_role(Role.FINANCES, Role.RH),
         categorie=CategorieNotification.FRAIS_MISSION,
         niveau=NiveauNotification.ATTENTION,
         titre=f"Imprévu à confirmer : {frais.mission.numero}",
@@ -348,7 +348,7 @@ def prevenir_de_la_validation_d_une_facture(sender, facture, **kwargs):
     """Facture émise : la FINANCES reçoit un bouton pour **confirmer le versement** quand il arrive (il
     devient alors une entrée de trésorerie) ; son auteur, s'il n'est pas de la FINANCES, est simplement
     prévenu."""
-    finances = list(utilisateurs_du_role(Role.FINANCES))
+    finances = list(utilisateurs_du_role(Role.FINANCES, Role.RH))
     resume = (
         f"{facture.client.raison_sociale} : {nombre(facture.montant_ttc)} FCFA TTC, "
         f"échéance le {_jour(facture.date_echeance)}."
@@ -378,7 +378,9 @@ def prevenir_de_la_validation_d_une_facture(sender, facture, **kwargs):
 
 @receiver(billing_signals.facture_refusee)
 def prevenir_du_refus_d_une_facture(sender, facture, motif, **kwargs):
-    destinataires = [facture.cree_par] if facture.cree_par else utilisateurs_du_role(Role.FINANCES)
+    destinataires = (
+        [facture.cree_par] if facture.cree_par else utilisateurs_du_role(Role.FINANCES, Role.RH)
+    )
     notifier(
         destinataires,
         categorie=CategorieNotification.FACTURE,
@@ -399,7 +401,7 @@ def _lien_proforma(proforma) -> str:
 @receiver(billing_signals.proforma_a_valider)
 def prevenir_la_finance_d_un_devis(sender, proforma, **kwargs):
     notifier(
-        utilisateurs_du_role(Role.FINANCES),
+        utilisateurs_du_role(Role.FINANCES, Role.RH),
         categorie=CategorieNotification.PROFORMA,
         niveau=NiveauNotification.ATTENTION,
         titre=f"Devis à valider : {proforma.client.raison_sociale}",
@@ -554,7 +556,7 @@ def prevenir_de_la_decision_d_une_demande(sender, demande, **kwargs):
 @receiver(finance_signals.ordre_a_executer)
 def prevenir_la_finance_d_un_ordre(sender, ordre, **kwargs):
     notifier(
-        utilisateurs_du_role(Role.FINANCES),
+        utilisateurs_du_role(Role.FINANCES, Role.RH),
         categorie=CategorieNotification.DEMANDE_DEPENSE,
         niveau=NiveauNotification.ATTENTION,
         titre=f"Ordre à exécuter : {ordre.numero}",

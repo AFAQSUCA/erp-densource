@@ -66,11 +66,13 @@ def test_le_rapport_suit_la_periode_demandee(client):
 
 
 def test_un_role_sans_acces_financier_n_a_pas_ce_bloc(client):
-    client.force_login(UserFactory(role=Role.RH))
+    # Retour réunion : la RH fait désormais tout ce que fait la FINANCES (bloc inclus) ; le Parc
+    # Auto, lui, n'y a jamais eu accès.
+    client.force_login(UserFactory(role=Role.PARCAUTO))
 
     texte = _texte(client.get(reverse("home_imprimer")))
 
-    assert "Finances du mois" not in texte and "Ressources humaines" in texte
+    assert "Finances du mois" not in texte and "Exploitation" in texte
 
 
 def test_le_lien_imprimer_est_sur_le_tableau_de_bord(client):

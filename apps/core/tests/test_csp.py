@@ -53,7 +53,7 @@ def test_la_documentation_de_l_api_a_sa_propre_politique(client):
 
 
 def test_les_pages_d_erreur_ont_aussi_la_csp(client):
-    client.force_login(UserFactory(role=Role.RH))
+    client.force_login(UserFactory(role=Role.PARCAUTO))
 
     reponse = client.get("/facturation/")  # 403
 

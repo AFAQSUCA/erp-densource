@@ -9,6 +9,7 @@ from django.utils.translation import gettext_lazy as _
 from apps.core.models import BaseModel
 
 POSTE_CHAUFFEUR = "Chauffeur"
+POSTE_COPILOTE = "Copilote"
 
 # Postes proposés au recrutement (forms.PersonnelForm) : une liste déroulante plutôt qu'une saisie
 # libre, pour écarter les fautes de frappe — en particulier sur « Chauffeur », qui doit correspondre
@@ -27,6 +28,7 @@ POSTES_COURANTS = [
     "Mécanicien",
     "Magasinier",
     POSTE_CHAUFFEUR,
+    POSTE_COPILOTE,
 ]
 
 
@@ -100,6 +102,12 @@ class Personnel(BaseModel):
     def est_chauffeur(self) -> bool:
         """Vrai si le poste est « Chauffeur » (cahier-des-charges.md:108)."""
         return self.poste.strip().casefold() == POSTE_CHAUFFEUR.casefold()
+
+    @property
+    def est_copilote(self) -> bool:
+        """Vrai si le poste est « Copilote » — assistant du chauffeur pendant le trajet,
+        exigé sur certains voyages (retour de réunion entreprise)."""
+        return self.poste.strip().casefold() == POSTE_COPILOTE.casefold()
 
 
 class StatutConge(models.TextChoices):

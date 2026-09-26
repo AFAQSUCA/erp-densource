@@ -8,7 +8,7 @@ import pytest
 from apps.audit.models import AuditLog
 from apps.customers.tests.factories import ClientFactory
 from apps.drivers.models import StatutChauffeur
-from apps.drivers.tests.factories import ChauffeurFactory
+from apps.drivers.tests.factories import ChauffeurFactory, CopiloteFactory
 from apps.fleet.models import StatutVehicule
 from apps.fleet.tests.factories import VehiculeFactory
 from apps.missions import services
@@ -43,11 +43,11 @@ def _planifiee(**surcharges):
     return services.planifier_mission(_creer(**surcharges))
 
 
-def _affectee(vehicule=None, chauffeur=None, **surcharges):
+def _affectee(vehicule=None, chauffeur=None, copilote=None, **surcharges):
     vehicule = vehicule or VehiculeFactory()
     chauffeur = chauffeur or ChauffeurFactory()
     return services.affecter_mission(
-        _planifiee(**surcharges), vehicule=vehicule, chauffeur=chauffeur
+        _planifiee(**surcharges), vehicule=vehicule, chauffeur=chauffeur, copilote=copilote
     )
 
 
@@ -219,6 +219,52 @@ def test_affecter_accepte_une_charge_egale_a_la_capacite():
     assert mission.statut == StatutMission.AFFECTEE
 
 
+# --- copilote (retour réunion : décision humaine du Parc Auto au moment de l'affectation) ---
+
+
+def test_affecter_sans_copilote_reste_possible():
+    mission = _affectee()
+
+    assert mission.copilote is None
+
+
+def test_affecter_avec_un_copilote_disponible():
+    copilote = CopiloteFactory()
+
+    mission = _affectee(copilote=copilote)
+
+    assert mission.copilote == copilote
+
+
+@pytest.mark.parametrize(
+    "statut",
+    [
+        StatutChauffeur.EN_MISSION,
+        StatutChauffeur.EN_CONGE,
+        StatutChauffeur.SUSPENDU,
+        StatutChauffeur.INACTIF,
+    ],
+)
+def test_affecter_refuse_un_copilote_non_disponible(statut):
+    with pytest.raises(AffectationImpossible, match="copilote"):
+        services.affecter_mission(
+            _planifiee(),
+            vehicule=VehiculeFactory(),
+            chauffeur=ChauffeurFactory(),
+            copilote=CopiloteFactory(statut=statut),
+        )
+
+
+def test_affecter_refuse_un_copilote_deja_reserve_par_une_autre_mission():
+    copilote = CopiloteFactory()
+    _affectee(copilote=copilote)
+
+    with pytest.raises(AffectationImpossible, match="déjà réservé"):
+        services.affecter_mission(
+            _planifiee(), vehicule=VehiculeFactory(), chauffeur=ChauffeurFactory(), copilote=copilote
+        )
+
+
 # --- démarrage ---
 
 
@@ -265,6 +311,28 @@ def test_demarrer_refuse_si_le_chauffeur_est_passe_en_conge_entre_temps():
 def test_demarrer_refuse_hors_statut_affectee():
     with pytest.raises(TransitionMissionInterdite):
         services.demarrer_mission(_planifiee())
+
+
+def test_demarrer_passe_le_copilote_en_mission_si_affecte():
+    copilote = CopiloteFactory()
+    mission = services.demarrer_mission(_affectee(copilote=copilote))
+
+    assert mission.statut == StatutMission.EN_COURS_DEPART
+    copilote.refresh_from_db()
+    assert copilote.statut == StatutChauffeur.EN_MISSION
+
+
+def test_demarrer_refuse_si_le_copilote_est_passe_en_conge_entre_temps():
+    copilote = CopiloteFactory()
+    mission = _affectee(copilote=copilote)
+    copilote.statut = StatutChauffeur.EN_CONGE
+    copilote.save()
+
+    with pytest.raises(DemarrageImpossible, match="copilote"):
+        services.demarrer_mission(mission)
+
+    mission.vehicule.refresh_from_db()
+    assert mission.vehicule.statut == StatutVehicule.DISPONIBLE
 
 
 # --- récupération du colis (code expéditeur) ---
@@ -383,6 +451,18 @@ def test_livrer_conserve_un_statut_chauffeur_suspendu():
 
     mission.chauffeur.refresh_from_db()
     assert mission.chauffeur.statut == StatutChauffeur.SUSPENDU
+
+
+def test_livrer_libere_le_copilote_si_affecte():
+    copilote = CopiloteFactory()
+    mission = _affectee(copilote=copilote)
+    mission = services.demarrer_mission(mission)
+    mission = services.confirmer_recuperation(mission, code=mission.code_expediteur)
+
+    services.livrer_mission(mission, code=mission.code_destinataire, km_arrivee=125000)
+
+    copilote.refresh_from_db()
+    assert copilote.statut == StatutChauffeur.DISPONIBLE
 
 
 def test_livrer_refuse_hors_statut_colis_recupere():

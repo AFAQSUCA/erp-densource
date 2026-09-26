@@ -133,7 +133,7 @@ def alerter_factures_echues(*, aujourd_hui: date | None = None) -> int:
     Une seule alerte par facture et par date d'échéance (le montant restant peut évoluer).
     """
     aujourd_hui = aujourd_hui or timezone.localdate()
-    finances = list(utilisateurs_du_role(Role.FINANCES))
+    finances = list(utilisateurs_du_role(Role.FINANCES, Role.RH))
     direction = list(utilisateurs_du_role(Role.DIRECTION))
     crees = 0
     for facture in billing_services.factures_echues(aujourd_hui):

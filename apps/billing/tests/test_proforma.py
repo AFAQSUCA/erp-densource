@@ -38,11 +38,13 @@ pytestmark = pytest.mark.django_db
 # --- préparation ---
 
 
-def test_seuls_charge_clientele_et_admin_preparent_un_devis():
-    for role in (Role.DIRECTION, Role.RH, Role.PARCAUTO, Role.FINANCES, Role.CHAUFFEUR):
+def test_seuls_charge_clientele_admin_et_direction_preparent_un_devis():
+    for role in (Role.RH, Role.PARCAUTO, Role.FINANCES, Role.CHAUFFEUR):
         with pytest.raises(ActionFactureNonAutorisee):
             proforma_brouillon(acteur=UserFactory(role=role))
     assert proforma_brouillon(acteur=UserFactory(role=Role.ADMIN)).pk
+    # Retour réunion : la DIRECTION a la même largeur que l'ADMIN pour la saisie.
+    assert proforma_brouillon(acteur=UserFactory(role=Role.DIRECTION)).pk
     superutilisateur = UserFactory(role="", is_superuser=True)
     assert proforma_brouillon(acteur=superutilisateur).pk
 

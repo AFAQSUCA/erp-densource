@@ -263,7 +263,8 @@ class AffecterView(ActionMissionView):
 
     def executer(self, mission, donnees):
         services.affecter_mission(
-            mission, vehicule=donnees["vehicule"], chauffeur=donnees["chauffeur"]
+            mission, vehicule=donnees["vehicule"], chauffeur=donnees["chauffeur"],
+            copilote=donnees.get("copilote"),
         )
 
     def message_succes(self, mission):

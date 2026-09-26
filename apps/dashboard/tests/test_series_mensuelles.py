@@ -146,7 +146,8 @@ def test_une_periode_invalide_revient_a_six_mois(client):
 
 
 def test_le_selecteur_de_periode_n_apparait_que_s_il_y_a_des_graphiques_dans_le_temps(client):
-    client.force_login(UserFactory(role=Role.RH))
+    # Retour réunion : la RH fait désormais tout ce que fait la FINANCES (graphiques inclus).
+    client.force_login(UserFactory(role=Role.PARCAUTO))
 
     assert "Graphiques dans le temps" not in client.get(reverse("home")).content.decode()
 
