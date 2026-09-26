@@ -46,7 +46,7 @@ def _periode(conge) -> str:
 
 
 def _jours(n: int) -> str:
-    return f"{n} jour{'s' if n > 1 else ''} ouvrable{'s' if n > 1 else ''}"
+    return f"{n} jour{'s' if n > 1 else ''} ouvré{'s' if n > 1 else ''}"
 
 
 # --- congés ---
@@ -129,6 +129,44 @@ def prevenir_l_employe(sender, conge, decision, **kwargs):
         titre=titre,
         message=message,
         url=reverse("hr:conges_detail", args=[conge.pk]),
+    )
+
+
+@receiver(hr_signals.report_demande)
+def prevenir_la_rh_du_report(sender, report, **kwargs):
+    """Sans cette validation, la demande de report n'est pas recevable (avenant § R7)."""
+    employe = report.conge.employe
+    notifier(
+        hr_services.comptes_rh(sauf=employe),
+        categorie=CategorieNotification.CONGE,
+        niveau=NiveauNotification.ATTENTION,
+        titre=f"Report de congé à valider : {employe.prenom} {employe.nom}",
+        message=(
+            f"Reprise le {_jour(report.nouvelle_date_fin)} : {_jours(report.jours_restants)} à reverser "
+            f"au solde. Motif : {report.motif}"
+        ),
+        url=reverse("hr:conges_detail", args=[report.conge_id]),
+        action="Confirmer le report",
+    )
+
+
+@receiver(hr_signals.report_decide)
+def prevenir_l_employe_du_report(sender, report, decision, **kwargs):
+    if decision == hr_signals.DECISION_APPROUVE:
+        titre = "Votre report de congé est validé"
+        message = f"{_jours(report.jours_restants).capitalize()} reversé(s) à votre solde. Vous reprenez le {_jour(report.nouvelle_date_fin)}."
+        niveau = NiveauNotification.INFO
+    else:
+        titre = "Votre demande de report est refusée"
+        message = f"Votre congé continue normalement jusqu'au {_jour(report.conge.date_fin)}. Motif : {report.motif_decision or 'non précisé'}."
+        niveau = NiveauNotification.ATTENTION
+    notifier(
+        [report.conge.employe.utilisateur],
+        categorie=CategorieNotification.CONGE,
+        niveau=niveau,
+        titre=titre,
+        message=message,
+        url=reverse("hr:conges_detail", args=[report.conge_id]),
     )
 
 

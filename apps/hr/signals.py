@@ -17,6 +17,11 @@ conge_valide_n1 = Signal()
 # Décision finale : ``decision`` vaut DECISION_APPROUVE, DECISION_REFUSE ou DECISION_ANNULE.
 # Arguments : ``conge``, ``decision``, ``acteur``.
 conge_decide = Signal()
+# Report du solde d'un congé en cours demandé par l'employé (avenant § R7). Argument : ``report``.
+report_demande = Signal()
+# Décision de la RH sur une demande de report. ``decision`` vaut DECISION_APPROUVE ou DECISION_REFUSE.
+# Arguments : ``report``, ``decision``, ``acteur``.
+report_decide = Signal()
 
 DECISION_APPROUVE, DECISION_REFUSE, DECISION_ANNULE = "APPROUVE", "REFUSE", "ANNULE"
 
