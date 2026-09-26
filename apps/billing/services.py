@@ -399,6 +399,7 @@ def valider(facture: Facture, acteur, *, aujourd_hui: date | None = None) -> Fac
         ]
     )
     signals.emettre(signals.facture_validee, facture=facture)
+    signals.facture_a_comptabiliser.send(sender=Facture, facture=facture)
     return facture
 
 

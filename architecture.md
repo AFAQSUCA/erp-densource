@@ -126,6 +126,10 @@ graph TD
         FIN[finance<br/>Trésorerie, rapprochement]
     end
 
+    subgraph Compta
+        ACCT[accounting<br/>Plan comptable, journaux, grand livre]
+    end
+
     subgraph API
         APIV1[api/v1]
         MOBAPI[mobile_api]
@@ -144,6 +148,7 @@ graph TD
     GARAGE --> INV
     GARAGE --> FLEET
     BILL --> FIN
+    BILL --> ACCT
     FIN --> DASH
     FUEL --> DASH
     MISSION --> DASH
