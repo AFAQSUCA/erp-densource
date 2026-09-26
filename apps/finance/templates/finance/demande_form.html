@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block titre %}Nouvelle demande de dépense{% endblock %}
+{% block entete %}Demandes de dépense{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-2xl">
+  <nav aria-label="Fil d'Ariane" class="text-sm text-slate-600">
+    <a href="{% url 'finance:demandes' %}" class="underline-offset-2 hover:underline">Demandes de dépense</a>
+    <span aria-hidden="true">/</span> Nouvelle demande
+  </nav>
+  <h1 class="mt-2 text-2xl font-bold text-slate-900">Nouvelle demande de dépense</h1>
+  <p class="mt-1 text-sm text-slate-600">
+    Pour un achat ou une réparation non routinière du parc auto. La direction valide avant tout
+    engagement ; une fois validée, la finance exécute le paiement.
+  </p>
+
+  <form method="post" enctype="multipart/form-data" novalidate class="mt-6 space-y-4 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+      <div role="alert" class="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">{% for erreur in form.non_field_errors %}<p>{{ erreur }}</p>{% endfor %}</div>
+    {% endif %}
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      {% include "components/_champ.html" with champ=form.categorie %}
+      {% include "components/_champ.html" with champ=form.vehicule %}
+    </div>
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      {% include "components/_champ.html" with champ=form.montant_estime %}
+      {% include "components/_champ.html" with champ=form.fournisseur %}
+    </div>
+    {% include "components/_champ.html" with champ=form.motif %}
+    {% include "components/_champ.html" with champ=form.piece_jointe %}
+    <div class="flex items-center justify-end gap-3 border-t border-slate-100 pt-5">
+      <a href="{% url 'finance:demandes' %}" class="rounded-lg px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Annuler</a>
+      <button type="submit" class="rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">Soumettre à la direction</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

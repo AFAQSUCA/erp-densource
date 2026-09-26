@@ -1,7 +1,8 @@
 """Workflow de congés en 3 niveaux — cahier-des-charges.md:211-221.
 
 N1 = supérieur hiérarchique direct de l'employé ; N2 = RH ; décompte en jours
-ouvrables (lundi-samedi, hors jours fériés) sur un droit annuel de 12 jours.
+ouvrés (lundi-vendredi, hors jours fériés) sur un droit annuel de 26 jours
+(avenant-separation-des-taches.md § R7).
 """
 
 from datetime import date, datetime, timedelta
@@ -29,7 +30,7 @@ from .factories import PersonnelFactory
 pytestmark = pytest.mark.django_db
 
 MAINTENANT = datetime(2026, 9, 1, 8, 0, tzinfo=dt_timezone.utc)
-DEBUT, FIN = date(2026, 10, 5), date(2026, 10, 9)  # lundi-vendredi = 5 jours ouvrables
+DEBUT, FIN = date(2026, 10, 5), date(2026, 10, 9)  # lundi-vendredi = 5 jours ouvrés
 
 
 def _hierarchie(poste="Dispatcheur"):
@@ -80,7 +81,7 @@ def _disponible(employe, annee=2026):
 # --- étape 1 : demande ---
 
 
-def test_demande_cree_un_conge_au_statut_demande_en_jours_ouvrables():
+def test_demande_cree_un_conge_au_statut_demande_en_jours_ouvres():
     conge, _ = _demande()
 
     assert conge.statut == StatutConge.DEMANDE
@@ -94,19 +95,19 @@ def test_demande_fixe_l_echeance_n1_a_48_heures():
     assert conge.date_limite_n2 is None
 
 
-def test_demande_bloquee_au_dela_de_12_jours_ouvrables_par_an():
+def test_demande_bloquee_au_dela_de_26_jours_ouvres_par_an():
     hierarchie = _hierarchie()
 
     with pytest.raises(SoldeInsuffisant):
-        _demande(hierarchie, date(2026, 10, 5), date(2026, 10, 19))  # 13 jours
+        _demande(hierarchie, date(2026, 10, 5), date(2026, 11, 10))  # 27 jours ouvrés
 
     assert not Conge.objects.exists()
 
 
-def test_demande_acceptee_pour_exactement_2_semaines():
+def test_demande_acceptee_sur_deux_semaines_calendaires():
     conge, _ = _demande(debut=date(2026, 10, 5), fin=date(2026, 10, 17))
 
-    assert conge.jours == 12
+    assert conge.jours == 10  # 2 x 5 jours ouvrés (les samedis 10 et 17, le dimanche 11, ne comptent pas)
 
 
 def test_demande_refusee_si_fin_avant_debut():
@@ -121,8 +122,8 @@ def test_demande_refusee_sans_superieur_hierarchique():
         services.demander_conge(employe, date_debut=DEBUT, date_fin=FIN, motif="x")
 
 
-def test_demande_refusee_si_la_periode_ne_contient_aucun_jour_ouvrable():
-    with pytest.raises(CongeError, match="jour ouvrable"):
+def test_demande_refusee_si_la_periode_ne_contient_aucun_jour_ouvre():
+    with pytest.raises(CongeError, match="jour ouvré"):
         _demande(debut=date(2026, 10, 11), fin=date(2026, 10, 11))  # un dimanche
 
 
@@ -212,7 +213,7 @@ def test_valider_n2_par_la_rh_approuve_et_decompte_le_droit_annuel():
 
     conge.refresh_from_db()
     assert conge.statut == StatutConge.APPROUVE
-    assert _disponible(conge.employe) == 7
+    assert _disponible(conge.employe) == 21
     assert conge.validations.filter(niveau=2, decision="APPROUVE").exists()
 
 
@@ -233,8 +234,8 @@ def test_valider_n2_impossible_sans_validation_n1():
 
 def test_valider_n2_recontrole_le_droit_quand_deux_demandes_etaient_en_attente():
     hierarchie = _hierarchie()
-    premiere, superieur = _demande(hierarchie, date(2026, 10, 5), date(2026, 10, 13))  # 8 j
-    seconde, _ = _demande(hierarchie, date(2026, 11, 2), date(2026, 11, 10))  # 8 j
+    premiere, superieur = _demande(hierarchie, date(2026, 10, 5), date(2026, 10, 26))  # 16 j
+    seconde, _ = _demande(hierarchie, date(2026, 11, 2), date(2026, 11, 23))  # 16 j : 32 > 26 ensemble
     services.valider_n1(premiere, superieur)
     services.valider_n1(seconde, superieur)
     rh = _rh()
@@ -279,7 +280,7 @@ def test_refus_n2_par_la_rh_ne_decompte_rien():
 
     services.refuser(conge, _rh())
 
-    assert _disponible(conge.employe) == 12
+    assert _disponible(conge.employe) == 26
     assert Conge.objects.get().statut == StatutConge.REFUSE
 
 
@@ -300,12 +301,12 @@ def test_refus_impossible_sur_un_conge_deja_approuve():
 
 def test_annulation_par_la_rh_restitue_les_jours():
     conge = _approuve()
-    assert _disponible(conge.employe) == 7
+    assert _disponible(conge.employe) == 21
 
     services.annuler_conge_approuve(conge, _rh(), motif="Urgence client")
 
     conge.refresh_from_db()
-    assert _disponible(conge.employe) == 12
+    assert _disponible(conge.employe) == 26
     assert conge.statut == StatutConge.REFUSE
     assert conge.motif_decision == "Urgence client"
 

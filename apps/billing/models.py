@@ -350,13 +350,19 @@ class CategorieDepense(models.TextChoices):
     ENTRETIEN = "ENTRETIEN", _("Entretien")
     FRAIS_ADMIN = "FRAIS_ADMIN", _("Frais administratifs")
     AUTRE = "AUTRE", _("Autre")
-    # Catégories du parc auto : créées automatiquement (voir OrigineDepense), pas proposées à la saisie manuelle.
+    # Catégories créées automatiquement (voir OrigineDepense), pas proposées à la saisie manuelle.
     CARBURANT = "CARBURANT", _("Carburant")
     PIECES = "PIECES", _("Pièces détachées")
     MAINTENANCE = "MAINTENANCE", _("Main-d'œuvre des réparations")
+    FRAIS_MISSION = "FRAIS_MISSION", _("Frais de mission (avance, imprévu)")
 
 
-CATEGORIES_AUTOMATIQUES = (CategorieDepense.CARBURANT, CategorieDepense.PIECES, CategorieDepense.MAINTENANCE)
+CATEGORIES_AUTOMATIQUES = (
+    CategorieDepense.CARBURANT,
+    CategorieDepense.PIECES,
+    CategorieDepense.MAINTENANCE,
+    CategorieDepense.FRAIS_MISSION,
+)
 
 
 class OrigineDepense(models.TextChoices):
@@ -365,12 +371,14 @@ class OrigineDepense(models.TextChoices):
     PLEIN = "PLEIN", _("Plein de carburant")
     ACHAT_STOCK = "ACHAT_STOCK", _("Achat de pièces")
     MAIN_OEUVRE_OR = "MAIN_OEUVRE_OR", _("Main-d'œuvre d'un OR")
+    FRAIS_MISSION = "FRAIS_MISSION", _("Frais de mission confirmé")
+    ORDRE_DECAISSEMENT = "ORDRE_DECAISSEMENT", _("Ordre de décaissement exécuté")
 
 
 class Depense(BaseModel):
     """Dépense de l'entreprise, par catégorie, éventuellement rattachée à une mission."""
 
-    categorie = models.CharField(_("catégorie"), max_length=12, choices=CategorieDepense.choices)
+    categorie = models.CharField(_("catégorie"), max_length=14, choices=CategorieDepense.choices)
     date_depense = models.DateField(_("date"))
     libelle = models.CharField(_("libellé"), max_length=200)
     montant = models.DecimalField(_("montant (FCFA)"), max_digits=14, decimal_places=2)
@@ -388,12 +396,21 @@ class Depense(BaseModel):
         settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="+"
     )
     origine = models.CharField(
-        _("origine"), max_length=14, choices=OrigineDepense.choices, blank=True,
+        _("origine"), max_length=20, choices=OrigineDepense.choices, blank=True,
         help_text=_("Renseignée pour une dépense créée automatiquement (plein, achat de pièces, OR)."),
     )
     origine_id = models.PositiveBigIntegerField(
         _("identifiant de l'origine"), null=True, blank=True,
         help_text=_("Numéro du plein, du mouvement de stock ou de l'OR à l'origine de la dépense."),
+    )
+    vehicule = models.ForeignKey(
+        "fleet.Vehicule",
+        verbose_name=_("camion"),
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="depenses",
+        help_text=_("Renseigné pour un plein, une main-d'œuvre d'OR ou un ordre de décaissement lié à un camion."),
     )
 
     class Meta:

@@ -29,6 +29,11 @@ proforma_contre_proposee = Signal()
 # Le devis envoyé au client a dépassé sa date de validité sans réponse. Argument : ``proforma``.
 proforma_expiree = Signal()
 
+# Un règlement vient d'être enregistré (entrée de trésorerie). Argument : ``reglement``. Utile à
+# ``missions`` (R4) pour refléter l'encaissement dans la prévision de trésorerie de la mission
+# facturée, sans double saisie.
+reglement_enregistre = Signal()
+
 
 def emettre(signal: Signal, *, sender: type | None = None, **arguments) -> None:
     """Émet un signal en journalisant (sans propager) les erreurs des récepteurs."""

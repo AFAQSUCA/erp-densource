@@ -17,7 +17,7 @@ from .factories import PersonnelFactory
 pytestmark = pytest.mark.django_db
 
 MAINTENANT = datetime(2026, 9, 1, 8, 0, tzinfo=dt_timezone.utc)
-DEBUT, FIN = date(2026, 10, 5), date(2026, 10, 9)  # 5 jours ouvrables
+DEBUT, FIN = date(2026, 10, 5), date(2026, 10, 9)  # 5 jours ouvrés
 
 
 class Equipe:
@@ -115,14 +115,14 @@ def test_le_formulaire_de_demande_affiche_le_solde(client, equipe):
 
     texte = client.get(reverse("hr:conges_nouveau")).content.decode()
 
-    assert "12 jours" in texte
+    assert "26 jours" in texte
 
 
 def test_une_demande_au_dela_du_solde_est_refusee_avec_le_message_du_service(client, equipe):
     client.force_login(equipe.compte)
 
     reponse = client.post(
-        reverse("hr:conges_nouveau"), _donnees(date_debut="2026-10-05", date_fin="2026-10-31")
+        reverse("hr:conges_nouveau"), _donnees(date_debut="2026-10-05", date_fin="2026-11-10")
     )
 
     assert reponse.status_code == 200
@@ -187,7 +187,7 @@ def test_la_liste_montre_mes_demandes_et_le_solde(client, equipe):
 
     assert reponse.context["vue"] == "mes"
     assert [c.employe for c in reponse.context["conges"]] == [equipe.employe]
-    assert reponse.context["droits"]["disponible"] == 12
+    assert reponse.context["droits"]["disponible"] == 26
     assert reponse.context["vues"] == ["mes", "a_valider"]
 
 
@@ -386,14 +386,14 @@ def test_un_refus_est_enregistre_avec_son_motif(client, equipe):
 
 def test_la_rh_annule_un_conge_approuve_et_les_jours_sont_restitues(client, equipe):
     conge = equipe.approuve()
-    assert services.droits_conges(equipe.employe, 2026)["disponible"] == 7
+    assert services.droits_conges(equipe.employe, 2026)["disponible"] == 21
     client.force_login(equipe.compte_rh)
 
     reponse = _decision(client, conge, "annuler", "Besoin de service")
 
     conge.refresh_from_db()
     assert conge.statut == StatutConge.REFUSE
-    assert services.droits_conges(equipe.employe, 2026)["disponible"] == 12
+    assert services.droits_conges(equipe.employe, 2026)["disponible"] == 26
     assert any("restitués" in m for m in _messages(reponse))
 
 

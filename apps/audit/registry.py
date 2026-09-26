@@ -12,7 +12,7 @@ import json
 from decimal import Decimal
 
 from django.core.serializers.json import DjangoJSONEncoder
-from django.db.models import DecimalField, Model
+from django.db.models import DecimalField, FileField, Model
 from django.db.models.signals import post_save, pre_save
 
 from apps.core.middleware import get_current_request, get_current_user
@@ -29,9 +29,13 @@ def _valeur(field, valeur):
 
     Sans cela, l'instance en mémoire (Decimal("250000")) et la ligne relue
     en base (Decimal("250000.00")) paraîtraient différentes à chaque save().
+    Un fichier (``FileField``/``ImageField``) n'est pas sérialisable tel quel : seul son chemin
+    (ou une chaîne vide, sans fichier) a une valeur d'audit.
     """
     if isinstance(field, DecimalField) and valeur is not None:
         return Decimal(valeur).quantize(Decimal(1).scaleb(-field.decimal_places))
+    if isinstance(field, FileField):
+        return valeur.name if valeur else ""
     return valeur
 
 

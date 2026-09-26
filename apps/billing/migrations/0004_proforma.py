@@ -9,7 +9,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('billing', '0003_reprise_depenses_parc_auto'),
+        ('billing', '0003_depense_vehicule_alter_depense_categorie_and_more'),
         ('customers', '0002_delai_paiement'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]

@@ -11,11 +11,27 @@
   </nav>
   <div class="mt-2">{% include "components/_suivi_direct.html" %}</div>
 
+  {% if peut_voir_frais %}
+    <div class="mt-2 text-right">
+      <a href="{% url 'missions:frais' mission.pk %}" class="text-sm font-medium text-marque-700 underline-offset-2 hover:underline">
+        <i class="fa-solid fa-money-bill-transfer mr-1" aria-hidden="true"></i>Frais de mission
+      </a>
+    </div>
+  {% endif %}
+
   {# Zone rafraîchie en direct (static/js/suivi-missions.js) : statut, frise, actions et codes #}
   <div data-suivi-zone="mission">
-  <div class="mt-2 flex flex-wrap items-center gap-3">
-    <h1 class="text-2xl font-bold text-slate-900">{{ mission.numero }}</h1>
-    {% badge mission.statut mission.get_statut_display %}
+  <div class="mt-2 flex flex-wrap items-center justify-between gap-3">
+    <div class="flex flex-wrap items-center gap-3">
+      <h1 class="text-2xl font-bold text-slate-900">{{ mission.numero }}</h1>
+      {% badge mission.statut mission.get_statut_display %}
+    </div>
+    {% if peut_modifier %}
+      <a href="{% url 'missions:modifier' mission.pk %}"
+         class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+        <i class="fa-solid fa-pen" aria-hidden="true"></i> Modifier
+      </a>
+    {% endif %}
   </div>
   <p class="mt-1 text-sm text-slate-600">{{ mission.client }}</p>
 

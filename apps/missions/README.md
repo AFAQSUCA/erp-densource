@@ -27,6 +27,18 @@ l'**ADMIN**, en correction depuis le back-office (`permissions.CODES_TERRAIN`). 
 chargé clientèle voient les codes, pour les communiquer, mais ne peuvent plus les saisir ; le
 « départ », lui, reste ouvert à l'ADMIN et à la DIRECTION (aucun code n'est en jeu).
 
+### Modification (`modifier_mission`, séparation des tâches — avenant-separation-des-taches.md § R3)
+
+Tant que la mission n'a pas dépassé « Colis récupéré » (`STATUTS_MODIFIABLES`), **DIRECTION et ADMIN
+seulement** (`permissions.MODIFICATION` — plus restreint que `CREATION`, qui inclut aussi le chargé
+clientèle) peuvent modifier lieux, marchandise, poids, prix, date de départ prévue, et — une fois la
+mission déjà **Affectée** seulement — réaffecter camion/chauffeur (revérifie leur disponibilité comme à
+l'affectation, `_verifier_disponibilite` partagée avec `affecter_mission`). Changer un lieu régénère les
+deux codes secrets (donc leurs QR, rendus à la volée). Le client n'est pas modifiable : c'est l'identité
+de la mission. Réaffecter camion/chauffeur une fois le départ effectué (`EN_COURS_DEPART`) n'est pas pris
+en charge : le camion est physiquement engagé, ça relève d'un signalement d'incident plutôt que d'une
+simple modification. Tracé gratuitement par l'audit déjà branché sur `Mission`.
+
 ### PDF des codes (`documents.py`, ReportLab)
 
 `/missions/<id>/codes.pdf` (bouton « Télécharger le PDF des codes » de la fiche, proposé dès la création) :
@@ -64,12 +76,42 @@ une autre casse ou sans accent ne compte qu'une fois. La saisie libre reste poss
 ### Mission créée depuis un devis accepté (R6)
 
 `Mission.proforma` (`OneToOneField` vers `billing.Proforma`, PROTECT) garantit **1 devis = 1
-mission** au niveau base. `services.creer_mission_depuis_proforma(proforma)` (pas de contrôle de
-rôle ici, comme le reste de ce module : c'est `permissions.CREATION`, le même rôle que la
-création manuelle, qui gère l'accès, sur `POST /facturation/devis/<id>/creer-mission/`) recopie
-tel quel le trajet, la marchandise, le poids et le **prix HT** du devis (la facture recalculera
-la TVA plus tard, avec le taux du client en vigueur ce jour-là) ; le devis passe à `CONVERTIE`.
-Refusé si le devis n'est pas `ACCEPTEE` (y compris s'il l'a déjà été converti).
+mission** au niveau base. `billing.services.convertir_en_mission(proforma)` (pas `missions` :
+le graphe de dépendance des apps, architecture.md:95-163, interdit à `missions` de dépendre de
+`billing` — l'inverse est permis, `billing` appelle donc `missions.services.creer_mission`)
+recopie tel quel le trajet, la marchandise, le poids et le **prix HT** du devis (la facture
+recalculera la TVA plus tard, avec le taux du client en vigueur ce jour-là) ; le devis passe à
+`CONVERTIE`. Déclenché sur `POST /facturation/devis/<id>/creer-mission/`, réservé au rôle
+`missions.permissions.CREATION`. Refusé si le devis n'est pas `ACCEPTEE` (y compris s'il l'a
+déjà été converti).
+
+### Prévision de trésorerie des missions (`terrain.py`, R4 — avenant-separation-des-taches.md)
+
+Séparation des tâches : celui qui déclare ou planifie un frais n'est jamais celui qui le valide. Modèle
+`FraisMission` (`mission`, `type_frais`, `montant`, `justificatif`, `statut`) :
+
+- **Avance de route** / **dépense prévue** : planifiée par le **Parc Auto** (`planifier_frais`,
+  écran `/missions/<id>/frais/`), confirmée par la seule **Finance** (`valider_finances`).
+- **Imprévu** (panne, incident) : déclaré par le **chauffeur** depuis l'espace mobile (photo ou facture
+  obligatoire) puis validé deux fois — le **Parc Auto** d'abord (`valider_parcauto`), la **Finance**
+  ensuite (`valider_finances`) — jamais par celui qui l'a déclaré ni en une seule fois.
+- **Encaissement** : reflet automatique d'un règlement déjà enregistré pour la facture de la mission
+  (`billing.signals.reglement_enregistre`, souscrit par `finance`), créé directement confirmé : aucune
+  double saisie.
+
+Seule une ligne **confirmée** représente un mouvement de trésorerie réel : `finance.receivers` la
+transforme alors en `billing.Depense` (catégorie « Frais de mission »), sauf l'encaissement qui n'en
+crée pas (déjà compté via son règlement). `missions` ignore `billing` et `finance` — c'est `finance` qui
+relie les trois signaux (`frais_mission_confirme`, `reglement_enregistre`), pour respecter le graphe de
+dépendance des apps (architecture.md:95-163).
+
+Signal `mission_affectee` (Affectée = mouvement de caisse probable) prévient la Finance. Écran séparé de
+la fiche mission (`permissions.FRAIS_CONSULTATION` : ADMIN, DIRECTION, PARCAUTO, FINANCES — pas le chargé
+clientèle, qui ne voit déjà pas le prix convenu côté chauffeur). Rapport de mission imprimable
+(`/missions/<id>/frais/imprimer/`) : lignes et totaux (sorties confirmées, encaissé, solde).
+
+**Limite connue** : la modification d'une mission (R3) ne verrouille pas encore son prix une fois des
+frais confirmés dessus, ni une fois créée depuis un devis accepté (R6).
 
 Reste à faire :
 - Notification « en cours de route (départ) » : signal `mission_demarree`, abonné par `notifications` (fait, étape 5).

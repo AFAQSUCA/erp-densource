@@ -5,7 +5,7 @@ from django.core.paginator import Paginator
 from django.shortcuts import get_object_or_404, redirect
 from django.utils import timezone
 from django.views import View
-from django.views.generic import FormView, TemplateView
+from django.views.generic import DetailView, FormView, ListView, TemplateView
 
 from apps.accounts.mixins import RoleRequiredMixin
 from apps.billing import services as billing_services
@@ -14,10 +14,21 @@ from apps.billing.forms import ReglementForm
 from apps.billing.models import STATUTS_A_RECOUVRER, CompteTresorerie
 from apps.core.formats import nombre
 from apps.core.rapports import contexte_rapport
+from apps.core.views import PaginationTolerante
 
+from . import demandes as demandes_services
 from . import permissions, services
-from .forms import FiltreTresorerieForm, MotifForm, MouvementForm
-from .models import MouvementManuel
+from .forms import (
+    DecisionDemandeForm,
+    DemandeDepenseForm,
+    EnveloppeForm,
+    ExecuterOrdreForm,
+    FiltreTresorerieForm,
+    MotifForm,
+    MouvementForm,
+    RevaliderOrdreForm,
+)
+from .models import DemandeDepense, MouvementManuel, OrdreDecaissement, StatutDemandeDepense, StatutOrdreDecaissement
 
 
 class TresorerieView(RoleRequiredMixin, TemplateView):
@@ -186,3 +197,177 @@ class VersementConfirmerView(RoleRequiredMixin, FormView):
             f"{compte.label} (facture {self.facture.numero}).",
         )
         return redirect("finance:tresorerie")
+
+
+# --- dépenses du parc auto pré-approuvées (R2) ---
+
+
+def _erreurs_en_messages(request, form):
+    for erreurs in form.errors.values():
+        for erreur in erreurs:
+            messages.error(request, erreur)
+
+
+class DemandeListView(PaginationTolerante, RoleRequiredMixin, ListView):
+    roles = permissions.DEMANDE_CONSULTATION
+    template_name = "finance/demande_list.html"
+    context_object_name = "demandes"
+    paginate_by = 20
+
+    def get_queryset(self):
+        return demandes_services.demandes_queryset()
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        contexte.update(
+            peut_soumettre=self.request.user.role_effectif in permissions.DEMANDE_SAISIE,
+            peut_definir_enveloppe=self.request.user.role_effectif in permissions.ENVELOPPE_VALIDATION,
+        )
+        return contexte
+
+
+class DemandeCreateView(RoleRequiredMixin, FormView):
+    roles = permissions.DEMANDE_SAISIE
+    form_class = DemandeDepenseForm
+    template_name = "finance/demande_form.html"
+
+    def form_valid(self, form):
+        try:
+            demande = demandes_services.soumettre_demande(self.request.user, **form.cleaned_data)
+        except BillingError as erreur:
+            form.add_error(None, str(erreur))
+            return self.form_invalid(form)
+        messages.success(self.request, f"Demande {demande.numero} soumise à la direction.")
+        return redirect("finance:demande", pk=demande.pk)
+
+
+class DemandeDetailView(RoleRequiredMixin, DetailView):
+    roles = permissions.DEMANDE_CONSULTATION
+    template_name = "finance/demande_detail.html"
+    context_object_name = "demande"
+
+    def get_queryset(self):
+        return demandes_services.demandes_queryset()
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        demande = self.object
+        role = self.request.user.role
+        ordre = OrdreDecaissement.objects.filter(demande=demande).select_related("execute_par").first()
+        peut_decider = role in permissions.DEMANDE_VALIDATION and demande.statut == StatutDemandeDepense.SOUMISE
+        peut_executer = (
+            role in permissions.ORDRE_EXECUTION
+            and ordre is not None and ordre.statut == StatutOrdreDecaissement.A_EXECUTER
+        )
+        peut_revalider = (
+            role in permissions.DEMANDE_VALIDATION
+            and ordre is not None and ordre.statut == StatutOrdreDecaissement.EN_ATTENTE_REVALIDATION
+        )
+        contexte.update(
+            ordre=ordre,
+            peut_decider=peut_decider,
+            peut_executer=peut_executer,
+            peut_revalider=peut_revalider,
+            form_decision=DecisionDemandeForm() if peut_decider else None,
+            form_executer=ExecuterOrdreForm() if peut_executer else None,
+            form_revalider=(
+                RevaliderOrdreForm(initial={"montant_valide": ordre.montant_reel}) if peut_revalider else None
+            ),
+        )
+        return contexte
+
+
+class DemandeDeciderView(RoleRequiredMixin, View):
+    roles = permissions.DEMANDE_VALIDATION
+    http_method_names = ["post"]
+
+    def post(self, request, pk):
+        demande = get_object_or_404(DemandeDepense, pk=pk)
+        form = DecisionDemandeForm(request.POST)
+        if not form.is_valid():
+            _erreurs_en_messages(request, form)
+            return redirect("finance:demande", pk=demande.pk)
+        donnees = form.cleaned_data
+        try:
+            if donnees["decision"] == "VALIDER":
+                demandes_services.valider_demande(
+                    demande, request.user, montant_valide=donnees.get("montant_valide")
+                )
+                messages.success(request, "Demande validée.")
+            else:
+                demandes_services.refuser_demande(demande, request.user, motif=donnees["motif_refus"])
+                messages.success(request, "Demande refusée.")
+        except BillingError as erreur:
+            messages.error(request, str(erreur))
+        return redirect("finance:demande", pk=demande.pk)
+
+
+class OrdreExecuterView(RoleRequiredMixin, View):
+    roles = permissions.ORDRE_EXECUTION
+    http_method_names = ["post"]
+
+    def post(self, request, pk):
+        ordre = get_object_or_404(OrdreDecaissement, pk=pk)
+        form = ExecuterOrdreForm(request.POST, request.FILES)
+        if not form.is_valid():
+            _erreurs_en_messages(request, form)
+            return redirect("finance:demande", pk=ordre.demande_id)
+        try:
+            demandes_services.executer_ordre(ordre, request.user, **form.cleaned_data)
+        except BillingError as erreur:
+            messages.error(request, str(erreur))
+        else:
+            messages.success(request, f"Ordre {ordre.numero} exécuté : comptabilisé en dépense.")
+        return redirect("finance:demande", pk=ordre.demande_id)
+
+
+class OrdreRevaliderView(RoleRequiredMixin, View):
+    roles = permissions.DEMANDE_VALIDATION
+    http_method_names = ["post"]
+
+    def post(self, request, pk):
+        ordre = get_object_or_404(OrdreDecaissement, pk=pk)
+        form = RevaliderOrdreForm(request.POST)
+        if not form.is_valid():
+            _erreurs_en_messages(request, form)
+            return redirect("finance:demande", pk=ordre.demande_id)
+        try:
+            demandes_services.revalider_ordre(ordre, request.user, **form.cleaned_data)
+        except BillingError as erreur:
+            messages.error(request, str(erreur))
+        else:
+            messages.success(request, "Ordre revalidé : la finance peut retenter l'exécution.")
+        return redirect("finance:demande", pk=ordre.demande_id)
+
+
+class EnveloppeListView(RoleRequiredMixin, ListView):
+    roles = permissions.ENVELOPPE_VALIDATION
+    template_name = "finance/enveloppe_list.html"
+    context_object_name = "enveloppes"
+
+    def get_queryset(self):
+        return demandes_services.enveloppes_queryset()
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        aujourd_hui = timezone.localdate()
+        contexte["form"] = EnveloppeForm(initial={"annee": aujourd_hui.year, "mois": aujourd_hui.month})
+        return contexte
+
+
+class EnveloppeCreateView(RoleRequiredMixin, View):
+    roles = permissions.ENVELOPPE_VALIDATION
+    http_method_names = ["post"]
+
+    def post(self, request):
+        form = EnveloppeForm(request.POST)
+        if not form.is_valid():
+            _erreurs_en_messages(request, form)
+            return redirect("finance:enveloppes")
+        try:
+            demandes_services.definir_enveloppe(request.user, **form.cleaned_data)
+        except BillingError as erreur:
+            messages.error(request, str(erreur))
+        else:
+            messages.success(request, "Enveloppe enregistrée.")
+        return redirect("finance:enveloppes")

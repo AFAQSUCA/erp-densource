@@ -26,14 +26,16 @@ from apps.fuel.exceptions import CarburantError, SaisieSuspecte
 from apps.garage.exceptions import ChauffeurNonAutorise, GarageError
 from apps.hr.exceptions import ActionNonAutorisee, CongeError, PersonnelError
 from apps.inventory.exceptions import StockError
-from apps.missions.exceptions import MissionError
+from apps.missions.exceptions import ActionFraisNonAutorisee, MissionError
 from apps.mobile_api.exceptions import MissionIntrouvable, MobileError
 
 ERREURS_METIER = (
     BillingError, ClientError, ChauffeurError, FlotteError, CarburantError, GarageError,
     CongeError, PersonnelError, StockError, MissionError, MobileError,
 )
-ERREURS_DE_DROIT = (ChauffeurNonAutorise, ActionFactureNonAutorisee, ActionNonAutorisee)
+ERREURS_DE_DROIT = (
+    ChauffeurNonAutorise, ActionFactureNonAutorisee, ActionNonAutorisee, ActionFraisNonAutorisee,
+)
 
 
 CODES_MFA = frozenset({"mfa_requise", "mfa_non_activee", "mfa_invalide"})

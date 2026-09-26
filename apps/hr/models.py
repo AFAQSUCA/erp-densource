@@ -196,7 +196,7 @@ class ValidationConge(BaseModel):
 
 
 class JourFerie(BaseModel):
-    """Jour férié légal, exclu du décompte des congés (jours ouvrables).
+    """Jour férié légal, exclu du décompte des congés (jours ouvrés).
 
     Les fêtes fixes et chrétiennes se génèrent avec
     ``services.initialiser_jours_feries`` ; les fêtes musulmanes (fin du
@@ -259,3 +259,53 @@ class AttributionConge(BaseModel):
 
     def __str__(self):
         return f"{self.employe} : +{self.jours} j ({self.annee})"
+
+
+class StatutReport(models.TextChoices):
+    DEMANDE = "DEMANDE", _("Demande")
+    APPROUVE = "APPROUVE", _("Approuvé")
+    REFUSE = "REFUSE", _("Refusé")
+
+
+class ReportConge(BaseModel):
+    """Report du solde non pris d'un congé **en cours** : l'employé écourte son congé (nouvelle date
+    de reprise, avant la fin initialement prévue) et demande à garder les jours non pris — avenant
+    « séparation des tâches » § R7. Recevable seulement une fois validée par la RH : tant que la
+    demande est en attente, le congé continue normalement.
+
+    ``jours_restants`` est calculé à la demande (jours ouvrés entre le lendemain de la reprise et la
+    fin initiale) et figé : l'approbation applique ce nombre, elle ne le recalcule pas.
+    """
+
+    conge = models.ForeignKey(
+        Conge, verbose_name=_("congé"), on_delete=models.PROTECT, related_name="reports"
+    )
+    nouvelle_date_fin = models.DateField(_("reprise du travail le"))
+    jours_restants = models.PositiveIntegerField(_("jours restants reversés au solde"))
+    motif = models.TextField(_("motif"))
+    statut = models.CharField(
+        _("statut"), max_length=10, choices=StatutReport.choices, default=StatutReport.DEMANDE
+    )
+    valide_par = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name=_("validé par"),
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+    motif_decision = models.TextField(_("motif du refus"), blank=True)
+    date_decision = models.DateTimeField(_("date de décision"), null=True, blank=True)
+
+    class Meta:
+        verbose_name = _("report de congé")
+        verbose_name_plural = _("reports de congé")
+        ordering = ["-created_at"]
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(jours_restants__gt=0), name="report_conge_jours_positifs"
+            ),
+        ]
+
+    def __str__(self):
+        return f"Report {self.conge} : {self.jours_restants} j à partir du {self.nouvelle_date_fin}"

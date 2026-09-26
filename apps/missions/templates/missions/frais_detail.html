@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% load ui humanize %}
+{% block titre %}Frais de mission {{ mission.numero }}{% endblock %}
+{% block entete %}Frais de mission{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-5xl">
+  <nav aria-label="Fil d'Ariane" class="text-sm text-slate-600">
+    <a href="{% url 'missions:frais_liste' %}" class="underline-offset-2 hover:underline">Frais de mission</a>
+    <span aria-hidden="true">/</span> {{ mission.numero }}
+  </nav>
+
+  <div class="mt-2 flex flex-wrap items-center justify-between gap-3">
+    <h1 class="text-2xl font-bold text-slate-900">Frais de mission {{ mission.numero }}</h1>
+    <div class="flex items-center gap-2">
+      <a href="{% url 'missions:detail' mission.pk %}" class="text-sm font-medium text-slate-700 underline-offset-2 hover:underline">Voir la mission</a>
+      <a href="{% url 'missions:frais_imprimer' mission.pk %}" target="_blank" rel="noopener"
+         class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50">
+        <i class="fa-solid fa-print" aria-hidden="true"></i> Rapport de mission
+      </a>
+    </div>
+  </div>
+  <p class="mt-1 text-sm text-slate-600">{{ mission.client.raison_sociale }} · {{ mission.lieu_chargement }} → {{ mission.lieu_livraison }}</p>
+
+  <dl class="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
+    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Sorties confirmées</dt><dd class="mt-1 text-2xl font-bold text-slate-900">{{ totaux.sorties|floatformat:0|intcomma }} <span class="text-sm font-medium text-slate-600">FCFA</span></dd></div>
+    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Encaissé</dt><dd class="mt-1 text-2xl font-bold text-slate-900">{{ totaux.encaisse|floatformat:0|intcomma }} <span class="text-sm font-medium text-slate-600">FCFA</span></dd></div>
+    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Solde</dt><dd class="mt-1 text-2xl font-bold {% if totaux.solde < 0 %}text-red-800{% else %}text-slate-900{% endif %}">{{ totaux.solde|floatformat:0|intcomma }} <span class="text-sm font-medium text-slate-600">FCFA</span></dd></div>
+  </dl>
+
+  {% if form_planifier %}
+    <form method="post" action="{% url 'missions:frais_planifier' mission.pk %}" class="mt-5 space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      {% csrf_token %}
+      <h2 class="text-sm font-semibold text-slate-900">Planifier une avance de route ou une dépense prévue</h2>
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        {% include "components/_champ.html" with champ=form_planifier.type_frais %}
+        {% include "components/_champ.html" with champ=form_planifier.montant %}
+        {% include "components/_champ.html" with champ=form_planifier.description %}
+      </div>
+      <button type="submit" class="rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700">Planifier</button>
+    </form>
+  {% endif %}
+
+  {% if lignes %}
+    <div class="mt-5 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+      <table class="min-w-full divide-y divide-slate-200 text-sm">
+        <caption class="sr-only">Lignes de frais de la mission</caption>
+        <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+          <tr>
+            <th scope="col" class="px-4 py-3">Type</th>
+            <th scope="col" class="px-4 py-3">Détail</th>
+            <th scope="col" class="px-4 py-3 text-right">Montant</th>
+            <th scope="col" class="px-4 py-3">Statut</th>
+            <th scope="col" class="px-4 py-3"><span class="sr-only">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          {% for f in lignes %}
+            <tr>
+              <td class="whitespace-nowrap px-4 py-3 text-slate-900">{{ f.get_type_frais_display }}</td>
+              <td class="px-4 py-3 text-slate-700">
+                {% if f.type_frais == "IMPREVU" %}{{ f.chauffeur.personnel.prenom }} {{ f.chauffeur.personnel.nom }}{% else %}{{ f.saisi_par|default:"—" }}{% endif %}
+                {% if f.description %}<span class="block text-xs text-slate-600">{{ f.description }}</span>{% endif %}
+                {% if f.justificatif %}<a href="{{ f.justificatif.url }}" target="_blank" rel="noopener" class="text-xs font-medium text-marque-700 underline-offset-2 hover:underline">Voir la preuve</a>{% endif %}
+                {% if f.statut == "REJETE" and f.motif_rejet %}<span class="block text-xs text-red-700">Motif : {{ f.motif_rejet }}</span>{% endif %}
+              </td>
+              <td class="whitespace-nowrap px-4 py-3 text-right font-medium text-slate-900">{{ f.montant|floatformat:0|intcomma }}</td>
+              <td class="whitespace-nowrap px-4 py-3">{% badge f.statut f.get_statut_display %}</td>
+              <td class="px-4 py-3">
+                {% if f.attend_le_parc_auto and peut_valider_parcauto %}
+                  <form method="post" action="{% url 'missions:frais_valider_parcauto' f.pk %}" class="inline">{% csrf_token %}<button type="submit" class="text-sm font-medium text-emerald-800 underline-offset-2 hover:underline">Valider</button></form>
+                {% elif f.attend_la_finance and peut_valider_finances %}
+                  <form method="post" action="{% url 'missions:frais_valider_finances' f.pk %}" class="inline">{% csrf_token %}<button type="submit" class="text-sm font-medium text-emerald-800 underline-offset-2 hover:underline">Confirmer</button></form>
+                {% endif %}
+                {% if f.statut == "PREVU" %}
+                  {% if peut_valider_parcauto or peut_valider_finances %}
+                    <span x-data="{ ouvert: false }" class="ml-2 inline">
+                      <button type="button" @click="ouvert = !ouvert" class="text-sm font-medium text-red-800 underline-offset-2 hover:underline">Rejeter</button>
+                      <form method="post" action="{% url 'missions:frais_rejeter' f.pk %}" x-show="ouvert" x-cloak class="mt-2 space-y-2 text-left">{% csrf_token %}
+                        <textarea name="motif" rows="2" required placeholder="Motif du rejet" class="block w-full rounded-lg border border-slate-300 px-2 py-1 text-xs"></textarea>
+                        <button type="submit" class="rounded-lg border border-red-300 bg-white px-3 py-1 text-xs font-semibold text-red-800 hover:bg-red-50">Confirmer le rejet</button>
+                      </form>
+                    </span>
+                  {% endif %}
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="mt-5 rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center">
+      <p class="text-sm text-slate-600">Aucun frais de mission pour l'instant.</p>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

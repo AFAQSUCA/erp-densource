@@ -22,6 +22,8 @@ from apps.accounts.models import Role
 from apps.billing import signals as billing_signals
 from apps.billing.models import SEUIL_VALIDATION_DIRECTION
 from apps.core.formats import nombre, pourcentage_signe
+from apps.finance import signals as finance_signals
+from apps.finance.models import OrigineDemande, StatutDemandeDepense
 from apps.fuel.models import NiveauAlerte
 from apps.fuel.signals import alerte_consommation
 from apps.garage import signals as garage_signals
@@ -30,7 +32,14 @@ from apps.hr import services as hr_services
 from apps.hr import signals as hr_signals
 from apps.inventory.signals import seuil_bas_atteint
 from apps.missions import services as missions_services
-from apps.missions.signals import mission_demarree
+from apps.missions.models import TypeFraisMission
+from apps.missions.signals import (
+    frais_mission_declare,
+    frais_mission_rejete,
+    frais_mission_valide_parcauto,
+    mission_affectee,
+    mission_demarree,
+)
 
 from .models import CategorieNotification, NiveauNotification
 from .services import notifier, utilisateurs_du_role
@@ -49,7 +58,7 @@ def _periode(conge) -> str:
 
 
 def _jours(n: int) -> str:
-    return f"{n} jour{'s' if n > 1 else ''} ouvrable{'s' if n > 1 else ''}"
+    return f"{n} jour{'s' if n > 1 else ''} ouvré{'s' if n > 1 else ''}"
 
 
 # --- congés ---
@@ -135,6 +144,44 @@ def prevenir_l_employe(sender, conge, decision, **kwargs):
     )
 
 
+@receiver(hr_signals.report_demande)
+def prevenir_la_rh_du_report(sender, report, **kwargs):
+    """Sans cette validation, la demande de report n'est pas recevable (avenant § R7)."""
+    employe = report.conge.employe
+    notifier(
+        hr_services.comptes_rh(sauf=employe),
+        categorie=CategorieNotification.CONGE,
+        niveau=NiveauNotification.ATTENTION,
+        titre=f"Report de congé à valider : {employe.prenom} {employe.nom}",
+        message=(
+            f"Reprise le {_jour(report.nouvelle_date_fin)} : {_jours(report.jours_restants)} à reverser "
+            f"au solde. Motif : {report.motif}"
+        ),
+        url=reverse("hr:conges_detail", args=[report.conge_id]),
+        action="Confirmer le report",
+    )
+
+
+@receiver(hr_signals.report_decide)
+def prevenir_l_employe_du_report(sender, report, decision, **kwargs):
+    if decision == hr_signals.DECISION_APPROUVE:
+        titre = "Votre report de congé est validé"
+        message = f"{_jours(report.jours_restants).capitalize()} reversé(s) à votre solde. Vous reprenez le {_jour(report.nouvelle_date_fin)}."
+        niveau = NiveauNotification.INFO
+    else:
+        titre = "Votre demande de report est refusée"
+        message = f"Votre congé continue normalement jusqu'au {_jour(report.conge.date_fin)}. Motif : {report.motif_decision or 'non précisé'}."
+        niveau = NiveauNotification.ATTENTION
+    notifier(
+        [report.conge.employe.utilisateur],
+        categorie=CategorieNotification.CONGE,
+        niveau=niveau,
+        titre=titre,
+        message=message,
+        url=reverse("hr:conges_detail", args=[report.conge_id]),
+    )
+
+
 # --- stock ---
 
 
@@ -206,6 +253,66 @@ def prevenir_du_depart(sender, mission, **kwargs):
             f"vers {mission.lieu_livraison}."
         ),
         url=reverse("missions:detail", args=[mission.pk]),
+    )
+
+
+@receiver(mission_affectee)
+def prevenir_la_finance_d_une_affectation(sender, mission, **kwargs):
+    notifier(
+        utilisateurs_du_role(Role.FINANCES),
+        categorie=CategorieNotification.FRAIS_MISSION,
+        niveau=NiveauNotification.INFO,
+        titre=f"Mission affectée : {mission.numero}",
+        message=(
+            f"{mission.client.raison_sociale} : {mission.lieu_chargement} → {mission.lieu_livraison}. "
+            "Mouvement de caisse probable (avance de route, dépense prévue)."
+        ),
+        url=reverse("missions:frais", args=[mission.pk]),
+    )
+
+
+@receiver(frais_mission_declare)
+def prevenir_le_parc_auto_d_un_imprevu(sender, frais, **kwargs):
+    chauffeur = frais.chauffeur.personnel
+    notifier(
+        utilisateurs_du_role(Role.PARCAUTO),
+        categorie=CategorieNotification.FRAIS_MISSION,
+        niveau=NiveauNotification.ATTENTION,
+        titre=f"Imprévu signalé : {frais.mission.numero}",
+        message=f"{chauffeur.prenom} {chauffeur.nom} : {nombre(frais.montant)} FCFA. À valider.",
+        url=reverse("missions:frais", args=[frais.mission_id]),
+        action="Examiner",
+    )
+
+
+@receiver(frais_mission_valide_parcauto)
+def prevenir_la_finance_d_un_imprevu_valide(sender, frais, **kwargs):
+    notifier(
+        utilisateurs_du_role(Role.FINANCES),
+        categorie=CategorieNotification.FRAIS_MISSION,
+        niveau=NiveauNotification.ATTENTION,
+        titre=f"Imprévu à confirmer : {frais.mission.numero}",
+        message=f"Validé par le Parc Auto : {nombre(frais.montant)} FCFA. Confirmation attendue.",
+        url=reverse("missions:frais", args=[frais.mission_id]),
+        action="Confirmer",
+    )
+
+
+@receiver(frais_mission_rejete)
+def prevenir_de_l_auteur_du_rejet(sender, frais, **kwargs):
+    if frais.type_frais == TypeFraisMission.IMPREVU:
+        destinataire = frais.chauffeur.personnel.utilisateur if frais.chauffeur_id else None
+    else:
+        destinataire = frais.saisi_par
+    if destinataire is None:
+        return
+    notifier(
+        [destinataire],
+        categorie=CategorieNotification.FRAIS_MISSION,
+        niveau=NiveauNotification.ATTENTION,
+        titre=f"Frais rejeté : {frais.mission.numero}",
+        message=f"Motif : {frais.motif_rejet}",
+        url=reverse("missions:frais", args=[frais.mission_id]),
     )
 
 
@@ -396,4 +503,78 @@ def prevenir_d_une_anomalie_de_checklist(sender, checklist, **kwargs):
         titre=f"Check-list : {len(ko)} point{'s' if len(ko) > 1 else ''} KO sur {checklist.vehicule.immatriculation}",
         message=f"Mission {checklist.mission.numero} : " + ", ".join(ko) + ".",
         url=reverse("garage:checklists"),
+    )
+
+
+# --- dépenses du parc auto pré-approuvées (R2) ---
+
+
+def _lien_demande(demande) -> str:
+    return reverse("finance:demande", args=[demande.pk])
+
+
+@receiver(finance_signals.demande_soumise)
+def prevenir_la_direction_d_une_demande(sender, demande, **kwargs):
+    if demande.origine == OrigineDemande.DEPASSEMENT_ENVELOPPE:
+        titre = f"Enveloppe dépassée : {demande.get_categorie_display()}"
+        message = f"{nombre(demande.montant_estime)} FCFA au-delà du plafond. Aucune autre dépense de ce type tant que ce n'est pas décidé."
+    else:
+        titre = f"Demande de dépense : {demande.get_categorie_display()}"
+        message = f"{demande.demandeur or 'Le Parc Auto'} demande {nombre(demande.montant_estime)} FCFA. {demande.motif}"
+    notifier(
+        utilisateurs_du_role(Role.DIRECTION),
+        categorie=CategorieNotification.DEMANDE_DEPENSE,
+        niveau=NiveauNotification.ATTENTION,
+        titre=titre,
+        message=message,
+        url=_lien_demande(demande),
+        action="Examiner",
+    )
+
+
+@receiver(finance_signals.demande_decidee)
+def prevenir_de_la_decision_d_une_demande(sender, demande, **kwargs):
+    if demande.origine == OrigineDemande.DEPASSEMENT_ENVELOPPE:
+        destinataires = utilisateurs_du_role(Role.PARCAUTO)
+    elif demande.demandeur:
+        destinataires = [demande.demandeur]
+    else:
+        destinataires = utilisateurs_du_role(Role.PARCAUTO)
+    valide = demande.statut == StatutDemandeDepense.VALIDEE
+    notifier(
+        destinataires,
+        categorie=CategorieNotification.DEMANDE_DEPENSE,
+        niveau=NiveauNotification.INFO if valide else NiveauNotification.ATTENTION,
+        titre=f"Demande {demande.numero} {'validée' if valide else 'refusée'}",
+        message=demande.motif_refus if not valide else "Le mécanisme automatique reprend pour cette catégorie.",
+        url=_lien_demande(demande),
+    )
+
+
+@receiver(finance_signals.ordre_a_executer)
+def prevenir_la_finance_d_un_ordre(sender, ordre, **kwargs):
+    notifier(
+        utilisateurs_du_role(Role.FINANCES),
+        categorie=CategorieNotification.DEMANDE_DEPENSE,
+        niveau=NiveauNotification.ATTENTION,
+        titre=f"Ordre à exécuter : {ordre.numero}",
+        message=f"{nombre(ordre.montant_valide)} FCFA validés par la direction.",
+        url=_lien_demande(ordre.demande),
+        action="Exécuter",
+    )
+
+
+@receiver(finance_signals.ordre_depassement)
+def prevenir_la_direction_d_un_depassement(sender, ordre, **kwargs):
+    notifier(
+        utilisateurs_du_role(Role.DIRECTION),
+        categorie=CategorieNotification.DEMANDE_DEPENSE,
+        niveau=NiveauNotification.URGENT,
+        titre=f"Dépassement de plus de 10 % : {ordre.numero}",
+        message=(
+            f"Montant réel {nombre(ordre.montant_reel)} FCFA contre {nombre(ordre.montant_valide)} FCFA validés. "
+            "Revalidation attendue avant exécution."
+        ),
+        url=_lien_demande(ordre.demande),
+        action="Revalider",
     )

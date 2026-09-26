@@ -16,12 +16,13 @@ class MissionsConfig(AppConfig):
         from django.db.models.signals import post_save
 
         from . import permissions, sections, temps_reel
-        from .models import Mission
+        from .models import FraisMission, Mission
 
         # Les codes secrets ne doivent jamais apparaître dans le journal.
         audit_model(
             Mission, module="MISSION", exclure=("code_expediteur", "code_destinataire")
         )
+        audit_model(FraisMission, module="FINANCES")
         # Suivi en direct : tout changement d'une mission est diffusé aux écrans ouverts.
         post_save.connect(
             temps_reel.diffuser_apres_enregistrement, sender=Mission, dispatch_uid="missions.suivi_en_direct"
@@ -31,5 +32,11 @@ class MissionsConfig(AppConfig):
         enregistrer(
             EntreeMenu(
                 "Missions", "missions:liste", "fa-truck-fast", permissions.CONSULTATION, ordre=10
+            )
+        )
+        enregistrer(
+            EntreeMenu(
+                "Frais de mission", "missions:frais_liste", "fa-money-bill-transfer",
+                permissions.FRAIS_CONSULTATION, ordre=63,
             )
         )
