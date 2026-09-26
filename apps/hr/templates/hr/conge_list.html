@@ -28,7 +28,7 @@
 
   {% if droits %}
     <dl class="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-      <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Droit annuel {{ annee }}</dt><dd class="mt-1 text-2xl font-bold text-slate-900">{{ droits.droit_annuel }} <span class="text-sm font-medium text-slate-600">jours ouvrables</span></dd></div>
+      <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Droit annuel {{ annee }}</dt><dd class="mt-1 text-2xl font-bold text-slate-900">{{ droits.droit_annuel }} <span class="text-sm font-medium text-slate-600">jours ouvrés</span></dd></div>
       <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Jours exceptionnels</dt><dd class="mt-1 text-2xl font-bold text-slate-900">{{ droits.exceptionnels }}</dd></div>
       <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Déjà pris ou approuvés</dt><dd class="mt-1 text-2xl font-bold text-slate-900">{{ droits.consommes }}</dd></div>
       <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Solde disponible</dt><dd class="mt-1 text-2xl font-bold {% if droits.disponible <= 0 %}text-red-700{% else %}text-emerald-800{% endif %}">{{ droits.disponible }}</dd></div>
@@ -69,6 +69,7 @@
             <th scope="col" class="px-4 py-3 text-right">Jours</th>
             <th scope="col" class="px-4 py-3">Statut</th>
             <th scope="col" class="hidden px-4 py-3 xl:table-cell">Décision attendue avant</th>
+            <th scope="col" class="px-4 py-3"><span class="sr-only">Actions</span></th>
           </tr>
         </thead>
         <tbody class="divide-y divide-slate-100">
@@ -86,6 +87,13 @@
                     <span class="text-slate-700">{{ e.1|date:"d/m/Y H:i" }}</span>
                     {% if e.2 %}<span class="ml-2 text-xs font-semibold text-red-700">en retard</span>{% endif %}
                   {% else %}<span class="text-slate-500">—</span>{% endif %}
+                </td>
+                <td class="whitespace-nowrap px-4 py-3">
+                  {% if ligne.peut_reporter %}
+                    <a href="{% url 'hr:conges_reporter' c.pk %}" class="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+                      <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> Reporter
+                    </a>
+                  {% endif %}
                 </td>
               </tr>
             {% endwith %}

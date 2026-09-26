@@ -4,7 +4,8 @@ Rôle : fiche personnel, recrutement et workflow de congés en 3 niveaux —
 cahier-des-charges.md:204-221. Audité (module `RH`).
 
 Entités : `Personnel` (avec `superieur` hiérarchique), `Conge`, `ValidationConge`,
-`AttributionConge` (jours exceptionnels), `JourFerie`.
+`AttributionConge` (jours exceptionnels), `ReportConge` (report du solde d'un congé en cours),
+`JourFerie`.
 
 Règles de congés :
 - N1 = supérieur hiérarchique direct (`Personnel.superieur`) ; le directeur (sans
@@ -12,15 +13,28 @@ Règles de congés :
   (48 h en N1, 24 h en N2) est dépassé, la DIRECTION peut valider ou refuser à la place du validateur habituel
   (`services._direction_remplace`), sauf sur sa propre demande ; sans cela, l'alerte « validation en retard » qui
   lui est adressée n'aurait aucune suite. Avant l'échéance, la hiérarchie reste seule décideuse.
-- Droit annuel 2 semaines = 12 jours ouvrables (`DROIT_ANNUEL_JOURS`), calculé
-  par `droits_conges` (jamais stocké) : droit + exceptions RH - congés approuvés,
-  en cours ou terminés de l'année de début.
-- Décompte en jours ouvrables : tous les jours sauf dimanches et `JourFerie`.
+- Droit annuel **26 jours ouvrés** (`DROIT_ANNUEL_JOURS`, avenant-separation-des-taches.md § R7 —
+  remplace les 12 jours ouvrables du cahier-des-charges.md:219-221 d'origine), calculé par
+  `droits_conges` (jamais stocké) : droit + exceptions RH − congés approuvés, en cours ou terminés de
+  l'année de début.
+- Décompte en jours **ouvrés** (`calculer_jours`) : du lundi au vendredi, hors `JourFerie` — le samedi
+  ne compte plus (avant : « ouvrables », tous les jours sauf dimanche).
+- **Report du solde d'un congé en cours** (`ReportConge`, § R7) : l'employé actuellement en congé
+  (bouton sur sa ligne du tableau, `hr:conges_reporter`) peut écourter son congé et demander à garder
+  les jours non pris. Sans validation de la RH, la demande n'a aucun effet — le congé continue
+  normalement. Une fois validée (`approuver_report`) : le congé est raccourci à la nouvelle date de
+  reprise et `conge.jours` réduit d'autant, ce qui libère le solde tout seul (`droits_conges` ne
+  décompte que `conge.jours`) ; une fois refusée (`refuser_report`), rien ne change. Notifie la RH à la
+  demande, l'employé à la décision.
+- **PDF « Autorisation de congé »** (`documents.py`, ReportLab, même en-tête que
+  `apps.missions.documents`) : produit à la demande une fois le congé approuvé (N2), jamais stocké —
+  donc toujours à jour, y compris après un report approuvé (aucune « régénération » à faire).
 
 Services (`services.py`) : `recruter`, `demander_conge`, `valider_n1`,
 `valider_n2`, `refuser`, `annuler_conge_approuve`, `accorder_jours_exceptionnels`,
-`droits_conges`, `calculer_jours`, `synchroniser_statuts_conges` (à planifier
-chaque jour par Celery Beat, étape 5), `initialiser_jours_feries`.
+`droits_conges`, `calculer_jours`, `demander_report`, `approuver_report`, `refuser_report`,
+`synchroniser_statuts_conges` (à planifier chaque jour par Celery Beat, étape 5),
+`initialiser_jours_feries`.
 
 Jours fériés : `python manage.py initialiser_jours_feries 2026` crée les fêtes
 fixes et chrétiennes ; les fêtes musulmanes (fixées par décret) se saisissent

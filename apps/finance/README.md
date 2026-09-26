@@ -30,6 +30,38 @@ python manage.py comptabiliser_historique_parc_auto --depuis 2026-09-01   # si u
     # 31/08/2026 comprend déjà les mouvements antérieurs (sinon ils seraient comptés deux fois)
 ```
 
+## Dépenses pré-approuvées du parc auto (`demandes.py`, R2 — avenant-separation-des-taches.md)
+
+Séparation des tâches : le **Parc Auto** demande, la **DIRECTION** valide (jamais l'ADMIN à sa place,
+contrôle strict comme pour une facture), la **FINANCES** exécute. Deux circuits sur le même modèle
+`DemandeDepense` (numéro `DEM-AAAA-XXXX`) :
+
+- **Manuelle** : le Parc Auto soumet une demande (catégorie, montant estimé, motif, fournisseur,
+  pièce jointe) *avant* un achat ou une réparation non routinière. Validée, elle génère un
+  `OrdreDecaissement` (`ODC-AAAA-XXXX`) que la Finance exécute (mode, montant réel, justificatif) :
+  cela crée la `billing.Depense` (origine `ORDRE_DECAISSEMENT`). Refusée, elle s'arrête là (motif
+  obligatoire).
+- **Dépassement d'enveloppe** : la DIRECTION peut fixer une `EnveloppeDepense` — un plafond mensuel
+  pour une catégorie automatique (carburant, pièces, main-d'œuvre), globalement ou pour un camion
+  précis (prioritaire sur la globale). Tant que les dépenses du mois restent dans ce plafond, le
+  mécanisme ci-dessus continue de fonctionner **sans rien changer** : c'est le comportement par
+  défaut, sans enveloppe définie, illimité comme avant R2. Une dépense qui fait franchir le plafond
+  reste comptabilisée (l'argent est déjà sorti) mais ouvre une `DemandeDepense` a posteriori ; toute
+  dépense automatique *suivante* de cette catégorie est bloquée (l'opération d'origine — plein,
+  achat, clôture d'OR — est annulée) tant que la DIRECTION n'a pas décidé (validée ou refusée,
+  peu importe : les deux débloquent, seul le refus n'est qu'un constat de désaccord).
+
+**Dépassement de plus de 10 %** à l'exécution d'un ordre (manuelle) : bloqué, l'ordre passe en
+`EN_ATTENTE_REVALIDATION` (état qui **doit** survivre à l'erreur renvoyée à l'écran — `executer_ordre`
+n'a donc pas de `@transaction.atomic` sur toute sa longueur, seulement sur le bloc qui écrit l'état,
+sans quoi l'erreur annulerait la mise en attente elle-même). La DIRECTION revalide
+(`revalider_ordre`, nouveau montant validé) avant que la Finance ne puisse retenter l'exécution.
+
+Écrans : `/finances/demandes/` (liste + « Nouvelle demande » pour le Parc Auto), fiche par demande
+(décision, exécution, revalidation selon le rôle et l'état), `/finances/enveloppes/` (DIRECTION).
+Notifications (catégorie `DEMANDE_DEPENSE`) : soumission → DIRECTION ; décision → le demandeur (ou
+le Parc Auto pour un dépassement) ; ordre à exécuter → FINANCES ; dépassement de 10 % → DIRECTION.
+
 **Versements à confirmer** : une facture émise mais pas soldée est un versement attendu
 (`services.versements_attendus`). Quand la Direction valide une facture, la FINANCES reçoit une
 notification avec le bouton « Confirmer le versement » ; il mène à `/finances/versements/<id>/confirmer/`

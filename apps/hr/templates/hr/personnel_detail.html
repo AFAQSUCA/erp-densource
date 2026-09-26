@@ -55,7 +55,7 @@
           <div><dt class="text-sm text-slate-600">Approuvés</dt><dd class="mt-1 text-xl font-bold text-slate-900">{{ droits.consommes }}</dd></div>
           <div><dt class="text-sm text-slate-600">Disponible</dt><dd class="mt-1 text-xl font-bold {% if droits.disponible <= 0 %}text-red-700{% else %}text-emerald-800{% endif %}">{{ droits.disponible }}</dd></div>
         </dl>
-        <p class="mt-2 text-xs text-slate-600">En jours ouvrables (hors dimanches et jours fériés).</p>
+        <p class="mt-2 text-xs text-slate-600">En jours ouvrés (lundi-vendredi, hors jours fériés).</p>
 
         {% if attributions %}
           <h3 class="mt-5 text-sm font-semibold text-slate-900">Jours exceptionnels accordés</h3>
