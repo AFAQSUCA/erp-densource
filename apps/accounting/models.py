@@ -176,3 +176,47 @@ class LigneEcriture(models.Model):
                 "Une ligne d'une écriture validée ne se supprime pas : contre-passez plutôt."
             )
         super().delete(*args, **kwargs)
+
+
+class StatutExercice(models.TextChoices):
+    OUVERT = "OUVERT", _("Ouvert")
+    CLOTURE = "CLOTURE", _("Clôturé")
+
+
+class ExerciceComptable(BaseModel):
+    """Exercice comptable — année civile (hypothèse par défaut alignée sur
+    ``core.CompteurNumero`` ; le cahier des charges ne précise pas de date de clôture fiscale
+    propre à l'entreprise, à confirmer avec l'expert-comptable avant mise en production).
+
+    Auto-créé ``OUVERT`` au passage de la première écriture de son année (même principe que
+    ``core.services.prochain_numero``) : aucun geste explicite n'est requis pour « ouvrir »
+    une nouvelle année. Une fois ``CLOTURE``, aucune écriture ne peut plus être datée dans sa
+    période — jamais rouvert (une correction après clôture attend une phase de contre-passation).
+    """
+
+    annee = models.PositiveSmallIntegerField(_("année"), unique=True)
+    date_debut = models.DateField(_("début"))
+    date_fin = models.DateField(_("fin"))
+    statut = models.CharField(
+        _("statut"), max_length=10, choices=StatutExercice.choices, default=StatutExercice.OUVERT
+    )
+    cloture_par = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name=_("clôturé par"),
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+    date_cloture = models.DateTimeField(_("clôturé le"), null=True, blank=True)
+
+    class Meta:
+        verbose_name = _("exercice comptable")
+        verbose_name_plural = _("exercices comptables")
+        ordering = ["-annee"]
+
+    def __str__(self):
+        return f"Exercice {self.annee}"
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("ExerciceComptable ne se supprime jamais.")

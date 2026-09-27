@@ -6,6 +6,25 @@ from apps.core.forms import StyleTailwindMixin
 from .models import Compte, SensEcriture
 
 
+class PeriodeForm(StyleTailwindMixin, forms.Form):
+    """Filtre de période, facultatif : la balance ou le grand livre portent sur toutes les dates
+    connues si les deux champs sont vides."""
+
+    debut = forms.DateField(label="Du", required=False, widget=forms.DateInput(attrs={"type": "date"}))
+    fin = forms.DateField(label="Au", required=False, widget=forms.DateInput(attrs={"type": "date"}))
+
+
+class GrandLivreForm(PeriodeForm):
+    """Choix du compte à consulter, plus la période facultative de ``PeriodeForm``."""
+
+    compte = forms.ModelChoiceField(queryset=None, label="Compte", to_field_name="numero")
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["compte"].queryset = Compte.objects.order_by("numero")
+        self.fields["compte"].label_from_instance = lambda c: f"{c.numero} — {c.libelle}"
+
+
 class EcritureManuelleForm(StyleTailwindMixin, forms.Form):
     """Ouverture d'un brouillon d'opération diverse : date et libellé seulement, les lignes
     s'ajoutent ensuite une par une sur la fiche."""

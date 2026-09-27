@@ -1,5 +1,7 @@
-"""Écrans de la saisie manuelle d'opérations diverses (Phase 4)."""
+"""Écrans de la saisie manuelle d'opérations diverses (Phase 4) et des exercices comptables
+(Phase 5)."""
 
+from datetime import date
 from decimal import Decimal
 
 import pytest
@@ -8,7 +10,13 @@ from django.urls import reverse
 from apps.accounts.models import Role
 from apps.accounts.tests.factories import UserFactory
 from apps.accounting import services
-from apps.accounting.models import EcritureComptable, SensEcriture, StatutEcriture
+from apps.accounting.models import (
+    EcritureComptable,
+    Journal,
+    SensEcriture,
+    StatutEcriture,
+    StatutExercice,
+)
 
 from .factories import CompteFactory
 
@@ -23,7 +31,7 @@ def _connecte(client, role):
 
 def _brouillon(**kwargs):
     return services.creer_ecriture_manuelle(
-        UserFactory(role=Role.FINANCES), date_ecriture="2026-09-05", libelle="Test OD", **kwargs
+        UserFactory(role=Role.FINANCES), date_ecriture=date(2026, 9, 5), libelle="Test OD", **kwargs
     )
 
 
@@ -131,3 +139,157 @@ def test_abandonner_via_l_ecran(client):
 
     assert reponse.status_code == 302
     assert not EcritureComptable.objects.filter(pk=ecriture.pk).exists()
+
+
+# --- exercices comptables (Phase 5) ---
+
+
+def test_la_liste_des_exercices_est_accessible_en_consultation(client):
+    services.exercice_pour(date(2026, 9, 5))
+    _connecte(client, Role.FINANCES)
+
+    reponse = client.get(reverse("accounting:exercices"))
+
+    assert reponse.status_code == 200
+    assert "2026" in reponse.content.decode()
+
+
+def test_seule_la_direction_voit_le_bouton_cloturer(client):
+    exercice = services.exercice_pour(date(2026, 9, 5))
+    url_cloturer = reverse("accounting:exercice_cloturer", args=[exercice.pk])
+
+    _connecte(client, Role.DIRECTION)
+    page = client.get(reverse("accounting:exercices")).content.decode()
+    assert url_cloturer in page
+
+    _connecte(client, Role.FINANCES)
+    page = client.get(reverse("accounting:exercices")).content.decode()
+    assert url_cloturer not in page
+
+
+def test_cloturer_via_l_ecran_est_reserve_a_la_direction(client):
+    exercice = services.exercice_pour(date(2026, 9, 5))
+
+    _connecte(client, Role.FINANCES)
+    assert client.post(reverse("accounting:exercice_cloturer", args=[exercice.pk])).status_code == 403
+
+    _connecte(client, Role.DIRECTION)
+    reponse = client.post(reverse("accounting:exercice_cloturer", args=[exercice.pk]))
+    assert reponse.status_code == 302
+    exercice.refresh_from_db()
+    assert exercice.statut == StatutExercice.CLOTURE
+
+
+# --- rapports comptables (Phase 6) ---
+
+
+def _passer_ecriture_od(charge, tresorerie, *, date_ecriture, montant="5000"):
+    return services.passer_ecriture(
+        journal=Journal.OPERATIONS_DIVERSES, date_ecriture=date_ecriture, libelle="Test",
+        lignes=[
+            services.LigneSaisie(compte=charge.numero, sens=SensEcriture.DEBIT, montant=Decimal(montant)),
+            services.LigneSaisie(compte=tresorerie.numero, sens=SensEcriture.CREDIT, montant=Decimal(montant)),
+        ],
+    )
+
+
+@pytest.mark.parametrize(
+    "nom_url",
+    ["accounting:grand_livre", "accounting:balance", "accounting:bilan", "accounting:compte_resultat"],
+)
+@pytest.mark.parametrize("role", [Role.ADMIN, Role.DIRECTION, Role.FINANCES, Role.RH])
+def test_les_rapports_sont_accessibles_aux_roles_de_consultation(client, role, nom_url):
+    _connecte(client, role)
+
+    assert client.get(reverse(nom_url)).status_code == 200
+
+
+@pytest.mark.parametrize(
+    "nom_url",
+    ["accounting:grand_livre", "accounting:balance", "accounting:bilan", "accounting:compte_resultat"],
+)
+@pytest.mark.parametrize("role", [Role.PARCAUTO, Role.CHAUFFEUR])
+def test_les_rapports_sont_interdits_aux_autres_roles(client, role, nom_url):
+    _connecte(client, role)
+
+    assert client.get(reverse(nom_url)).status_code == 403
+
+
+def test_grand_livre_sans_compte_selectionne_n_affiche_aucune_ligne(client):
+    _connecte(client, Role.FINANCES)
+
+    reponse = client.get(reverse("accounting:grand_livre"))
+
+    assert reponse.context["lignes"] is None
+
+
+def test_grand_livre_avec_compte_selectionne_affiche_les_lignes(client):
+    charge, tresorerie = CompteFactory(), CompteFactory()
+    _passer_ecriture_od(charge, tresorerie, date_ecriture=date(2026, 9, 5))
+    _connecte(client, Role.FINANCES)
+
+    reponse = client.get(reverse("accounting:grand_livre"), {"compte": charge.numero})
+
+    lignes = reponse.context["lignes"]
+    assert len(lignes) == 1
+    assert lignes[0]["solde_cumule"] == Decimal("5000")
+
+
+def test_balance_totalise_debit_et_credit(client):
+    charge, tresorerie = CompteFactory(), CompteFactory()
+    _passer_ecriture_od(charge, tresorerie, date_ecriture=date(2026, 9, 5), montant="7000")
+    _connecte(client, Role.FINANCES)
+
+    reponse = client.get(reverse("accounting:balance"))
+
+    assert reponse.context["totaux"] == {"debit": Decimal("7000"), "credit": Decimal("7000")}
+
+
+def test_bilan_sans_aucun_exercice_n_affiche_pas_de_rapport(client):
+    _connecte(client, Role.FINANCES)
+
+    reponse = client.get(reverse("accounting:bilan"))
+
+    assert reponse.context["exercice"] is None
+    assert reponse.context["rapport"] is None
+
+
+def test_bilan_choisit_l_exercice_le_plus_recent_par_defaut(client):
+    services.exercice_pour(date(2025, 6, 1))
+    exercice_2026 = services.exercice_pour(date(2026, 9, 5))
+    _connecte(client, Role.FINANCES)
+
+    reponse = client.get(reverse("accounting:bilan"))
+
+    assert reponse.context["exercice"] == exercice_2026
+    assert reponse.context["rapport"] is not None
+
+
+def test_bilan_change_d_exercice_via_le_parametre(client):
+    exercice_2025 = services.exercice_pour(date(2025, 6, 1))
+    services.exercice_pour(date(2026, 9, 5))
+    _connecte(client, Role.FINANCES)
+
+    reponse = client.get(reverse("accounting:bilan"), {"exercice": 2025})
+
+    assert reponse.context["exercice"] == exercice_2025
+
+
+def test_compte_de_resultat_choisit_l_exercice_le_plus_recent_par_defaut(client):
+    services.exercice_pour(date(2025, 6, 1))
+    exercice_2026 = services.exercice_pour(date(2026, 9, 5))
+    _connecte(client, Role.FINANCES)
+
+    reponse = client.get(reverse("accounting:compte_resultat"))
+
+    assert reponse.context["exercice"] == exercice_2026
+    assert reponse.context["rapport"] is not None
+
+
+def test_compte_de_resultat_sans_aucun_exercice_n_affiche_pas_de_rapport(client):
+    _connecte(client, Role.FINANCES)
+
+    reponse = client.get(reverse("accounting:compte_resultat"))
+
+    assert reponse.context["exercice"] is None
+    assert reponse.context["rapport"] is None

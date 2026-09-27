@@ -13,7 +13,8 @@ from decimal import Decimal
 from typing import Sequence
 
 from django.db import transaction
-from django.db.models import QuerySet
+from django.db.models import Q, QuerySet, Sum, Value
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from apps.billing.models import COMPTE_DU_MODE
@@ -31,11 +32,25 @@ from .constants import (
 from . import permissions
 from .exceptions import (
     ActionComptableNonAutorisee,
+    ClotureImpossible,
     CompteInconnu,
     EcritureNonEquilibree,
     EcritureVerrouillee,
+    ExerciceCloture,
 )
-from .models import Compte, EcritureComptable, Journal, LigneEcriture, SensEcriture, StatutEcriture
+from .models import (
+    Compte,
+    EcritureComptable,
+    ExerciceComptable,
+    Journal,
+    LigneEcriture,
+    NatureCompte,
+    SensEcriture,
+    StatutEcriture,
+    StatutExercice,
+)
+
+ZERO = Decimal("0")
 
 
 @dataclass(frozen=True)
@@ -59,6 +74,55 @@ def _exiger_role(acteur, roles, action: str, *, strict: bool = False) -> None:
 def _exiger_brouillon(ecriture: EcritureComptable, action: str) -> None:
     if ecriture.statut != StatutEcriture.BROUILLON:
         raise EcritureVerrouillee(f"Impossible de {action} : l'écriture est « {ecriture.get_statut_display()} ».")
+
+
+def exercice_pour(date_ecriture: date) -> ExerciceComptable:
+    """Renvoie l'exercice comptable (année civile) de cette date, le crée ``OUVERT`` s'il
+    n'existe pas encore — même principe que ``core.services.prochain_numero`` : aucun geste
+    explicite n'est requis pour « ouvrir » une nouvelle année."""
+    exercice, _ = ExerciceComptable.objects.get_or_create(
+        annee=date_ecriture.year,
+        defaults={
+            "date_debut": date(date_ecriture.year, 1, 1),
+            "date_fin": date(date_ecriture.year, 12, 31),
+        },
+    )
+    return exercice
+
+
+def _exiger_exercice_ouvert(date_ecriture: date) -> None:
+    exercice = exercice_pour(date_ecriture)
+    if exercice.statut == StatutExercice.CLOTURE:
+        raise ExerciceCloture(
+            f"L'exercice {exercice.annee} est clôturé : aucune écriture ne peut plus y être datée."
+        )
+
+
+@transaction.atomic
+def cloturer_exercice(exercice: ExerciceComptable, acteur) -> ExerciceComptable:
+    """Clôture un exercice : verrouille toute nouvelle écriture datée dans sa période. Refusé s'il
+    reste des brouillons (saisie manuelle non validée) dans la période — à valider ou abandonner
+    avant de clôturer, pour ne jamais clôturer une année à l'insu d'une saisie en attente.
+    Contrôle **strict** (``acteur.role``) : réservé à la DIRECTION, comme ``Facture.valider`` —
+    jamais l'ADMIN ni un superutilisateur à sa place. Jamais rouvert ensuite."""
+    _exiger_role(acteur, permissions.CLOTURE_EXERCICE, "clôturer un exercice", strict=True)
+    if exercice.statut == StatutExercice.CLOTURE:
+        raise ExerciceCloture(f"L'exercice {exercice.annee} est déjà clôturé.")
+    brouillons = EcritureComptable.objects.filter(
+        statut=StatutEcriture.BROUILLON,
+        date_ecriture__gte=exercice.date_debut,
+        date_ecriture__lte=exercice.date_fin,
+    ).count()
+    if brouillons:
+        raise ClotureImpossible(
+            f"{brouillons} écriture(s) en brouillon reste(nt) dans cette période : "
+            "validez-les ou abandonnez-les avant de clôturer."
+        )
+    exercice.statut = StatutExercice.CLOTURE
+    exercice.cloture_par = acteur
+    exercice.date_cloture = timezone.now()
+    exercice.save(update_fields=["statut", "cloture_par", "date_cloture", "updated_at"])
+    return exercice
 
 
 def _comptes_actifs(numeros: set[str]) -> dict[str, Compte]:
@@ -93,6 +157,8 @@ def passer_ecriture(
         existante = EcritureComptable.objects.filter(origine=origine, origine_id=origine_id).first()
         if existante is not None:
             return existante
+
+    _exiger_exercice_ouvert(date_ecriture)
 
     if len(lignes) < 2:
         raise EcritureNonEquilibree("Une écriture comptable a au moins 2 lignes.")
@@ -302,6 +368,7 @@ def creer_ecriture_manuelle(acteur, *, date_ecriture: date, libelle: str) -> Ecr
     _exiger_role(acteur, permissions.SAISIE_OD, "saisir une écriture")
     if not libelle.strip():
         raise EcritureNonEquilibree("Le libellé est obligatoire.")
+    _exiger_exercice_ouvert(date_ecriture)
     return EcritureComptable.objects.create(
         journal=Journal.OPERATIONS_DIVERSES,
         date_ecriture=date_ecriture,
@@ -351,6 +418,7 @@ def valider_ecriture_manuelle(ecriture: EcritureComptable, acteur) -> EcritureCo
     à sa place)."""
     _exiger_role(acteur, permissions.VALIDATION_OD, "valider une écriture", strict=True)
     _exiger_brouillon(ecriture, "valider l'écriture")
+    _exiger_exercice_ouvert(ecriture.date_ecriture)
     lignes = list(ecriture.lignes.all())
     if len(lignes) < 2:
         raise EcritureNonEquilibree("Une écriture comptable a au moins 2 lignes.")
@@ -371,11 +439,118 @@ def valider_ecriture_manuelle(ecriture: EcritureComptable, acteur) -> EcritureCo
 def grand_livre(
     compte: Compte, *, debut: date | None = None, fin: date | None = None
 ) -> QuerySet[LigneEcriture]:
-    """Lignes d'un compte, triées par date d'écriture — lecture de vérification (le grand livre
-    complet, avec soldes cumulés, vient de la Phase 6)."""
+    """Lignes d'un compte, triées par date d'écriture."""
     lignes = LigneEcriture.objects.filter(compte=compte).select_related("ecriture", "compte")
     if debut is not None:
         lignes = lignes.filter(ecriture__date_ecriture__gte=debut)
     if fin is not None:
         lignes = lignes.filter(ecriture__date_ecriture__lte=fin)
     return lignes.order_by("ecriture__date_ecriture", "pk")
+
+
+def grand_livre_avec_solde(
+    compte: Compte, *, debut: date | None = None, fin: date | None = None
+) -> list[dict]:
+    """Lignes du compte avec leur solde cumulé (débit augmente le solde, crédit le diminue —
+    convention SYSCOHADA, valable pour un compte d'actif/charge ; un compte de passif/produit se
+    lit alors en négatif, ce qui reste correct pour vérifier l'équilibre ligne à ligne)."""
+    solde = ZERO
+    resultat = []
+    for ligne in grand_livre(compte, debut=debut, fin=fin):
+        solde += ligne.montant if ligne.sens == SensEcriture.DEBIT else -ligne.montant
+        resultat.append({"ligne": ligne, "solde_cumule": solde})
+    return resultat
+
+
+def _agreger_par_compte(lignes: QuerySet[LigneEcriture]) -> list[dict]:
+    """Total débit/crédit par compte mouvementé dans ``lignes``."""
+    return list(
+        lignes.values("compte__id", "compte__numero", "compte__libelle", "compte__nature")
+        .annotate(
+            total_debit=Coalesce(Sum("montant", filter=Q(sens=SensEcriture.DEBIT)), Value(ZERO)),
+            total_credit=Coalesce(Sum("montant", filter=Q(sens=SensEcriture.CREDIT)), Value(ZERO)),
+        )
+        .order_by("compte__numero")
+    )
+
+
+def balance(*, debut: date | None = None, fin: date | None = None) -> list[dict]:
+    """Balance générale : total débit/crédit et solde de chaque compte mouvementé sur la période
+    (tous comptes confondus, toutes dates si ``debut``/``fin`` omis)."""
+    lignes = LigneEcriture.objects.all()
+    if debut is not None:
+        lignes = lignes.filter(ecriture__date_ecriture__gte=debut)
+    if fin is not None:
+        lignes = lignes.filter(ecriture__date_ecriture__lte=fin)
+    resultat = []
+    for ligne in _agreger_par_compte(lignes):
+        solde = ligne["total_debit"] - ligne["total_credit"]
+        resultat.append(
+            {
+                **ligne,
+                "solde_debiteur": solde if solde > 0 else ZERO,
+                "solde_crediteur": -solde if solde < 0 else ZERO,
+            }
+        )
+    return resultat
+
+
+def compte_de_resultat(exercice: ExerciceComptable) -> dict:
+    """Produits moins charges de l'exercice = résultat net (bénéfice ou perte). Calculé à la
+    demande à partir des lignes de la période (rapport de situation) : aucune écriture de
+    clôture n'existe encore pour transférer ce résultat dans le bilan de l'exercice suivant —
+    voir « Limite connue », avenant-comptabilite-syscohada.md § P6."""
+    lignes = LigneEcriture.objects.filter(
+        ecriture__date_ecriture__gte=exercice.date_debut,
+        ecriture__date_ecriture__lte=exercice.date_fin,
+        compte__nature__in=[NatureCompte.CHARGE, NatureCompte.PRODUIT],
+    )
+    charges, produits = [], []
+    total_charges = total_produits = ZERO
+    for ligne in _agreger_par_compte(lignes):
+        if ligne["compte__nature"] == NatureCompte.CHARGE:
+            montant = ligne["total_debit"] - ligne["total_credit"]
+            charges.append({**ligne, "montant": montant})
+            total_charges += montant
+        else:
+            montant = ligne["total_credit"] - ligne["total_debit"]
+            produits.append({**ligne, "montant": montant})
+            total_produits += montant
+    return {
+        "charges": charges,
+        "produits": produits,
+        "total_charges": total_charges,
+        "total_produits": total_produits,
+        "resultat_net": total_produits - total_charges,
+    }
+
+
+def bilan(exercice: ExerciceComptable) -> dict:
+    """Actif et passif cumulés depuis l'origine jusqu'à la fin de l'exercice (un bilan est une
+    photo à une date, pas une période — contrairement au compte de résultat). Le résultat net de
+    l'exercice (voir :func:`compte_de_resultat`) est ajouté au passif pour équilibrer le bilan,
+    puisqu'il n'existe pas encore d'écriture de clôture qui l'impute au compte 120000."""
+    lignes = LigneEcriture.objects.filter(
+        ecriture__date_ecriture__lte=exercice.date_fin,
+        compte__nature__in=[NatureCompte.ACTIF, NatureCompte.PASSIF],
+    )
+    actif, passif = [], []
+    total_actif = total_passif = ZERO
+    for ligne in _agreger_par_compte(lignes):
+        if ligne["compte__nature"] == NatureCompte.ACTIF:
+            montant = ligne["total_debit"] - ligne["total_credit"]
+            actif.append({**ligne, "montant": montant})
+            total_actif += montant
+        else:
+            montant = ligne["total_credit"] - ligne["total_debit"]
+            passif.append({**ligne, "montant": montant})
+            total_passif += montant
+    resultat_net = compte_de_resultat(exercice)["resultat_net"]
+    return {
+        "actif": actif,
+        "passif": passif,
+        "total_actif": total_actif,
+        "total_passif": total_passif,
+        "resultat_net": resultat_net,
+        "total_passif_avec_resultat": total_passif + resultat_net,
+    }

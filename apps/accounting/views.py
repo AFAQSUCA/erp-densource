@@ -1,5 +1,6 @@
-"""Écrans de la saisie manuelle d'opérations diverses (Phase 4) : les écrans de grand livre,
-balance, bilan et compte de résultat viennent avec la Phase 6.
+"""Écrans de la saisie manuelle d'opérations diverses (Phase 4), de la clôture d'exercice
+(Phase 5) et des rapports en lecture seule — grand livre, balance, bilan, compte de résultat
+(Phase 6).
 
 Aucune règle métier ici : les vues contrôlent le rôle, lisent le formulaire et délèguent à
 ``services.py`` (conventions.md:19-23).
@@ -8,15 +9,15 @@ Aucune règle métier ici : les vues contrôlent le rôle, lisent le formulaire 
 from django.contrib import messages
 from django.shortcuts import get_object_or_404, redirect
 from django.views import View
-from django.views.generic import DetailView, FormView, ListView
+from django.views.generic import DetailView, FormView, ListView, TemplateView
 
 from apps.accounts.mixins import RoleRequiredMixin
 from apps.core.views import PaginationTolerante
 
 from . import permissions, services
 from .exceptions import AccountingError
-from .forms import EcritureManuelleForm, LigneManuelleForm
-from .models import EcritureComptable, Journal, LigneEcriture, SensEcriture, StatutEcriture
+from .forms import EcritureManuelleForm, GrandLivreForm, LigneManuelleForm, PeriodeForm
+from .models import EcritureComptable, ExerciceComptable, Journal, LigneEcriture, SensEcriture, StatutEcriture
 
 
 def _erreurs_en_messages(request, form):
@@ -156,3 +157,113 @@ class EcritureManuelleAbandonnerView(RoleRequiredMixin, View):
             return redirect("accounting:ecriture_manuelle", pk=pk)
         messages.success(request, "Brouillon abandonné.")
         return redirect("accounting:ecritures_manuelles")
+
+
+class ExerciceListView(RoleRequiredMixin, ListView):
+    roles = permissions.CONSULTATION
+    template_name = "accounting/exercice_list.html"
+    context_object_name = "exercices"
+
+    def get_queryset(self):
+        return ExerciceComptable.objects.all()
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        contexte["peut_cloturer"] = self.request.user.role in permissions.CLOTURE_EXERCICE
+        return contexte
+
+
+class ExerciceCloturerView(RoleRequiredMixin, View):
+    roles = permissions.CLOTURE_EXERCICE
+    http_method_names = ["post"]
+
+    def post(self, request, pk):
+        exercice = get_object_or_404(ExerciceComptable, pk=pk)
+        try:
+            services.cloturer_exercice(exercice, request.user)
+        except AccountingError as erreur:
+            messages.error(request, str(erreur))
+        else:
+            messages.success(request, f"Exercice {exercice.annee} clôturé.")
+        return redirect("accounting:exercices")
+
+
+class GrandLivreView(RoleRequiredMixin, TemplateView):
+    roles = permissions.CONSULTATION
+    template_name = "accounting/grand_livre.html"
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        form = GrandLivreForm(self.request.GET or None)
+        lignes = None
+        if form.is_valid() and form.cleaned_data.get("compte"):
+            lignes = services.grand_livre_avec_solde(
+                form.cleaned_data["compte"],
+                debut=form.cleaned_data.get("debut"),
+                fin=form.cleaned_data.get("fin"),
+            )
+        contexte.update(form=form, lignes=lignes)
+        return contexte
+
+
+class BalanceView(RoleRequiredMixin, TemplateView):
+    roles = permissions.CONSULTATION
+    template_name = "accounting/balance.html"
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        form = PeriodeForm(self.request.GET or None)
+        debut = fin = None
+        if form.is_valid():
+            debut, fin = form.cleaned_data.get("debut"), form.cleaned_data.get("fin")
+        lignes = services.balance(debut=debut, fin=fin)
+        totaux = {
+            "debit": sum((l["total_debit"] for l in lignes), start=0),
+            "credit": sum((l["total_credit"] for l in lignes), start=0),
+        }
+        contexte.update(form=form, lignes=lignes, totaux=totaux)
+        return contexte
+
+
+class _RapportExerciceView(RoleRequiredMixin, TemplateView):
+    """Un rapport (bilan, compte de résultat) porte toujours sur un exercice choisi dans la
+    liste existante — le plus récent par défaut."""
+
+    roles = permissions.CONSULTATION
+
+    def get_exercice(self):
+        exercices = ExerciceComptable.objects.order_by("-annee")
+        annee = self.request.GET.get("exercice")
+        if annee:
+            exercice = exercices.filter(annee=annee).first()
+            if exercice is not None:
+                return exercice, exercices
+        return exercices.first(), exercices
+
+
+class BilanView(_RapportExerciceView):
+    template_name = "accounting/bilan.html"
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        exercice, exercices = self.get_exercice()
+        contexte.update(
+            exercices=exercices,
+            exercice=exercice,
+            rapport=services.bilan(exercice) if exercice else None,
+        )
+        return contexte
+
+
+class CompteDeResultatView(_RapportExerciceView):
+    template_name = "accounting/compte_resultat.html"
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        exercice, exercices = self.get_exercice()
+        contexte.update(
+            exercices=exercices,
+            exercice=exercice,
+            rapport=services.compte_de_resultat(exercice) if exercice else None,
+        )
+        return contexte

@@ -16,3 +16,12 @@ class EcritureVerrouillee(AccountingError):
 
 class ActionComptableNonAutorisee(AccountingError):
     """L'utilisateur n'a pas le droit d'effectuer cette action."""
+
+
+class ExerciceCloture(AccountingError):
+    """L'exercice comptable concerné est déjà clôturé : aucune écriture ne peut plus y être
+    datée, ni y être clôturé une seconde fois."""
+
+
+class ClotureImpossible(AccountingError):
+    """Des brouillons non résolus (saisie manuelle) empêchent de clôturer l'exercice."""

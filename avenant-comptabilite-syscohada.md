@@ -19,15 +19,15 @@ indépendant, testée (≥ 70 % sur les services), documentée, fusionnée sépa
 | P1 | Fondations : plan comptable, moteur d'écritures, écriture de facture validée | ✅ Fusionnée |
 | P2 | Encaissements (règlements clients) | ✅ Fusionnée |
 | P3 | Dépenses automatiques du parc auto/missions (carburant, pièces, main-d'œuvre, frais de mission, ordre de décaissement) | ✅ Fusionnée |
-| P4 | Saisie manuelle (mouvements de trésorerie, opérations diverses) — brouillon → validation DIRECTION | **✅ Ce lot** — voir ci-dessous |
-| P5 | Exercice comptable et clôture (DIRECTION, contrôle strict) | À livrer |
-| P6 | Rapports : grand livre, balance, bilan, compte de résultat | À livrer |
+| P4 | Saisie manuelle (mouvements de trésorerie, opérations diverses) — brouillon → validation DIRECTION | ✅ Fusionnée |
+| P5 | Exercice comptable et clôture (DIRECTION, contrôle strict) | ✅ Fusionnée |
+| P6 | Rapports : grand livre, balance, bilan, compte de résultat | **✅ Ce lot** — voir ci-dessous |
 
 ## P1 — Fondations : plan comptable, moteur d'écritures, écriture de facture
 
 **Position dans le graphe de dépendances** (architecture.md) : nouvelle app `accounting`, dépend
-de `billing` (lit `Facture`, `CompteTresorerie`) ; aucune app existante ne dépend d'`accounting`
-pour l'instant (la Phase 6 y ajoutera `dashboard`).
+de `billing` (lit `Facture`, `CompteTresorerie`) ; aucune autre app ne dépend d'`accounting` — les
+rapports de la P6 restent des écrans internes à l'app, aucune intégration au `dashboard`.
 
 **Modèles** (`apps/accounting/models.py`) :
 - `Compte` : plan comptable (numéro, libellé, nature ACTIF/PASSIF/CHARGE/PRODUIT, actif). Table de
@@ -256,3 +256,101 @@ tests automatisés.
 `apps.accounting.permissions.SAISIE_OD` / `VALIDATION_OD`, signal
 `apps.finance.signals.mouvement_a_comptabiliser`, migration
 `apps/finance/migrations/0003_mouvementmanuel_nature.py`. Détails : `apps/accounting/README.md`.
+
+## P5 — Exercice comptable et clôture
+
+**Modèle** (`apps/accounting/models.py`) : `ExerciceComptable` (`BaseModel`) — `annee` (unique),
+`date_debut`/`date_fin` (année civile par défaut : le cahier des charges ne précise pas de date de
+clôture fiscale propre à l'entreprise, hypothèse à confirmer avec l'expert-comptable), `statut`
+(`OUVERT`/`CLOTURE`), `cloture_par`, `date_cloture`. Auto-créé `OUVERT` au passage de la première
+écriture de son année (`services.exercice_pour`, même principe que
+`core.services.prochain_numero` : aucun geste explicite n'est requis pour « ouvrir » une nouvelle
+année). Jamais supprimé, jamais rouvert une fois clôturé.
+
+**Verrouillage** (`services._exiger_exercice_ouvert`) : appelé par `passer_ecriture` (écritures
+automatiques), `creer_ecriture_manuelle` et `valider_ecriture_manuelle` (saisie manuelle, cette
+dernière en seconde ligne de défense contre une clôture concurrente — en pratique la clôture est
+déjà bloquée tant qu'un brouillon existe dans la période, voir ci-dessous). Toute date tombant
+dans un exercice `CLOTURE` lève `ExerciceCloture` : l'opération d'origine est annulée, comme pour
+un déséquilibre.
+
+**Service** (`apps/accounting/services.py::cloturer_exercice`) : refusé si l'exercice est déjà
+clôturé, ou s'il reste des écritures manuelles en `BROUILLON` datées dans sa période (à valider ou
+abandonner d'abord — jamais clôturer une année à l'insu d'une saisie en attente). Contrôle
+**strict** (`acteur.role`) : réservé à la DIRECTION, comme `Facture.valider` — jamais l'ADMIN ni
+un superutilisateur à sa place.
+
+**Permissions** (`apps/accounting/permissions.py`) : `CLOTURE_EXERCICE` (DIRECTION seule, strict).
+Consultation de la liste : `CONSULTATION` (inchangé).
+
+**Écran** (`/comptabilite/exercices/`) : liste des exercices (année, période, statut, clôturé par
+qui et quand), bouton « Clôturer » visible seulement à la DIRECTION sur un exercice `OUVERT`.
+Vérifié manuellement dans le navigateur (`demo_finances` : la liste s'affiche, le bouton
+« Clôturer » n'apparaît pas pour ce rôle — conforme à ce que testent les tests automatisés).
+
+**Limite connue** : une fois clôturé, un exercice ne se rouvre jamais — une correction après
+clôture attendra la phase de contre-passation générale (déjà signalée comme limite connue depuis
+la P1), pas un mécanisme de réouverture dédié.
+
+**Implémentation** : `apps.accounting.models.ExerciceComptable`,
+`apps.accounting.services.exercice_pour` / `cloturer_exercice`,
+`apps.accounting.permissions.CLOTURE_EXERCICE`, `apps.accounting.views.ExerciceListView` /
+`ExerciceCloturerView`. Détails : `apps/accounting/README.md`.
+
+## P6 — Rapports : grand livre, balance, bilan, compte de résultat
+
+Dernier lot de la feuille de route : aucun nouveau modèle, aucun nouveau signal — uniquement de la
+lecture sur les écritures déjà comptabilisées par les P1-P5.
+
+**Services** (`apps/accounting/services.py`) :
+- `grand_livre_avec_solde(compte, *, debut=None, fin=None)` : lignes du compte triées par date,
+  chacune enrichie d'un solde cumulé (débit − crédit, cumulé ligne après ligne dans l'ordre
+  chronologique) — la lecture brute non enrichie (`grand_livre`, P1) reste disponible pour les
+  usages internes/tests qui n'ont pas besoin du solde.
+- `balance(*, debut=None, fin=None)` : agrège tous les comptes mouvementés sur la période (total
+  débit, total crédit, solde débiteur ou créditeur selon lequel des deux totaux l'emporte), via
+  `_agreger_par_compte`.
+- `compte_de_resultat(exercice)` : produits et charges **strictement dans `[date_debut, date_fin]`
+  de l'exercice** — les comptes de charge/produit sont par nature des compteurs de période, remis
+  à zéro à chaque exercice.
+- `bilan(exercice)` : actif et passif **cumulés depuis l'origine jusqu'à `date_fin`**, sans borne de
+  date basse — contrairement au compte de résultat, les comptes de bilan (trésorerie, créances,
+  capital…) portent un solde qui survit d'un exercice à l'autre.
+
+**Limite connue (documentée dans l'écran du bilan lui-même)** : le résultat net de l'exercice est
+**calculé à la volée** par `compte_de_resultat` et simplement ajouté au passif du bilan
+(`total_passif_avec_resultat`) pour l'équilibrer à l'affichage — il n'existe **aucune écriture de
+clôture** qui transfère réellement ce résultat dans le compte 120000 "Résultat de l'exercice" au
+moment de `cloturer_exercice` (P5). Une clôture comptable complète (contre-passation des comptes de
+classe 6/7 vers le 120000) est un chantier à part, non demandé pour ce lot — le bilan reste donc une
+photo cohérente mais pas une écriture posée dans le grand livre.
+
+**Permissions** : inchangées, `CONSULTATION` (voir P1) — ces 4 écrans sont uniquement de la
+lecture, aucune saisie.
+
+**Écrans** (`apps/accounting/views.py`, `forms.py`, `templates/accounting/`, montés sous
+`/comptabilite/`) :
+- `/comptabilite/grand-livre/` : formulaire compte (obligatoire) + période (facultative) ;
+  n'affiche de tableau qu'une fois un compte choisi.
+- `/comptabilite/balance/` : formulaire période (facultative) ; tableau de tous les comptes
+  mouvementés avec leurs totaux et soldes, plus une ligne de total général.
+- `/comptabilite/bilan/` et `/comptabilite/compte-de-resultat/` : sélecteur d'exercice (le plus
+  récent par défaut, `?exercice=AAAA` pour changer), partagé par les deux écrans via
+  `_RapportExerciceView`.
+- Menu : « Rapports comptables » pointe vers la balance ; les 3 autres rapports se rejoignent
+  depuis le même sous-menu (`_nav_rapports.html`).
+
+**Vérifié manuellement** (navigateur, `demo_finances`) : les 4 écrans affichent des montants
+cohérents entre eux sur les mêmes données (le résultat net du compte de résultat correspond
+exactement à celui ajouté au passif du bilan), le filtre par compte du grand livre calcule le bon
+solde cumulé, la balance totalise correctement débit/crédit.
+
+**Implémentation** : `apps.accounting.services.grand_livre_avec_solde` / `balance` /
+`compte_de_resultat` / `bilan`, `apps.accounting.forms.PeriodeForm` / `GrandLivreForm`,
+`apps.accounting.views.GrandLivreView` / `BalanceView` / `BilanView` / `CompteDeResultatView`.
+Détails : `apps/accounting/README.md`.
+
+**Ceci clôt la feuille de route des 6 phases.** Les limites connues documentées phase par phase
+restent ouvertes (contre-passation générale, TVA déductible réelle, dépenses manuelles hors
+périmètre, clôture comptable posée dans le grand livre) : à traiter dans un futur avenant si
+l'entreprise en confirme le besoin une fois la comptabilité internalisée.
