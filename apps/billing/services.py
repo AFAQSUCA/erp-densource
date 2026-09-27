@@ -473,6 +473,7 @@ def enregistrer_reglement(
     facture.statut = _statut_selon_reste(facture)
     facture.save(update_fields=["statut", "updated_at"])
     signals.emettre(signals.reglement_enregistre, reglement=reglement)
+    signals.reglement_a_comptabiliser.send(sender=Reglement, reglement=reglement)
     return reglement
 
 
@@ -562,7 +563,7 @@ def comptabiliser_depense_automatique(
     montant = Decimal(montant).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     if montant <= 0:
         return None
-    depense, _ = Depense.objects.get_or_create(
+    depense, creee = Depense.objects.get_or_create(
         origine=origine,
         origine_id=origine_id,
         defaults={
@@ -576,9 +577,12 @@ def comptabiliser_depense_automatique(
             "vehicule": vehicule,
         },
     )
+    if creee:
+        signals.depense_a_comptabiliser.send(sender=Depense, depense=depense)
     return depense
 
 
+@transaction.atomic
 def changer_mode_depense(depense: Depense, acteur, *, mode: str) -> Depense:
     """La Finance corrige le mode de paiement d'une dépense automatique (elle en déduit le compte débité)."""
     _exiger_role(acteur, permissions.SAISIE, "modifier une dépense")
@@ -586,8 +590,11 @@ def changer_mode_depense(depense: Depense, acteur, *, mode: str) -> Depense:
         raise ActionFactureNonAutorisee("Seules les dépenses créées automatiquement se corrigent ici.")
     if mode not in ModePaiement.values:
         raise MontantInvalide("Mode de paiement inconnu.")
+    ancien_mode = depense.mode
     depense.mode = mode
     depense.save(update_fields=["mode", "updated_at"])
+    if mode != ancien_mode:
+        signals.depense_mode_a_reclasser.send(sender=Depense, depense=depense, ancien_mode=ancien_mode)
     return depense
 
 

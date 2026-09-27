@@ -40,6 +40,21 @@ reglement_enregistre = Signal()
 # validation plutôt que d'être silencieusement absente du grand livre.
 facture_a_comptabiliser = Signal()
 
+# Un règlement vient d'être enregistré : à comptabiliser (même principe que ``facture_a_comptabiliser``,
+# ``send()`` brut). Argument : ``reglement``.
+reglement_a_comptabiliser = Signal()
+
+# Une dépense automatique (plein, achat de pièces, main-d'œuvre d'OR, frais de mission, ordre de
+# décaissement) vient d'être créée : à comptabiliser (même principe, ``send()`` brut). N'est émis
+# que lors de la création réelle (pas quand ``comptabiliser_depense_automatique`` retombe sur une
+# dépense déjà existante). Argument : ``depense``.
+depense_a_comptabiliser = Signal()
+
+# La Finance a corrigé le mode de paiement d'une dépense automatique (``changer_mode_depense``) :
+# le compte de trésorerie provisoire (Caisse par défaut) doit être reclassé vers le bon compte.
+# ``send()`` brut. Arguments : ``depense`` (déjà sur le nouveau mode), ``ancien_mode``.
+depense_mode_a_reclasser = Signal()
+
 
 def emettre(signal: Signal, *, sender: type | None = None, **arguments) -> None:
     """Émet un signal en journalisant (sans propager) les erreurs des récepteurs."""

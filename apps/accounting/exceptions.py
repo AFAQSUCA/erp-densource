@@ -12,3 +12,7 @@ class CompteInconnu(AccountingError):
 
 class EcritureVerrouillee(AccountingError):
     """Une écriture déjà validée ne se modifie ni ne se supprime."""
+
+
+class ActionComptableNonAutorisee(AccountingError):
+    """L'utilisateur n'a pas le droit d'effectuer cette action."""

@@ -16,10 +16,10 @@ indépendant, testée (≥ 70 % sur les services), documentée, fusionnée sépa
 
 | Phase | Contenu | Statut |
 |---|---|---|
-| P1 | Fondations : plan comptable, moteur d'écritures, écriture de facture validée | **✅ Ce lot** — voir ci-dessous |
-| P2 | Encaissements (règlements clients) | À livrer |
-| P3 | Dépenses automatiques du parc auto/missions (carburant, pièces, main-d'œuvre, frais de mission, ordre de décaissement) | À livrer |
-| P4 | Saisie manuelle (mouvements de trésorerie, opérations diverses) — brouillon → validation DIRECTION | À livrer |
+| P1 | Fondations : plan comptable, moteur d'écritures, écriture de facture validée | ✅ Fusionnée |
+| P2 | Encaissements (règlements clients) | ✅ Fusionnée |
+| P3 | Dépenses automatiques du parc auto/missions (carburant, pièces, main-d'œuvre, frais de mission, ordre de décaissement) | ✅ Fusionnée |
+| P4 | Saisie manuelle (mouvements de trésorerie, opérations diverses) — brouillon → validation DIRECTION | **✅ Ce lot** — voir ci-dessous |
 | P5 | Exercice comptable et clôture (DIRECTION, contrôle strict) | À livrer |
 | P6 | Rapports : grand livre, balance, bilan, compte de résultat | À livrer |
 
@@ -99,3 +99,160 @@ aux phases suivantes.
 **Implémentation** : `apps.accounting.services.passer_ecriture`,
 `apps.accounting.services.comptabiliser_facture_validee`, `apps.accounting.receivers`,
 signal `apps.billing.signals.facture_a_comptabiliser`. Détails : `apps/accounting/README.md`.
+
+## P2 — Encaissements (règlements clients)
+
+**Aucun nouveau modèle** : réutilise le moteur et le plan comptable de la P1 tels quels.
+
+**Service** (`apps/accounting/services.py::comptabiliser_un_reglement`) : débite le compte de
+trésorerie déduit du mode de paiement du règlement (`billing.models.COMPTE_DU_MODE` puis
+`constants.COMPTE_TRESORERIE_VERS_COMPTE` — banque 521, caisse 571, mobile money 5219), crédite
+le client (411, rattaché au tiers) — solde la créance. Journal déduit du même compte de
+trésorerie (`constants.COMPTE_TRESORERIE_VERS_JOURNAL`) : Banque (BQ) ou Caisse (CAI) ; le mobile
+money, dématérialisé, est rattaché à la Banque faute de journal auxiliaire dédié dans les 5
+journaux SYSCOHADA standards.
+
+**Déclencheur** : `apps.billing.signals.reglement_a_comptabiliser`, ajouté à côté de
+`reglement_enregistre` — même principe que `facture_a_comptabiliser` (P1) : émis en `send()`
+**brut**, un échec d'équilibrage annule l'enregistrement du règlement plutôt que de laisser un
+encaissement non tracé.
+
+**Permissions, audit, écrans** : inchangés (voir P1) — aucune nouvelle app-permission, aucun
+nouvel écran.
+
+**Reprise de l'historique** : `python manage.py comptabiliser_historique_reglements [--depuis
+AAAA-MM-JJ] [--dry-run]`, même gabarit que `comptabiliser_historique_factures` (P1).
+
+**Limite connue** : l'annulation d'un règlement (`billing.services.annuler_reglement`) n'émet
+aucun signal et ne génère aucune contre-passation — l'écriture d'origine reste en l'état,
+orpheline de son règlement annulé. La contre-passation d'une écriture arrive avec une phase
+future, une fois le mécanisme de correction (par écriture inverse plutôt que par édition) posé
+pour l'ensemble du chantier plutôt que traité au cas par cas.
+
+**Implémentation** : `apps.accounting.services.comptabiliser_un_reglement`,
+`apps.accounting.receivers.comptabiliser_un_reglement_recu`, signal
+`apps.billing.signals.reglement_a_comptabiliser`. Détails : `apps/accounting/README.md`.
+
+## P3 — Dépenses automatiques du parc auto/missions + reclassement de mode
+
+**Aucun nouveau modèle** : réutilise le moteur et le plan comptable de la P1 tels quels. Les 5
+origines (`OrigineDepense` : PLEIN, ACHAT_STOCK, MAIN_OEUVRE_OR, FRAIS_MISSION,
+ORDRE_DECAISSEMENT) convergent toutes vers le même point d'entrée, déjà en place :
+`billing.services.comptabiliser_depense_automatique` — un seul récepteur suffit donc, pas cinq.
+Seules 4 catégories sont concernées (`billing.models.CATEGORIES_AUTOMATIQUES` : CARBURANT,
+PIECES, MAINTENANCE, FRAIS_MISSION — vérifié que `DemandeDepense.categorie`, pour un ordre de
+décaissement manuel, est lui-même restreint à `CARBURANT`/`PIECES`/`MAINTENANCE` par
+`finance.demandes._exiger_categorie_automatique`, jamais `FRAIS_ADMIN`/`PEAGES`/`ENTRETIEN`/`AUTRE`) ;
+ces 4 catégories manuelles arrivent avec la P4.
+
+**Service** (`apps/accounting/services.py::comptabiliser_une_depense_automatique`) : débite la
+charge selon la catégorie (`constants.CATEGORIE_DEPENSE_VERS_COMPTE` : Carburant 6051, Pièces
+6058, Main-d'œuvre 6241, Frais de mission 6281), crédite la trésorerie selon le mode de paiement
+(même mapping que la P2). Pour 4 des 5 origines (tout sauf l'ordre de décaissement), le mode est
+**provisoire** : `comptabiliser_depense_automatique` par défaut sur Espèces (Caisse), corrigé
+ensuite par la Finance via `billing.services.changer_mode_depense`. L'ordre de décaissement, lui,
+connaît son mode réel dès l'exécution (`finance.demandes.executer_ordre` le passe directement) :
+pas de provisoire pour cette origine.
+
+**Reclassement de mode** (`apps/accounting/services.py::reclasser_mode_depense`) : quand la
+Finance corrige le mode d'une dépense provisoire, une écriture de reclassement (journal
+Opérations diverses) débite le nouveau compte de trésorerie et crédite l'ancien — jamais d'édition
+de l'écriture d'origine (append-only). Aucune écriture si l'ancien et le nouveau mode partagent le
+même compte de trésorerie (ex. virement → chèque, tous deux Banque).
+
+**Déclencheurs** :
+- `apps.billing.signals.depense_a_comptabiliser`, émis dans
+  `comptabiliser_depense_automatique` **uniquement à la création réelle** de la `Depense` (pas
+  quand le `get_or_create` retombe sur l'existante) — évite un double signal au rejeu d'une source.
+- `apps.billing.signals.depense_mode_a_reclasser`, émis par `changer_mode_depense` (désormais
+  `@transaction.atomic`, ne l'était pas avant ce lot) **uniquement si le mode change vraiment**.
+
+Les deux en `send()` **brut** : un échec d'équilibrage annule l'opération d'origine (la
+comptabilisation de la dépense, ou sa correction de mode).
+
+**Permissions, audit, écrans** : inchangés (voir P1).
+
+**Reprise de l'historique** : `python manage.py comptabiliser_historique_depenses [--depuis
+AAAA-MM-JJ] [--dry-run]`, même gabarit que les commandes des P1/P2 — ne reprend que les dépenses
+automatiques (`Depense.est_automatique`), pas la saisie manuelle (P4).
+
+**Limite connue** : le reclassement de mode n'est pas idempotent (pas d'`origine`/`origine_id` sur
+son écriture) — une correction rejouée deux fois (double clic, retry réseau) créerait deux
+reclassements. Accepté pour cette phase : c'est une action manuelle rare de la Finance, pas un
+événement automatique rejouable par construction comme les 3 autres signaux.
+
+**Implémentation** : `apps.accounting.services.comptabiliser_une_depense_automatique`,
+`apps.accounting.services.reclasser_mode_depense`, `apps.accounting.receivers`, signaux
+`apps.billing.signals.depense_a_comptabiliser` et `depense_mode_a_reclasser`. Détails :
+`apps/accounting/README.md`.
+
+## P4 — Saisie manuelle (mouvements de trésorerie, opérations diverses)
+
+Deux volets tranchés avec l'utilisateur avant implémentation (aucune décision unilatérale sur une
+règle métier ambiguë) :
+
+**1. `finance.MouvementManuel` gagne un champ structuré.** Contrairement aux événements des P1-P3,
+un mouvement manuel (solde d'ouverture, apport, retrait, frais bancaires…) n'avait qu'un libellé
+libre : impossible d'en déduire automatiquement le compte de contrepartie. Nouveau champ
+`nature` (`finance.models.NatureMouvement` : SOLDE_OUVERTURE, APPORT, RETRAIT, FRAIS_BANCAIRE,
+AUTRE — migration `finance/migrations/0003_mouvementmanuel_nature.py`, défaut `AUTRE` pour les
+lignes déjà existantes). Mapping vers le plan comptable
+(`accounting.constants.NATURE_MOUVEMENT_VERS_COMPTE`) : SOLDE_OUVERTURE/APPORT → 101000 Capital,
+RETRAIT → 108000 Compte de l'exploitant, FRAIS_BANCAIRE → 631000, AUTRE → 658000.
+
+**Service** (`apps/accounting/services.py::comptabiliser_un_mouvement_manuel`) : une entrée débite
+la trésorerie et crédite la contrepartie ; une sortie fait l'inverse. Déclencheur :
+`apps.finance.signals.mouvement_a_comptabiliser` (nouveau, `send()` brut), émis par
+`finance.services.enregistrer_mouvement`. **Ce signal vit dans `finance`, pas `billing`** :
+`MouvementManuel` est un modèle `finance`, et le graphe de dépendances gagne l'arête `FIN → ACCT`
+(`architecture.md`) pour que `accounting` puisse lire `finance.models.NatureMouvement`.
+
+**Limite connue** (même principe que l'annulation d'un règlement, P2) : l'annulation d'un
+mouvement (`annuler_mouvement`) n'émet aucun signal, aucune contre-passation.
+
+**Limite de périmètre** (pas une omission) : les dépenses manuelles de `billing.Depense`
+(catégories PEAGES, ENTRETIEN, FRAIS_ADMIN, AUTRE, saisies via `billing.services.enregistrer_depense`)
+restent hors périmètre — l'ambiguïté sur leur compte de contrepartie (péages/entretien n'ont pas
+de compte déjà seedé et vérifié) n'a pas été tranchée avec l'utilisateur pour ce lot.
+
+**2. Écran de saisie manuelle d'opérations diverses (journal OD).** Premier écran web de l'app
+`accounting` — sans lui, la saisie manuelle serait inutilisable en pratique. Cycle de vie calqué
+sur celui de `Facture` : `BROUILLON` (numéro vide, lignes ajoutées/retirées librement) →
+`VALIDEE` (numéro attribué, verrouillée) — jamais de brouillon abandonné qui laisse un trou de
+numérotation.
+
+**Modèles** : aucun changement de schéma dans `accounting` — seul le comportement de
+`EcritureComptable.delete()` et `LigneEcriture.delete()` est assoupli (suppression permise tant
+que l'écriture est encore `BROUILLON`, verrouillée dès `VALIDEE`, comme documenté en P1).
+
+**Services** (`apps/accounting/services.py`) :
+- `creer_ecriture_manuelle(acteur, *, date_ecriture, libelle)` → `BROUILLON`, journal OD, pas de
+  numéro.
+- `ajouter_ligne_manuelle(ecriture, acteur, *, compte, sens, montant, libelle="")` /
+  `supprimer_ligne_manuelle(ligne, acteur)` — uniquement sur un brouillon.
+- `abandonner_ecriture_manuelle(ecriture, acteur)` — soft delete, uniquement sur un brouillon (pas
+  de contre-passation nécessaire, aucun numéro n'a encore été attribué).
+- `valider_ecriture_manuelle(ecriture, acteur)` — vérifie l'équilibre (au moins 2 lignes, débit ==
+  crédit, la même règle que `passer_ecriture`), attribue le numéro, verrouille. **Contrôle
+  strict** (`acteur.role`, jamais `role_effectif`) : réservé à la DIRECTION, comme
+  `Facture.valider` — ni l'ADMIN ni un superutilisateur ne valident à sa place.
+
+**Permissions** (`apps/accounting/permissions.py`) : `SAISIE_OD` (ADMIN, DIRECTION, FINANCES, RH —
+créer, ajouter/retirer une ligne, abandonner) ; `VALIDATION_OD` (DIRECTION seule, strict).
+
+**Écrans** (`apps/accounting/views.py`, `urls.py`, `templates/accounting/`, montés sous
+`/comptabilite/`) : liste des écritures OD, formulaire de création (date + libellé), fiche
+(lignes, totaux débit/crédit, indicateur d'équilibre, formulaire d'ajout de ligne, bouton
+Valider réservé à la DIRECTION sur une écriture équilibrée, bouton Abandonner). Menu :
+« Opérations diverses », rôles `CONSULTATION`.
+
+**Vérifié manuellement** (navigateur, `demo_finances`) : création d'un brouillon, ajout de deux
+lignes, calcul des totaux et détection d'équilibre en direct, conformes à ce que testent les
+tests automatisés.
+
+**Implémentation** : `apps.accounting.services.creer_ecriture_manuelle` /
+`ajouter_ligne_manuelle` / `supprimer_ligne_manuelle` / `valider_ecriture_manuelle` /
+`abandonner_ecriture_manuelle` / `comptabiliser_un_mouvement_manuel`, `apps.accounting.views`,
+`apps.accounting.permissions.SAISIE_OD` / `VALIDATION_OD`, signal
+`apps.finance.signals.mouvement_a_comptabiliser`, migration
+`apps/finance/migrations/0003_mouvementmanuel_nature.py`. Détails : `apps/accounting/README.md`.

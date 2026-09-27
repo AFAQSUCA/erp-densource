@@ -6,7 +6,7 @@ et mouvements manuels. Le compte (banque, caisse, mobile money) se déduit du mo
 Charges du mois (indicateur, distinct de la trésorerie) = dépenses saisies + carburant (pleins)
 + coût des OR clôturés (main-d'œuvre et pièces). Marge nette = CA HT - charges. Les trois
 composantes restent visibles séparément. Le rapprochement bancaire n'est pas géré (décision
-de l'utilisateur) ; les écritures comptables non plus.
+de l'utilisateur).
 """
 
 from __future__ import annotations
@@ -36,7 +36,8 @@ from apps.fuel.models import Plein
 from apps.garage.models import OrdreReparation, StatutOr
 from apps.inventory.models import MouvementStock, TypeMouvement
 
-from .models import MouvementManuel, SensMouvement
+from . import signals
+from .models import MouvementManuel, NatureMouvement, SensMouvement
 
 ZERO = Decimal("0")
 
@@ -58,6 +59,7 @@ def enregistrer_mouvement(
     montant: Decimal,
     mode: str,
     reference: str = "",
+    nature: str = NatureMouvement.AUTRE,
 ) -> MouvementManuel:
     if acteur.role_effectif not in billing_permissions.SAISIE:
         raise ActionFactureNonAutorisee("Vous n'avez pas le droit de saisir un mouvement.")
@@ -69,8 +71,11 @@ def enregistrer_mouvement(
         raise MontantInvalide("Le montant doit être strictement positif.")
     if date_mouvement > timezone.localdate():
         raise MontantInvalide("La date du mouvement ne peut pas être dans le futur.")
-    return MouvementManuel.objects.create(
+    if nature not in NatureMouvement.values:
+        raise MontantInvalide("Nature de mouvement inconnue.")
+    mouvement = MouvementManuel.objects.create(
         sens=sens,
+        nature=nature,
         date_mouvement=date_mouvement,
         libelle=libelle,
         montant=montant,
@@ -78,6 +83,8 @@ def enregistrer_mouvement(
         reference=reference.strip(),
         saisi_par=acteur,
     )
+    signals.mouvement_a_comptabiliser.send(sender=MouvementManuel, mouvement=mouvement)
+    return mouvement
 
 
 @transaction.atomic

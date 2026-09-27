@@ -21,6 +21,12 @@ ordre_a_executer = Signal()
 # Argument : ``ordre``.
 ordre_depassement = Signal()
 
+# Un mouvement manuel de trésorerie vient d'être enregistré : à comptabiliser (même principe que
+# ``billing.signals.facture_a_comptabiliser`` — ``send()`` **brut**, pas ``send_robust`` : une
+# écriture qui échoue à s'équilibrer annule l'enregistrement plutôt que de laisser un mouvement de
+# trésorerie non tracé). Argument : ``mouvement``.
+mouvement_a_comptabiliser = Signal()
+
 
 def emettre(signal: Signal, **arguments) -> None:
     for recepteur, resultat in signal.send_robust(sender=None, **arguments):

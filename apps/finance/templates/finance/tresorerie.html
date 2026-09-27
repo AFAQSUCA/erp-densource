@@ -80,6 +80,7 @@
       <p class="text-xs text-slate-600">Solde d'ouverture, apport, frais bancaires, retrait… Les règlements et les dépenses se saisissent depuis la facturation.</p>
       <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
         {% include "components/_champ.html" with champ=form_mouvement.sens %}
+        {% include "components/_champ.html" with champ=form_mouvement.nature %}
         {% include "components/_champ.html" with champ=form_mouvement.date_mouvement %}
         {% include "components/_champ.html" with champ=form_mouvement.montant %}
         <div class="sm:col-span-3">{% include "components/_champ.html" with champ=form_mouvement.libelle %}</div>

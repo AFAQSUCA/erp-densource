@@ -7,6 +7,8 @@ Rôle : trésorerie et indicateurs financiers — cahier-des-charges.md:195-199.
 `MouvementManuel` (solde d'ouverture, apport, frais bancaires, retrait...). Le compte (Banque, Caisse,
 Mobile Money) se déduit du mode de paiement : Virement et Chèque → Banque, Espèces → Caisse, Wave,
 Orange et MTN → Mobile Money. Solde en temps réel par compte et total ; journal filtrable.
+`MouvementManuel.nature` (`NatureMouvement` : solde d'ouverture, apport, retrait, frais bancaires,
+autre) détermine le compte de contrepartie comptable — voir `apps/accounting/README.md` (P4).
 
 **Dépenses du parc auto** (`receivers.py`) : chaque plein (`fuel.enregistrer_plein`), chaque achat de pièces
 (`inventory.enregistrer_entree`) et la main-d'œuvre de chaque OR clôturé (`garage.cloturer_or`) crée une
@@ -92,6 +94,8 @@ pour le graphique du tableau de bord ; le mois en cours reprend les indicateurs 
   Les charges (économiques) et la trésorerie (réelle) ne sont volontairement pas les mêmes chiffres.
 
 Pas encore fait : **rapprochement bancaire** (écarté sur décision de l'utilisateur : trésorerie
-seulement), import de relevés, écritures comptables, grand livre.
+seulement), import de relevés. Les écritures comptables (partie double, SYSCOHADA) sont désormais
+générées automatiquement depuis chaque événement de trésorerie — voir `apps/accounting/README.md`
+et `avenant-comptabilite-syscohada.md` ; le grand livre/balance/bilan restent à livrer (Phase 6).
 
 Rapport imprimable de la trésorerie (`/finances/imprimer/`, bouton « Imprimer ») : soldes par compte, synthèse et journal de la période filtrée, mêmes filtres que l'écran, plafonné à 500 lignes (voir `apps/core/README.md`).

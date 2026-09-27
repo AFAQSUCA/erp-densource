@@ -127,7 +127,11 @@ class EcritureComptable(BaseModel):
         super().save(*args, **kwargs)
 
     def delete(self, *args, **kwargs):
-        raise EcritureVerrouillee("Une écriture comptable ne se supprime jamais : contre-passez-la.")
+        """Une écriture encore en brouillon peut être abandonnée (soft delete, ``BaseModel``) ;
+        une écriture validée ne se supprime jamais, seule une contre-passation la corrige."""
+        if self.statut == StatutEcriture.VALIDEE:
+            raise EcritureVerrouillee("Une écriture validée ne se supprime jamais : contre-passez-la.")
+        super().delete(*args, **kwargs)
 
 
 class LigneEcriture(models.Model):
@@ -165,4 +169,10 @@ class LigneEcriture(models.Model):
         super().save(*args, **kwargs)
 
     def delete(self, *args, **kwargs):
-        raise ValueError("LigneEcriture est append-only : contre-passez plutôt que supprimer.")
+        """Une ligne d'une écriture encore en brouillon (saisie manuelle) peut être retirée ; une
+        fois l'écriture validée, plus aucune ligne ne se supprime."""
+        if self.ecriture.statut == StatutEcriture.VALIDEE:
+            raise EcritureVerrouillee(
+                "Une ligne d'une écriture validée ne se supprime pas : contre-passez plutôt."
+            )
+        super().delete(*args, **kwargs)
