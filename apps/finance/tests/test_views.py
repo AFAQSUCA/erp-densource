@@ -31,7 +31,7 @@ def _messages(reponse):
 
 def _donnees(**surcharges):
     donnees = {
-        "sens": "ENTREE", "date_mouvement": timezone.localdate().isoformat(),
+        "sens": "ENTREE", "nature": "SOLDE_OUVERTURE", "date_mouvement": timezone.localdate().isoformat(),
         "libelle": "Solde d'ouverture", "montant": "250000", "mode": "VIREMENT", "reference": "",
     }
     donnees.update(surcharges)

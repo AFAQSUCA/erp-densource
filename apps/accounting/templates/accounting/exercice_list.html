@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% load ui %}
+{% block titre %}Exercices comptables{% endblock %}
+{% block entete %}Comptabilité{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-4xl">
+  <h1 class="text-2xl font-bold text-slate-900">Exercices comptables</h1>
+  <p class="mt-1 text-sm text-slate-600">
+    Un exercice s'ouvre tout seul à la première écriture de son année. Une fois clôturé, aucune
+    écriture ne peut plus y être datée — la clôture est définitive.
+  </p>
+
+  {% if exercices %}
+    <div class="mt-5 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+      <table class="min-w-full divide-y divide-slate-200 text-sm">
+        <caption class="sr-only">Liste des exercices comptables</caption>
+        <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+          <tr>
+            <th scope="col" class="px-4 py-3">Année</th>
+            <th scope="col" class="px-4 py-3">Période</th>
+            <th scope="col" class="px-4 py-3">Statut</th>
+            <th scope="col" class="px-4 py-3">Clôturé par</th>
+            {% if peut_cloturer %}<th scope="col" class="px-4 py-3"><span class="sr-only">Actions</span></th>{% endif %}
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          {% for e in exercices %}
+            <tr class="hover:bg-slate-50">
+              <td class="whitespace-nowrap px-4 py-3 font-semibold text-slate-900">{{ e.annee }}</td>
+              <td class="whitespace-nowrap px-4 py-3 text-slate-700">{{ e.date_debut|date:"d/m/Y" }} – {{ e.date_fin|date:"d/m/Y" }}</td>
+              <td class="whitespace-nowrap px-4 py-3">{% badge e.statut e.get_statut_display %}</td>
+              <td class="whitespace-nowrap px-4 py-3 text-slate-700">
+                {% if e.cloture_par %}{{ e.cloture_par }} · {{ e.date_cloture|date:"d/m/Y" }}{% else %}—{% endif %}
+              </td>
+              {% if peut_cloturer %}
+                <td class="whitespace-nowrap px-4 py-3 text-right">
+                  {% if e.statut == "OUVERT" %}
+                    <form method="post" action="{% url 'accounting:exercice_cloturer' e.pk %}" data-confirm="Clôturer l'exercice {{ e.annee }} ? Aucune écriture ne pourra plus y être datée, et cette action est définitive.">{% csrf_token %}
+                      <button type="submit" class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">Clôturer</button>
+                    </form>
+                  {% endif %}
+                </td>
+              {% endif %}
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="mt-5 rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center">
+      <span class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-600"><i class="fa-solid fa-calendar-days" aria-hidden="true"></i></span>
+      <p class="mt-3 font-semibold text-slate-900">Aucun exercice pour l'instant</p>
+      <p class="mt-1 text-sm text-slate-600">Un exercice apparaît dès la première écriture comptable de son année.</p>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

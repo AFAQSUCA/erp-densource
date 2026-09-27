@@ -12,6 +12,18 @@ class SensMouvement(models.TextChoices):
     SORTIE = "SORTIE", _("Sortie")
 
 
+class NatureMouvement(models.TextChoices):
+    """Nature du mouvement — détermine son compte de contrepartie comptable (accounting, P4 de
+    avenant-comptabilite-syscohada.md) : un solde d'ouverture ou un apport créditent le capital, un
+    retrait débite le compte de l'exploitant, des frais bancaires sont une charge."""
+
+    SOLDE_OUVERTURE = "SOLDE_OUVERTURE", _("Solde d'ouverture")
+    APPORT = "APPORT", _("Apport de l'exploitant")
+    RETRAIT = "RETRAIT", _("Retrait de l'exploitant")
+    FRAIS_BANCAIRE = "FRAIS_BANCAIRE", _("Frais bancaires")
+    AUTRE = "AUTRE", _("Autre")
+
+
 class MouvementManuel(BaseModel):
     """Entrée ou sortie de trésorerie qui n'est ni un règlement ni une dépense.
 
@@ -20,6 +32,9 @@ class MouvementManuel(BaseModel):
     """
 
     sens = models.CharField(_("sens"), max_length=6, choices=SensMouvement.choices)
+    nature = models.CharField(
+        _("nature"), max_length=16, choices=NatureMouvement.choices, default=NatureMouvement.AUTRE
+    )
     date_mouvement = models.DateField(_("date"))
     libelle = models.CharField(_("libellé"), max_length=200)
     montant = models.DecimalField(_("montant (FCFA)"), max_digits=14, decimal_places=2)

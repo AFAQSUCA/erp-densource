@@ -6,11 +6,12 @@ from apps.core.forms import StyleTailwindMixin
 from apps.fleet import services as fleet_services
 
 from .demandes import CATEGORIES_PARC_AUTO as CATEGORIES_PARC_AUTO_CODES
-from .models import SensMouvement
+from .models import NatureMouvement, SensMouvement
 
 
 class MouvementForm(StyleTailwindMixin, forms.Form):
     sens = forms.ChoiceField(label="Sens", choices=SensMouvement.choices)
+    nature = forms.ChoiceField(label="Nature", choices=NatureMouvement.choices)
     date_mouvement = forms.DateField(label="Date", widget=forms.DateInput(attrs={"type": "date"}))
     libelle = forms.CharField(label="Libellé", max_length=200)
     montant = forms.DecimalField(label="Montant (FCFA)", min_value=0, decimal_places=2, max_digits=14)

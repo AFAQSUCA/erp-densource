@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% load ui humanize %}
+{% block titre %}{{ ecriture.numero|default:"Brouillon" }}{% endblock %}
+{% block entete %}Comptabilité{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-4xl">
+  <nav aria-label="Fil d'Ariane" class="text-sm text-slate-600">
+    <a href="{% url 'accounting:ecritures_manuelles' %}" class="underline-offset-2 hover:underline">Opérations diverses</a>
+    <span aria-hidden="true">/</span> {{ ecriture.numero|default:"Brouillon" }}
+  </nav>
+
+  <div class="mt-2 flex flex-wrap items-center gap-3">
+    <h1 class="text-2xl font-bold text-slate-900">{{ ecriture.numero|default:"Brouillon" }}</h1>
+    {% badge ecriture.statut ecriture.get_statut_display %}
+  </div>
+  <p class="mt-1 text-sm text-slate-600">{{ ecriture.date_ecriture|date:"d/m/Y" }} · {{ ecriture.libelle }}</p>
+
+  <section class="mt-5 rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-lignes">
+    <h2 id="titre-lignes" class="text-base font-semibold text-slate-900">Lignes</h2>
+
+    {% if lignes %}
+      <div class="mt-3 overflow-x-auto">
+        <table class="min-w-full divide-y divide-slate-200 text-sm">
+          <caption class="sr-only">Lignes débit/crédit de l'écriture</caption>
+          <thead class="text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+            <tr>
+              <th scope="col" class="py-2 pr-4">Compte</th>
+              <th scope="col" class="py-2 pr-4">Libellé</th>
+              <th scope="col" class="py-2 pr-4 text-right">Débit</th>
+              <th scope="col" class="py-2 pr-4 text-right">Crédit</th>
+              {% if peut_saisir %}<th scope="col" class="py-2 pr-4"><span class="sr-only">Actions</span></th>{% endif %}
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            {% for l in lignes %}
+              <tr>
+                <td class="whitespace-nowrap py-2 pr-4 text-slate-900">{{ l.compte.numero }} — {{ l.compte.libelle }}</td>
+                <td class="py-2 pr-4 text-slate-700">{{ l.libelle|default:"—" }}</td>
+                <td class="whitespace-nowrap py-2 pr-4 text-right text-slate-900">{% if l.sens == "DEBIT" %}{{ l.montant|floatformat:0|intcomma }}{% endif %}</td>
+                <td class="whitespace-nowrap py-2 pr-4 text-right text-slate-900">{% if l.sens == "CREDIT" %}{{ l.montant|floatformat:0|intcomma }}{% endif %}</td>
+                {% if peut_saisir %}
+                  <td class="whitespace-nowrap py-2 pr-4 text-right">
+                    <form method="post" action="{% url 'accounting:ligne_supprimer' ecriture.pk l.pk %}" data-confirm="Supprimer cette ligne ?">{% csrf_token %}
+                      <button type="submit" class="text-sm font-medium text-red-800 underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-red-700"><i class="fa-solid fa-trash-can" aria-hidden="true"></i><span class="sr-only">Supprimer la ligne</span></button>
+                    </form>
+                  </td>
+                {% endif %}
+              </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot class="border-t border-slate-200 font-semibold text-slate-900">
+            <tr>
+              <td class="py-2 pr-4" colspan="2">Total</td>
+              <td class="whitespace-nowrap py-2 pr-4 text-right">{{ total_debit|floatformat:0|intcomma }}</td>
+              <td class="whitespace-nowrap py-2 pr-4 text-right">{{ total_credit|floatformat:0|intcomma }}</td>
+              {% if peut_saisir %}<td></td>{% endif %}
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      <p class="mt-3 text-sm {% if equilibree %}text-green-800{% else %}text-amber-800{% endif %}">
+        {% if equilibree %}<i class="fa-solid fa-check" aria-hidden="true"></i> Écriture équilibrée, prête à valider.
+        {% else %}<i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> Écriture déséquilibrée ou incomplète (2 lignes minimum, débit = crédit).{% endif %}
+      </p>
+    {% else %}
+      <p class="mt-3 text-sm text-slate-700">Aucune ligne pour l'instant.</p>
+    {% endif %}
+
+    {% if form_ligne %}
+      <form method="post" action="{% url 'accounting:ligne_ajouter' ecriture.pk %}" class="mt-5 space-y-3 rounded-lg bg-slate-50 p-4">{% csrf_token %}
+        <h3 class="text-sm font-semibold text-slate-900">Ajouter une ligne</h3>
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-4">
+          <div class="sm:col-span-2">{% include "components/_champ.html" with champ=form_ligne.compte %}</div>
+          {% include "components/_champ.html" with champ=form_ligne.sens %}
+          {% include "components/_champ.html" with champ=form_ligne.montant %}
+        </div>
+        {% include "components/_champ.html" with champ=form_ligne.libelle %}
+        <button type="submit" class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2">Ajouter</button>
+      </form>
+    {% endif %}
+  </section>
+
+  {% if peut_valider or peut_saisir %}
+    <section class="mt-5 rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-actions">
+      <h2 id="titre-actions" class="text-base font-semibold text-slate-900">Actions</h2>
+      <div class="mt-3 flex flex-wrap gap-3">
+        {% if peut_valider %}
+          <form method="post" action="{% url 'accounting:ecriture_manuelle_valider' ecriture.pk %}" data-confirm="Valider cette écriture ? Elle ne pourra plus être modifiée ensuite.">{% csrf_token %}
+            <button type="submit" class="rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">Valider</button>
+          </form>
+        {% endif %}
+        {% if peut_saisir %}
+          <form method="post" action="{% url 'accounting:ecriture_manuelle_abandonner' ecriture.pk %}" data-confirm="Abandonner ce brouillon ? Cette action est irréversible.">{% csrf_token %}
+            <button type="submit" class="rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-800 hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-700">Abandonner le brouillon</button>
+          </form>
+        {% endif %}
+      </div>
+    </section>
+  {% endif %}
+</div>
+{% endblock %}

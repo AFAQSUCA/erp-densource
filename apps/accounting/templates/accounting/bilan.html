@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% load ui humanize %}
+{% block titre %}Bilan{% endblock %}
+{% block entete %}Comptabilité{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-4xl">
+  <h1 class="text-2xl font-bold text-slate-900">Rapports comptables</h1>
+  {% include "accounting/_nav_rapports.html" %}
+
+  {% if exercices %}
+    <nav class="mt-4 flex flex-wrap items-center gap-2 text-sm" aria-label="Exercice">
+      <span class="text-slate-600">Exercice :</span>
+      {% for e in exercices %}
+        <a href="?exercice={{ e.annee }}"
+           class="rounded-lg border px-3 py-1.5 font-medium {% if e.annee == exercice.annee %}border-slate-900 bg-slate-900 text-white{% else %}border-slate-300 bg-white text-slate-800 hover:bg-slate-50{% endif %}">{{ e.annee }}</a>
+      {% endfor %}
+    </nav>
+  {% endif %}
+
+  {% if rapport %}
+    <p class="mt-3 text-sm text-slate-600">
+      Photo cumulée depuis l'origine jusqu'au {{ exercice.date_fin|date:"d/m/Y" }} — le résultat de
+      l'exercice {{ exercice.annee }} est ajouté au passif pour équilibrer le bilan (aucune écriture
+      de clôture ne l'a encore imputé au compte 120000, voir « Limite connue », avenant-comptabilite-syscohada.md § P6).
+    </p>
+    <div class="mt-4 grid grid-cols-1 gap-5 sm:grid-cols-2">
+      <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-actif">
+        <h2 id="titre-actif" class="text-base font-semibold text-slate-900">Actif</h2>
+        <dl class="mt-3 space-y-2 text-sm">
+          {% for l in rapport.actif %}
+            <div class="flex justify-between gap-3"><dt class="text-slate-600">{{ l.compte__numero }} — {{ l.compte__libelle }}</dt><dd class="font-medium text-slate-900">{{ l.montant|floatformat:0|intcomma }}</dd></div>
+          {% empty %}
+            <p class="text-slate-600">Aucun compte d'actif mouvementé.</p>
+          {% endfor %}
+        </dl>
+        <p class="mt-3 flex justify-between border-t border-slate-200 pt-3 font-semibold text-slate-900"><span>Total actif</span><span>{{ rapport.total_actif|floatformat:0|intcomma }}</span></p>
+      </section>
+
+      <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-passif">
+        <h2 id="titre-passif" class="text-base font-semibold text-slate-900">Passif</h2>
+        <dl class="mt-3 space-y-2 text-sm">
+          {% for l in rapport.passif %}
+            <div class="flex justify-between gap-3"><dt class="text-slate-600">{{ l.compte__numero }} — {{ l.compte__libelle }}</dt><dd class="font-medium text-slate-900">{{ l.montant|floatformat:0|intcomma }}</dd></div>
+          {% empty %}
+            <p class="text-slate-600">Aucun compte de passif mouvementé.</p>
+          {% endfor %}
+          <div class="flex justify-between gap-3"><dt class="text-slate-600">Résultat de l'exercice {{ exercice.annee }} (calculé)</dt><dd class="font-medium text-slate-900">{{ rapport.resultat_net|floatformat:0|intcomma }}</dd></div>
+        </dl>
+        <p class="mt-3 flex justify-between border-t border-slate-200 pt-3 font-semibold text-slate-900"><span>Total passif</span><span>{{ rapport.total_passif_avec_resultat|floatformat:0|intcomma }}</span></p>
+      </section>
+    </div>
+  {% else %}
+    <div class="mt-5 rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center">
+      <p class="font-semibold text-slate-900">Aucun exercice pour l'instant</p>
+      <p class="mt-1 text-sm text-slate-600">Un exercice apparaît dès la première écriture comptable de son année.</p>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -149,6 +149,7 @@ graph TD
     GARAGE --> FLEET
     BILL --> FIN
     BILL --> ACCT
+    FIN --> ACCT
     FIN --> DASH
     FUEL --> DASH
     MISSION --> DASH

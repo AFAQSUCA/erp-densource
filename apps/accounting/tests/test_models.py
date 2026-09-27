@@ -53,8 +53,8 @@ def test_une_ligne_d_ecriture_ne_se_modifie_pas():
         ligne.save()
 
 
-def test_une_ligne_d_ecriture_ne_se_supprime_pas():
+def test_une_ligne_d_une_ecriture_validee_ne_se_supprime_pas():
     ligne = _ecriture().lignes.first()
 
-    with pytest.raises(ValueError):
+    with pytest.raises(EcritureVerrouillee):
         ligne.delete()

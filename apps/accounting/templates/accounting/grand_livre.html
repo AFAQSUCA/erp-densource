@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% load ui humanize %}
+{% block titre %}Grand livre{% endblock %}
+{% block entete %}Comptabilité{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-4xl">
+  <h1 class="text-2xl font-bold text-slate-900">Rapports comptables</h1>
+  {% include "accounting/_nav_rapports.html" %}
+
+  <form method="get" class="mt-5 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    {% include "components/_champ.html" with champ=form.compte %}
+    {% include "components/_champ.html" with champ=form.debut %}
+    {% include "components/_champ.html" with champ=form.fin %}
+    <button type="submit" class="rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">Afficher</button>
+  </form>
+
+  {% if lignes is not None %}
+    <div class="mt-5 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+      <table class="min-w-full divide-y divide-slate-200 text-sm">
+        <caption class="sr-only">Grand livre du compte sélectionné</caption>
+        <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+          <tr>
+            <th scope="col" class="px-4 py-3">Date</th>
+            <th scope="col" class="px-4 py-3">Écriture</th>
+            <th scope="col" class="px-4 py-3">Libellé</th>
+            <th scope="col" class="px-4 py-3 text-right">Débit</th>
+            <th scope="col" class="px-4 py-3 text-right">Crédit</th>
+            <th scope="col" class="px-4 py-3 text-right">Solde cumulé</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          {% for entree in lignes %}
+            <tr class="hover:bg-slate-50">
+              <td class="whitespace-nowrap px-4 py-3 text-slate-700">{{ entree.ligne.ecriture.date_ecriture|date:"d/m/Y" }}</td>
+              <td class="whitespace-nowrap px-4 py-3 font-semibold text-slate-900">{{ entree.ligne.ecriture.numero|default:"Brouillon" }}</td>
+              <td class="px-4 py-3 text-slate-700">{{ entree.ligne.libelle|default:entree.ligne.ecriture.libelle }}</td>
+              <td class="whitespace-nowrap px-4 py-3 text-right text-slate-900">{% if entree.ligne.sens == "DEBIT" %}{{ entree.ligne.montant|floatformat:0|intcomma }}{% endif %}</td>
+              <td class="whitespace-nowrap px-4 py-3 text-right text-slate-900">{% if entree.ligne.sens == "CREDIT" %}{{ entree.ligne.montant|floatformat:0|intcomma }}{% endif %}</td>
+              <td class="whitespace-nowrap px-4 py-3 text-right font-semibold text-slate-900">{{ entree.solde_cumule|floatformat:0|intcomma }}</td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="6" class="px-4 py-6 text-center text-slate-600">Aucun mouvement pour ce compte sur cette période.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Compte, EcritureComptable, LigneEcriture
+from .models import Compte, EcritureComptable, ExerciceComptable, LigneEcriture
 
 
 @admin.register(Compte)
@@ -31,6 +31,15 @@ class EcritureComptableAdmin(admin.ModelAdmin):
 
     def get_queryset(self, request):
         return EcritureComptable.objects.select_related("cree_par", "valide_par")
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(ExerciceComptable)
+class ExerciceComptableAdmin(admin.ModelAdmin):
+    list_display = ("annee", "date_debut", "date_fin", "statut", "cloture_par")
+    list_filter = ("statut",)
 
     def has_delete_permission(self, request, obj=None):
         return False
