@@ -518,7 +518,7 @@ Lisez en particulier :
 - **`changer_statut_manuel`** : on ne peut suspendre, désactiver ou réactiver qu'à la main ; « En mission » et
   « En congé » sont **posés par le système** et refusés ici (`StatutNonModifiable`).
 - **`chauffeur_de(utilisateur)`** : retrouve la fiche chauffeur d'un compte : c'est ce qui permet à l'espace
-  mobile de n'afficher que *ses* missions (chapitre 27).
+  mobile de n'afficher que *ses* missions (chapitre 29).
 - **`etat_echeances`** utilise `etat_echeance` du chapitre 2 pour dire « valide / à renouveler / expiré ».
 
 #### `apps/drivers/signals.py`
@@ -1423,7 +1423,7 @@ def _hierarchie(poste="Dispatcheur"):
         poste="Chef", departement=Departement.DIRECTION, utilisateur=user
     )
     employe = PersonnelFactory(
-        poste=poste, departement=Departement.EXPLOITATION, superieur=chef
+        poste=poste, departement=Departement.PARC_AUTO, superieur=chef
     )
     return employe, user
 
@@ -1525,7 +1525,7 @@ def test_valider_n1_par_le_superieur_direct_meme_dans_un_autre_departement():
 def test_valider_n1_refuse_pour_un_utilisateur_qui_n_est_pas_le_superieur():
     conge, _ = _demande()
     autre = UserFactory(role=Role.PARCAUTO)
-    PersonnelFactory(departement=Departement.EXPLOITATION, utilisateur=autre)
+    PersonnelFactory(departement=Departement.PARC_AUTO, utilisateur=autre)
 
     with pytest.raises(ActionNonAutorisee):
         services.valider_n1(conge, autre)
@@ -2199,7 +2199,6 @@ python manage.py check
 python -m pytest apps/drivers/tests/test_copilote.py apps/drivers/tests/test_fiche.py apps/drivers/tests/test_models.py apps/drivers/tests/test_services.py apps/hr/tests/test_comptes_demo.py apps/hr/tests/test_conges.py apps/hr/tests/test_droits_conges.py apps/hr/tests/test_recrutement.py -q --no-cov
 ```
 
-**Résultat attendu :** `114 passed` (pour les 7 fichier(s) de tests présentés dans ce chapitre).
 
 **Créez maintenant vos comptes d'essai** (un par rôle) et vérifiez que la fiche chauffeur s'est créée
 toute seule :

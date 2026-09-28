@@ -3140,7 +3140,6 @@ python manage.py check
 python -m pytest apps/missions/tests/test_frais_mission.py apps/missions/tests/test_models.py apps/missions/tests/test_permissions.py apps/missions/tests/test_services.py apps/missions/tests/test_temps_reel.py -q --no-cov
 ```
 
-**Résultat attendu :** `69 passed` (pour les 3 fichier(s) de tests présentés dans ce chapitre).
 
 Essais dans le shell (avec le client `Cimaf CI` créé au chapitre 7) :
 

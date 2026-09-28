@@ -34,7 +34,7 @@ if not Path(PYTHON).exists():
 MIGRATIONS = {
     t.NUM[a]: [a] for a in (
         "core", "accounts", "audit", "hr", "drivers", "customers", "fleet", "missions", "garage",
-        "inventory", "fuel", "billing", "finance", "notifications",
+        "inventory", "fuel", "billing", "finance", "accounting", "notifications",
     )
 }
 

@@ -18,7 +18,7 @@
 ## Prérequis
 
 - Chapitres 1 et 2 terminés (`python -m pytest apps/core -q` est vert).
-- Une application d'authentification sur le téléphone n'est pas nécessaire ici ; elle servira au chapitre 16.
+- Une application d'authentification sur le téléphone n'est pas nécessaire ici ; elle servira au chapitre 17.
 
 ## Notions Django de ce chapitre
 
@@ -248,7 +248,7 @@ class IsAdminOrDirection(HasRole):
     allowed_roles = (Role.ADMIN, Role.DIRECTION)
 ```
 
-Ces classes servent à l'**API** (chapitre 28) : `IsAdmin`, `IsDirection`… décident si un rôle a accès à une
+Ces classes servent à l'**API** (chapitre 30) : `IsAdmin`, `IsDirection`… décident si un rôle a accès à une
 route.
 
 #### `apps/accounts/mixins.py`
@@ -803,7 +803,7 @@ class MFARequiseMiddleware:
 La **porte** : à chaque requête, si l'utilisateur est un ADMIN ou une DIRECTION dont la session n'est pas
 « vérifiée », on le renvoie vers la saisie du code. C'est un **refus par défaut** : il couvre aussi
 l'administration et la documentation de l'API, sans que chaque vue y pense. Les appels d'API avec un jeton
-(JWT) ne passent pas ici : la MFA y est contrôlée à l'émission du jeton (chapitre 28).
+(JWT) ne passent pas ici : la MFA y est contrôlée à l'émission du jeton (chapitre 30).
 
 ## Étape 5 — Administration, démarrage et commande de secours
 
@@ -1220,10 +1220,9 @@ python manage.py check
 python -m pytest apps/accounts/tests/test_models.py apps/accounts/tests/test_permissions.py -q --no-cov
 ```
 
-**Résultat attendu :** `7 passed` (pour les 2 fichier(s) de tests présentés dans ce chapitre).
 
 Les tests de connexion, de MFA et de menu par rôle **ouvrent des pages** et seront présentés plus tard
-(chapitres 16 et suivants), quand les écrans existeront.
+(chapitres 17 et suivants), quand les écrans existeront.
 
 Petit essai dans le shell : créer un utilisateur et lire son rôle effectif.
 

@@ -58,7 +58,7 @@ Lisez en particulier :
 - **`changer_statut_manuel`** : on ne peut suspendre, désactiver ou réactiver qu'à la main ; « En mission » et
   « En congé » sont **posés par le système** et refusés ici (`StatutNonModifiable`).
 - **`chauffeur_de(utilisateur)`** : retrouve la fiche chauffeur d'un compte : c'est ce qui permet à l'espace
-  mobile de n'afficher que *ses* missions (chapitre 27).
+  mobile de n'afficher que *ses* missions (chapitre 29).
 - **`etat_echeances`** utilise `etat_echeance` du chapitre 2 pour dire « valide / à renouveler / expiré ».
 
 {{FICHIER apps/drivers/signals.py}}

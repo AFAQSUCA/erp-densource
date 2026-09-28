@@ -1403,7 +1403,6 @@ python manage.py check
 python -m pytest apps/core/tests/test_echeance.py apps/core/tests/test_formats.py apps/core/tests/test_graphiques.py apps/core/tests/test_models.py apps/core/tests/test_numerotation.py apps/core/tests/test_sections.py -q --no-cov
 ```
 
-**Résultat attendu :** `42 passed` (pour les 5 fichier(s) de tests présentés dans ce chapitre).
 
 Petits essais dans le shell (aucune base nécessaire) :
 

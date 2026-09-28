@@ -9,8 +9,8 @@ Le tutoriel (dossier ``tutoriel/``) est **généré depuis le code du dépôt** 
   (``etat_config``) : ces deux fichiers évoluent tout au long du projet, le tutoriel montre donc leur
   version du chapitre puis, ensuite, seulement ce qui s'ajoute.
 
-Deux phases : d'abord le « cerveau » (modèles, règles métier, tests : chapitres 2 à 15), ensuite le
-« visage » (écrans, gabarits, API : chapitres 16 à 29). Une app est créée dans l'ordre de ses dépendances
+Deux phases : d'abord le « cerveau » (modèles, règles métier, tests : chapitres 2 à 16), ensuite le
+« visage » (écrans, gabarits, API : chapitres 17 à 31). Une app est créée dans l'ordre de ses dépendances
 (``ORDRE_APPS``), vérifié par l'analyse des imports.
 """
 
@@ -42,6 +42,7 @@ _LISTE = [
     ("fuel", "Le carburant : l'app fuel"),
     ("billing", "La facturation : l'app billing"),
     ("finance", "La trésorerie : l'app finance"),
+    ("accounting", "La comptabilité en partie double : l'app accounting"),
     ("notifications", "Les notifications : l'app notifications"),
     ("interface", "Le socle de l'interface : gabarits, styles, connexion, notifications"),
     ("ecrans-rh", "Écrans : personnel et congés"),
@@ -53,6 +54,7 @@ _LISTE = [
     ("ecrans-stock", "Écrans : stock de pièces"),
     ("ecrans-carburant", "Écrans : carburant"),
     ("ecrans-finances", "Écrans : facturation, dépenses et trésorerie"),
+    ("ecrans-comptabilite", "Écrans : plan comptable, opérations diverses et rapports comptables"),
     ("tableau-de-bord", "La page d'accueil : le tableau de bord"),
     ("mobile", "L'espace mobile du chauffeur"),
     ("api", "L'API REST"),
@@ -65,7 +67,7 @@ DERNIER = len(_LISTE) - 1
 # Ordre de création des apps (chaque app ne dépend que de celles qui la précèdent).
 ORDRE_APPS = [
     "core", "accounts", "audit", "hr", "drivers", "customers", "fleet", "missions", "garage",
-    "inventory", "fuel", "billing", "finance", "notifications", "dashboard", "mobile_api", "api",
+    "inventory", "fuel", "billing", "finance", "accounting", "notifications", "dashboard", "mobile_api", "api",
 ]
 RANG = {a: i for i, a in enumerate(ORDRE_APPS)}
 
@@ -75,6 +77,7 @@ CH_METIER = {
     "drivers": NUM["drivers"], "customers": NUM["customers"], "fleet": NUM["fleet"],
     "missions": NUM["missions"], "garage": NUM["garage"], "inventory": NUM["inventory"],
     "fuel": NUM["fuel"], "billing": NUM["billing"], "finance": NUM["finance"],
+    "accounting": NUM["accounting"],
     "notifications": NUM["notifications"], "dashboard": NUM["tableau-de-bord"],
     "mobile_api": NUM["mobile"], "api": NUM["api"],
 }
@@ -85,6 +88,7 @@ CH_ECRANS = {
     "customers": NUM["ecrans-clients"], "fleet": NUM["ecrans-flotte"], "missions": NUM["ecrans-missions"],
     "garage": NUM["ecrans-garage"], "inventory": NUM["ecrans-stock"], "fuel": NUM["ecrans-carburant"],
     "billing": NUM["ecrans-finances"], "finance": NUM["ecrans-finances"],
+    "accounting": NUM["ecrans-comptabilite"],
     "dashboard": NUM["tableau-de-bord"], "mobile_api": NUM["mobile"], "api": NUM["api"],
 }
 CH_TESTS_DASHBOARD = NUM["tableau-de-bord"]
@@ -98,9 +102,11 @@ EXCLUS = [
     (r"^apps/[^/]+/migrations/", "généré par `python manage.py makemigrations`"),
     (r"^static/img/", "identité visuelle de DEN Source Group : à copier depuis le dépôt (voir le chapitre « Le socle de l'interface »)"),
     (r"\.(docx|pptx)$", "documents de présentation, sans rapport avec le fonctionnement"),
-    (r"^(cahier-des-charges|architecture|conventions|glossaire-metier|audit-checklist|GUIDE-INTERFACE|GUIDE-PARCOURS)\.md$",
+    (r"^(cahier-des-charges|architecture|conventions|glossaire-metier|audit-checklist|GUIDE-INTERFACE|GUIDE-PARCOURS|GUIDE-DEPLOIEMENT|avenant-[\w-]+)\.md$",
      "documents de référence à lire (ils décrivent le besoin), pas à recopier"),
     (r"^(outils|tutoriel)/", "outils et sources de ce tutoriel"),
+    (r"^(Dockerfile|\.dockerignore|docker-compose\.yml)$|^nginx/|^ops/",
+     "mise en production (Docker, Nginx, Gunicorn) : hors périmètre de ce tutoriel de développement — voir GUIDE-DEPLOIEMENT.md"),
 ]
 
 # --- classement des fichiers ------------------------------------------------------------------------
@@ -185,13 +191,14 @@ def _freres_importes(chemin: str) -> list[str]:
 _PREFIXES_URL = {
     "missions": "missions", "clients": "customers", "flotte": "fleet", "rh": "hr", "chauffeurs": "drivers",
     "garage": "garage", "carburant": "fuel", "stock": "inventory", "facturation": "billing",
-    "finances": "finance", "chauffeur": "mobile_api", "api": "api", "notifications": "notifications",
+    "finances": "finance", "comptabilite": "accounting", "chauffeur": "mobile_api", "api": "api",
+    "notifications": "notifications",
 }
 _ESPACES_NOMS = {
     "missions": "missions", "customers": "customers", "fleet": "fleet", "hr": "hr", "drivers": "drivers",
     "garage": "garage", "fuel": "fuel", "inventory": "inventory", "billing": "billing",
-    "finance": "finance", "chauffeur": "mobile_api", "notifications": "notifications", "api": "api",
-    "mobile": "api",
+    "finance": "finance", "accounting": "accounting", "chauffeur": "mobile_api",
+    "notifications": "notifications", "api": "api", "mobile": "api",
 }
 
 
@@ -226,6 +233,8 @@ def chapitre_de(chemin: str) -> int | None:
             return NUM["interface"]
         if chemin in ("static/js/sw-register.js", "static/js/scanner.js"):
             return NUM["mobile"]
+        if chemin == "static/js/suivi-missions.js":
+            return NUM["ecrans-missions"]
         if chemin == "README.md":
             return NUM["finalisation"]
         return 1  # squelette : manage.py, config/, requirements/, .gitignore, pytest.ini...
@@ -357,13 +366,15 @@ _REGLES_SETTINGS = [
     (r'apps\.notifications\.context_processors\.', NUM["interface"]),
 ]
 _REGLES_URLS = [
-    (r'apps\.dashboard|DashboardView', NUM["tableau-de-bord"]),
+    (r'apps\.dashboard|Dashboard\w*View', NUM["tableau-de-bord"]),
     (r'apps\.accounts\.urls', NUM["interface"]), (r'apps\.notifications\.urls', NUM["interface"]),
+    (r'apps\.audit\.urls', NUM["interface"]),
     (r'apps\.hr\.urls', NUM["ecrans-rh"]), (r'apps\.drivers\.urls', NUM["ecrans-chauffeurs"]),
     (r'apps\.customers\.urls', NUM["ecrans-clients"]), (r'apps\.fleet\.urls', NUM["ecrans-flotte"]),
     (r'apps\.missions\.urls', NUM["ecrans-missions"]), (r'apps\.garage\.urls', NUM["ecrans-garage"]),
     (r'apps\.inventory\.urls', NUM["ecrans-stock"]), (r'apps\.fuel\.urls', NUM["ecrans-carburant"]),
     (r'apps\.billing\.urls', NUM["ecrans-finances"]), (r'apps\.finance\.urls', NUM["ecrans-finances"]),
+    (r'apps\.accounting\.urls', NUM["ecrans-comptabilite"]),
     (r'apps\.mobile_api\.urls_web', NUM["mobile"]), (r'apps\.api\.urls', NUM["api"]),
 ]
 # Fichier écrit seulement pour le tutoriel : une page d'accueil provisoire, le temps que les écrans

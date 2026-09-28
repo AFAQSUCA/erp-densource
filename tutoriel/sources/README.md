@@ -2,7 +2,8 @@
 
 Ce tutoriel vous fait **reconstruire, fichier par fichier, l'application complète** : un ERP de
 transport et de logistique (missions, camions, chauffeurs, carburant, stock, clients, personnel, congés,
-facturation, trésorerie, tableau de bord, espace mobile du chauffeur, API), avec sa suite de **près de 1 800 tests**.
+facturation, trésorerie, comptabilité, tableau de bord, espace mobile du chauffeur, API), avec sa suite de
+**plus de 2 500 tests**.
 
 Chaque chapitre vous dit **quoi faire**, **pourquoi**, **quelles commandes lancer**, **donne le code complet
 à créer**, puis **comment vérifier** que tout fonctionne avant de passer au suivant.
@@ -13,7 +14,7 @@ Chaque chapitre vous dit **quoi faire**, **pourquoi**, **quelles commandes lance
   `outils/generer_tutoriel.py`. Si le code change, on régénère le tutoriel.
 - **Le tutoriel a été rejoué.** `outils/tester_tutoriel.py` reconstruit le projet dans un dossier vide,
   chapitre après chapitre, en exécutant les commandes demandées (`check`, `makemigrations`, `migrate`,
-  `npm run build`, `pytest`). À la fin : **tous les tests passent** (voir le chapitre 29).
+  `npm run build`, `pytest`). À la fin : **tous les tests passent** (voir le chapitre 31).
 - **Chaque fichier suivi par git est couvert** : soit présenté ici, soit exclu pour une raison écrite
   (tableau plus bas).
 
@@ -21,12 +22,12 @@ Chaque chapitre vous dit **quoi faire**, **pourquoi**, **quelles commandes lance
 
 Il suit l'ordre dans lequel on construit vraiment un projet Django de cette taille :
 
-1. **Le cerveau d'abord** (chapitres 2 à 15) : pour chaque domaine, les *modèles* (les tables), les
+1. **Le cerveau d'abord** (chapitres 2 à 16) : pour chaque domaine, les *modèles* (les tables), les
    *règles métier* (`services.py`) et leurs *tests*. Rien à cliquer dans un navigateur, mais tout est
    vérifié par des tests.
-2. **Puis le visage** (chapitres 16 à 28) : les gabarits HTML, les formulaires, les vues, le tableau de
+2. **Puis le visage** (chapitres 17 à 30) : les gabarits HTML, les formulaires, les vues, le tableau de
    bord, l'espace mobile et l'API.
-3. **Enfin la vérification d'ensemble** (chapitre 29).
+3. **Enfin la vérification d'ensemble** (chapitre 31).
 
 Chaque application n'utilise que celles qui la précèdent : on peut donc toujours s'arrêter à la fin
 d'un chapitre avec un projet qui fonctionne.

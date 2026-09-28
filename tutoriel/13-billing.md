@@ -1,6 +1,6 @@
 # Chapitre 13 — La facturation : l'app billing
 
-> 13 fichier(s) dans ce chapitre, 2684 lignes de code.
+> 13 fichier(s) dans ce chapitre, 2783 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -62,7 +62,7 @@ touch apps/billing/tests/__init__.py
 
 #### `apps/billing/models.py`
 
-*433 lignes*
+*449 lignes*
 
 ```python
 from decimal import Decimal
@@ -448,7 +448,15 @@ class Depense(BaseModel):
     categorie = models.CharField(_("catégorie"), max_length=14, choices=CategorieDepense.choices)
     date_depense = models.DateField(_("date"))
     libelle = models.CharField(_("libellé"), max_length=200)
-    montant = models.DecimalField(_("montant (FCFA)"), max_digits=14, decimal_places=2)
+    montant = models.DecimalField(_("montant TTC (FCFA)"), max_digits=14, decimal_places=2)
+    montant_tva = models.DecimalField(
+        _("dont TVA déductible (FCFA)"), max_digits=14, decimal_places=2, default=0,
+        help_text=_(
+            "Part de TVA incluse dans le montant, si le fournisseur l'a facturée et que la pièce "
+            "le justifie. Laisser à 0 si aucune TVA récupérable (fournisseur informel, non "
+            "assujetti…)."
+        ),
+    )
     mode = models.CharField(_("mode de paiement"), max_length=14, choices=ModePaiement.choices)
     reference = models.CharField(_("n° de pièce"), max_length=100, blank=True)
     mission = models.ForeignKey(
@@ -486,6 +494,10 @@ class Depense(BaseModel):
         ordering = ["-date_depense", "-pk"]
         constraints = [
             models.CheckConstraint(condition=Q(montant__gt=0), name="depense_montant_positif"),
+            models.CheckConstraint(condition=Q(montant_tva__gte=0), name="depense_montant_tva_non_negatif"),
+            models.CheckConstraint(
+                condition=Q(montant_tva__lt=F("montant")), name="depense_montant_tva_inferieur_au_montant"
+            ),
             # Une source (un plein, un achat, un OR) ne donne jamais deux dépenses.
             models.UniqueConstraint(
                 fields=["origine", "origine_id"], condition=~Q(origine=""), name="depense_une_par_origine"
@@ -495,6 +507,10 @@ class Depense(BaseModel):
     @property
     def est_automatique(self) -> bool:
         return bool(self.origine)
+
+    @property
+    def montant_ht(self) -> Decimal:
+        return self.montant - self.montant_tva
 
     def __str__(self):
         return f"{self.libelle} ({self.montant})"
@@ -574,7 +590,7 @@ saisir) et `VALIDATION` (**DIRECTION seule**).
 
 #### `apps/billing/services.py`
 
-*921 lignes* — Logique métier de la facturation : factures, TVA, règlements, dépenses.
+*946 lignes* — Logique métier de la facturation : factures, TVA, règlements, dépenses.
 
 ```python
 """Logique métier de la facturation : factures, TVA, règlements, dépenses.
@@ -978,6 +994,7 @@ def valider(facture: Facture, acteur, *, aujourd_hui: date | None = None) -> Fac
         ]
     )
     signals.emettre(signals.facture_validee, facture=facture)
+    signals.facture_a_comptabiliser.send(sender=Facture, facture=facture)
     return facture
 
 
@@ -1051,6 +1068,7 @@ def enregistrer_reglement(
     facture.statut = _statut_selon_reste(facture)
     facture.save(update_fields=["statut", "updated_at"])
     signals.emettre(signals.reglement_enregistre, reglement=reglement)
+    signals.reglement_a_comptabiliser.send(sender=Reglement, reglement=reglement)
     return reglement
 
 
@@ -1140,7 +1158,7 @@ def comptabiliser_depense_automatique(
     montant = Decimal(montant).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     if montant <= 0:
         return None
-    depense, _ = Depense.objects.get_or_create(
+    depense, creee = Depense.objects.get_or_create(
         origine=origine,
         origine_id=origine_id,
         defaults={
@@ -1154,9 +1172,12 @@ def comptabiliser_depense_automatique(
             "vehicule": vehicule,
         },
     )
+    if creee:
+        signals.depense_a_comptabiliser.send(sender=Depense, depense=depense)
     return depense
 
 
+@transaction.atomic
 def changer_mode_depense(depense: Depense, acteur, *, mode: str) -> Depense:
     """La Finance corrige le mode de paiement d'une dépense automatique (elle en déduit le compte débité)."""
     _exiger_role(acteur, permissions.SAISIE, "modifier une dépense")
@@ -1164,8 +1185,11 @@ def changer_mode_depense(depense: Depense, acteur, *, mode: str) -> Depense:
         raise ActionFactureNonAutorisee("Seules les dépenses créées automatiquement se corrigent ici.")
     if mode not in ModePaiement.values:
         raise MontantInvalide("Mode de paiement inconnu.")
+    ancien_mode = depense.mode
     depense.mode = mode
     depense.save(update_fields=["mode", "updated_at"])
+    if mode != ancien_mode:
+        signals.depense_mode_a_reclasser.send(sender=Depense, depense=depense, ancien_mode=ancien_mode)
     return depense
 
 
@@ -1180,8 +1204,17 @@ def enregistrer_depense(
     mode: str,
     reference: str = "",
     mission: Mission | None = None,
+    montant_tva: Decimal = Decimal("0"),
 ) -> Depense:
-    """Saisie d'une dépense (cahier-des-charges.md:192) ; la date ne peut pas être future."""
+    """Saisie d'une dépense (cahier-des-charges.md:192) ; la date ne peut pas être future.
+
+    ``montant`` reste le TTC payé ; ``montant_tva`` (facultatif, 0 par défaut) est la part de TVA
+    récupérable si le fournisseur l'a facturée — voir avenant-comptabilite-autonomie.md § Lot D.
+
+    Comptabilisée comme les dépenses automatiques (:func:`comptabiliser_depense_automatique`) :
+    si l'écriture ne peut pas s'équilibrer, la saisie est annulée plutôt que de laisser une
+    sortie d'argent non comptée (avenant-comptabilite-autonomie.md § Lot C).
+    """
     _exiger_role(acteur, permissions.SAISIE, "saisir une dépense")
     if categorie in CATEGORIES_AUTOMATIQUES:
         raise MontantInvalide(
@@ -1194,18 +1227,26 @@ def enregistrer_depense(
     montant = Decimal(montant)
     if montant <= 0:
         raise MontantInvalide("Le montant de la dépense doit être strictement positif.")
+    montant_tva = Decimal(montant_tva)
+    if montant_tva < 0:
+        raise MontantInvalide("La TVA déductible ne peut pas être négative.")
+    if montant_tva >= montant:
+        raise MontantInvalide("La TVA déductible doit être strictement inférieure au montant TTC.")
     if date_depense > timezone.localdate():
         raise MontantInvalide("La date de la dépense ne peut pas être dans le futur.")
-    return Depense.objects.create(
+    depense = Depense.objects.create(
         categorie=categorie,
         date_depense=date_depense,
         libelle=libelle,
         montant=montant,
+        montant_tva=montant_tva,
         mode=mode,
         reference=reference.strip(),
         mission=mission,
         saisi_par=acteur,
     )
+    signals.depense_a_comptabiliser.send(sender=Depense, depense=depense)
+    return depense
 
 
 # --- devis (R5 : le chargé clientèle fixe le prix, la FINANCES et, au-delà d'un seuil,
@@ -1517,7 +1558,7 @@ def expirer_proformas(aujourd_hui: date | None = None) -> int:
 
 #### `apps/billing/signals.py`
 
-*44 lignes* — Événements du cycle de facturation (souscrits par ``notifications``).
+*65 lignes* — Événements du cycle de facturation (souscrits par ``notifications``).
 
 ```python
 """Événements du cycle de facturation (souscrits par ``notifications``).
@@ -1555,6 +1596,27 @@ proforma_expiree = Signal()
 # ``missions`` (R4) pour refléter l'encaissement dans la prévision de trésorerie de la mission
 # facturée, sans double saisie.
 reglement_enregistre = Signal()
+
+# La facture vient d'être validée : à comptabiliser (écriture équilibrée, cahier-des-charges.md:340).
+# Argument : ``facture``. Émis en ``send()`` **brut**, pas ``emettre()``/``send_robust`` : contrairement
+# aux signaux ci-dessus (notifications), une écriture qui échoue à s'équilibrer doit annuler la
+# validation plutôt que d'être silencieusement absente du grand livre.
+facture_a_comptabiliser = Signal()
+
+# Un règlement vient d'être enregistré : à comptabiliser (même principe que ``facture_a_comptabiliser``,
+# ``send()`` brut). Argument : ``reglement``.
+reglement_a_comptabiliser = Signal()
+
+# Une dépense automatique (plein, achat de pièces, main-d'œuvre d'OR, frais de mission, ordre de
+# décaissement) vient d'être créée : à comptabiliser (même principe, ``send()`` brut). N'est émis
+# que lors de la création réelle (pas quand ``comptabiliser_depense_automatique`` retombe sur une
+# dépense déjà existante). Argument : ``depense``.
+depense_a_comptabiliser = Signal()
+
+# La Finance a corrigé le mode de paiement d'une dépense automatique (``changer_mode_depense``) :
+# le compte de trésorerie provisoire (Caisse par défaut) doit être reclassé vers le bon compte.
+# ``send()`` brut. Arguments : ``depense`` (déjà sur le nouveau mode), ``ancien_mode``.
+depense_mode_a_reclasser = Signal()
 
 
 def emettre(signal: Signal, *, sender: type | None = None, **arguments) -> None:
@@ -2256,7 +2318,7 @@ def test_un_devis_deja_converti_ne_recree_pas_de_seconde_mission():
 
 #### `apps/billing/tests/test_services.py`
 
-*579 lignes* — Facturation : préparation, TVA à 3 niveaux, validation, numérotation, règlements.
+*616 lignes* — Facturation : préparation, TVA à 3 niveaux, validation, numérotation, règlements.
 
 ```python
 """Facturation : préparation, TVA à 3 niveaux, validation, numérotation, règlements."""
@@ -2791,6 +2853,43 @@ def test_depenses_invalides(libelle, montant, jour, message):
         )
 
 
+def test_enregistrer_une_depense_avec_tva_deductible():
+    depense = services.enregistrer_depense(
+        finances(), categorie="PEAGES", date_depense=date(2026, 9, 5), libelle="Péage avec facture",
+        montant=Decimal("11800"), montant_tva=Decimal("1800"), mode=ModePaiement.ESPECES,
+    )
+
+    assert depense.montant == Decimal("11800")
+    assert depense.montant_tva == Decimal("1800")
+    assert depense.montant_ht == Decimal("10000")
+
+
+def test_enregistrer_une_depense_sans_preciser_la_tva_vaut_zero():
+    depense = services.enregistrer_depense(
+        finances(), categorie="PEAGES", date_depense=date(2026, 9, 5), libelle="Péage sans facture",
+        montant=Decimal("5000"), mode=ModePaiement.ESPECES,
+    )
+
+    assert depense.montant_tva == Decimal("0")
+    assert depense.montant_ht == Decimal("5000")
+
+
+@pytest.mark.parametrize(
+    ("montant", "montant_tva", "message"),
+    [
+        ("5000", "-100", "négative"),
+        ("5000", "5000", "inférieure au montant"),
+        ("5000", "6000", "inférieure au montant"),
+    ],
+)
+def test_tva_deductible_invalide(montant, montant_tva, message):
+    with pytest.raises(MontantInvalide, match=message):
+        services.enregistrer_depense(
+            finances(), categorie="PEAGES", date_depense=date(2026, 9, 1), libelle="x",
+            montant=Decimal(montant), montant_tva=Decimal(montant_tva), mode=ModePaiement.ESPECES,
+        )
+
+
 def test_les_depenses_sont_reservees_a_la_saisie_facturation():
     with pytest.raises(ActionFactureNonAutorisee):
         services.enregistrer_depense(
@@ -2875,9 +2974,8 @@ python manage.py check
 python -m pytest apps/billing/tests/test_proforma.py apps/billing/tests/test_r6_creer_mission.py apps/billing/tests/test_services.py -q --no-cov
 ```
 
-**Résultat attendu :** `52 passed` (pour les 1 fichier(s) de tests présentés dans ce chapitre).
 
-(Les tests d'écrans de `billing` sont présentés au chapitre 25.)
+(Les tests d'écrans de `billing` sont présentés au chapitre 26.)
 
 Essai dans le shell : l'arrondi au franc.
 

@@ -114,7 +114,7 @@ python manage.py check
 
 {{PYTEST}}
 
-(Les tests d'écrans de `billing` sont présentés au chapitre 25.)
+(Les tests d'écrans de `billing` sont présentés au chapitre 26.)
 
 Essai dans le shell : l'arrondi au franc.
 

@@ -1,6 +1,6 @@
 # Chapitre 14 — La trésorerie : l'app finance
 
-> 16 fichier(s) dans ce chapitre, 1932 lignes de code.
+> 16 fichier(s) dans ce chapitre, 1965 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -67,7 +67,7 @@ touch apps/finance/tests/__init__.py
 
 #### `apps/finance/models.py`
 
-*200 lignes*
+*215 lignes*
 
 ```python
 from django.conf import settings
@@ -84,6 +84,18 @@ class SensMouvement(models.TextChoices):
     SORTIE = "SORTIE", _("Sortie")
 
 
+class NatureMouvement(models.TextChoices):
+    """Nature du mouvement — détermine son compte de contrepartie comptable (accounting, P4 de
+    avenant-comptabilite-syscohada.md) : un solde d'ouverture ou un apport créditent le capital, un
+    retrait débite le compte de l'exploitant, des frais bancaires sont une charge."""
+
+    SOLDE_OUVERTURE = "SOLDE_OUVERTURE", _("Solde d'ouverture")
+    APPORT = "APPORT", _("Apport de l'exploitant")
+    RETRAIT = "RETRAIT", _("Retrait de l'exploitant")
+    FRAIS_BANCAIRE = "FRAIS_BANCAIRE", _("Frais bancaires")
+    AUTRE = "AUTRE", _("Autre")
+
+
 class MouvementManuel(BaseModel):
     """Entrée ou sortie de trésorerie qui n'est ni un règlement ni une dépense.
 
@@ -92,6 +104,9 @@ class MouvementManuel(BaseModel):
     """
 
     sens = models.CharField(_("sens"), max_length=6, choices=SensMouvement.choices)
+    nature = models.CharField(
+        _("nature"), max_length=16, choices=NatureMouvement.choices, default=NatureMouvement.AUTRE
+    )
     date_mouvement = models.DateField(_("date"))
     libelle = models.CharField(_("libellé"), max_length=200)
     montant = models.DecimalField(_("montant (FCFA)"), max_digits=14, decimal_places=2)
@@ -276,7 +291,7 @@ Un seul modèle : `MouvementManuel`. Tout le reste de la trésorerie vient des m
 
 #### `apps/finance/services.py`
 
-*386 lignes* — Trésorerie et indicateurs financiers — cahier-des-charges.md:195-199.
+*393 lignes* — Trésorerie et indicateurs financiers — cahier-des-charges.md:195-199.
 
 ```python
 """Trésorerie et indicateurs financiers — cahier-des-charges.md:195-199.
@@ -287,7 +302,7 @@ et mouvements manuels. Le compte (banque, caisse, mobile money) se déduit du mo
 Charges du mois (indicateur, distinct de la trésorerie) = dépenses saisies + carburant (pleins)
 + coût des OR clôturés (main-d'œuvre et pièces). Marge nette = CA HT - charges. Les trois
 composantes restent visibles séparément. Le rapprochement bancaire n'est pas géré (décision
-de l'utilisateur) ; les écritures comptables non plus.
+de l'utilisateur).
 """
 
 from __future__ import annotations
@@ -317,7 +332,8 @@ from apps.fuel.models import Plein
 from apps.garage.models import OrdreReparation, StatutOr
 from apps.inventory.models import MouvementStock, TypeMouvement
 
-from .models import MouvementManuel, SensMouvement
+from . import signals
+from .models import MouvementManuel, NatureMouvement, SensMouvement
 
 ZERO = Decimal("0")
 
@@ -339,6 +355,7 @@ def enregistrer_mouvement(
     montant: Decimal,
     mode: str,
     reference: str = "",
+    nature: str = NatureMouvement.AUTRE,
 ) -> MouvementManuel:
     if acteur.role_effectif not in billing_permissions.SAISIE:
         raise ActionFactureNonAutorisee("Vous n'avez pas le droit de saisir un mouvement.")
@@ -350,8 +367,11 @@ def enregistrer_mouvement(
         raise MontantInvalide("Le montant doit être strictement positif.")
     if date_mouvement > timezone.localdate():
         raise MontantInvalide("La date du mouvement ne peut pas être dans le futur.")
-    return MouvementManuel.objects.create(
+    if nature not in NatureMouvement.values:
+        raise MontantInvalide("Nature de mouvement inconnue.")
+    mouvement = MouvementManuel.objects.create(
         sens=sens,
+        nature=nature,
         date_mouvement=date_mouvement,
         libelle=libelle,
         montant=montant,
@@ -359,6 +379,8 @@ def enregistrer_mouvement(
         reference=reference.strip(),
         saisi_par=acteur,
     )
+    signals.mouvement_a_comptabiliser.send(sender=MouvementManuel, mouvement=mouvement)
+    return mouvement
 
 
 @transaction.atomic
@@ -752,7 +774,7 @@ class FinanceConfig(AppConfig):
 
 #### `apps/finance/README.md`
 
-*97 lignes* — finance
+*102 lignes* — finance
 
 ````markdown
 # finance
@@ -764,6 +786,8 @@ Rôle : trésorerie et indicateurs financiers — cahier-des-charges.md:195-199.
 `MouvementManuel` (solde d'ouverture, apport, frais bancaires, retrait...). Le compte (Banque, Caisse,
 Mobile Money) se déduit du mode de paiement : Virement et Chèque → Banque, Espèces → Caisse, Wave,
 Orange et MTN → Mobile Money. Solde en temps réel par compte et total ; journal filtrable.
+`MouvementManuel.nature` (`NatureMouvement` : solde d'ouverture, apport, retrait, frais bancaires,
+autre) détermine le compte de contrepartie comptable — voir `apps/accounting/README.md` (P4).
 
 **Dépenses du parc auto** (`receivers.py`) : chaque plein (`fuel.enregistrer_plein`), chaque achat de pièces
 (`inventory.enregistrer_entree`) et la main-d'œuvre de chaque OR clôturé (`garage.cloturer_or`) crée une
@@ -848,15 +872,18 @@ pour le graphique du tableau de bord ; le mois en cours reprend les indicateurs 
 - marge nette = CA HT - charges ; créances = reste à recouvrer (dont échu) ; trésorerie = solde.
   Les charges (économiques) et la trésorerie (réelle) ne sont volontairement pas les mêmes chiffres.
 
-Pas encore fait : **rapprochement bancaire** (écarté sur décision de l'utilisateur : trésorerie
-seulement), import de relevés, écritures comptables, grand livre.
+Pas encore fait : **rapprochement bancaire** (écarté sur décision confirmée de l'entreprise le
+29/09/2026 — cahier-des-charges.md:199 : trésorerie seulement, aucune confrontation aux relevés),
+import de relevés. Les écritures comptables (partie double, SYSCOHADA) sont désormais
+générées automatiquement depuis chaque événement de trésorerie — voir `apps/accounting/README.md`
+et `avenant-comptabilite-syscohada.md` ; le grand livre/balance/bilan restent à livrer (Phase 6).
 
 Rapport imprimable de la trésorerie (`/finances/imprimer/`, bouton « Imprimer ») : soldes par compte, synthèse et journal de la période filtrée, mêmes filtres que l'écran, plafonné à 500 lignes (voir `apps/core/README.md`).
 ````
 
 #### `apps/finance/signals.py`
 
-*28 lignes* — Événements des dépenses pré-approuvées du parc auto (R2), souscrits par ``notifications``.
+*34 lignes* — Événements des dépenses pré-approuvées du parc auto (R2), souscrits par ``notifications``.
 
 ```python
 """Événements des dépenses pré-approuvées du parc auto (R2), souscrits par ``notifications``.
@@ -881,6 +908,12 @@ ordre_a_executer = Signal()
 # Le montant réel dépasse de plus de 10 % le montant validé : l'ordre revient à la direction.
 # Argument : ``ordre``.
 ordre_depassement = Signal()
+
+# Un mouvement manuel de trésorerie vient d'être enregistré : à comptabiliser (même principe que
+# ``billing.signals.facture_a_comptabiliser`` — ``send()`` **brut**, pas ``send_robust`` : une
+# écriture qui échoue à s'équilibrer annule l'enregistrement plutôt que de laisser un mouvement de
+# trésorerie non tracé). Argument : ``mouvement``.
+mouvement_a_comptabiliser = Signal()
 
 
 def emettre(signal: Signal, **arguments) -> None:
@@ -2114,7 +2147,6 @@ python manage.py check
 python -m pytest apps/finance/tests/test_demandes.py apps/finance/tests/test_frais_mission_receivers.py apps/finance/tests/test_services.py -q --no-cov
 ```
 
-**Résultat attendu :** `17 passed` (pour les 1 fichier(s) de tests présentés dans ce chapitre).
 
 Essai dans le shell (base sans règlement ni dépense) :
 
@@ -2138,4 +2170,4 @@ git commit -m "chapitre 14 : app finance (trésorerie par compte, indicateurs du
 
 ---
 
-[← Chapitre 13](13-billing.md) · [Sommaire](README.md) · [Chapitre 15 →](15-notifications.md)
+[← Chapitre 13](13-billing.md) · [Sommaire](README.md) · [Chapitre 15 →](15-accounting.md)
