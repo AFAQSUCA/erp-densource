@@ -12,6 +12,7 @@ from django.views import View
 from django.views.generic import DetailView, FormView, ListView, TemplateView
 
 from apps.accounts.mixins import RoleRequiredMixin
+from apps.core.rapports import contexte_rapport
 from apps.core.views import PaginationTolerante
 
 from . import permissions, services
@@ -206,6 +207,29 @@ class GrandLivreView(RoleRequiredMixin, TemplateView):
         return contexte
 
 
+class GrandLivreImprimerView(RoleRequiredMixin, TemplateView):
+    roles = permissions.CONSULTATION
+    template_name = "accounting/grand_livre_print.html"
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        form = GrandLivreForm(self.request.GET or None)
+        compte = lignes = None
+        morceaux = []
+        if form.is_valid() and form.cleaned_data.get("compte"):
+            compte = form.cleaned_data["compte"]
+            debut, fin = form.cleaned_data.get("debut"), form.cleaned_data.get("fin")
+            lignes = services.grand_livre_avec_solde(compte, debut=debut, fin=fin)
+            morceaux.append(f"{compte.numero} — {compte.libelle}")
+            if debut or fin:
+                debut_texte = f"{debut:%d/%m/%Y}" if debut else "l'origine"
+                fin_texte = f"{fin:%d/%m/%Y}" if fin else "aujourd'hui"
+                morceaux.append(f"du {debut_texte} au {fin_texte}")
+        rapport = contexte_rapport(self.request, titre="Grand livre", sous_titre=" · ".join(morceaux))
+        contexte.update(rapport, compte=compte, lignes=lignes)
+        return contexte
+
+
 class BalanceView(RoleRequiredMixin, TemplateView):
     roles = permissions.CONSULTATION
     template_name = "accounting/balance.html"
@@ -222,6 +246,32 @@ class BalanceView(RoleRequiredMixin, TemplateView):
             "credit": sum((l["total_credit"] for l in lignes), start=0),
         }
         contexte.update(form=form, lignes=lignes, totaux=totaux)
+        return contexte
+
+
+class BalanceImprimerView(RoleRequiredMixin, TemplateView):
+    roles = permissions.CONSULTATION
+    template_name = "accounting/balance_print.html"
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        form = PeriodeForm(self.request.GET or None)
+        debut = fin = None
+        if form.is_valid():
+            debut, fin = form.cleaned_data.get("debut"), form.cleaned_data.get("fin")
+        if debut or fin:
+            debut_texte = f"{debut:%d/%m/%Y}" if debut else "l'origine"
+            fin_texte = f"{fin:%d/%m/%Y}" if fin else "aujourd'hui"
+            sous_titre = f"du {debut_texte} au {fin_texte}"
+        else:
+            sous_titre = "Depuis l'origine"
+        lignes = services.balance(debut=debut, fin=fin)
+        totaux = {
+            "debit": sum((l["total_debit"] for l in lignes), start=0),
+            "credit": sum((l["total_credit"] for l in lignes), start=0),
+        }
+        rapport = contexte_rapport(self.request, titre="Balance générale", sous_titre=sous_titre)
+        contexte.update(rapport, lignes=lignes, totaux=totaux)
         return contexte
 
 
@@ -255,6 +305,22 @@ class BilanView(_RapportExerciceView):
         return contexte
 
 
+class BilanImprimerView(_RapportExerciceView):
+    template_name = "accounting/bilan_print.html"
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        exercice, _ = self.get_exercice()
+        sous_titre = f"Exercice {exercice.annee}, au {exercice.date_fin:%d/%m/%Y}" if exercice else ""
+        rapport = contexte_rapport(self.request, titre="Bilan", sous_titre=sous_titre)
+        contexte.update(
+            rapport,
+            exercice=exercice,
+            rapport_bilan=services.bilan(exercice) if exercice else None,
+        )
+        return contexte
+
+
 class CompteDeResultatView(_RapportExerciceView):
     template_name = "accounting/compte_resultat.html"
 
@@ -265,5 +331,24 @@ class CompteDeResultatView(_RapportExerciceView):
             exercices=exercices,
             exercice=exercice,
             rapport=services.compte_de_resultat(exercice) if exercice else None,
+        )
+        return contexte
+
+
+class CompteDeResultatImprimerView(_RapportExerciceView):
+    template_name = "accounting/compte_resultat_print.html"
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        exercice, _ = self.get_exercice()
+        sous_titre = (
+            f"Exercice {exercice.annee}, du {exercice.date_debut:%d/%m/%Y} au {exercice.date_fin:%d/%m/%Y}"
+            if exercice else ""
+        )
+        rapport = contexte_rapport(self.request, titre="Compte de résultat", sous_titre=sous_titre)
+        contexte.update(
+            rapport,
+            exercice=exercice,
+            rapport_resultat=services.compte_de_resultat(exercice) if exercice else None,
         )
         return contexte

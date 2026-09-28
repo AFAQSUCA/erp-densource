@@ -1,0 +1,52 @@
+{% load static humanize %}<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bilan · {{ entreprise.nom }}</title>
+  {% include "rapports/_style_impression.html" %}
+</head>
+<body>
+  {% include "rapports/_entete_impression.html" %}
+
+  {% if rapport_bilan %}
+    <p class="petit">
+      Photo cumulée depuis l'origine jusqu'au {{ exercice.date_fin|date:"d/m/Y" }} — le résultat de
+      l'exercice {{ exercice.annee }} est ajouté au passif pour équilibrer le bilan (aucune écriture
+      de clôture ne l'a encore imputé au compte 120000).
+    </p>
+
+    <h2>Actif</h2>
+    <table>
+      <thead><tr><th>Compte</th><th class="droite">Montant</th></tr></thead>
+      <tbody>
+        {% for l in rapport_bilan.actif %}
+          <tr><td>{{ l.compte__numero }} — {{ l.compte__libelle }}</td><td class="droite">{{ l.montant|floatformat:0|intcomma }}</td></tr>
+        {% empty %}
+          <tr><td colspan="2">Aucun compte d'actif mouvementé.</td></tr>
+        {% endfor %}
+      </tbody>
+      <tfoot><tr><td><strong>Total actif</strong></td><td class="droite"><strong>{{ rapport_bilan.total_actif|floatformat:0|intcomma }}</strong></td></tr></tfoot>
+    </table>
+
+    <h2>Passif</h2>
+    <table>
+      <thead><tr><th>Compte</th><th class="droite">Montant</th></tr></thead>
+      <tbody>
+        {% for l in rapport_bilan.passif %}
+          <tr><td>{{ l.compte__numero }} — {{ l.compte__libelle }}</td><td class="droite">{{ l.montant|floatformat:0|intcomma }}</td></tr>
+        {% empty %}
+          <tr><td colspan="2">Aucun compte de passif mouvementé.</td></tr>
+        {% endfor %}
+        <tr><td>Résultat de l'exercice {{ exercice.annee }} (calculé)</td><td class="droite">{{ rapport_bilan.resultat_net|floatformat:0|intcomma }}</td></tr>
+      </tbody>
+      <tfoot><tr><td><strong>Total passif</strong></td><td class="droite"><strong>{{ rapport_bilan.total_passif_avec_resultat|floatformat:0|intcomma }}</strong></td></tr></tfoot>
+    </table>
+  {% else %}
+    <p class="petit">Aucun exercice pour l'instant.</p>
+  {% endif %}
+
+  {% include "rapports/_pied_impression.html" %}
+  <script src="{% static 'js/app.js' %}" defer></script>
+</body>
+</html>

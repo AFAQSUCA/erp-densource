@@ -1,0 +1,46 @@
+{% load static humanize %}<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Grand livre · {{ entreprise.nom }}</title>
+  {% include "rapports/_style_impression.html" %}
+</head>
+<body>
+  {% include "rapports/_entete_impression.html" %}
+
+  {% if lignes is not None %}
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Écriture</th>
+          <th>Libellé</th>
+          <th class="droite">Débit</th>
+          <th class="droite">Crédit</th>
+          <th class="droite">Solde cumulé</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for entree in lignes %}
+          <tr>
+            <td>{{ entree.ligne.ecriture.date_ecriture|date:"d/m/Y" }}</td>
+            <td>{{ entree.ligne.ecriture.numero|default:"Brouillon" }}</td>
+            <td>{{ entree.ligne.libelle|default:entree.ligne.ecriture.libelle }}</td>
+            <td class="droite">{% if entree.ligne.sens == "DEBIT" %}{{ entree.ligne.montant|floatformat:0|intcomma }}{% endif %}</td>
+            <td class="droite">{% if entree.ligne.sens == "CREDIT" %}{{ entree.ligne.montant|floatformat:0|intcomma }}{% endif %}</td>
+            <td class="droite">{{ entree.solde_cumule|floatformat:0|intcomma }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6">Aucun mouvement pour ce compte sur cette période.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="petit">Aucun compte sélectionné.</p>
+  {% endif %}
+
+  {% include "rapports/_pied_impression.html" %}
+  <script src="{% static 'js/app.js' %}" defer></script>
+</body>
+</html>
