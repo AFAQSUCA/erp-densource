@@ -30,7 +30,7 @@ qui ne la propose pas, le bouton n'apparaît pas et le chauffeur saisit le code 
 
 Pas encore fait :
 - **Mode hors ligne** (file d'attente des saisies, synchronisation différée, conflits) : écarté sur
-  décision confirmée de l'entreprise le 29/09/2026 (cahier-des-charges.md:307). Sans réseau, une
+  décision confirmée de l'entreprise le 29/09/2026 (cahier-des-charges.md:303). Sans réseau, une
   page « hors connexion » s'affiche.
 - Photos des incidents (stockage S3 ou MinIO, étape 7) ; notifications push (Firebase).
 - Avoir une position GPS ; envoi du code par SMS à l'expéditeur.

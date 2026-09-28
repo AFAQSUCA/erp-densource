@@ -41,7 +41,6 @@ fixes et chrétiennes ; les fêtes musulmanes (fixées par décret) se saisissen
 dans l'admin.
 
 Points en attente d'autres apps :
-- Alerte N1 « chauffeur avec mission sur la période » : à câbler avec `missions` (étape 3).
 - Notifications et rappels d'échéance (`date_limite_n1/n2`) : `notifications` (étape 5).
 
 Interface (`views.py`, `templates/hr/`, montée sous `/rh/`) :
