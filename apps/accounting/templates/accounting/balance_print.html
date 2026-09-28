@@ -1,0 +1,51 @@
+{% load static humanize %}<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Balance générale · {{ entreprise.nom }}</title>
+  {% include "rapports/_style_impression.html" %}
+</head>
+<body>
+  {% include "rapports/_entete_impression.html" %}
+
+  <table>
+    <thead>
+      <tr>
+        <th>Compte</th>
+        <th class="droite">Total débit</th>
+        <th class="droite">Total crédit</th>
+        <th class="droite">Solde débiteur</th>
+        <th class="droite">Solde créditeur</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for l in lignes %}
+        <tr>
+          <td>{{ l.compte__numero }} — {{ l.compte__libelle }}</td>
+          <td class="droite">{{ l.total_debit|floatformat:0|intcomma }}</td>
+          <td class="droite">{{ l.total_credit|floatformat:0|intcomma }}</td>
+          <td class="droite">{% if l.solde_debiteur %}{{ l.solde_debiteur|floatformat:0|intcomma }}{% endif %}</td>
+          <td class="droite">{% if l.solde_crediteur %}{{ l.solde_crediteur|floatformat:0|intcomma }}{% endif %}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="5">Aucun compte mouvementé sur cette période.</td></tr>
+      {% endfor %}
+    </tbody>
+    {% if lignes %}
+      <tfoot>
+        <tr>
+          <td><strong>Total</strong></td>
+          <td class="droite"><strong>{{ totaux.debit|floatformat:0|intcomma }}</strong></td>
+          <td class="droite"><strong>{{ totaux.credit|floatformat:0|intcomma }}</strong></td>
+          <td></td>
+          <td></td>
+        </tr>
+      </tfoot>
+    {% endif %}
+  </table>
+
+  {% include "rapports/_pied_impression.html" %}
+  <script src="{% static 'js/app.js' %}" defer></script>
+</body>
+</html>

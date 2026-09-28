@@ -1,0 +1,54 @@
+{% load static humanize %}<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Compte de résultat · {{ entreprise.nom }}</title>
+  {% include "rapports/_style_impression.html" %}
+</head>
+<body>
+  {% include "rapports/_entete_impression.html" %}
+
+  {% if rapport_resultat %}
+    <p class="petit">
+      Produits et charges de l'exercice seulement (contrairement au bilan, qui est cumulé
+      depuis l'origine).
+    </p>
+
+    <h2>Produits</h2>
+    <table>
+      <thead><tr><th>Compte</th><th class="droite">Montant</th></tr></thead>
+      <tbody>
+        {% for l in rapport_resultat.produits %}
+          <tr><td>{{ l.compte__numero }} — {{ l.compte__libelle }}</td><td class="droite">{{ l.montant|floatformat:0|intcomma }}</td></tr>
+        {% empty %}
+          <tr><td colspan="2">Aucun produit sur la période.</td></tr>
+        {% endfor %}
+      </tbody>
+      <tfoot><tr><td><strong>Total produits</strong></td><td class="droite"><strong>{{ rapport_resultat.total_produits|floatformat:0|intcomma }}</strong></td></tr></tfoot>
+    </table>
+
+    <h2>Charges</h2>
+    <table>
+      <thead><tr><th>Compte</th><th class="droite">Montant</th></tr></thead>
+      <tbody>
+        {% for l in rapport_resultat.charges %}
+          <tr><td>{{ l.compte__numero }} — {{ l.compte__libelle }}</td><td class="droite">{{ l.montant|floatformat:0|intcomma }}</td></tr>
+        {% empty %}
+          <tr><td colspan="2">Aucune charge sur la période.</td></tr>
+        {% endfor %}
+      </tbody>
+      <tfoot><tr><td><strong>Total charges</strong></td><td class="droite"><strong>{{ rapport_resultat.total_charges|floatformat:0|intcomma }}</strong></td></tr></tfoot>
+    </table>
+
+    <div class="cartouche">
+      <div><dt>Résultat net {% if rapport_resultat.resultat_net >= 0 %}(bénéfice){% else %}(perte){% endif %}</dt><dd>{{ rapport_resultat.resultat_net|floatformat:0|intcomma }} FCFA</dd></div>
+    </div>
+  {% else %}
+    <p class="petit">Aucun exercice pour l'instant.</p>
+  {% endif %}
+
+  {% include "rapports/_pied_impression.html" %}
+  <script src="{% static 'js/app.js' %}" defer></script>
+</body>
+</html>

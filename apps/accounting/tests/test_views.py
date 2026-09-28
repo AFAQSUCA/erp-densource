@@ -293,3 +293,81 @@ def test_compte_de_resultat_sans_aucun_exercice_n_affiche_pas_de_rapport(client)
 
     assert reponse.context["exercice"] is None
     assert reponse.context["rapport"] is None
+
+
+# --- versions imprimables des rapports (Phase 6 bis) ---
+
+
+@pytest.mark.parametrize(
+    "nom_url",
+    [
+        "accounting:grand_livre_imprimer",
+        "accounting:balance_imprimer",
+        "accounting:bilan_imprimer",
+        "accounting:compte_resultat_imprimer",
+    ],
+)
+@pytest.mark.parametrize("role", [Role.ADMIN, Role.DIRECTION, Role.FINANCES, Role.RH])
+def test_les_versions_imprimables_sont_accessibles_aux_roles_de_consultation(client, role, nom_url):
+    _connecte(client, role)
+
+    assert client.get(reverse(nom_url)).status_code == 200
+
+
+@pytest.mark.parametrize(
+    "nom_url",
+    [
+        "accounting:grand_livre_imprimer",
+        "accounting:balance_imprimer",
+        "accounting:bilan_imprimer",
+        "accounting:compte_resultat_imprimer",
+    ],
+)
+def test_les_versions_imprimables_sont_interdites_aux_autres_roles(client, nom_url):
+    _connecte(client, Role.CHAUFFEUR)
+
+    assert client.get(reverse(nom_url)).status_code == 403
+
+
+def test_grand_livre_imprimer_affiche_les_lignes_du_compte(client):
+    charge, tresorerie = CompteFactory(), CompteFactory()
+    _passer_ecriture_od(charge, tresorerie, date_ecriture=date(2026, 9, 5))
+    _connecte(client, Role.FINANCES)
+
+    reponse = client.get(reverse("accounting:grand_livre_imprimer"), {"compte": charge.numero})
+
+    assert reponse.status_code == 200
+    assert reponse.context["lignes"] is not None
+    assert len(reponse.context["lignes"]) == 1
+    contenu = reponse.content.decode()
+    assert "Généré le" in contenu  # pied de rapport commun (apps/core/rapports.py)
+
+
+def test_balance_imprimer_affiche_les_totaux(client):
+    charge, tresorerie = CompteFactory(), CompteFactory()
+    _passer_ecriture_od(charge, tresorerie, date_ecriture=date(2026, 9, 5), montant="7000")
+    _connecte(client, Role.FINANCES)
+
+    reponse = client.get(reverse("accounting:balance_imprimer"))
+
+    assert reponse.context["totaux"] == {"debit": Decimal("7000"), "credit": Decimal("7000")}
+
+
+def test_bilan_imprimer_reprend_l_exercice_le_plus_recent(client):
+    exercice = services.exercice_pour(date(2026, 9, 5))
+    _connecte(client, Role.FINANCES)
+
+    reponse = client.get(reverse("accounting:bilan_imprimer"))
+
+    assert reponse.context["exercice"] == exercice
+    assert reponse.context["rapport_bilan"] is not None
+
+
+def test_compte_resultat_imprimer_reprend_l_exercice_le_plus_recent(client):
+    exercice = services.exercice_pour(date(2026, 9, 5))
+    _connecte(client, Role.FINANCES)
+
+    reponse = client.get(reverse("accounting:compte_resultat_imprimer"))
+
+    assert reponse.context["exercice"] == exercice
+    assert reponse.context["rapport_resultat"] is not None
