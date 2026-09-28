@@ -511,6 +511,31 @@ def balance(*, debut: date | None = None, fin: date | None = None) -> list[dict]
     return resultat
 
 
+def declaration_tva(*, debut: date, fin: date) -> dict:
+    """TVA collectée (443300, sur les ventes) moins TVA déductible (445200, sur les dépenses) sur
+    la période = TVA nette à payer (positive) ou crédit de TVA reportable (négative), comme une
+    déclaration périodique réelle (avenant-comptabilite-autonomie.md § Lot E). Seules les
+    écritures VALIDEE comptent."""
+    lignes = LigneEcriture.objects.filter(
+        ecriture__statut=StatutEcriture.VALIDEE,
+        ecriture__date_ecriture__gte=debut,
+        ecriture__date_ecriture__lte=fin,
+        compte__numero__in=[COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE],
+    )
+    agrege = {ligne["compte__numero"]: ligne for ligne in _agreger_par_compte(lignes)}
+    collectee = agrege.get(COMPTE_TVA_COLLECTEE)
+    deductible = agrege.get(COMPTE_TVA_DEDUCTIBLE)
+    tva_collectee = (collectee["total_credit"] - collectee["total_debit"]) if collectee else ZERO
+    tva_deductible = (deductible["total_debit"] - deductible["total_credit"]) if deductible else ZERO
+    return {
+        "debut": debut,
+        "fin": fin,
+        "tva_collectee": tva_collectee,
+        "tva_deductible": tva_deductible,
+        "tva_nette": tva_collectee - tva_deductible,
+    }
+
+
 def compte_de_resultat(exercice: ExerciceComptable) -> dict:
     """Produits moins charges de l'exercice = résultat net (bénéfice ou perte). Calculé à la
     demande à partir des lignes de la période (rapport de situation) : aucune écriture de
