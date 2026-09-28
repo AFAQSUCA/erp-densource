@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django import forms
 from django.utils import timezone
 
@@ -85,7 +87,12 @@ class DepenseForm(StyleTailwindMixin, forms.Form):
     )
     date_depense = forms.DateField(label="Date", widget=forms.DateInput(attrs={"type": "date"}))
     libelle = forms.CharField(label="Libellé", max_length=200)
-    montant = forms.DecimalField(label="Montant (FCFA)", min_value=0, decimal_places=2, max_digits=14)
+    montant = forms.DecimalField(label="Montant TTC (FCFA)", min_value=0, decimal_places=2, max_digits=14)
+    montant_tva = forms.DecimalField(
+        label="dont TVA déductible (FCFA)", min_value=0, decimal_places=2, max_digits=14,
+        required=False, initial=0,
+        help_text="Si le fournisseur l'a facturée (ex. 18 % : montant TTC × 18 ÷ 118) — sinon laisser à 0.",
+    )
     mode = forms.ChoiceField(label="Mode de paiement", choices=ModePaiement.choices)
     reference = forms.CharField(label="N° de pièce", max_length=100, required=False)
     mission = forms.ModelChoiceField(
@@ -98,6 +105,16 @@ class DepenseForm(StyleTailwindMixin, forms.Form):
         self.fields["mission"].queryset = Mission.objects.order_by("-created_at", "-pk")
         self.fields["mission"].label_from_instance = lambda m: f"{m.numero} · {m.client.raison_sociale}"
         self.fields["mission"].queryset = self.fields["mission"].queryset.select_related("client")
+
+    def clean_montant_tva(self):
+        return self.cleaned_data.get("montant_tva") or Decimal("0")
+
+    def clean(self):
+        cleaned = super().clean()
+        montant, montant_tva = cleaned.get("montant"), cleaned.get("montant_tva")
+        if montant is not None and montant_tva is not None and montant_tva >= montant:
+            self.add_error("montant_tva", "La TVA déductible doit être strictement inférieure au montant TTC.")
+        return cleaned
 
     def clean_date_depense(self):
         jour = self.cleaned_data["date_depense"]

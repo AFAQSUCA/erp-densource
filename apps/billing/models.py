@@ -381,7 +381,15 @@ class Depense(BaseModel):
     categorie = models.CharField(_("catégorie"), max_length=14, choices=CategorieDepense.choices)
     date_depense = models.DateField(_("date"))
     libelle = models.CharField(_("libellé"), max_length=200)
-    montant = models.DecimalField(_("montant (FCFA)"), max_digits=14, decimal_places=2)
+    montant = models.DecimalField(_("montant TTC (FCFA)"), max_digits=14, decimal_places=2)
+    montant_tva = models.DecimalField(
+        _("dont TVA déductible (FCFA)"), max_digits=14, decimal_places=2, default=0,
+        help_text=_(
+            "Part de TVA incluse dans le montant, si le fournisseur l'a facturée et que la pièce "
+            "le justifie. Laisser à 0 si aucune TVA récupérable (fournisseur informel, non "
+            "assujetti…)."
+        ),
+    )
     mode = models.CharField(_("mode de paiement"), max_length=14, choices=ModePaiement.choices)
     reference = models.CharField(_("n° de pièce"), max_length=100, blank=True)
     mission = models.ForeignKey(
@@ -419,6 +427,10 @@ class Depense(BaseModel):
         ordering = ["-date_depense", "-pk"]
         constraints = [
             models.CheckConstraint(condition=Q(montant__gt=0), name="depense_montant_positif"),
+            models.CheckConstraint(condition=Q(montant_tva__gte=0), name="depense_montant_tva_non_negatif"),
+            models.CheckConstraint(
+                condition=Q(montant_tva__lt=F("montant")), name="depense_montant_tva_inferieur_au_montant"
+            ),
             # Une source (un plein, un achat, un OR) ne donne jamais deux dépenses.
             models.UniqueConstraint(
                 fields=["origine", "origine_id"], condition=~Q(origine=""), name="depense_une_par_origine"
@@ -428,6 +440,10 @@ class Depense(BaseModel):
     @property
     def est_automatique(self) -> bool:
         return bool(self.origine)
+
+    @property
+    def montant_ht(self) -> Decimal:
+        return self.montant - self.montant_tva
 
     def __str__(self):
         return f"{self.libelle} ({self.montant})"

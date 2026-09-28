@@ -609,8 +609,12 @@ def enregistrer_depense(
     mode: str,
     reference: str = "",
     mission: Mission | None = None,
+    montant_tva: Decimal = Decimal("0"),
 ) -> Depense:
     """Saisie d'une dépense (cahier-des-charges.md:192) ; la date ne peut pas être future.
+
+    ``montant`` reste le TTC payé ; ``montant_tva`` (facultatif, 0 par défaut) est la part de TVA
+    récupérable si le fournisseur l'a facturée — voir avenant-comptabilite-autonomie.md § Lot D.
 
     Comptabilisée comme les dépenses automatiques (:func:`comptabiliser_depense_automatique`) :
     si l'écriture ne peut pas s'équilibrer, la saisie est annulée plutôt que de laisser une
@@ -628,6 +632,11 @@ def enregistrer_depense(
     montant = Decimal(montant)
     if montant <= 0:
         raise MontantInvalide("Le montant de la dépense doit être strictement positif.")
+    montant_tva = Decimal(montant_tva)
+    if montant_tva < 0:
+        raise MontantInvalide("La TVA déductible ne peut pas être négative.")
+    if montant_tva >= montant:
+        raise MontantInvalide("La TVA déductible doit être strictement inférieure au montant TTC.")
     if date_depense > timezone.localdate():
         raise MontantInvalide("La date de la dépense ne peut pas être dans le futur.")
     depense = Depense.objects.create(
@@ -635,6 +644,7 @@ def enregistrer_depense(
         date_depense=date_depense,
         libelle=libelle,
         montant=montant,
+        montant_tva=montant_tva,
         mode=mode,
         reference=reference.strip(),
         mission=mission,
