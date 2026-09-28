@@ -95,6 +95,20 @@ def test_immobiliser_un_camion_pendant_un_or_conserve_l_immobilisation_a_la_clot
     assert _statut(camion) == StatutVehicule.IMMOBILISE  # règle 3 du CDC
 
 
+@pytest.mark.parametrize("statut", [StatutVehicule.IMMOBILISE, StatutVehicule.HORS_SERVICE])
+def test_ouvrir_un_or_sur_un_camion_deja_immobilise_ou_hors_service_le_conserve_a_la_cloture(
+    statut,
+):
+    camion = VehiculeFactory(statut=statut)
+    ordre = _ouvrir(camion)
+
+    assert _statut(camion) == statut  # l'ouverture ne doit pas écraser le statut
+
+    services.cloturer_or(ordre)
+
+    assert _statut(camion) == statut  # règle 3 du CDC
+
+
 # --- remise en service ---
 
 
