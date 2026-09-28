@@ -10,6 +10,10 @@ class CompteInconnu(AccountingError):
     """Le compte demandé n'existe pas dans le plan comptable, ou n'est plus actif."""
 
 
+class CompteDejaExistant(AccountingError):
+    """Un compte porte déjà ce numéro dans le plan comptable."""
+
+
 class EcritureVerrouillee(AccountingError):
     """Une écriture déjà validée ne se modifie ni ne se supprime."""
 

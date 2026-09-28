@@ -3,7 +3,7 @@ from django.utils import timezone
 
 from apps.core.forms import StyleTailwindMixin
 
-from .models import Compte, SensEcriture
+from .models import Compte, NatureCompte, SensEcriture
 
 
 class PeriodeForm(StyleTailwindMixin, forms.Form):
@@ -23,6 +23,22 @@ class GrandLivreForm(PeriodeForm):
         super().__init__(*args, **kwargs)
         self.fields["compte"].queryset = Compte.objects.order_by("numero")
         self.fields["compte"].label_from_instance = lambda c: f"{c.numero} — {c.libelle}"
+
+
+class CompteForm(StyleTailwindMixin, forms.Form):
+    """Ajout d'un compte au plan comptable : numéro et nature ne se saisissent qu'ici, ils ne se
+    modifient plus ensuite (voir ``services.modifier_compte``)."""
+
+    numero = forms.CharField(label="Numéro", max_length=10)
+    libelle = forms.CharField(label="Libellé", max_length=150)
+    nature = forms.ChoiceField(label="Nature", choices=NatureCompte.choices)
+
+
+class CompteModifierForm(StyleTailwindMixin, forms.Form):
+    """Correction du libellé et activation/désactivation d'un compte existant."""
+
+    libelle = forms.CharField(label="Libellé", max_length=150)
+    actif = forms.BooleanField(label="Actif (utilisable dans une nouvelle écriture)", required=False)
 
 
 class EcritureManuelleForm(StyleTailwindMixin, forms.Form):

@@ -19,9 +19,9 @@ from apps.core.rapports import contexte_rapport
 from apps.core.views import PaginationTolerante
 
 from . import permissions, services
-from .exceptions import AccountingError
-from .forms import EcritureManuelleForm, GrandLivreForm, LigneManuelleForm, PeriodeForm
-from .models import EcritureComptable, ExerciceComptable, Journal, LigneEcriture, SensEcriture, StatutEcriture
+from .exceptions import AccountingError, CompteDejaExistant
+from .forms import CompteForm, CompteModifierForm, EcritureManuelleForm, GrandLivreForm, LigneManuelleForm, PeriodeForm
+from .models import Compte, EcritureComptable, ExerciceComptable, Journal, LigneEcriture, SensEcriture, StatutEcriture
 
 
 def _erreurs_en_messages(request, form):
@@ -190,6 +190,63 @@ class ExerciceCloturerView(RoleRequiredMixin, View):
         else:
             messages.success(request, f"Exercice {exercice.annee} clôturé.")
         return redirect("accounting:exercices")
+
+
+class PlanComptableListView(RoleRequiredMixin, ListView):
+    roles = permissions.CONSULTATION
+    template_name = "accounting/plan_comptable_list.html"
+    context_object_name = "comptes"
+
+    def get_queryset(self):
+        return Compte.objects.all()
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        contexte["peut_gerer"] = self.request.user.role_effectif in permissions.GESTION_PLAN_COMPTABLE
+        return contexte
+
+
+class CompteCreateView(RoleRequiredMixin, FormView):
+    roles = permissions.GESTION_PLAN_COMPTABLE
+    form_class = CompteForm
+    template_name = "accounting/compte_form.html"
+
+    def form_valid(self, form):
+        try:
+            services.creer_compte(self.request.user, **form.cleaned_data)
+        except CompteDejaExistant as erreur:
+            form.add_error("numero", str(erreur))
+            return self.form_invalid(form)
+        except AccountingError as erreur:
+            form.add_error(None, str(erreur))
+            return self.form_invalid(form)
+        messages.success(self.request, "Compte créé.")
+        return redirect("accounting:plan_comptable")
+
+
+class CompteModifierView(RoleRequiredMixin, FormView):
+    roles = permissions.GESTION_PLAN_COMPTABLE
+    form_class = CompteModifierForm
+    template_name = "accounting/compte_modifier_form.html"
+
+    def dispatch(self, request, *args, **kwargs):
+        self.compte = get_object_or_404(Compte, pk=kwargs["pk"])
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_initial(self):
+        return {"libelle": self.compte.libelle, "actif": self.compte.actif}
+
+    def get_context_data(self, **kwargs):
+        return super().get_context_data(compte=self.compte, **kwargs)
+
+    def form_valid(self, form):
+        try:
+            services.modifier_compte(self.compte, self.request.user, **form.cleaned_data)
+        except AccountingError as erreur:
+            form.add_error(None, str(erreur))
+            return self.form_invalid(form)
+        messages.success(self.request, "Compte modifié.")
+        return redirect("accounting:plan_comptable")
 
 
 class GrandLivreView(RoleRequiredMixin, TemplateView):

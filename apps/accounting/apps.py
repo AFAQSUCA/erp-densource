@@ -20,6 +20,12 @@ class AccountingConfig(AppConfig):
         audit_model(ExerciceComptable, module="COMPTABILITE")
         enregistrer(
             EntreeMenu(
+                "Plan comptable", "accounting:plan_comptable", "fa-list-check",
+                permissions.CONSULTATION, ordre=63,
+            )
+        )
+        enregistrer(
+            EntreeMenu(
                 "Opérations diverses", "accounting:ecritures_manuelles", "fa-scale-balanced",
                 permissions.CONSULTATION, ordre=64,
             )

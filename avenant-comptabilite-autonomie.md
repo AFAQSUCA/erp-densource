@@ -20,8 +20,8 @@ Chaque lot est livré, testé, documenté et fusionné séparément (même princ
 | B | Export / impression des rapports comptables (grand livre, balance, bilan, compte de résultat) | ✅ Ce lot (PR #26) |
 | C | Comptabilisation automatique des dépenses manuelles (péages, entretien, frais admin, autre) | ✅ Ce lot (PR #27) |
 | D | TVA déductible réelle sur les dépenses | ✅ Ce lot (PR #28) |
-| E | Déclaration TVA (synthèse collectée / déductible) | **✅ Ce lot** — voir ci-dessous |
-| F | Écran de gestion du plan comptable | À livrer |
+| E | Déclaration TVA (synthèse collectée / déductible) | ✅ Ce lot (PR #29) |
+| F | Écran de gestion du plan comptable | **✅ Ce lot** — voir ci-dessous |
 | G | Rapprochement bancaire | À livrer |
 
 ## Lot A — Rapports comptables : exclure les brouillons non validés
@@ -166,3 +166,36 @@ dépense facturée), correctement affiché comme un crédit de TVA reportable n�
 **Implémentation** : `accounting.services.declaration_tva`,
 `accounting.views.DeclarationTvaView` / `DeclarationTvaImprimerView`,
 `accounting/templates/accounting/declaration_tva.html` / `declaration_tva_print.html`.
+
+## Lot F — Écran de gestion du plan comptable
+
+Le plan comptable (`accounting.Compte`) n'était consultable et modifiable que depuis l'admin
+Django, réservé à l'ADMIN — alors que le plan de départ est explicitement marqué « à valider par
+un expert-comptable » dans le code depuis la Phase 1 : le comptable qui doit le corriger n'y avait
+pas accès.
+
+**Décisions de conception** (pas de question business ouverte, choix techniques directs, cohérents
+avec le reste de l'app) :
+- Même largeur de rôle que la saisie d'écritures manuelles (`GESTION_PLAN_COMPTABLE` = ADMIN,
+  DIRECTION, FINANCES, RH) — ce n'est pas une transaction financière nécessitant un contrôle
+  Direction a posteriori, seulement le paramétrage du référentiel.
+- Le numéro et la nature d'un compte ne se modifient plus une fois créés (`services.creer_compte`
+  vs `services.modifier_compte`) : changer la nature d'un compte après coup reclasserait
+  silencieusement toutes ses écritures passées dans le bilan/compte de résultat.
+- Un compte ne se supprime jamais (comme documenté depuis la Phase 1) : seule la désactivation
+  (`actif=False`) est possible, empêchant son usage dans une nouvelle écriture
+  (`passer_ecriture` refuse déjà un compte inactif) sans perdre son historique.
+
+**Écran** (`/comptabilite/plan-comptable/`, menu « Plan comptable ») : liste triée par numéro avec
+nature et statut, bouton « Nouveau compte » et lien « Modifier » par ligne pour les rôles
+autorisés.
+
+**Vérifié manuellement** (navigateur, `demo_finances`) : création d'un compte 626000 « Péages et
+parkings » (Charge), immédiatement disponible dans les formulaires d'opération diverse ; puis
+modification de son libellé, conservée après rechargement de la liste.
+
+**Implémentation** : `accounting.services.creer_compte` / `modifier_compte`,
+`accounting.permissions.GESTION_PLAN_COMPTABLE`, `accounting.exceptions.CompteDejaExistant`,
+`accounting.views.PlanComptableListView` / `CompteCreateView` / `CompteModifierView`,
+`accounting/templates/accounting/plan_comptable_list.html` / `compte_form.html` /
+`compte_modifier_form.html`.

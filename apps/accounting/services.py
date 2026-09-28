@@ -34,6 +34,7 @@ from . import permissions
 from .exceptions import (
     ActionComptableNonAutorisee,
     ClotureImpossible,
+    CompteDejaExistant,
     CompteInconnu,
     EcritureNonEquilibree,
     EcritureVerrouillee,
@@ -75,6 +76,38 @@ def _exiger_role(acteur, roles, action: str, *, strict: bool = False) -> None:
 def _exiger_brouillon(ecriture: EcritureComptable, action: str) -> None:
     if ecriture.statut != StatutEcriture.BROUILLON:
         raise EcritureVerrouillee(f"Impossible de {action} : l'écriture est « {ecriture.get_statut_display()} ».")
+
+
+def creer_compte(acteur, *, numero: str, libelle: str, nature: str) -> Compte:
+    """Ajoute un compte au plan comptable (avenant-comptabilite-autonomie.md § Lot F). Le numéro
+    et la nature ne se modifient plus ensuite (:func:`modifier_compte`) : seuls le libellé et
+    l'activation le peuvent, pour ne jamais reclasser silencieusement des écritures déjà
+    posées."""
+    _exiger_role(acteur, permissions.GESTION_PLAN_COMPTABLE, "créer un compte")
+    numero = numero.strip()
+    if not numero:
+        raise CompteInconnu("Le numéro de compte est obligatoire.")
+    if Compte.objects.filter(numero=numero).exists():
+        raise CompteDejaExistant(f"Le compte {numero} existe déjà.")
+    libelle = libelle.strip()
+    if not libelle:
+        raise CompteInconnu("Le libellé est obligatoire.")
+    if nature not in NatureCompte.values:
+        raise CompteInconnu("Nature de compte inconnue.")
+    return Compte.objects.create(numero=numero, libelle=libelle, nature=nature)
+
+
+def modifier_compte(compte: Compte, acteur, *, libelle: str, actif: bool) -> Compte:
+    """Corrige le libellé d'un compte et/ou le désactive (jamais supprimé, voir
+    ``Compte.__doc__``) : un compte désactivé ne peut plus être utilisé dans une nouvelle
+    écriture, mais son historique reste lisible dans le grand livre."""
+    _exiger_role(acteur, permissions.GESTION_PLAN_COMPTABLE, "modifier un compte")
+    libelle = libelle.strip()
+    if not libelle:
+        raise CompteInconnu("Le libellé est obligatoire.")
+    compte.libelle, compte.actif = libelle, actif
+    compte.save(update_fields=["libelle", "actif"])
+    return compte
 
 
 def exercice_pour(date_ecriture: date) -> ExerciceComptable:
