@@ -157,6 +157,28 @@ def test_depense_automatique_genere_une_ecriture_selon_la_categorie(categorie, c
     assert lignes["571000"] == (SensEcriture.CREDIT, Decimal("50000"))
 
 
+@pytest.mark.parametrize(
+    ("categorie", "compte_charge"),
+    [
+        (CategorieDepense.PEAGES, "628100"),
+        (CategorieDepense.ENTRETIEN, "624100"),
+        (CategorieDepense.FRAIS_ADMIN, "658000"),
+        (CategorieDepense.AUTRE, "658000"),
+    ],
+)
+def test_depense_manuelle_genere_une_ecriture_selon_la_categorie(categorie, compte_charge):
+    depense = billing_services.enregistrer_depense(
+        finances(), categorie=categorie, date_depense=date(2026, 9, 5), libelle="Test",
+        montant=Decimal("12000"), mode=ModePaiement.ESPECES,
+    )
+
+    ecriture = EcritureComptable.objects.get(origine="DEPENSE", origine_id=depense.pk)
+    assert ecriture.journal == Journal.CAISSE
+    lignes = {l.compte.numero: (l.sens, l.montant) for l in ecriture.lignes.all()}
+    assert lignes[compte_charge] == (SensEcriture.DEBIT, Decimal("12000"))
+    assert lignes["571000"] == (SensEcriture.CREDIT, Decimal("12000"))
+
+
 def test_rejouer_la_meme_source_ne_duplique_pas_l_ecriture():
     premiere = _depense_automatique(1002)
     seconde = _depense_automatique(1002)  # même origine_id : Depense.get_or_create retombe dessus

@@ -210,10 +210,10 @@ la trésorerie et crédite la contrepartie ; une sortie fait l'inverse. Déclenc
 **Limite connue** (même principe que l'annulation d'un règlement, P2) : l'annulation d'un
 mouvement (`annuler_mouvement`) n'émet aucun signal, aucune contre-passation.
 
-**Limite de périmètre** (pas une omission) : les dépenses manuelles de `billing.Depense`
-(catégories PEAGES, ENTRETIEN, FRAIS_ADMIN, AUTRE, saisies via `billing.services.enregistrer_depense`)
-restent hors périmètre — l'ambiguïté sur leur compte de contrepartie (péages/entretien n'ont pas
-de compte déjà seedé et vérifié) n'a pas été tranchée avec l'utilisateur pour ce lot.
+**Limite de périmètre, résolue depuis** : les dépenses manuelles de `billing.Depense` (catégories
+PEAGES, ENTRETIEN, FRAIS_ADMIN, AUTRE) sont restées hors périmètre jusqu'à ce lot — voir
+`avenant-comptabilite-autonomie.md` § Lot C, qui les comptabilise désormais au même titre que les
+dépenses automatiques.
 
 **2. Écran de saisie manuelle d'opérations diverses (journal OD).** Premier écran web de l'app
 `accounting` — sans lui, la saisie manuelle serait inutilisable en pratique. Cycle de vie calqué

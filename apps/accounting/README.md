@@ -43,8 +43,9 @@ crédit), l'idempotence par `(origine, origine_id)` et que l'exercice de la date
 clôturé, jamais l'appelant ; toujours `VALIDEE` directement (usage automatique). Chaque événement
 automatique a sa fonction dédiée qui construit les lignes puis appelle `passer_ecriture` :
 `comptabiliser_facture_validee`, `comptabiliser_un_reglement`,
-`comptabiliser_une_depense_automatique`, `reclasser_mode_depense` (sans `origine`/`origine_id`,
-voir « Limite connue » P3), `comptabiliser_un_mouvement_manuel`.
+`comptabiliser_une_depense_automatique` (dépenses automatiques *et* manuelles, les 8 catégories
+de `billing.CategorieDepense` — `avenant-comptabilite-autonomie.md` § Lot C), `reclasser_mode_depense`
+(sans `origine`/`origine_id`, voir « Limite connue » P3), `comptabiliser_un_mouvement_manuel`.
 
 La saisie manuelle passe par un cycle brouillon/validation distinct :
 `creer_ecriture_manuelle` → `ajouter_ligne_manuelle`/`supprimer_ligne_manuelle` (librement, tant

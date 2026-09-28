@@ -17,8 +17,8 @@ Chaque lot est livré, testé, documenté et fusionné séparément (même princ
 | Lot | Contenu | Statut |
 |---|---|---|
 | A | Rapports comptables : exclure les brouillons non validés (bug trouvé en testant) | ✅ Fusionnée (PR #25) |
-| B | Export / impression des rapports comptables (grand livre, balance, bilan, compte de résultat) | **✅ Ce lot** — voir ci-dessous |
-| C | Comptabilisation automatique des dépenses manuelles (péages, entretien, frais admin, autre) | À livrer |
+| B | Export / impression des rapports comptables (grand livre, balance, bilan, compte de résultat) | ✅ Ce lot (PR #26) |
+| C | Comptabilisation automatique des dépenses manuelles (péages, entretien, frais admin, autre) | **✅ Ce lot** — voir ci-dessous |
 | D | TVA déductible réelle sur les dépenses | À livrer |
 | E | Déclaration TVA (synthèse collectée / déductible) | À livrer |
 | F | Écran de gestion du plan comptable | À livrer |
@@ -58,3 +58,36 @@ exactement les mêmes chiffres que les écrans en ligne, avec l'en-tête entrepr
 `BalanceImprimerView` / `BilanImprimerView` / `CompteDeResultatImprimerView`,
 `apps/accounting/templates/accounting/grand_livre_print.html` /
 `balance_print.html` / `bilan_print.html` / `compte_resultat_print.html`.
+
+## Lot C — Comptabilisation automatique des dépenses manuelles
+
+Trouvé en testant : une dépense saisie à la main (péages, entretien, frais administratifs, autre
+— `billing.services.enregistrer_depense`) apparaissait bien en trésorerie mais ne générait
+**aucune écriture comptable**. Seules les 4 catégories automatiques (carburant, pièces,
+main-d'œuvre des OR, frais de mission) étaient comptabilisées depuis la Phase 3
+(`avenant-comptabilite-syscohada.md` § P4, « limite de périmètre »). Concrètement : la
+comptabilité prenait du retard sur la trésorerie sans que rien ne l'alerte.
+
+**Mapping retenu** (`apps/accounting/constants.py::CATEGORIE_DEPENSE_VERS_COMPTE`), à valider par
+un expert-comptable comme le reste du plan comptable de départ :
+- Péages → 628100 (Frais de mission et déplacements — même nature que les frais de route)
+- Entretien → 624100 (Entretien, réparations — même compte que la main-d'œuvre des OR)
+- Frais administratifs et Autre → 658000 (Charges diverses de gestion courante)
+
+**Implémentation** : `apps.billing.services.enregistrer_depense` émet désormais
+`billing.signals.depense_a_comptabiliser` après création de la `Depense` (même signal que les
+dépenses automatiques, `@transaction.atomic` : une dépense dont l'écriture ne s'équilibre pas est
+annulée plutôt que de laisser une sortie d'argent non comptée). Côté `accounting`, aucun nouveau
+code : `services.comptabiliser_une_depense_automatique` était déjà générique par catégorie, elle
+gère maintenant les 8 catégories au lieu de 4. `comptabiliser_historique_depenses` reprend
+désormais toutes les dépenses (plus seulement celles avec une `origine` automatique).
+
+**Vérifié manuellement** (navigateur, `demo_finances`) : rattrapage des dépenses manuelles
+existantes dans la base de dev via la commande (`4 dépense(s) comptabilisée(s)`), balance
+correctement mouvementée sur 624100/628100/658000 ; une nouvelle dépense « Péages » saisie en
+direct génère immédiatement son écriture (journal Caisse, visible dans le grand livre du compte
+628100) sans action supplémentaire.
+
+**Implémentation** : `apps.accounting.constants.CATEGORIE_DEPENSE_VERS_COMPTE`,
+`apps.billing.services.enregistrer_depense`,
+`apps.accounting.management.commands.comptabiliser_historique_depenses`.

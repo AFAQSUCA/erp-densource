@@ -264,11 +264,13 @@ def comptabiliser_un_reglement(reglement) -> EcritureComptable:
 
 
 def comptabiliser_une_depense_automatique(depense) -> EcritureComptable:
-    """Écriture d'une dépense automatique (plein, achat de pièces, main-d'œuvre d'OR, frais de
-    mission, ordre de décaissement) : débite la charge selon la catégorie, crédite la trésorerie
-    selon le mode de paiement. Le mode est provisoire (Caisse par défaut) sauf pour un ordre de
-    décaissement, dont le mode réel est connu dès l'exécution — voir :func:`reclasser_mode_depense`
-    pour la correction ultérieure. Idempotent (voir :func:`passer_ecriture`)."""
+    """Écriture d'une dépense, automatique (plein, achat de pièces, main-d'œuvre d'OR, frais de
+    mission, ordre de décaissement) ou manuelle (péages, entretien, frais administratifs, autre —
+    avenant-comptabilite-autonomie.md § Lot C) : débite la charge selon la catégorie, crédite la
+    trésorerie selon le mode de paiement. Pour une dépense automatique, le mode est provisoire
+    (Caisse par défaut) sauf pour un ordre de décaissement, dont le mode réel est connu dès
+    l'exécution — voir :func:`reclasser_mode_depense` pour la correction ultérieure ; une dépense
+    saisie à la main connaît déjà son mode réel. Idempotent (voir :func:`passer_ecriture`)."""
     compte_tresorerie = COMPTE_DU_MODE[depense.mode]
     lignes = [
         LigneSaisie(

@@ -14,15 +14,21 @@ COMPTE_CLIENTS = "411000"
 COMPTE_VENTES_TRANSPORT = "706100"
 COMPTE_TVA_COLLECTEE = "443300"
 
-# billing.models.CategorieDepense -> Compte.numero — seules les 4 catégories automatiques
-# (billing.models.CATEGORIES_AUTOMATIQUES) sont mobilisées à ce stade ; les catégories de saisie
-# manuelle (PEAGES, ENTRETIEN, FRAIS_ADMIN, AUTRE) restent hors périmètre (limite connue,
-# avenant-comptabilite-syscohada.md § P4).
+# billing.models.CategorieDepense -> Compte.numero — les 4 catégories automatiques
+# (billing.models.CATEGORIES_AUTOMATIQUES) et les 4 catégories de saisie manuelle sont toutes
+# mobilisées (avenant-comptabilite-autonomie.md § Lot C). Péages rattachés aux frais de mission
+# (comptes de déplacement) ; Entretien au même compte que la main-d'œuvre des OR (prestataires
+# extérieurs) ; Frais administratifs et Autre au compte générique de charges diverses — mapping
+# de départ, à valider par un expert-comptable comme le reste du plan comptable.
 CATEGORIE_DEPENSE_VERS_COMPTE = {
     CategorieDepense.CARBURANT: "605100",
     CategorieDepense.PIECES: "605800",
     CategorieDepense.MAINTENANCE: "624100",
     CategorieDepense.FRAIS_MISSION: "628100",
+    CategorieDepense.PEAGES: "628100",
+    CategorieDepense.ENTRETIEN: "624100",
+    CategorieDepense.FRAIS_ADMIN: "658000",
+    CategorieDepense.AUTRE: "658000",
 }
 
 # finance.models.NatureMouvement -> Compte.numero (contrepartie du mouvement manuel de trésorerie).
