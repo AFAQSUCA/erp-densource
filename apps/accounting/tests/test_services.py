@@ -161,6 +161,16 @@ def test_grand_livre_filtre_par_compte_et_periode():
     assert lignes_premier_semestre.count() == 1
 
 
+def test_grand_livre_exclut_les_brouillons_non_valides():
+    charge = CompteFactory()
+    ecriture = services.creer_ecriture_manuelle(finances(), date_ecriture=JOUR, libelle="Brouillon")
+    services.ajouter_ligne_manuelle(
+        ecriture, finances(), compte=charge.numero, sens=SensEcriture.DEBIT, montant=Decimal("5000")
+    )
+
+    assert services.grand_livre(charge).count() == 0
+
+
 # --- saisie manuelle d'opérations diverses (Phase 4) ---
 
 
@@ -475,6 +485,18 @@ def test_balance_filtre_par_periode():
     assert lignes[charge.numero]["total_debit"] == Decimal("1000")
 
 
+def test_balance_exclut_les_brouillons_non_valides():
+    charge = CompteFactory()
+    ecriture = services.creer_ecriture_manuelle(finances(), date_ecriture=JOUR, libelle="Brouillon")
+    services.ajouter_ligne_manuelle(
+        ecriture, finances(), compte=charge.numero, sens=SensEcriture.DEBIT, montant=Decimal("5000")
+    )
+
+    lignes = {l["compte__numero"]: l for l in services.balance()}
+
+    assert charge.numero not in lignes
+
+
 def test_compte_de_resultat_calcule_le_resultat_net():
     exercice = services.exercice_pour(JOUR)
     clients, ventes, tva = _compte("411000"), _compte("706100"), _compte("443300")
@@ -502,6 +524,20 @@ def test_compte_de_resultat_calcule_le_resultat_net():
     assert rapport["resultat_net"] == Decimal("700")
 
 
+def test_compte_de_resultat_exclut_les_brouillons_non_valides():
+    exercice = services.exercice_pour(JOUR)
+    charge = CompteFactory()
+    ecriture = services.creer_ecriture_manuelle(finances(), date_ecriture=JOUR, libelle="Brouillon")
+    services.ajouter_ligne_manuelle(
+        ecriture, finances(), compte=charge.numero, sens=SensEcriture.DEBIT, montant=Decimal("5000")
+    )
+
+    rapport = services.compte_de_resultat(exercice)
+
+    assert rapport["total_charges"] == Decimal("0")
+    assert rapport["charges"] == []
+
+
 def test_bilan_equilibre_avec_le_resultat_net():
     exercice = services.exercice_pour(JOUR)
     clients, ventes = _compte("411000"), _compte("706100")
@@ -519,6 +555,20 @@ def test_bilan_equilibre_avec_le_resultat_net():
     assert rapport["total_passif"] == Decimal("0")
     assert rapport["resultat_net"] == Decimal("1000")
     assert rapport["total_passif_avec_resultat"] == rapport["total_actif"] == Decimal("1000")
+
+
+def test_bilan_exclut_les_brouillons_non_valides():
+    exercice = services.exercice_pour(JOUR)
+    caisse = _compte("571000")
+    ecriture = services.creer_ecriture_manuelle(finances(), date_ecriture=JOUR, libelle="Brouillon")
+    services.ajouter_ligne_manuelle(
+        ecriture, finances(), compte=caisse.numero, sens=SensEcriture.DEBIT, montant=Decimal("5000")
+    )
+
+    rapport = services.bilan(exercice)
+
+    assert rapport["total_actif"] == Decimal("0")
+    assert rapport["actif"] == []
 
 
 def test_bilan_est_cumulatif_mais_compte_de_resultat_reste_par_exercice():
