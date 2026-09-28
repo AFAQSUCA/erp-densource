@@ -93,8 +93,9 @@ pour le graphique du tableau de bord ; le mois en cours reprend les indicateurs 
 - marge nette = CA HT - charges ; créances = reste à recouvrer (dont échu) ; trésorerie = solde.
   Les charges (économiques) et la trésorerie (réelle) ne sont volontairement pas les mêmes chiffres.
 
-Pas encore fait : **rapprochement bancaire** (écarté sur décision de l'utilisateur : trésorerie
-seulement), import de relevés. Les écritures comptables (partie double, SYSCOHADA) sont désormais
+Pas encore fait : **rapprochement bancaire** (écarté sur décision confirmée de l'entreprise le
+29/09/2026 — cahier-des-charges.md:199 : trésorerie seulement, aucune confrontation aux relevés),
+import de relevés. Les écritures comptables (partie double, SYSCOHADA) sont désormais
 générées automatiquement depuis chaque événement de trésorerie — voir `apps/accounting/README.md`
 et `avenant-comptabilite-syscohada.md` ; le grand livre/balance/bilan restent à livrer (Phase 6).
 

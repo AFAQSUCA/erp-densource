@@ -485,7 +485,7 @@ class PersonnelModeleImportView(RoleRequiredMixin, View):
         feuille = classeur.active
         feuille.title = "Personnel"
         feuille.append(services.COLONNES_IMPORT)
-        feuille.append(["Traoré", "Awa", "Comptable", "Comptabilité", "CDI", "01/09/2026", "250000"])
+        feuille.append(["Traoré", "Awa", "Comptable", "Ressources Humaines et Finances", "CDI", "01/09/2026", "250000"])
         reponse = HttpResponse(
             content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )

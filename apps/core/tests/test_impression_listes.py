@@ -68,11 +68,11 @@ def test_impression_de_la_flotte(client):
 
 def test_impression_du_personnel_sans_le_salaire(client):
     client.force_login(UserFactory(role=Role.RH))
-    PersonnelFactory(nom="Diomandé", departement=Departement.EXPLOITATION, salaire_base=Decimal("999999"))
+    PersonnelFactory(nom="Diomandé", departement=Departement.PARC_AUTO, salaire_base=Decimal("999999"))
 
-    texte = _texte(client.get(reverse("hr:personnel_imprimer"), {"departement": Departement.EXPLOITATION}))
+    texte = _texte(client.get(reverse("hr:personnel_imprimer"), {"departement": Departement.PARC_AUTO}))
 
-    assert "Diomandé" in texte and "département : Exploitation" in texte
+    assert "Diomandé" in texte and "département : Parc Auto" in texte
     assert "999" not in texte.replace("999999", "")  # le salaire n'est pas dans les colonnes imprimées
 
 

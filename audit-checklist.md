@@ -67,7 +67,7 @@ Justification obligatoire : `fichier:ligne` ou "NON TROUVÉ".
 
 ## M6 — Carburant
 
-- [ ] Saisie plein (7 champs)
+- [ ] Saisie plein (8 champs)
 - [ ] Formule L/100 km exacte
 - [ ] Alerte jaune > +20 %
 - [ ] Alerte rouge > +40 %
@@ -143,7 +143,8 @@ Justification obligatoire : `fichier:ligne` ou "NON TROUVÉ".
 - [ ] Docker + Docker Compose
 
 ### Architecture
-- [ ] 17 apps Django conformes à la structure
+- [ ] 17 apps Django conformes à la structure (cahier-des-charges.md:259-261 ; `accounting` s'y
+      ajoute en plus, hors périmètre CDC — voir avenant-comptabilite-syscohada.md)
 - [ ] `views → serializers → services → models`
 - [ ] Logique métier dans `services.py`
 - [ ] Transactions atomiques (missions, factures, OR)
