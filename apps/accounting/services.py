@@ -439,8 +439,12 @@ def valider_ecriture_manuelle(ecriture: EcritureComptable, acteur) -> EcritureCo
 def grand_livre(
     compte: Compte, *, debut: date | None = None, fin: date | None = None
 ) -> QuerySet[LigneEcriture]:
-    """Lignes d'un compte, triées par date d'écriture."""
-    lignes = LigneEcriture.objects.filter(compte=compte).select_related("ecriture", "compte")
+    """Lignes d'un compte, triées par date d'écriture. Un brouillon d'opération diverse n'est pas
+    encore approuvé par la DIRECTION (services.valider_ecriture_manuelle) : il ne doit jamais
+    apparaître dans un rapport officiel, donc seules les écritures VALIDEE sont incluses."""
+    lignes = LigneEcriture.objects.filter(
+        compte=compte, ecriture__statut=StatutEcriture.VALIDEE
+    ).select_related("ecriture", "compte")
     if debut is not None:
         lignes = lignes.filter(ecriture__date_ecriture__gte=debut)
     if fin is not None:
@@ -476,8 +480,10 @@ def _agreger_par_compte(lignes: QuerySet[LigneEcriture]) -> list[dict]:
 
 def balance(*, debut: date | None = None, fin: date | None = None) -> list[dict]:
     """Balance générale : total débit/crédit et solde de chaque compte mouvementé sur la période
-    (tous comptes confondus, toutes dates si ``debut``/``fin`` omis)."""
-    lignes = LigneEcriture.objects.all()
+    (tous comptes confondus, toutes dates si ``debut``/``fin`` omis). Seules les écritures
+    VALIDEE comptent — un brouillon d'opération diverse ne doit jamais fausser la balance
+    officielle avant l'approbation de la DIRECTION."""
+    lignes = LigneEcriture.objects.filter(ecriture__statut=StatutEcriture.VALIDEE)
     if debut is not None:
         lignes = lignes.filter(ecriture__date_ecriture__gte=debut)
     if fin is not None:
@@ -499,8 +505,10 @@ def compte_de_resultat(exercice: ExerciceComptable) -> dict:
     """Produits moins charges de l'exercice = résultat net (bénéfice ou perte). Calculé à la
     demande à partir des lignes de la période (rapport de situation) : aucune écriture de
     clôture n'existe encore pour transférer ce résultat dans le bilan de l'exercice suivant —
-    voir « Limite connue », avenant-comptabilite-syscohada.md § P6."""
+    voir « Limite connue », avenant-comptabilite-syscohada.md § P6. Seules les écritures VALIDEE
+    comptent, jamais un brouillon d'opération diverse non encore approuvé par la DIRECTION."""
     lignes = LigneEcriture.objects.filter(
+        ecriture__statut=StatutEcriture.VALIDEE,
         ecriture__date_ecriture__gte=exercice.date_debut,
         ecriture__date_ecriture__lte=exercice.date_fin,
         compte__nature__in=[NatureCompte.CHARGE, NatureCompte.PRODUIT],
@@ -529,8 +537,11 @@ def bilan(exercice: ExerciceComptable) -> dict:
     """Actif et passif cumulés depuis l'origine jusqu'à la fin de l'exercice (un bilan est une
     photo à une date, pas une période — contrairement au compte de résultat). Le résultat net de
     l'exercice (voir :func:`compte_de_resultat`) est ajouté au passif pour équilibrer le bilan,
-    puisqu'il n'existe pas encore d'écriture de clôture qui l'impute au compte 120000."""
+    puisqu'il n'existe pas encore d'écriture de clôture qui l'impute au compte 120000. Seules les
+    écritures VALIDEE comptent, jamais un brouillon d'opération diverse non encore approuvé par
+    la DIRECTION."""
     lignes = LigneEcriture.objects.filter(
+        ecriture__statut=StatutEcriture.VALIDEE,
         ecriture__date_ecriture__lte=exercice.date_fin,
         compte__nature__in=[NatureCompte.ACTIF, NatureCompte.PASSIF],
     )
