@@ -13,6 +13,7 @@ from .models import Journal
 COMPTE_CLIENTS = "411000"
 COMPTE_VENTES_TRANSPORT = "706100"
 COMPTE_TVA_COLLECTEE = "443300"
+COMPTE_TVA_DEDUCTIBLE = "445200"
 
 # billing.models.CategorieDepense -> Compte.numero — les 4 catégories automatiques
 # (billing.models.CATEGORIES_AUTOMATIQUES) et les 4 catégories de saisie manuelle sont toutes

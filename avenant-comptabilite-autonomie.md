@@ -18,8 +18,8 @@ Chaque lot est livré, testé, documenté et fusionné séparément (même princ
 |---|---|---|
 | A | Rapports comptables : exclure les brouillons non validés (bug trouvé en testant) | ✅ Fusionnée (PR #25) |
 | B | Export / impression des rapports comptables (grand livre, balance, bilan, compte de résultat) | ✅ Ce lot (PR #26) |
-| C | Comptabilisation automatique des dépenses manuelles (péages, entretien, frais admin, autre) | **✅ Ce lot** — voir ci-dessous |
-| D | TVA déductible réelle sur les dépenses | À livrer |
+| C | Comptabilisation automatique des dépenses manuelles (péages, entretien, frais admin, autre) | ✅ Ce lot (PR #27) |
+| D | TVA déductible réelle sur les dépenses | **✅ Ce lot** — voir ci-dessous |
 | E | Déclaration TVA (synthèse collectée / déductible) | À livrer |
 | F | Écran de gestion du plan comptable | À livrer |
 | G | Rapprochement bancaire | À livrer |
@@ -91,3 +91,51 @@ direct génère immédiatement son écriture (journal Caisse, visible dans le gr
 **Implémentation** : `apps.accounting.constants.CATEGORIE_DEPENSE_VERS_COMPTE`,
 `apps.billing.services.enregistrer_depense`,
 `apps.accounting.management.commands.comptabiliser_historique_depenses`.
+
+## Lot D — TVA déductible réelle sur les dépenses
+
+Jusqu'ici, une dépense n'avait qu'un montant unique traité comme une charge TTC sans TVA
+récupérable — même les dépenses automatiques (carburant, pièces…) chargeaient le compte de charge
+pour le montant plein. Le compte 445200 « État, TVA déductible » du plan comptable seedé n'était
+jamais mouvementé.
+
+**Décisions confirmées avec l'entreprise** :
+- Toutes les catégories peuvent porter de la TVA déductible, au cas par cas (pas systématique :
+  un fournisseur informel ou non assujetti ne la facture pas).
+- Taux par défaut 18 % (aligné sur les ventes), mais l'utilisateur saisit le montant de TVA
+  directement depuis sa pièce justificative plutôt qu'un taux — plus fidèle à ce qui est écrit sur
+  un vrai reçu (HT / TVA / TTC).
+
+**Modèle** (`billing.models.Depense`) : nouveau champ `montant_tva` (FCFA, défaut 0, facultatif).
+`montant` reste le TTC payé ; `montant_ht` est une propriété calculée (`montant - montant_tva`).
+Contraintes DB : `montant_tva >= 0` et `montant_tva < montant` (une TVA ne peut jamais égaler ou
+dépasser le TTC). Les dépenses existantes gardent `montant_tva = 0` (aucune TVA reconstituée a
+posteriori sur l'historique).
+
+**Écriture comptable** (`accounting.services.comptabiliser_une_depense_automatique`) : quand
+`montant_tva > 0`, l'écriture passe à 3 lignes — débit du compte de charge au HT, débit du compte
+445200 pour la TVA déductible, crédit de la trésorerie au TTC (toujours équilibrée). Quand
+`montant_tva = 0` (cas par défaut, y compris toutes les dépenses automatiques pour l'instant —
+leurs apps sources ne capturent pas encore la TVA à la source), le comportement est inchangé : une
+seule ligne de charge au montant plein.
+
+**Écran** (`/facturation/depenses/nouvelle/`) : nouveau champ « dont TVA déductible (FCFA) »,
+facultatif, avec l'aide « ex. 18 % : montant TTC × 18 ÷ 118 » ; affiché aussi dans la liste des
+dépenses (« dont X TVA déd. » sous le montant) quand non nul.
+
+**Limite de périmètre (pas un oubli)** : seule la saisie manuelle expose le champ TVA pour
+l'instant. Les 4 catégories automatiques (carburant, pièces, main-d'œuvre des OR, frais de
+mission) restent à TVA = 0 tant que leurs apps sources (`fuel`, `inventory`, `garage`, `missions`)
+ne capturent pas elles-mêmes une ventilation HT/TVA — un chantier séparé, plus large (il toucherait
+4 apps et leurs formulaires), pas nécessaire pour que le moteur comptable gère déjà la TVA
+déductible correctement partout où elle est saisie.
+
+**Vérifié manuellement** (navigateur, `demo_finances`) : péage à 11 800 FCFA TTC dont 1 800 FCFA de
+TVA saisi en direct → écriture à 3 lignes (628100 débit 10 000, 445200 débit 1 800, 571000 crédit
+11 800), balance équilibrée, compte de résultat n'inclut pas la TVA déductible dans les charges
+(c'est un compte d'actif, pas une charge).
+
+**Implémentation** : `billing.models.Depense.montant_tva`/`montant_ht`,
+`billing.services.enregistrer_depense`, `billing.forms.DepenseForm`,
+`accounting.constants.COMPTE_TVA_DEDUCTIBLE`,
+`accounting.services.comptabiliser_une_depense_automatique`.

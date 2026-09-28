@@ -179,6 +179,32 @@ def test_depense_manuelle_genere_une_ecriture_selon_la_categorie(categorie, comp
     assert lignes["571000"] == (SensEcriture.CREDIT, Decimal("12000"))
 
 
+def test_depense_avec_tva_deductible_genere_une_ecriture_a_3_lignes():
+    depense = billing_services.enregistrer_depense(
+        finances(), categorie=CategorieDepense.PEAGES, date_depense=date(2026, 9, 5), libelle="Péage facturé",
+        montant=Decimal("11800"), montant_tva=Decimal("1800"), mode=ModePaiement.ESPECES,
+    )
+
+    ecriture = EcritureComptable.objects.get(origine="DEPENSE", origine_id=depense.pk)
+    lignes = {l.compte.numero: (l.sens, l.montant) for l in ecriture.lignes.all()}
+    assert lignes["628100"] == (SensEcriture.DEBIT, Decimal("10000"))  # charge au HT
+    assert lignes["445200"] == (SensEcriture.DEBIT, Decimal("1800"))  # TVA déductible
+    assert lignes["571000"] == (SensEcriture.CREDIT, Decimal("11800"))  # trésorerie au TTC
+    total_debit = sum(m for sens, m in lignes.values() if sens == SensEcriture.DEBIT)
+    assert total_debit == Decimal("11800")  # écriture équilibrée
+
+
+def test_depense_sans_tva_ne_genere_aucune_ligne_445200():
+    depense = billing_services.enregistrer_depense(
+        finances(), categorie=CategorieDepense.PEAGES, date_depense=date(2026, 9, 5), libelle="Péage sans facture",
+        montant=Decimal("5000"), mode=ModePaiement.ESPECES,
+    )
+
+    ecriture = EcritureComptable.objects.get(origine="DEPENSE", origine_id=depense.pk)
+    assert not ecriture.lignes.filter(compte__numero="445200").exists()
+    assert ecriture.lignes.count() == 2
+
+
 def test_rejouer_la_meme_source_ne_duplique_pas_l_ecriture():
     premiere = _depense_automatique(1002)
     seconde = _depense_automatique(1002)  # même origine_id : Depense.get_or_create retombe dessus

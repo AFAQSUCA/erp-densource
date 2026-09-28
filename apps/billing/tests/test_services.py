@@ -530,6 +530,43 @@ def test_depenses_invalides(libelle, montant, jour, message):
         )
 
 
+def test_enregistrer_une_depense_avec_tva_deductible():
+    depense = services.enregistrer_depense(
+        finances(), categorie="PEAGES", date_depense=date(2026, 9, 5), libelle="Péage avec facture",
+        montant=Decimal("11800"), montant_tva=Decimal("1800"), mode=ModePaiement.ESPECES,
+    )
+
+    assert depense.montant == Decimal("11800")
+    assert depense.montant_tva == Decimal("1800")
+    assert depense.montant_ht == Decimal("10000")
+
+
+def test_enregistrer_une_depense_sans_preciser_la_tva_vaut_zero():
+    depense = services.enregistrer_depense(
+        finances(), categorie="PEAGES", date_depense=date(2026, 9, 5), libelle="Péage sans facture",
+        montant=Decimal("5000"), mode=ModePaiement.ESPECES,
+    )
+
+    assert depense.montant_tva == Decimal("0")
+    assert depense.montant_ht == Decimal("5000")
+
+
+@pytest.mark.parametrize(
+    ("montant", "montant_tva", "message"),
+    [
+        ("5000", "-100", "négative"),
+        ("5000", "5000", "inférieure au montant"),
+        ("5000", "6000", "inférieure au montant"),
+    ],
+)
+def test_tva_deductible_invalide(montant, montant_tva, message):
+    with pytest.raises(MontantInvalide, match=message):
+        services.enregistrer_depense(
+            finances(), categorie="PEAGES", date_depense=date(2026, 9, 1), libelle="x",
+            montant=Decimal(montant), montant_tva=Decimal(montant_tva), mode=ModePaiement.ESPECES,
+        )
+
+
 def test_les_depenses_sont_reservees_a_la_saisie_facturation():
     with pytest.raises(ActionFactureNonAutorisee):
         services.enregistrer_depense(

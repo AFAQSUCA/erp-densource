@@ -26,6 +26,7 @@ from .constants import (
     COMPTE_TRESORERIE_VERS_COMPTE,
     COMPTE_TRESORERIE_VERS_JOURNAL,
     COMPTE_TVA_COLLECTEE,
+    COMPTE_TVA_DEDUCTIBLE,
     COMPTE_VENTES_TRANSPORT,
     NATURE_MOUVEMENT_VERS_COMPTE,
 )
@@ -266,24 +267,31 @@ def comptabiliser_un_reglement(reglement) -> EcritureComptable:
 def comptabiliser_une_depense_automatique(depense) -> EcritureComptable:
     """Écriture d'une dépense, automatique (plein, achat de pièces, main-d'œuvre d'OR, frais de
     mission, ordre de décaissement) ou manuelle (péages, entretien, frais administratifs, autre —
-    avenant-comptabilite-autonomie.md § Lot C) : débite la charge selon la catégorie, crédite la
-    trésorerie selon le mode de paiement. Pour une dépense automatique, le mode est provisoire
-    (Caisse par défaut) sauf pour un ordre de décaissement, dont le mode réel est connu dès
-    l'exécution — voir :func:`reclasser_mode_depense` pour la correction ultérieure ; une dépense
-    saisie à la main connaît déjà son mode réel. Idempotent (voir :func:`passer_ecriture`)."""
+    avenant-comptabilite-autonomie.md § Lot C) : débite la charge (montant HT) selon la catégorie,
+    débite la TVA déductible si ``depense.montant_tva`` est renseignée (§ Lot D), crédite la
+    trésorerie au montant TTC selon le mode de paiement. Pour une dépense automatique, le mode est
+    provisoire (Caisse par défaut) sauf pour un ordre de décaissement, dont le mode réel est connu
+    dès l'exécution — voir :func:`reclasser_mode_depense` pour la correction ultérieure ; une
+    dépense saisie à la main connaît déjà son mode réel. Idempotent (voir :func:`passer_ecriture`)."""
     compte_tresorerie = COMPTE_DU_MODE[depense.mode]
     lignes = [
         LigneSaisie(
             compte=CATEGORIE_DEPENSE_VERS_COMPTE[depense.categorie],
             sens=SensEcriture.DEBIT,
-            montant=depense.montant,
+            montant=depense.montant_ht,
         ),
+    ]
+    if depense.montant_tva > 0:
+        lignes.append(
+            LigneSaisie(compte=COMPTE_TVA_DEDUCTIBLE, sens=SensEcriture.DEBIT, montant=depense.montant_tva)
+        )
+    lignes.append(
         LigneSaisie(
             compte=COMPTE_TRESORERIE_VERS_COMPTE[compte_tresorerie],
             sens=SensEcriture.CREDIT,
             montant=depense.montant,
-        ),
-    ]
+        )
+    )
     return passer_ecriture(
         journal=COMPTE_TRESORERIE_VERS_JOURNAL[compte_tresorerie],
         date_ecriture=depense.date_depense,
