@@ -48,6 +48,11 @@ def ouvrir_or(
 
     Autorisé même si le camion est en mission : c'est le cas d'une panne en
     route. La mission continue ; le statut sera recalculé à la clôture.
+
+    Règle 3 du CDC appliquée dès l'ouverture (et pas seulement à la clôture) :
+    un camion déjà Immobilisé/Hors service garde ce statut, sinon la clôture
+    ne pourrait plus le restaurer — elle relit le statut en base, qui aurait
+    été écrasé en « En maintenance » ici.
     """
     _verrouiller(vehicule)
     ordre = OrdreReparation.objects.create(
@@ -57,7 +62,8 @@ def ouvrir_or(
         lieu=lieu,
         motif=motif,
     )
-    fleet_services.definir_statut(vehicule, StatutVehicule.EN_MAINTENANCE)
+    if vehicule.statut not in (StatutVehicule.IMMOBILISE, StatutVehicule.HORS_SERVICE):
+        fleet_services.definir_statut(vehicule, StatutVehicule.EN_MAINTENANCE)
     return ordre
 
 
