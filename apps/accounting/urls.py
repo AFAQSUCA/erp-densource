@@ -22,4 +22,6 @@ urlpatterns = [
     path("bilan/imprimer/", views.BilanImprimerView.as_view(), name="bilan_imprimer"),
     path("compte-de-resultat/", views.CompteDeResultatView.as_view(), name="compte_resultat"),
     path("compte-de-resultat/imprimer/", views.CompteDeResultatImprimerView.as_view(), name="compte_resultat_imprimer"),
+    path("declaration-tva/", views.DeclarationTvaView.as_view(), name="declaration_tva"),
+    path("declaration-tva/imprimer/", views.DeclarationTvaImprimerView.as_view(), name="declaration_tva_imprimer"),
 ]

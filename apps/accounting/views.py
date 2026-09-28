@@ -6,8 +6,11 @@ Aucune règle métier ici : les vues contrôlent le rôle, lisent le formulaire 
 ``services.py`` (conventions.md:19-23).
 """
 
+import calendar
+
 from django.contrib import messages
 from django.shortcuts import get_object_or_404, redirect
+from django.utils import timezone
 from django.views import View
 from django.views.generic import DetailView, FormView, ListView, TemplateView
 
@@ -272,6 +275,49 @@ class BalanceImprimerView(RoleRequiredMixin, TemplateView):
         }
         rapport = contexte_rapport(self.request, titre="Balance générale", sous_titre=sous_titre)
         contexte.update(rapport, lignes=lignes, totaux=totaux)
+        return contexte
+
+
+def _periode_declaration_tva(form):
+    """Période d'une déclaration TVA : toujours bornée, le mois en cours par défaut (une
+    déclaration ne porte jamais sur « depuis l'origine », contrairement à la balance)."""
+    debut = fin = None
+    if form.is_valid():
+        debut, fin = form.cleaned_data.get("debut"), form.cleaned_data.get("fin")
+    if debut is None and fin is None:
+        aujourd_hui = timezone.localdate()
+        debut = aujourd_hui.replace(day=1)
+        fin = aujourd_hui.replace(day=calendar.monthrange(aujourd_hui.year, aujourd_hui.month)[1])
+    elif debut is None:
+        debut = fin.replace(day=1)
+    elif fin is None:
+        fin = debut.replace(day=calendar.monthrange(debut.year, debut.month)[1])
+    return debut, fin
+
+
+class DeclarationTvaView(RoleRequiredMixin, TemplateView):
+    roles = permissions.CONSULTATION
+    template_name = "accounting/declaration_tva.html"
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        form = PeriodeForm(self.request.GET or None)
+        debut, fin = _periode_declaration_tva(form)
+        contexte.update(form=form, rapport=services.declaration_tva(debut=debut, fin=fin))
+        return contexte
+
+
+class DeclarationTvaImprimerView(RoleRequiredMixin, TemplateView):
+    roles = permissions.CONSULTATION
+    template_name = "accounting/declaration_tva_print.html"
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        form = PeriodeForm(self.request.GET or None)
+        debut, fin = _periode_declaration_tva(form)
+        sous_titre = f"du {debut:%d/%m/%Y} au {fin:%d/%m/%Y}"
+        rapport = contexte_rapport(self.request, titre="Déclaration TVA", sous_titre=sous_titre)
+        contexte.update(rapport, rapport_tva=services.declaration_tva(debut=debut, fin=fin))
         return contexte
 
 

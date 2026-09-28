@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% load ui humanize %}
+{% block titre %}Déclaration TVA{% endblock %}
+{% block entete %}Comptabilité{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-4xl">
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <h1 class="text-2xl font-bold text-slate-900">Rapports comptables</h1>
+    <a href="{% url 'accounting:declaration_tva_imprimer' %}?{{ request.GET.urlencode }}" target="_blank" rel="noopener"
+       class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+      <i class="fa-solid fa-print" aria-hidden="true"></i> Imprimer
+    </a>
+  </div>
+  {% include "accounting/_nav_rapports.html" %}
+
+  <form method="get" class="mt-5 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    {% include "components/_champ.html" with champ=form.debut %}
+    {% include "components/_champ.html" with champ=form.fin %}
+    <button type="submit" class="rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">Afficher</button>
+  </form>
+
+  <p class="mt-3 text-sm text-slate-600">
+    Période du {{ rapport.debut|date:"d/m/Y" }} au {{ rapport.fin|date:"d/m/Y" }} — le mois en cours par
+    défaut si aucune date n'est choisie. Comptes 443300 (TVA facturée sur ventes) et 445200 (TVA
+    déductible sur achats/dépenses).
+  </p>
+
+  <div class="mt-4 grid grid-cols-1 gap-5 sm:grid-cols-2">
+    <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      <dt class="text-sm text-slate-600">TVA collectée (ventes)</dt>
+      <dd class="mt-1 text-2xl font-bold text-slate-900">{{ rapport.tva_collectee|floatformat:0|intcomma }} FCFA</dd>
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      <dt class="text-sm text-slate-600">TVA déductible (dépenses)</dt>
+      <dd class="mt-1 text-2xl font-bold text-slate-900">{{ rapport.tva_deductible|floatformat:0|intcomma }} FCFA</dd>
+    </div>
+  </div>
+
+  <section class="mt-5 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+    <p class="flex justify-between text-base font-semibold {% if rapport.tva_nette >= 0 %}text-red-800{% else %}text-green-800{% endif %}">
+      <span>{% if rapport.tva_nette >= 0 %}TVA nette à payer{% else %}Crédit de TVA reportable{% endif %}</span>
+      <span>{{ rapport.tva_nette|floatformat:0|intcomma }} FCFA</span>
+    </p>
+    <p class="mt-2 text-xs text-slate-500">
+      TVA collectée − TVA déductible. {% if rapport.tva_nette >= 0 %}Montant à reverser au Trésor Public.{% else %}Négative : crédit de TVA à reporter sur la période suivante.{% endif %}
+    </p>
+  </section>
+</div>
+{% endblock %}

@@ -80,9 +80,12 @@ rôles, opérations diverses) ; `VALIDATION_OD` (DIRECTION seule, strict) ; `CLO
 avec ajout/retrait de ligne, validation, abandon), `/comptabilite/exercices/` (liste, clôture),
 `/comptabilite/grand-livre/` (formulaire compte + période), `/comptabilite/balance/` (formulaire
 période), `/comptabilite/bilan/` et `/comptabilite/compte-de-resultat/` (sélecteur d'exercice,
-le plus récent par défaut) — les 4 derniers accessibles depuis le menu « Rapports comptables »,
-chacun avec une version imprimable (`.../imprimer/`, même mécanisme que `finance.tresorerie` —
-voir `avenant-comptabilite-autonomie.md` § Lot B).
+le plus récent par défaut), `/comptabilite/declaration-tva/` (TVA collectée 443300 − TVA
+déductible 445200 sur une période, le mois en cours par défaut —
+`services.declaration_tva`, `avenant-comptabilite-autonomie.md` § Lot E) — les 5 derniers
+accessibles depuis le menu « Rapports comptables », chacun avec une version imprimable
+(`.../imprimer/`, même mécanisme que `finance.tresorerie` — voir
+`avenant-comptabilite-autonomie.md` § Lot B).
 
 **Plan comptable de départ** (`migrations/0002_plan_comptable_seed.py`) : liste de travail, à
 valider par un expert-comptable avant mise en production — aucun plan comptable existant côté

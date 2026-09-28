@@ -305,6 +305,7 @@ def test_compte_de_resultat_sans_aucun_exercice_n_affiche_pas_de_rapport(client)
         "accounting:balance_imprimer",
         "accounting:bilan_imprimer",
         "accounting:compte_resultat_imprimer",
+        "accounting:declaration_tva_imprimer",
     ],
 )
 @pytest.mark.parametrize("role", [Role.ADMIN, Role.DIRECTION, Role.FINANCES, Role.RH])
@@ -321,6 +322,7 @@ def test_les_versions_imprimables_sont_accessibles_aux_roles_de_consultation(cli
         "accounting:balance_imprimer",
         "accounting:bilan_imprimer",
         "accounting:compte_resultat_imprimer",
+        "accounting:declaration_tva_imprimer",
     ],
 )
 def test_les_versions_imprimables_sont_interdites_aux_autres_roles(client, nom_url):
@@ -371,3 +373,42 @@ def test_compte_resultat_imprimer_reprend_l_exercice_le_plus_recent(client):
 
     assert reponse.context["exercice"] == exercice
     assert reponse.context["rapport_resultat"] is not None
+
+
+# --- déclaration TVA (Phase 6 ter) ---
+
+
+def test_declaration_tva_par_defaut_porte_sur_le_mois_en_cours(client):
+    _connecte(client, Role.FINANCES)
+
+    reponse = client.get(reverse("accounting:declaration_tva"))
+
+    assert reponse.status_code == 200
+    rapport = reponse.context["rapport"]
+    assert rapport["debut"].day == 1
+    assert rapport["fin"].month == rapport["debut"].month
+
+
+def test_declaration_tva_accepte_une_periode_choisie(client):
+    _connecte(client, Role.FINANCES)
+
+    reponse = client.get(
+        reverse("accounting:declaration_tva"), {"debut": "2026-01-01", "fin": "2026-03-31"}
+    )
+
+    rapport = reponse.context["rapport"]
+    assert (rapport["debut"], rapport["fin"]) == (date(2026, 1, 1), date(2026, 3, 31))
+
+
+def test_declaration_tva_imprimer_affiche_les_totaux(client):
+    _connecte(client, Role.FINANCES)
+
+    reponse = client.get(
+        reverse("accounting:declaration_tva_imprimer"), {"debut": "2026-01-01", "fin": "2026-03-31"}
+    )
+
+    assert reponse.status_code == 200
+    rapport = reponse.context["rapport_tva"]
+    assert (rapport["debut"], rapport["fin"]) == (date(2026, 1, 1), date(2026, 3, 31))
+    contenu = reponse.content.decode()
+    assert "Généré le" in contenu

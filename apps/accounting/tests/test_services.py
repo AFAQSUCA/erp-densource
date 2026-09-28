@@ -497,6 +497,79 @@ def test_balance_exclut_les_brouillons_non_valides():
     assert charge.numero not in lignes
 
 
+def test_declaration_tva_calcule_la_tva_nette():
+    clients, ventes, tva_collectee = _compte("411000"), _compte("706100"), _compte("443300")
+    charge, tva_deductible, caisse = _compte("628100"), _compte("445200"), _compte("571000")
+    services.passer_ecriture(
+        journal=Journal.VENTES, date_ecriture=JOUR, libelle="Vente",
+        lignes=[
+            LigneSaisie(compte=clients.numero, sens=SensEcriture.DEBIT, montant=Decimal("1180")),
+            LigneSaisie(compte=ventes.numero, sens=SensEcriture.CREDIT, montant=Decimal("1000")),
+            LigneSaisie(compte=tva_collectee.numero, sens=SensEcriture.CREDIT, montant=Decimal("180")),
+        ],
+    )
+    services.passer_ecriture(
+        journal=Journal.CAISSE, date_ecriture=JOUR, libelle="Péage facturé",
+        lignes=[
+            LigneSaisie(compte=charge.numero, sens=SensEcriture.DEBIT, montant=Decimal("100")),
+            LigneSaisie(compte=tva_deductible.numero, sens=SensEcriture.DEBIT, montant=Decimal("18")),
+            LigneSaisie(compte=caisse.numero, sens=SensEcriture.CREDIT, montant=Decimal("118")),
+        ],
+    )
+
+    rapport = services.declaration_tva(debut=date(2026, 9, 1), fin=date(2026, 9, 30))
+
+    assert rapport["tva_collectee"] == Decimal("180")
+    assert rapport["tva_deductible"] == Decimal("18")
+    assert rapport["tva_nette"] == Decimal("162")
+
+
+def test_declaration_tva_negative_est_un_credit_reportable():
+    charge, tva_deductible, caisse = _compte("628100"), _compte("445200"), _compte("571000")
+    services.passer_ecriture(
+        journal=Journal.CAISSE, date_ecriture=JOUR, libelle="Grosse dépense facturée",
+        lignes=[
+            LigneSaisie(compte=charge.numero, sens=SensEcriture.DEBIT, montant=Decimal("1000")),
+            LigneSaisie(compte=tva_deductible.numero, sens=SensEcriture.DEBIT, montant=Decimal("180")),
+            LigneSaisie(compte=caisse.numero, sens=SensEcriture.CREDIT, montant=Decimal("1180")),
+        ],
+    )
+
+    rapport = services.declaration_tva(debut=date(2026, 9, 1), fin=date(2026, 9, 30))
+
+    assert rapport["tva_collectee"] == Decimal("0")
+    assert rapport["tva_deductible"] == Decimal("180")
+    assert rapport["tva_nette"] == Decimal("-180")
+
+
+def test_declaration_tva_filtre_par_periode():
+    clients, ventes, tva_collectee = _compte("411000"), _compte("706100"), _compte("443300")
+    services.passer_ecriture(
+        journal=Journal.VENTES, date_ecriture=date(2026, 1, 15), libelle="Vente janvier",
+        lignes=[
+            LigneSaisie(compte=clients.numero, sens=SensEcriture.DEBIT, montant=Decimal("1180")),
+            LigneSaisie(compte=ventes.numero, sens=SensEcriture.CREDIT, montant=Decimal("1000")),
+            LigneSaisie(compte=tva_collectee.numero, sens=SensEcriture.CREDIT, montant=Decimal("180")),
+        ],
+    )
+
+    rapport = services.declaration_tva(debut=date(2026, 6, 1), fin=date(2026, 6, 30))
+
+    assert rapport["tva_collectee"] == Decimal("0")
+
+
+def test_declaration_tva_exclut_les_brouillons_non_valides():
+    tva_deductible = _compte("445200")
+    ecriture = services.creer_ecriture_manuelle(finances(), date_ecriture=JOUR, libelle="Brouillon")
+    services.ajouter_ligne_manuelle(
+        ecriture, finances(), compte=tva_deductible.numero, sens=SensEcriture.DEBIT, montant=Decimal("5000")
+    )
+
+    rapport = services.declaration_tva(debut=date(2026, 9, 1), fin=date(2026, 9, 30))
+
+    assert rapport["tva_deductible"] == Decimal("0")
+
+
 def test_compte_de_resultat_calcule_le_resultat_net():
     exercice = services.exercice_pour(JOUR)
     clients, ventes, tva = _compte("411000"), _compte("706100"), _compte("443300")

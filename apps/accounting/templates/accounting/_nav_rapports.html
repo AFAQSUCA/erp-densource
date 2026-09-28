@@ -3,4 +3,5 @@
   <a href="{% url 'accounting:balance' %}" class="rounded-lg px-3 py-1.5 font-medium {% if request.resolver_match.url_name == 'balance' %}bg-slate-900 text-white{% else %}border border-slate-300 bg-white text-slate-800 hover:bg-slate-50{% endif %}">Balance</a>
   <a href="{% url 'accounting:bilan' %}" class="rounded-lg px-3 py-1.5 font-medium {% if request.resolver_match.url_name == 'bilan' %}bg-slate-900 text-white{% else %}border border-slate-300 bg-white text-slate-800 hover:bg-slate-50{% endif %}">Bilan</a>
   <a href="{% url 'accounting:compte_resultat' %}" class="rounded-lg px-3 py-1.5 font-medium {% if request.resolver_match.url_name == 'compte_resultat' %}bg-slate-900 text-white{% else %}border border-slate-300 bg-white text-slate-800 hover:bg-slate-50{% endif %}">Compte de résultat</a>
+  <a href="{% url 'accounting:declaration_tva' %}" class="rounded-lg px-3 py-1.5 font-medium {% if request.resolver_match.url_name == 'declaration_tva' %}bg-slate-900 text-white{% else %}border border-slate-300 bg-white text-slate-800 hover:bg-slate-50{% endif %}">Déclaration TVA</a>
 </nav>

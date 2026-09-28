@@ -19,8 +19,8 @@ Chaque lot est livré, testé, documenté et fusionné séparément (même princ
 | A | Rapports comptables : exclure les brouillons non validés (bug trouvé en testant) | ✅ Fusionnée (PR #25) |
 | B | Export / impression des rapports comptables (grand livre, balance, bilan, compte de résultat) | ✅ Ce lot (PR #26) |
 | C | Comptabilisation automatique des dépenses manuelles (péages, entretien, frais admin, autre) | ✅ Ce lot (PR #27) |
-| D | TVA déductible réelle sur les dépenses | **✅ Ce lot** — voir ci-dessous |
-| E | Déclaration TVA (synthèse collectée / déductible) | À livrer |
+| D | TVA déductible réelle sur les dépenses | ✅ Ce lot (PR #28) |
+| E | Déclaration TVA (synthèse collectée / déductible) | **✅ Ce lot** — voir ci-dessous |
 | F | Écran de gestion du plan comptable | À livrer |
 | G | Rapprochement bancaire | À livrer |
 
@@ -139,3 +139,30 @@ TVA saisi en direct → écriture à 3 lignes (628100 débit 10 000, 445200 déb
 `billing.services.enregistrer_depense`, `billing.forms.DepenseForm`,
 `accounting.constants.COMPTE_TVA_DEDUCTIBLE`,
 `accounting.services.comptabiliser_une_depense_automatique`.
+
+## Lot E — Déclaration TVA
+
+Dernier maillon manquant côté TVA : une fois la TVA déductible réelle en place (Lot D), rien ne
+calculait « TVA collectée − TVA déductible » pour une période — un comptable devait le faire à la
+main à partir de la balance, en repérant lui-même les comptes 443300 et 445200.
+
+**Service** (`accounting.services.declaration_tva(*, debut, fin)`) : agrège les mouvements
+VALIDEE des deux comptes sur la période, renvoie `tva_collectee`, `tva_deductible` et
+`tva_nette` (positive = à reverser au Trésor Public, négative = crédit de TVA reportable sur la
+période suivante). Contrairement à la balance ou au grand livre, une déclaration porte toujours
+sur une période bornée : le mois en cours par défaut si aucune date n'est choisie (cycle de
+déclaration usuel en Côte d'Ivoire), ou le mois complet de la seule date fournie si une seule
+borne est donnée.
+
+**Écran** (`/comptabilite/declaration-tva/`, formulaire de période, accessible depuis le menu
+« Rapports comptables ») + version imprimable (`.../imprimer/`, même mécanisme que les autres
+rapports — Lot B).
+
+**Vérifié manuellement** (navigateur, `demo_finances`) : sur l'année 2026 complète, TVA collectée
+216 000 FCFA (identique à la ligne 443300 de la balance), TVA déductible 1 800 FCFA (identique à
+la ligne 445200), TVA nette à payer 214 200 FCFA ; sur le mois en cours (aucune vente, une
+dépense facturée), correctement affiché comme un crédit de TVA reportable négatif.
+
+**Implémentation** : `accounting.services.declaration_tva`,
+`accounting.views.DeclarationTvaView` / `DeclarationTvaImprimerView`,
+`accounting/templates/accounting/declaration_tva.html` / `declaration_tva_print.html`.
