@@ -196,7 +196,7 @@ Tableau de bord & KPIs · Tableaux de bord par utilisateur.
 
 - Trésorerie : entrées et sorties.
 - Suivi flux : encaissements, décaissements, solde temps réel.
-- Rapprochement bancaire (mouvements bancaires + caisse) — non implémenté, écarté le 29/09/2026 sur décision confirmée de l'entreprise (voir `apps/finance/README.md`).
+- Rapprochement bancaire (compte Banque) : saisie manuelle du relevé, suggestion automatique de pointage, écart signalé — voir `apps/finance/README.md` et `avenant-comptabilite-autonomie.md` (Lot G).
 - Indicateurs : CA, charges, marge nette, créances, trésorerie.
 
 ---

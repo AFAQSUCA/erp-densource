@@ -22,7 +22,9 @@ espèces → caisse, Wave / Orange Money / MTN → mobile money.
 - **marge nette** = CA HT − charges ; **créances** = reste à recouvrer (dont échu) ; **trésorerie** = solde.
 
 > Les **charges** (vue économique) et la **trésorerie** (vue réelle) ne sont volontairement **pas les mêmes
-> chiffres**. Le rapprochement bancaire et les écritures comptables ne sont pas gérés (décision du client).
+> chiffres**. Le **rapprochement bancaire** (compte Banque uniquement : saisie du relevé, suggestion de
+> pointage même sens/montant, écart) vit dans ces mêmes `models.py`/`services.py` ; son écran arrive plus tard,
+> au chapitre « Écrans : facturation, dépenses et trésorerie ».
 
 ## Prérequis
 
