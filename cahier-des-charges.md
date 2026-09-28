@@ -196,7 +196,7 @@ Tableau de bord & KPIs · Tableaux de bord par utilisateur.
 
 - Trésorerie : entrées et sorties.
 - Suivi flux : encaissements, décaissements, solde temps réel.
-- Rapprochement bancaire (mouvements bancaires + caisse).
+- Rapprochement bancaire (mouvements bancaires + caisse) — non implémenté, écarté le 29/09/2026 sur décision confirmée de l'entreprise (voir `apps/finance/README.md`).
 - Indicateurs : CA, charges, marge nette, créances, trésorerie.
 
 ---
@@ -233,8 +233,8 @@ Tableau de bord & KPIs · Tableaux de bord par utilisateur.
 - **Dashboards par rôle** :
   - RH : effectif, congés/absents
   - Finances : CA, flux, créances, marge nette
-  - Chargé clientèle : clients actifs, satisfaction, réclamations,
-    top 3 clients, contrats à renouveler
+  - Chargé clientèle : clients actifs, réclamations, top 3 clients (satisfaction et
+    contrats à renouveler non implémentés, écartés le 29/09/2026, voir `apps/dashboard/README.md`)
   - Chauffeur : course du jour, km parcouru, conso, état véhicule,
     prochaine mission
 
@@ -300,7 +300,7 @@ Tableau de bord & KPIs · Tableaux de bord par utilisateur.
 - Chrome, Edge, Safari, Firefox (2 dernières versions)
 - Responsive mobile-first
 - PWA espace mobile chauffeur
-- Fonctionnement hors ligne pour saisies chauffeur (sync différée)
+- Fonctionnement hors ligne pour saisies chauffeur (sync différée) — non implémenté, écarté le 29/09/2026 sur décision confirmée de l'entreprise (voir `apps/mobile_api/README.md`)
 - Accessibilité WCAG 2.1 AA
 - Export PDF et Excel
 

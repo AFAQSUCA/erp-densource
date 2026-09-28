@@ -43,6 +43,8 @@ test) via le cache Django, donc partagé entre processus dès que Redis est conf
 centre d'alertes est toujours recalculé.
 
 Reste à faire :
-- Clientèle : **satisfaction** et **contrats à renouveler** (aucune donnée ne les porte encore).
+- Clientèle : **satisfaction** et **contrats à renouveler** (aucune donnée ne les porte encore ;
+  confirmé non prioritaire par l'entreprise le 29/09/2026, cahier-des-charges.md:236-237 —
+  à reprendre si le besoin redevient prioritaire).
 
 Rapport imprimable (`/imprimer/`, bouton « Imprimer » sur l'écran) : mêmes blocs et mêmes droits que le tableau de bord de l'utilisateur connecté, en tableaux (voir `apps/core/README.md`).
