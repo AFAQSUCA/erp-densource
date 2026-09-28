@@ -19,6 +19,10 @@ Blocs (selon les droits déjà définis dans chaque app) :
 - **Clientèle** (ADMIN, DIRECTION, CHARGE_CLIENTELE) : clients actifs (mission sur 90 jours),
   réclamations (30 jours), top 3 des clients (missions livrées ou clôturées sur 12 mois).
 
+Le tableau de bord du CHAUFFEUR (course du jour, km du mois, consommation, véhicule) n'est pas
+dans cette app : il vit dans l'espace mobile (`apps.mobile_api.services.tableau`), voir
+`apps/mobile_api/README.md`.
+
 Graphiques (`apps/core/graphiques.py`, balises `graphique_barres` / `graphique_colonnes`, styles `viz-*` de
 `frontend/input.css`) : camions et missions par statut, effectif par département, top des clients, charges du
 mois, créances par ancienneté, missions créées / livrées par mois, et facturé / encaissé / charges par mois.
@@ -39,7 +43,6 @@ test) via le cache Django, donc partagé entre processus dès que Redis est conf
 centre d'alertes est toujours recalculé.
 
 Reste à faire :
-- Dashboard **chauffeur** (course du jour, km, conso, prochaine mission) : espace mobile, étape 6.
 - Clientèle : **satisfaction** et **contrats à renouveler** (aucune donnée ne les porte encore).
 
 Rapport imprimable (`/imprimer/`, bouton « Imprimer » sur l'écran) : mêmes blocs et mêmes droits que le tableau de bord de l'utilisateur connecté, en tableaux (voir `apps/core/README.md`).
