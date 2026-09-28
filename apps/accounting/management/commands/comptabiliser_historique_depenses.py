@@ -1,9 +1,9 @@
-"""Reprise, à la demande, des dépenses automatiques déjà enregistrées avant la mise en service de
-la comptabilisation automatique (``accounting.receivers``) — même principe que
-``comptabiliser_historique_factures``/``comptabiliser_historique_reglements``. Ne reprend que les
-dépenses créées automatiquement (``Depense.est_automatique``, catégories CARBURANT, PIECES,
-MAINTENANCE, FRAIS_MISSION) : la saisie manuelle (péages, entretien, frais administratifs, autre)
-arrive avec la Phase 4.
+"""Reprise, à la demande, des dépenses déjà enregistrées avant la mise en service de la
+comptabilisation automatique (``accounting.receivers``) — même principe que
+``comptabiliser_historique_factures``/``comptabiliser_historique_reglements``. Reprend toutes les
+dépenses, automatiques (catégories CARBURANT, PIECES, MAINTENANCE, FRAIS_MISSION) et de saisie
+manuelle (péages, entretien, frais administratifs, autre — comptabilisées depuis
+avenant-comptabilite-autonomie.md § Lot C).
 
 - pas de solde d'ouverture (ou aucune dépense antérieure à sa date) → lancer sans ``--depuis`` ;
 - un solde d'ouverture à une date donnée → lancer avec ``--depuis`` fixé au lendemain de cette date.
@@ -23,8 +23,8 @@ from apps.billing.models import Depense
 
 class Command(BaseCommand):
     help = (
-        "Comptabilise les dépenses automatiques déjà enregistrées avant ce lot (voir --dry-run "
-        "pour prévisualiser, --depuis pour ignorer ce qui précède un solde d'ouverture)."
+        "Comptabilise les dépenses déjà enregistrées avant ce lot (voir --dry-run pour "
+        "prévisualiser, --depuis pour ignorer ce qui précède un solde d'ouverture)."
     )
 
     def add_arguments(self, parser):
@@ -45,7 +45,7 @@ class Command(BaseCommand):
             except ValueError:
                 raise CommandError(f"Date invalide pour --depuis : {depuis!r} (attendu AAAA-MM-JJ).")
 
-        depenses = Depense.objects.exclude(origine="")
+        depenses = Depense.objects.all()
         if date_depuis is not None:
             depenses = depenses.filter(date_depense__gte=date_depuis)
 

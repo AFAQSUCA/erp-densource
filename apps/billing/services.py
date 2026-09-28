@@ -610,7 +610,12 @@ def enregistrer_depense(
     reference: str = "",
     mission: Mission | None = None,
 ) -> Depense:
-    """Saisie d'une dépense (cahier-des-charges.md:192) ; la date ne peut pas être future."""
+    """Saisie d'une dépense (cahier-des-charges.md:192) ; la date ne peut pas être future.
+
+    Comptabilisée comme les dépenses automatiques (:func:`comptabiliser_depense_automatique`) :
+    si l'écriture ne peut pas s'équilibrer, la saisie est annulée plutôt que de laisser une
+    sortie d'argent non comptée (avenant-comptabilite-autonomie.md § Lot C).
+    """
     _exiger_role(acteur, permissions.SAISIE, "saisir une dépense")
     if categorie in CATEGORIES_AUTOMATIQUES:
         raise MontantInvalide(
@@ -625,7 +630,7 @@ def enregistrer_depense(
         raise MontantInvalide("Le montant de la dépense doit être strictement positif.")
     if date_depense > timezone.localdate():
         raise MontantInvalide("La date de la dépense ne peut pas être dans le futur.")
-    return Depense.objects.create(
+    depense = Depense.objects.create(
         categorie=categorie,
         date_depense=date_depense,
         libelle=libelle,
@@ -635,6 +640,8 @@ def enregistrer_depense(
         mission=mission,
         saisi_par=acteur,
     )
+    signals.depense_a_comptabiliser.send(sender=Depense, depense=depense)
+    return depense
 
 
 # --- devis (R5 : le chargé clientèle fixe le prix, la FINANCES et, au-delà d'un seuil,
