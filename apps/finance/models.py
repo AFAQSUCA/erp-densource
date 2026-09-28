@@ -167,6 +167,43 @@ class DemandeDepense(BaseModel):
         return self.numero
 
 
+class LigneReleve(BaseModel):
+    """Une ligne du relevé bancaire, saisie à la main pour la confronter à la trésorerie déjà
+    enregistrée (rapprochement bancaire — cahier-des-charges.md:199,
+    avenant-comptabilite-autonomie.md § Lot G).
+
+    Une fois pointée, elle porte l'origine et l'identifiant du mouvement de trésorerie
+    (``finance.services.mouvements``, un règlement/une dépense/un mouvement manuel) auquel elle
+    correspond ; ``mouvement_origine``/``mouvement_id`` restent vides tant qu'elle ne l'est pas.
+    """
+
+    date_operation = models.DateField(_("date"))
+    libelle = models.CharField(_("libellé"), max_length=200)
+    montant = models.DecimalField(_("montant (FCFA)"), max_digits=14, decimal_places=2)
+    sens = models.CharField(_("sens"), max_length=6, choices=SensMouvement.choices)
+    reference = models.CharField(_("référence"), max_length=100, blank=True)
+    pointee = models.BooleanField(_("pointée"), default=False)
+    mouvement_origine = models.CharField(
+        _("origine du mouvement rapproché"), max_length=10, blank=True,
+        help_text=_("REGLEMENT, DEPENSE ou MANUEL — renseignée une fois la ligne pointée."),
+    )
+    mouvement_id = models.PositiveBigIntegerField(_("identifiant du mouvement rapproché"), null=True, blank=True)
+    saisi_par = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="+"
+    )
+
+    class Meta:
+        verbose_name = _("ligne de relevé bancaire")
+        verbose_name_plural = _("lignes de relevé bancaire")
+        ordering = ["-date_operation", "-pk"]
+        constraints = [
+            models.CheckConstraint(condition=Q(montant__gt=0), name="ligne_releve_montant_positif"),
+        ]
+
+    def __str__(self):
+        return f"{self.get_sens_display()} {self.montant} : {self.libelle}"
+
+
 class StatutOrdreDecaissement(models.TextChoices):
     A_EXECUTER = "A_EXECUTER", _("À exécuter")
     EN_ATTENTE_REVALIDATION = "EN_ATTENTE_REVALIDATION", _("En attente de revalidation")

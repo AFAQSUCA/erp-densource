@@ -24,11 +24,21 @@ from .forms import (
     EnveloppeForm,
     ExecuterOrdreForm,
     FiltreTresorerieForm,
+    LigneReleveForm,
     MotifForm,
     MouvementForm,
+    PeriodeRapprochementForm,
+    PointerLigneReleveForm,
     RevaliderOrdreForm,
 )
-from .models import DemandeDepense, MouvementManuel, OrdreDecaissement, StatutDemandeDepense, StatutOrdreDecaissement
+from .models import (
+    DemandeDepense,
+    LigneReleve,
+    MouvementManuel,
+    OrdreDecaissement,
+    StatutDemandeDepense,
+    StatutOrdreDecaissement,
+)
 
 
 class TresorerieView(RoleRequiredMixin, TemplateView):
@@ -371,3 +381,85 @@ class EnveloppeCreateView(RoleRequiredMixin, View):
         else:
             messages.success(request, "Enveloppe enregistrée.")
         return redirect("finance:enveloppes")
+
+
+# --- rapprochement bancaire (Lot G) ---
+
+
+class RapprochementBancaireView(RoleRequiredMixin, TemplateView):
+    roles = permissions.CONSULTATION
+    template_name = "finance/rapprochement.html"
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        periode_form = PeriodeRapprochementForm(self.request.GET)
+        debut, fin = periode_form.periode()
+        etat = services.rapprochement_bancaire(debut=debut, fin=fin)
+        peut_saisir = self.request.user.role_effectif in permissions.SAISIE
+        lignes_avec_suggestions = [
+            {"ligne": ligne, "suggestions": services.suggestions_pointage(ligne)}
+            for ligne in etat["lignes_non_pointees"]
+        ]
+        contexte.update(
+            periode_form=periode_form,
+            debut=debut,
+            fin=fin,
+            etat=etat,
+            lignes_avec_suggestions=lignes_avec_suggestions,
+            peut_saisir=peut_saisir,
+            form_ligne=LigneReleveForm(initial={"date_operation": timezone.localdate()}) if peut_saisir else None,
+            form_pointer=PointerLigneReleveForm() if peut_saisir else None,
+        )
+        return contexte
+
+
+class LigneReleveCreateView(RoleRequiredMixin, View):
+    roles = permissions.SAISIE
+    http_method_names = ["post"]
+
+    def post(self, request):
+        form = LigneReleveForm(request.POST)
+        if not form.is_valid():
+            _erreurs_en_messages(request, form)
+            return redirect("finance:rapprochement")
+        try:
+            services.saisir_ligne_releve(request.user, **form.cleaned_data)
+        except BillingError as erreur:
+            messages.error(request, str(erreur))
+        else:
+            messages.success(request, "Ligne de relevé ajoutée.")
+        return redirect("finance:rapprochement")
+
+
+class LigneRelevePointerView(RoleRequiredMixin, View):
+    roles = permissions.SAISIE
+    http_method_names = ["post"]
+
+    def post(self, request, pk):
+        ligne = get_object_or_404(LigneReleve, pk=pk)
+        form = PointerLigneReleveForm(request.POST)
+        if not form.is_valid():
+            _erreurs_en_messages(request, form)
+            return redirect("finance:rapprochement")
+        try:
+            services.pointer_ligne_releve(ligne, request.user, **form.cleaned_data)
+        except BillingError as erreur:
+            messages.error(request, str(erreur))
+        else:
+            messages.success(request, "Ligne pointée.")
+        return redirect("finance:rapprochement")
+
+
+class LigneReleveDepointerView(RoleRequiredMixin, View):
+    roles = permissions.SAISIE
+    http_method_names = ["post"]
+
+    def post(self, request, pk):
+        ligne = get_object_or_404(LigneReleve, pk=pk)
+        try:
+            services.depointer_ligne_releve(ligne, request.user)
+        except BillingError as erreur:
+            messages.error(request, str(erreur))
+        else:
+            messages.success(request, "Pointage annulé.")
+        return redirect("finance:rapprochement")
