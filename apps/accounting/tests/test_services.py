@@ -10,6 +10,7 @@ from apps.accounting import services
 from apps.accounting.exceptions import (
     ActionComptableNonAutorisee,
     ClotureImpossible,
+    CompteDejaExistant,
     CompteInconnu,
     EcritureNonEquilibree,
     EcritureVerrouillee,
@@ -169,6 +170,81 @@ def test_grand_livre_exclut_les_brouillons_non_valides():
     )
 
     assert services.grand_livre(charge).count() == 0
+
+
+# --- plan comptable (Lot F, autonomie comptable) ---
+
+
+def test_creer_un_compte():
+    compte = services.creer_compte(
+        finances(), numero="999999", libelle="Compte de test", nature="CHARGE"
+    )
+
+    assert (compte.numero, compte.libelle, compte.nature, compte.actif) == ("999999", "Compte de test", "CHARGE", True)
+
+
+def test_creer_un_compte_refuse_un_numero_vide():
+    with pytest.raises(CompteInconnu, match="numéro"):
+        services.creer_compte(finances(), numero="  ", libelle="x", nature="CHARGE")
+
+
+def test_creer_un_compte_refuse_une_nature_inconnue():
+    with pytest.raises(CompteInconnu, match="Nature"):
+        services.creer_compte(finances(), numero="999999", libelle="x", nature="INCONNUE")
+
+
+def test_creer_un_compte_refuse_un_numero_deja_pris():
+    services.creer_compte(finances(), numero="999999", libelle="Premier", nature="CHARGE")
+
+    with pytest.raises(CompteDejaExistant):
+        services.creer_compte(finances(), numero="999999", libelle="Second", nature="PRODUIT")
+
+
+def test_creer_un_compte_refuse_un_libelle_vide():
+    with pytest.raises(CompteInconnu, match="libellé"):
+        services.creer_compte(finances(), numero="999999", libelle="  ", nature="CHARGE")
+
+
+def test_creer_un_compte_refuse_un_role_non_autorise():
+    with pytest.raises(ActionComptableNonAutorisee):
+        services.creer_compte(
+            UserFactory(role=Role.CHAUFFEUR), numero="999999", libelle="x", nature="CHARGE"
+        )
+
+
+def test_modifier_un_compte_corrige_le_libelle_et_le_statut():
+    compte = CompteFactory(libelle="Ancien libellé", actif=True)
+
+    services.modifier_compte(compte, finances(), libelle="Nouveau libellé", actif=False)
+
+    compte.refresh_from_db()
+    assert (compte.libelle, compte.actif) == ("Nouveau libellé", False)
+
+
+def test_modifier_un_compte_refuse_un_libelle_vide():
+    compte = CompteFactory()
+
+    with pytest.raises(CompteInconnu, match="libellé"):
+        services.modifier_compte(compte, finances(), libelle=" ", actif=True)
+
+
+def test_modifier_un_compte_refuse_un_role_non_autorise():
+    compte = CompteFactory()
+
+    with pytest.raises(ActionComptableNonAutorisee):
+        services.modifier_compte(compte, UserFactory(role=Role.CHAUFFEUR), libelle="x", actif=True)
+
+
+def test_un_compte_desactive_est_refuse_dans_une_nouvelle_ecriture():
+    compte = CompteFactory()
+    services.modifier_compte(compte, finances(), libelle=compte.libelle, actif=False)
+    autre = CompteFactory()
+
+    with pytest.raises(CompteInconnu):
+        services.passer_ecriture(
+            journal=Journal.OPERATIONS_DIVERSES, date_ecriture=JOUR, libelle="Test",
+            lignes=_lignes_equilibrees(compte, autre),
+        )
 
 
 # --- saisie manuelle d'opérations diverses (Phase 4) ---

@@ -11,6 +11,7 @@ from apps.accounts.models import Role
 from apps.accounts.tests.factories import UserFactory
 from apps.accounting import services
 from apps.accounting.models import (
+    Compte,
     EcritureComptable,
     Journal,
     SensEcriture,
@@ -178,6 +179,72 @@ def test_cloturer_via_l_ecran_est_reserve_a_la_direction(client):
     assert reponse.status_code == 302
     exercice.refresh_from_db()
     assert exercice.statut == StatutExercice.CLOTURE
+
+
+# --- plan comptable (Lot F, autonomie comptable) ---
+
+
+def test_le_plan_comptable_est_accessible_en_consultation(client):
+    _connecte(client, Role.FINANCES)
+
+    reponse = client.get(reverse("accounting:plan_comptable"))
+
+    assert reponse.status_code == 200
+    assert reponse.context["peut_gerer"] is True
+
+
+def test_le_bouton_nouveau_compte_apparait_pour_un_role_autorise(client):
+    _connecte(client, Role.RH)  # RH a la même largeur que Finances (CONSULTATION et GESTION)
+    page = client.get(reverse("accounting:plan_comptable")).content.decode()
+    assert reverse("accounting:compte_nouveau") in page
+
+
+def test_creer_un_compte_via_l_ecran(client):
+    _connecte(client, Role.FINANCES)
+
+    reponse = client.post(
+        reverse("accounting:compte_nouveau"),
+        {"numero": "999999", "libelle": "Compte de test", "nature": "CHARGE"},
+    )
+
+    assert reponse.status_code == 302
+    assert Compte.objects.filter(numero="999999", libelle="Compte de test").exists()
+
+
+def test_creer_un_compte_avec_un_numero_deja_pris_affiche_une_erreur(client):
+    CompteFactory(numero="999999")
+    _connecte(client, Role.FINANCES)
+
+    reponse = client.post(
+        reverse("accounting:compte_nouveau"),
+        {"numero": "999999", "libelle": "Doublon", "nature": "CHARGE"},
+    )
+
+    assert reponse.status_code == 200
+    assert "existe déjà" in reponse.content.decode()
+
+
+def test_modifier_un_compte_via_l_ecran(client):
+    compte = CompteFactory(libelle="Ancien", actif=True)
+    _connecte(client, Role.FINANCES)
+
+    reponse = client.post(
+        reverse("accounting:compte_modifier", args=[compte.pk]), {"libelle": "Nouveau"}
+    )
+
+    assert reponse.status_code == 302
+    compte.refresh_from_db()
+    assert compte.libelle == "Nouveau"
+    assert compte.actif is False  # case à cocher absente du POST = décochée
+
+
+def test_gestion_du_plan_comptable_est_interdite_aux_autres_roles(client):
+    compte = CompteFactory()
+    _connecte(client, Role.CHAUFFEUR)
+
+    assert client.get(reverse("accounting:plan_comptable")).status_code == 403
+    assert client.get(reverse("accounting:compte_nouveau")).status_code == 403
+    assert client.get(reverse("accounting:compte_modifier", args=[compte.pk])).status_code == 403
 
 
 # --- rapports comptables (Phase 6) ---

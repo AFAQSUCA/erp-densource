@@ -18,3 +18,7 @@ SAISIE_OD = frozenset({Role.ADMIN, Role.DIRECTION, Role.FINANCES, Role.RH})
 VALIDATION_OD = frozenset({Role.DIRECTION})
 # Clôture d'un exercice comptable (P5) : DIRECTION seule, contrôle strict.
 CLOTURE_EXERCICE = frozenset({Role.DIRECTION})
+# Gestion du plan comptable (créer/modifier un compte, Lot F autonomie comptable) : même largeur
+# que la saisie d'une écriture manuelle, pas de contrôle Direction a posteriori (ce n'est pas une
+# transaction financière, seulement le paramétrage du référentiel).
+GESTION_PLAN_COMPTABLE = frozenset({Role.ADMIN, Role.DIRECTION, Role.FINANCES, Role.RH})

@@ -76,13 +76,17 @@ Reprise de l'historique (événements déjà enregistrés avant la mise en servi
 
 Accès : `permissions.CONSULTATION` (ADMIN, DIRECTION, FINANCES, RH, lecture) ; `SAISIE_OD` (mêmes
 rôles, opérations diverses) ; `VALIDATION_OD` (DIRECTION seule, strict) ; `CLOTURE_EXERCICE`
-(DIRECTION seule, strict). Écrans : `/comptabilite/operations-diverses/` (liste, création, fiche
-avec ajout/retrait de ligne, validation, abandon), `/comptabilite/exercices/` (liste, clôture),
+(DIRECTION seule, strict) ; `GESTION_PLAN_COMPTABLE` (mêmes rôles que `SAISIE_OD` — créer/modifier
+un compte, `avenant-comptabilite-autonomie.md` § Lot F). Écrans :
+`/comptabilite/plan-comptable/` (liste, création, modification — numéro et nature fixés à la
+création, un compte ne se supprime jamais, seulement désactivé),
+`/comptabilite/operations-diverses/` (liste, création, fiche avec ajout/retrait de ligne,
+validation, abandon), `/comptabilite/exercices/` (liste, clôture),
 `/comptabilite/grand-livre/` (formulaire compte + période), `/comptabilite/balance/` (formulaire
 période), `/comptabilite/bilan/` et `/comptabilite/compte-de-resultat/` (sélecteur d'exercice,
 le plus récent par défaut), `/comptabilite/declaration-tva/` (TVA collectée 443300 − TVA
 déductible 445200 sur une période, le mois en cours par défaut —
-`services.declaration_tva`, `avenant-comptabilite-autonomie.md` § Lot E) — les 5 derniers
+`services.declaration_tva`, `avenant-comptabilite-autonomie.md` § Lot E) — ces 5 derniers
 accessibles depuis le menu « Rapports comptables », chacun avec une version imprimable
 (`.../imprimer/`, même mécanisme que `finance.tresorerie` — voir
 `avenant-comptabilite-autonomie.md` § Lot B).
