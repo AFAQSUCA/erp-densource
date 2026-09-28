@@ -563,14 +563,14 @@ def test_le_parc_auto_ne_voit_pas_le_graphique_des_missions(client):
 
 
 def test_le_graphique_de_l_effectif_reprend_les_departements(client):
-    PersonnelFactory(departement="EXPLOITATION")
-    PersonnelFactory(departement="EXPLOITATION")
+    PersonnelFactory(departement="PARC_AUTO")
+    PersonnelFactory(departement="PARC_AUTO")
     PersonnelFactory(departement="DIRECTION")
 
     reponse = _page(client, Role.RH)
 
     lignes = {l["libelle"]: (l["valeur_texte"], l["largeur"]) for l in reponse.context["ressources_humaines"]["graphique_departements"]["lignes"]}
-    assert lignes["Exploitation"] == ("2", 100) and lignes["Direction"] == ("1", 50) and lignes["Comptabilité"] == ("0", 0)
+    assert lignes["Parc Auto"] == ("2", 100) and lignes["Direction"] == ("1", 50) and lignes["Ressources Humaines et Finances"] == ("0", 0)
 
 
 def test_le_graphique_des_clients_renvoie_a_la_fiche_client(client):

@@ -66,7 +66,7 @@ def test_recruter_refuse_un_matricule_deja_attribue_meme_supprime():
     with pytest.raises(PersonnelError, match="MAT-77"):
         services.recruter(
             matricule="MAT-77", nom="A", prenom="B", poste="Comptable",
-            departement=Departement.COMPTABILITE, type_contrat="CDI",
+            departement=Departement.RH_FINANCE, type_contrat="CDI",
             date_embauche=date(2026, 9, 1), salaire_base=Decimal("1"),
         )
 
@@ -76,7 +76,7 @@ def test_recruter_rattache_le_compte_utilisateur():
 
     personnel = services.recruter(
         matricule="MAT-78", nom="A", prenom="B", poste="Comptable",
-        departement=Departement.COMPTABILITE, type_contrat="CDI",
+        departement=Departement.RH_FINANCE, type_contrat="CDI",
         date_embauche=date(2026, 9, 1), salaire_base=Decimal("1"), utilisateur=compte,
     )
 
@@ -90,7 +90,7 @@ def test_recruter_refuse_un_compte_deja_rattache():
     with pytest.raises(PersonnelError, match="déjà rattaché"):
         services.recruter(
             matricule="MAT-79", nom="A", prenom="B", poste="Comptable",
-            departement=Departement.COMPTABILITE, type_contrat="CDI",
+            departement=Departement.RH_FINANCE, type_contrat="CDI",
             date_embauche=date(2026, 9, 1), salaire_base=Decimal("1"), utilisateur=compte,
         )
 

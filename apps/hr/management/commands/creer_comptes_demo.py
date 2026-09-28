@@ -20,11 +20,11 @@ from apps.hr.models import Departement, Personnel
 COMPTES = (
     ("demo_direction", Role.DIRECTION, "Awa", "Koné", "Directrice générale", Departement.DIRECTION, None),
     ("demo_admin", Role.ADMIN, "Ibrahim", "Sanogo", "Administrateur système", Departement.DIRECTION, "demo_direction"),
-    ("demo_rh", Role.RH, "Marie", "Yao", "Responsable RH", Departement.EXPLOITATION, "demo_direction"),
+    ("demo_rh", Role.RH, "Marie", "Yao", "Responsable RH", Departement.RH_FINANCE, "demo_direction"),
     ("demo_charge", Role.CHARGE_CLIENTELE, "Ali", "Traoré", "Chargé clientèle", Departement.COMMERCIAL, "demo_direction"),
     ("demo_parcauto", Role.PARCAUTO, "Issa", "Bamba", "Responsable parc auto", Departement.PARC_AUTO, "demo_direction"),
-    ("demo_finances", Role.FINANCES, "Fatou", "Diallo", "Comptable", Departement.COMPTABILITE, "demo_direction"),
-    ("demo_chauffeur", Role.CHAUFFEUR, "Moussa", "Ouattara", "Chauffeur", Departement.EXPLOITATION, "demo_parcauto"),
+    ("demo_finances", Role.FINANCES, "Fatou", "Diallo", "Comptable", Departement.RH_FINANCE, "demo_direction"),
+    ("demo_chauffeur", Role.CHAUFFEUR, "Moussa", "Ouattara", "Chauffeur", Departement.PARC_AUTO, "demo_parcauto"),
 )
 
 

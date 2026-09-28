@@ -27,7 +27,7 @@ def _hierarchie(poste="Dispatcheur"):
         poste="Chef", departement=Departement.DIRECTION, utilisateur=UserFactory(role=Role.PARCAUTO)
     )
     employe = PersonnelFactory(
-        poste=poste, departement=Departement.EXPLOITATION, superieur=chef,
+        poste=poste, departement=Departement.PARC_AUTO, superieur=chef,
         utilisateur=UserFactory(role=Role.PARCAUTO),
     )
     return employe, chef.utilisateur

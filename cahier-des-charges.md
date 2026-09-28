@@ -204,7 +204,7 @@ Tableau de bord & KPIs · Tableaux de bord par utilisateur.
 ### Module 11 — Ressources Humaines
 
 - **Fiche personnel** : matricule, nom, prénom, poste, département
-  (Exploitation, Parc Auto, Comptabilité, Commercial, Direction),
+  (Parc Auto, Ressources Humaines et Finances, Commercial, Direction),
   date d'embauche, salaire de base (FCFA).
 - **Recrutements** : matricule, nom, prénom, poste, département, type de
   contrat, date d'embauche, salaire de base.

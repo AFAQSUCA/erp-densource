@@ -14,6 +14,6 @@ class PersonnelFactory(factory.django.DjangoModelFactory):
     nom = "Kouassi"
     prenom = "Jean"
     poste = "Comptable"
-    departement = Departement.COMPTABILITE
+    departement = Departement.RH_FINANCE
     date_embauche = date(2024, 1, 15)
     salaire_base = Decimal("250000")

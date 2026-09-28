@@ -33,11 +33,12 @@ POSTES_COURANTS = [
 
 
 class Departement(models.TextChoices):
-    """5 départements — cahier-des-charges.md:207-208."""
+    """4 départements — cahier-des-charges.md:207-208. L'Exploitation ne forme pas un département
+    à part : l'entreprise l'a confirmé rattachée au Parc Auto, qui la gère. La RH n'en forme pas
+    un non plus : elle est rattachée au même département que la Finance/Comptabilité."""
 
-    EXPLOITATION = "EXPLOITATION", _("Exploitation")
     PARC_AUTO = "PARC_AUTO", _("Parc Auto")
-    COMPTABILITE = "COMPTABILITE", _("Comptabilité")
+    RH_FINANCE = "RH_FINANCE", _("Ressources Humaines et Finances")
     COMMERCIAL = "COMMERCIAL", _("Commercial")
     DIRECTION = "DIRECTION", _("Direction")
 
