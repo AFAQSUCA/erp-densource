@@ -22,4 +22,16 @@ urlpatterns = [
     path("ordres/<int:pk>/revalider/", views.OrdreRevaliderView.as_view(), name="ordre_revalider"),
     path("enveloppes/", views.EnveloppeListView.as_view(), name="enveloppes"),
     path("enveloppes/nouvelle/", views.EnveloppeCreateView.as_view(), name="enveloppe_nouvelle"),
+    path("rapprochement/", views.RapprochementBancaireView.as_view(), name="rapprochement"),
+    path("rapprochement/lignes/nouvelle/", views.LigneReleveCreateView.as_view(), name="ligne_releve_nouvelle"),
+    path(
+        "rapprochement/lignes/<int:pk>/pointer/",
+        views.LigneRelevePointerView.as_view(),
+        name="ligne_releve_pointer",
+    ),
+    path(
+        "rapprochement/lignes/<int:pk>/depointer/",
+        views.LigneReleveDepointerView.as_view(),
+        name="ligne_releve_depointer",
+    ),
 ]

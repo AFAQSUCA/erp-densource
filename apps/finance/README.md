@@ -93,10 +93,17 @@ pour le graphique du tableau de bord ; le mois en cours reprend les indicateurs 
 - marge nette = CA HT - charges ; créances = reste à recouvrer (dont échu) ; trésorerie = solde.
   Les charges (économiques) et la trésorerie (réelle) ne sont volontairement pas les mêmes chiffres.
 
-Pas encore fait : **rapprochement bancaire** (écarté sur décision confirmée de l'entreprise le
-29/09/2026 — cahier-des-charges.md:199 : trésorerie seulement, aucune confrontation aux relevés),
-import de relevés. Les écritures comptables (partie double, SYSCOHADA) sont désormais
-générées automatiquement depuis chaque événement de trésorerie — voir `apps/accounting/README.md`
-et `avenant-comptabilite-syscohada.md` ; le grand livre/balance/bilan restent à livrer (Phase 6).
+**Rapprochement bancaire** (`/finances/rapprochement/`, Lot G — avenant-comptabilite-autonomie.md) :
+confronte les lignes du relevé bancaire, saisies à la main (pas d'import de fichier — décision
+confirmée), aux mouvements déjà enregistrés sur le compte Banque (`services.mouvements(compte="BANQUE")`
+: règlements, dépenses, mouvements manuels — jamais la Caisse ni le Mobile Money). Chaque ligne non
+pointée se voit proposer des suggestions (`services.suggestions_pointage`, même sens et montant,
+triées par date la plus proche) ; la Finance confirme (`pointer_ligne_releve`) ou dépointe
+(`depointer_ligne_releve`) en cas d'erreur. L'écran affiche le solde du relevé, celui des mouvements
+enregistrés et l'écart entre les deux sur la période choisie (`services.rapprochement_bancaire`) ;
+un écart qui persiste après pointage signale une opération jamais saisie (frais bancaires, par
+exemple) — à corriger par l'opération diverse existante (`apps/accounting/README.md`), pas un nouveau
+mécanisme. Les écritures comptables (partie double, SYSCOHADA) sont générées automatiquement depuis
+chaque événement de trésorerie — voir `apps/accounting/README.md` et `avenant-comptabilite-syscohada.md`.
 
 Rapport imprimable de la trésorerie (`/finances/imprimer/`, bouton « Imprimer ») : soldes par compte, synthèse et journal de la période filtrée, mêmes filtres que l'écran, plafonné à 500 lignes (voir `apps/core/README.md`).

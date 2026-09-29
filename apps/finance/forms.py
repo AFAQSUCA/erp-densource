@@ -29,6 +29,56 @@ class MotifForm(StyleTailwindMixin, forms.Form):
     motif = forms.CharField(label="Motif", widget=forms.Textarea(attrs={"rows": 2}))
 
 
+class LigneReleveForm(StyleTailwindMixin, forms.Form):
+    """Saisie manuelle d'une ligne du relevé bancaire (Lot G)."""
+
+    date_operation = forms.DateField(label="Date", widget=forms.DateInput(attrs={"type": "date"}))
+    libelle = forms.CharField(label="Libellé", max_length=200)
+    montant = forms.DecimalField(label="Montant (FCFA)", min_value=0, decimal_places=2, max_digits=14)
+    sens = forms.ChoiceField(label="Sens", choices=SensMouvement.choices)
+    reference = forms.CharField(label="Référence", max_length=100, required=False)
+
+    def clean_date_operation(self):
+        jour = self.cleaned_data["date_operation"]
+        if jour > timezone.localdate():
+            raise forms.ValidationError("La date ne peut pas être dans le futur.")
+        return jour
+
+
+class PeriodeRapprochementForm(StyleTailwindMixin, forms.Form):
+    """Période affichée pour le rapprochement bancaire ; par défaut le mois en cours."""
+
+    debut = forms.DateField(label="Du", required=False, widget=forms.DateInput(attrs={"type": "date"}))
+    fin = forms.DateField(label="Au", required=False, widget=forms.DateInput(attrs={"type": "date"}))
+
+    def clean(self):
+        donnees = super().clean()
+        debut, fin = donnees.get("debut"), donnees.get("fin")
+        if debut and fin and debut > fin:
+            self.add_error("fin", "La date de fin précède la date de début : période ignorée.")
+            donnees.pop("debut", None)
+            donnees.pop("fin", None)
+        return donnees
+
+    def periode(self) -> tuple:
+        self.is_valid()
+        donnees = getattr(self, "cleaned_data", {})
+        aujourd_hui = timezone.localdate()
+        return (
+            donnees.get("debut") or aujourd_hui.replace(day=1),
+            donnees.get("fin") or aujourd_hui,
+        )
+
+
+class PointerLigneReleveForm(StyleTailwindMixin, forms.Form):
+    """Choix du mouvement de trésorerie auquel associer une ligne de relevé."""
+
+    origine = forms.ChoiceField(
+        label="Origine", choices=[("REGLEMENT", "Règlement"), ("DEPENSE", "Dépense"), ("MANUEL", "Mouvement manuel")]
+    )
+    mouvement_id = forms.IntegerField(label="Mouvement", min_value=1, widget=forms.HiddenInput)
+
+
 class FiltreTresorerieForm(StyleTailwindMixin, forms.Form):
     """Filtres du journal ; un paramètre invalide est ignoré."""
 

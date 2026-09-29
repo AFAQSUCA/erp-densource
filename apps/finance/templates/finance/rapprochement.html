@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+{% load ui humanize %}
+{% block titre %}Rapprochement bancaire{% endblock %}
+{% block entete %}Rapprochement bancaire{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-7xl" x-data="{ saisie: false }">
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <div>
+      <h1 class="text-2xl font-bold text-slate-900">Rapprochement bancaire</h1>
+      <p class="mt-1 text-sm text-slate-600">Confrontez le relevé de la banque aux mouvements déjà enregistrés sur le compte Banque.</p>
+    </div>
+    {% if peut_saisir %}
+      <button type="button" @click="saisie = !saisie" :aria-expanded="saisie.toString()"
+              class="inline-flex items-center gap-2 rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">
+        <i class="fa-solid fa-plus" aria-hidden="true"></i> Ligne de relevé
+      </button>
+    {% endif %}
+  </div>
+
+  <form method="get" class="mt-5 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    {% include "components/_champ.html" with champ=periode_form.debut %}
+    {% include "components/_champ.html" with champ=periode_form.fin %}
+    <button type="submit" class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2">Filtrer</button>
+  </form>
+
+  <dl class="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
+    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <dt class="text-sm text-slate-600">Solde du relevé</dt>
+      <dd class="mt-1 text-xl font-bold text-slate-900">{{ etat.solde_releve|floatformat:0|intcomma }} <span class="text-sm font-medium text-slate-600">FCFA</span></dd>
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <dt class="text-sm text-slate-600">Solde des mouvements enregistrés</dt>
+      <dd class="mt-1 text-xl font-bold text-slate-900">{{ etat.solde_comptable|floatformat:0|intcomma }} <span class="text-sm font-medium text-slate-600">FCFA</span></dd>
+    </div>
+    <div class="rounded-xl border {% if etat.ecart == 0 %}border-emerald-300{% else %}border-red-300{% endif %} bg-white p-4 shadow-sm">
+      <dt class="text-sm text-slate-600">Écart</dt>
+      <dd class="mt-1 text-xl font-bold {% if etat.ecart == 0 %}text-emerald-800{% else %}text-red-800{% endif %}">{{ etat.ecart|floatformat:0|intcomma }} <span class="text-sm font-medium text-slate-600">FCFA</span></dd>
+    </div>
+  </dl>
+  {% if etat.ecart != 0 %}
+    <p class="mt-2 text-xs text-slate-600">Un écart qui persiste après avoir pointé toutes les lignes concordantes signale une opération jamais saisie (frais bancaires, par exemple) : à corriger par une opération diverse.</p>
+  {% endif %}
+
+  {% if peut_saisir %}
+    <form method="post" action="{% url 'finance:ligne_releve_nouvelle' %}" x-show="saisie" x-cloak class="mt-5 space-y-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      {% csrf_token %}
+      <h2 class="text-base font-semibold text-slate-900">Nouvelle ligne du relevé</h2>
+      <div class="grid grid-cols-1 gap-4 sm:grid-cols-4">
+        {% include "components/_champ.html" with champ=form_ligne.date_operation %}
+        <div class="sm:col-span-2">{% include "components/_champ.html" with champ=form_ligne.libelle %}</div>
+        {% include "components/_champ.html" with champ=form_ligne.sens %}
+        {% include "components/_champ.html" with champ=form_ligne.montant %}
+        {% include "components/_champ.html" with champ=form_ligne.reference %}
+      </div>
+      <button type="submit" class="rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">Enregistrer</button>
+    </form>
+  {% endif %}
+
+  <section class="mt-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+    <h2 class="text-base font-semibold text-slate-900">Lignes du relevé non pointées</h2>
+    {% if lignes_avec_suggestions %}
+      <div class="mt-3 space-y-3">
+        {% for entree in lignes_avec_suggestions %}
+          <div class="rounded-lg border border-slate-200 p-3">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <span class="font-medium text-slate-900">{{ entree.ligne.date_operation|date:"d/m/Y" }} · {{ entree.ligne.libelle }}</span>
+                {% if entree.ligne.reference %}<span class="text-xs text-slate-600"> · {{ entree.ligne.reference }}</span>{% endif %}
+              </div>
+              <span class="font-semibold {% if entree.ligne.sens == 'ENTREE' %}text-emerald-800{% else %}text-red-800{% endif %}">{% if entree.ligne.sens == 'ENTREE' %}+{% else %}−{% endif %}{{ entree.ligne.montant|floatformat:0|intcomma }} FCFA</span>
+            </div>
+            {% if peut_saisir %}
+              {% if entree.suggestions %}
+                <p class="mt-2 text-xs font-medium text-slate-600">Suggestions (même sens et montant) :</p>
+                <ul class="mt-1 space-y-1">
+                  {% for s in entree.suggestions %}
+                    <li class="flex flex-wrap items-center justify-between gap-2 rounded bg-slate-50 px-2 py-1.5 text-sm">
+                      <span class="text-slate-800">{{ s.date|date:"d/m/Y" }} · {{ s.libelle }}</span>
+                      <form method="post" action="{% url 'finance:ligne_releve_pointer' entree.ligne.pk %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="origine" value="{{ s.origine }}">
+                        <input type="hidden" name="mouvement_id" value="{{ s.pk }}">
+                        <button type="submit" class="rounded-lg bg-emerald-700 px-3 py-1 text-xs font-semibold text-white hover:bg-emerald-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:ring-offset-2">Associer</button>
+                      </form>
+                    </li>
+                  {% endfor %}
+                </ul>
+              {% else %}
+                <p class="mt-2 text-xs text-slate-600">Aucun mouvement Banque correspondant trouvé.</p>
+              {% endif %}
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="mt-2 text-sm text-slate-600">Toutes les lignes du relevé sont pointées.</p>
+    {% endif %}
+  </section>
+
+  <section class="mt-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+    <h2 class="text-base font-semibold text-slate-900">Mouvements Banque non pointés</h2>
+    {% if etat.mouvements_non_pointes %}
+      <div class="mt-3 overflow-x-auto">
+        <table class="min-w-full divide-y divide-slate-200 text-sm">
+          <caption class="sr-only">Mouvements Banque non pointés</caption>
+          <thead class="text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+            <tr><th scope="col" class="py-2 pr-4">Date</th><th scope="col" class="px-4 py-2">Libellé</th><th scope="col" class="px-4 py-2 text-right">Montant</th></tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            {% for m in etat.mouvements_non_pointes %}
+              <tr>
+                <td class="whitespace-nowrap py-2 pr-4 text-slate-700">{{ m.date|date:"d/m/Y" }}</td>
+                <td class="px-4 py-2 text-slate-900">{{ m.libelle }}</td>
+                <td class="whitespace-nowrap px-4 py-2 text-right font-medium {% if m.sens == 'ENTREE' %}text-emerald-800{% else %}text-red-800{% endif %}">{% if m.sens == 'ENTREE' %}+{% else %}−{% endif %}{{ m.montant|floatformat:0|intcomma }} FCFA</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="mt-2 text-sm text-slate-600">Tous les mouvements Banque de la période sont pointés.</p>
+    {% endif %}
+  </section>
+
+  <section class="mt-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+    <h2 class="text-base font-semibold text-slate-900">Toutes les lignes du relevé de la période</h2>
+    {% with pointees=etat.lignes_releve %}
+      {% if pointees %}
+        <div class="mt-3 overflow-x-auto">
+          <table class="min-w-full divide-y divide-slate-200 text-sm">
+            <caption class="sr-only">Lignes du relevé pointées</caption>
+            <thead class="text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+              <tr><th scope="col" class="py-2 pr-4">Date</th><th scope="col" class="px-4 py-2">Libellé</th><th scope="col" class="px-4 py-2 text-right">Montant</th><th scope="col" class="px-4 py-2">Statut</th>{% if peut_saisir %}<th scope="col" class="py-2 pl-4"><span class="sr-only">Action</span></th>{% endif %}</tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              {% for ligne in pointees %}
+                <tr>
+                  <td class="whitespace-nowrap py-2 pr-4 text-slate-700">{{ ligne.date_operation|date:"d/m/Y" }}</td>
+                  <td class="px-4 py-2 text-slate-900">{{ ligne.libelle }}</td>
+                  <td class="whitespace-nowrap px-4 py-2 text-right font-medium {% if ligne.sens == 'ENTREE' %}text-emerald-800{% else %}text-red-800{% endif %}">{% if ligne.sens == 'ENTREE' %}+{% else %}−{% endif %}{{ ligne.montant|floatformat:0|intcomma }} FCFA</td>
+                  <td class="whitespace-nowrap px-4 py-2">
+                    {% if ligne.pointee %}<span class="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800"><i class="fa-solid fa-check" aria-hidden="true"></i> Pointée</span>{% else %}<span class="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">Non pointée</span>{% endif %}
+                  </td>
+                  {% if peut_saisir %}
+                    <td class="whitespace-nowrap py-2 pl-4 text-right">
+                      {% if ligne.pointee %}
+                        <form method="post" action="{% url 'finance:ligne_releve_depointer' ligne.pk %}">
+                          {% csrf_token %}
+                          <button type="submit" class="text-sm font-medium text-red-800 underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-red-700">Dépointer</button>
+                        </form>
+                      {% endif %}
+                    </td>
+                  {% endif %}
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="mt-2 text-sm text-slate-600">Aucune ligne saisie sur la période.</p>
+      {% endif %}
+    {% endwith %}
+  </section>
+</div>
+{% endblock %}

@@ -17,12 +17,12 @@ Chaque lot est livré, testé, documenté et fusionné séparément (même princ
 | Lot | Contenu | Statut |
 |---|---|---|
 | A | Rapports comptables : exclure les brouillons non validés (bug trouvé en testant) | ✅ Fusionnée (PR #25) |
-| B | Export / impression des rapports comptables (grand livre, balance, bilan, compte de résultat) | ✅ Ce lot (PR #26) |
-| C | Comptabilisation automatique des dépenses manuelles (péages, entretien, frais admin, autre) | ✅ Ce lot (PR #27) |
-| D | TVA déductible réelle sur les dépenses | ✅ Ce lot (PR #28) |
-| E | Déclaration TVA (synthèse collectée / déductible) | ✅ Ce lot (PR #29) |
-| F | Écran de gestion du plan comptable | **✅ Ce lot** — voir ci-dessous |
-| G | Rapprochement bancaire | À livrer |
+| B | Export / impression des rapports comptables (grand livre, balance, bilan, compte de résultat) | ✅ Fusionnée (PR #31) |
+| C | Comptabilisation automatique des dépenses manuelles (péages, entretien, frais admin, autre) | ✅ Fusionnée (PR #32) |
+| D | TVA déductible réelle sur les dépenses | ✅ Fusionnée (PR #33) |
+| E | Déclaration TVA (synthèse collectée / déductible) | ✅ Fusionnée (PR #34) |
+| F | Écran de gestion du plan comptable | ✅ Fusionnée (PR #35) |
+| G | Rapprochement bancaire | **✅ Ce lot** — voir ci-dessous |
 
 ## Lot A — Rapports comptables : exclure les brouillons non validés
 
@@ -199,3 +199,59 @@ modification de son libellé, conservée après rechargement de la liste.
 `accounting.views.PlanComptableListView` / `CompteCreateView` / `CompteModifierView`,
 `accounting/templates/accounting/plan_comptable_list.html` / `compte_form.html` /
 `compte_modifier_form.html`.
+
+## Lot G — Rapprochement bancaire
+
+Dernier écart trouvé en testant : rien dans l'ERP ne confrontait le relevé réel de la banque aux
+mouvements de trésorerie enregistrés. Un comptable ne pouvait pas s'assurer que la banque était
+d'accord avec le solde affiché ; en cas d'écart (frais bancaires prélevés directement, virement non
+enregistré...), rien ne l'aurait signalé.
+
+**Décisions confirmées avec l'entreprise** :
+- Saisie manuelle ligne par ligne du relevé bancaire — pas d'import de fichier (aucun format de
+  relevé n'est imposé par la banque actuelle, et l'import serait un chantier séparé si le besoin
+  se confirme).
+- Suggestion automatique de rapprochement (même sens et même montant que la ligne saisie, mouvement
+  le plus proche en date en premier) avec pointage manuel confirmé par l'utilisateur — jamais de
+  pointage automatique silencieux.
+- Un écart qui persiste après pointage se corrige par l'opération diverse déjà existante
+  (`apps/accounting/README.md`), pas par un nouveau mécanisme de correction.
+
+**Modèle** (`finance.models.LigneReleve`) : une ligne du relevé saisie à la main (date, libellé,
+montant, sens, référence facultative) ; `pointee`, `mouvement_origine` et `mouvement_id`
+restent vides tant qu'elle n'est pas associée à un mouvement de trésorerie précis. Le
+rapprochement ne concerne que le compte Banque (Virement, Chèque) — jamais la Caisse ni le Mobile
+Money, cohérent avec `apps.billing.models.COMPTE_DU_MODE`.
+
+**Service** (`finance.services`) : `saisir_ligne_releve` (mêmes droits que toute saisie
+trésorerie, `billing.permissions.SAISIE`) ; `suggestions_pointage` (mouvements Banque non encore
+pointés, même sens et montant, triés par proximité de date) ; `pointer_ligne_releve` /
+`depointer_ligne_releve` (un mouvement ne peut être pointé que sur une seule ligne à la fois) ;
+`rapprochement_bancaire(*, debut, fin)` calcule le solde du relevé, le solde des mouvements Banque
+déjà enregistrés, l'écart entre les deux, et le détail de chaque côté non encore pointé.
+
+**Écran** (`/finances/rapprochement/`, menu « Rapprochement bancaire ») : les trois totaux
+(solde relevé, solde comptable, écart — en rouge si non nul), formulaire de saisie d'une ligne,
+lignes non pointées avec leurs suggestions et un bouton « Associer » par suggestion, mouvements
+Banque non pointés, et la liste complète des lignes de la période avec un bouton « Dépointer » en
+cas d'erreur.
+
+**Vérifié manuellement** (navigateur, `demo_finances`) : avec un règlement Cimaf de 916 000 FCFA
+et un apport de 1 500 000 FCFA déjà en trésorerie, écart initial de -2 416 000 FCFA (aucune ligne
+de relevé saisie) ; saisie d'une ligne « Virement Cimaf » de 916 000 FCFA → suggestion automatique
+du règlement correspondant, écart ramené à -1 500 000 FCFA ; « Associer » → ligne pointée, sortie
+des listes « non pointées » des deux côtés ; « Dépointer » → pointage annulé, suggestion réapparaît,
+écart revient à -1 500 000 FCFA.
+
+**Implémentation** : `finance.models.LigneReleve`, `finance.services.saisir_ligne_releve` /
+`suggestions_pointage` / `pointer_ligne_releve` / `depointer_ligne_releve` /
+`rapprochement_bancaire`, `finance.forms.LigneReleveForm` / `PeriodeRapprochementForm` /
+`PointerLigneReleveForm`, `finance.views.RapprochementBancaireView` / `LigneReleveCreateView` /
+`LigneRelevePointerView` / `LigneReleveDepointerView`,
+`finance/templates/finance/rapprochement.html`.
+
+---
+
+Les 7 lots sont désormais fusionnés : l'ERP est complet pour un usage autonome de comptable, à
+l'exception volontaire du contrôle Finances/Direction sur les écritures manuelles (séparation des
+tâches, confirmée comme devant rester en place dès l'ouverture de cet avenant).

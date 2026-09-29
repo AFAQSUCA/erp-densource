@@ -113,8 +113,7 @@ production demande encore (les « lots 2 et 3 » de l'étape 7 du cahier des cha
 - `config/settings/prod.py` existe déjà (chapitre 1) mais **n'a pas été exercé** : il attend ces briques.
 
 Sont aussi **hors périmètre**, sur décision du client : le **mode hors ligne** du chauffeur (saisie sans réseau,
-synchronisation différée), les **écritures comptables** et le **rapprochement bancaire**, l'envoi de SMS et de
-notifications push, les photos d'incident.
+synchronisation différée), l'envoi de SMS et de notifications push, les photos d'incident.
 
 ## Aller plus loin
 
