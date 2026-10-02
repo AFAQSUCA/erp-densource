@@ -51,7 +51,7 @@ d'un chapitre avec un projet qui fonctionne.
 | 12 | [Le carburant : l'app fuel](12-fuel.md) | 14 | 1240 |
 | 13 | [La facturation : l'app billing](13-billing.md) | 13 | 2783 |
 | 14 | [La trésorerie : l'app finance](14-finance.md) | 16 | 1965 |
-| 15 | [La comptabilité en partie double : l'app accounting](15-accounting.md) | 20 | 2557 |
+| 15 | [La comptabilité en partie double : l'app accounting](15-accounting.md) | 21 | 2610 |
 | 16 | [Les notifications : l'app notifications](16-notifications.md) | 17 | 1371 |
 | 17 | [Le socle de l'interface : gabarits, styles, connexion, notifications](17-interface.md) | 54 | 2421 |
 | 18 | [Écrans : personnel et congés](18-ecrans-rh.md) | 14 | 2513 |
@@ -75,7 +75,7 @@ Ces fichiers sont dans le dépôt mais **ne se recopient pas**. Le chapitre conc
 
 | Fichiers | Raison |
 |---|---|
-| 59 (`apps/accounting/migrations/0001_initial.py`, `apps/accounting/migrations/0002_plan_comptable_seed.py`, `apps/accounting/migrations/0003_exercicecomptable.py` …) | généré par `python manage.py makemigrations` |
+| 58 (`apps/accounting/migrations/0001_initial.py`, `apps/accounting/migrations/0003_exercicecomptable.py`, `apps/accounting/migrations/__init__.py` …) | généré par `python manage.py makemigrations` (sauf la migration de données du plan comptable, écrite à la main : voir le chapitre « La comptabilité en partie double ») |
 | 11 (`GUIDE-DEPLOIEMENT.md`, `GUIDE-INTERFACE.md`, `GUIDE-PARCOURS.md` …) | documents de référence à lire (ils décrivent le besoin), pas à recopier |
 | 8 (`.dockerignore`, `Dockerfile`, `docker-compose.yml` …) | mise en production (Docker, Nginx, Gunicorn) : hors périmètre de ce tutoriel de développement — voir GUIDE-DEPLOIEMENT.md |
 | 5 (`static/vendor/alpine/alpine.min.js`, `static/vendor/fontawesome/LICENSE.txt`, `static/vendor/fontawesome/css/all.min.css` …) | généré par `npm run build` (bibliothèques Alpine.js et Font Awesome) |

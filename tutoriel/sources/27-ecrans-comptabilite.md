@@ -123,11 +123,12 @@ python manage.py check
 
 {{PYTEST}}
 
-**Le cycle d'une opération diverse, dans le navigateur** (avec les comptes créés à l'essai du
-chapitre 15) :
+**Le cycle d'une opération diverse, dans le navigateur** (le plan comptable est déjà seedé depuis le
+chapitre 15 : `571000` Caisse, `101000` Capital social… y figurent déjà) :
 
-1. **`demo_finances`** : **Plan comptable → Nouveau compte** : ajoutez `571000` « Caisse » (Actif) si vous
-   ne l'avez pas déjà.
+1. **`demo_finances`** : **Plan comptable** : le plan de départ y est. **Nouveau compte** : ajoutez
+   `612000` « Locations » (Charge) pour voir l'écran de création — numéro et nature ne se modifient
+   plus ensuite.
 2. **`demo_finances`** : **Opérations diverses → Nouvelle opération**, date du jour, libellé « Apport en
    caisse ». Le brouillon se crée **sans numéro**. Ajoutez deux lignes : `571000` au débit, `101000` au
    crédit, même montant. Le bandeau passe à **équilibrée**.

@@ -1,6 +1,6 @@
 # Chapitre 15 — La comptabilité en partie double : l'app accounting
 
-> 20 fichier(s) dans ce chapitre, 2557 lignes de code.
+> 21 fichier(s) dans ce chapitre, 2610 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -36,10 +36,10 @@ modèle. Leurs **écrans** viennent au chapitre 27, une fois le tableau de bord 
 place.
 
 > Le **plan comptable de départ** est une liste de travail, à valider par un expert-comptable avant mise
-> en production (aucun cabinet externe consulté à ce stade). Ce tutoriel ne le préremplit pas par une
-> migration de données (les migrations, générées par `makemigrations`, ne sont jamais recopiées ici — voir
-> la couverture en fin de tutoriel) : l'essai de ce chapitre crée les quelques comptes nécessaires à la
-> main, avec `services.creer_compte` — exactement ce que fera l'écran « Plan comptable » du chapitre 27.
+> en production (aucun cabinet externe consulté à ce stade). Il est chargé par une **migration de
+> données** que vous écrivez à la main dans ce chapitre (Étape 7) — la seule migration de tout ce
+> tutoriel à ne pas être générée par `makemigrations` : les autres, purement schéma, sont reproductibles
+> depuis les modèles et ne sont donc jamais recopiées (voir la couverture en fin de tutoriel).
 
 ## Prérequis
 
@@ -68,6 +68,12 @@ place.
   rejoue les événements déjà enregistrés **avant** la mise en service de la comptabilisation automatique
   — à lancer une fois, à la main, jamais dans une migration (le choix d'inclure ou non l'historique avant
   un solde d'ouverture appartient à qui déploie, pas au code).
+- **Migration de données (`RunPython`)** : contrairement à une migration de schéma (déduite de
+  `models.py` par `makemigrations`), une migration de données est écrite à la main — ici pour peupler le
+  plan comptable de départ. `apps.get_model("accounting", "Compte")` (et non un `import` direct du
+  modèle) fige la version du modèle **au moment de cette migration** : le code continue de fonctionner
+  même si `Compte` change de forme plus tard. `update_or_create` la rend **idempotente** (rejouable sans
+  doublon), et son second argument (`retirer`) permet de la défaire avec `migrate accounting 0001`.
 
 ## Étape 1 — Créer l'application
 
@@ -1561,6 +1567,72 @@ Dans `ready()`, on branche l'audit (module `COMPTABILITE`) sur les quatre modèl
 entrées de menu : « Plan comptable », « Opérations diverses », « Exercices comptables » et « Rapports
 comptables » — ces écrans n'existent pas encore, l'entrée reste simplement inactive jusqu'au chapitre 27.
 
+La migration de données du plan comptable de départ — la seule migration de tout ce tutoriel à être
+montrée : les autres, purement schéma, sont reproduites par `makemigrations` (voir l'Étape 7) :
+
+#### `apps/accounting/migrations/0002_plan_comptable_seed.py`
+
+*52 lignes* — Plan comptable de départ (SYSCOHADA révisé) — liste de travail, à valider par un
+
+```python
+"""Plan comptable de départ (SYSCOHADA révisé) — liste de travail, à valider par un
+expert-comptable avant mise en production (voir apps/accounting/README.md et
+avenant-comptabilite-syscohada.md). Seuls 411000, 706100, 443300 et les 3 comptes de trésorerie
+sont mobilisés par le code de la Phase 1 ; le reste est seedé pour ne pas fragmenter la migration
+de données quand les lots suivants (dépenses automatiques, saisie manuelle) arriveront.
+
+``RunPython`` idempotent (``update_or_create``) : rejouable sans effet si déjà appliquée.
+"""
+
+from django.db import migrations
+
+PLAN_COMPTABLE = [
+    ("101000", "Capital social", "PASSIF"),
+    ("108000", "Compte de l'exploitant", "PASSIF"),
+    ("120000", "Résultat de l'exercice", "PASSIF"),
+    ("401000", "Fournisseurs", "PASSIF"),
+    ("411000", "Clients", "ACTIF"),
+    ("443300", "État, TVA facturée sur ventes", "PASSIF"),
+    ("445200", "État, TVA déductible", "ACTIF"),
+    ("521000", "Banque", "ACTIF"),
+    ("521900", "Mobile Money", "ACTIF"),
+    ("571000", "Caisse", "ACTIF"),
+    ("605100", "Carburants et lubrifiants", "CHARGE"),
+    ("605800", "Pièces détachées et fournitures véhicules", "CHARGE"),
+    ("624100", "Entretien, réparations (prestataires extérieurs)", "CHARGE"),
+    ("628100", "Frais de mission et déplacements", "CHARGE"),
+    ("631000", "Frais bancaires", "CHARGE"),
+    ("658000", "Charges diverses de gestion courante", "CHARGE"),
+    ("706100", "Prestations de transport", "PRODUIT"),
+]
+
+
+def seeder(apps, schema_editor):
+    Compte = apps.get_model("accounting", "Compte")
+    for numero, libelle, nature in PLAN_COMPTABLE:
+        Compte.objects.update_or_create(numero=numero, defaults={"libelle": libelle, "nature": nature})
+
+
+def retirer(apps, schema_editor):
+    Compte = apps.get_model("accounting", "Compte")
+    Compte.objects.filter(numero__in=[numero for numero, _, _ in PLAN_COMPTABLE]).delete()
+
+
+class Migration(migrations.Migration):
+
+    dependencies = [
+        ("accounting", "0001_initial"),
+    ]
+
+    operations = [
+        migrations.RunPython(seeder, retirer),
+    ]
+```
+
+Seuls `411000`, `706100`, `443300` et les 3 comptes de trésorerie sont mobilisés par ce chapitre ; le
+reste est seedé maintenant pour ne pas fragmenter cette migration quand les dépenses automatiques et la
+saisie manuelle (déjà couvertes par `services.py`) s'en serviront.
+
 #### `apps/accounting/README.md`
 
 *96 lignes* — accounting
@@ -2832,6 +2904,17 @@ python manage.py migrate
 `Create model LigneEcriture`, `Create model ExerciceComptable`, les contraintes, puis
 `Applying accounting.0001_initial... OK`.
 
+Puis la migration de données ci-dessus — vous ne pouvez pas la générer avec `makemigrations` (elle ne se
+devine pas depuis `models.py`) : créez une migration **vide**, puis complétez-la avec le contenu montré
+plus haut :
+
+```bash
+python manage.py makemigrations accounting --empty --name plan_comptable_seed
+python manage.py migrate
+```
+
+**Résultat attendu :** `Applying accounting.0002_plan_comptable_seed... OK`.
+
 ## Vérifier le chapitre
 
 ```bash
@@ -2845,11 +2928,10 @@ python -m pytest apps/accounting/tests/test_models.py apps/accounting/tests/test
 
 (Les tests d'écrans de `accounting` sont présentés au chapitre 27.)
 
-Essai dans le shell : deux comptes créés à la main (comme le fera l'écran « Plan comptable »), puis une
-écriture équilibrée.
+Essai dans le shell : une écriture équilibrée sur deux comptes du plan comptable déjà seedé.
 
 ```bash
-python manage.py shell -c "from datetime import date; from decimal import Decimal; from apps.accounts.models import User; from apps.accounting import services as s; a = User.objects.get(username='demo_admin'); s.creer_compte(a, numero='411000', libelle='Clients', nature='ACTIF'); s.creer_compte(a, numero='706100', libelle='Ventes de transport', nature='PRODUIT'); lignes = [s.LigneSaisie(compte='411000', sens='DEBIT', montant=Decimal('118000')), s.LigneSaisie(compte='706100', sens='CREDIT', montant=Decimal('118000'))]; e = s.passer_ecriture(journal='VTE', date_ecriture=date.today(), libelle='Essai', lignes=lignes); print(e.numero, e.lignes.count())"
+python manage.py shell -c "from datetime import date; from decimal import Decimal; from apps.accounting import services as s; lignes = [s.LigneSaisie(compte='411000', sens='DEBIT', montant=Decimal('118000')), s.LigneSaisie(compte='706100', sens='CREDIT', montant=Decimal('118000'))]; e = s.passer_ecriture(journal='VTE', date_ecriture=date.today(), libelle='Essai', lignes=lignes); print(e.numero, e.lignes.count())"
 ```
 
 **Résultat attendu :** `VTE-<année>-0001 2` (le numéro commence par le journal Ventes, suivi de

@@ -114,7 +114,7 @@ erp-densource/
 │   │   │   └── __init__.py  ← ch. 15
 │   │   ├── migrations/
 │   │   │   ├── 0001_initial.py  ← (généré par `python manage.py makemigrations`)
-│   │   │   ├── 0002_plan_comptable_seed.py  ← (généré par `python manage.py makemigrations`)
+│   │   │   ├── 0002_plan_comptable_seed.py  ← ch. 15
 │   │   │   ├── 0003_exercicecomptable.py  ← (généré par `python manage.py makemigrations`)
 │   │   │   └── __init__.py  ← (généré par `python manage.py makemigrations`)
 │   │   ├── templates/

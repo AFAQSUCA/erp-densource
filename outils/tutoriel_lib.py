@@ -99,7 +99,9 @@ EXCLUS = [
     (r"^static/vendor/", "généré par `npm run build` (bibliothèques Alpine.js et Font Awesome)"),
     (r"^static/css/tailwind\.css$", "généré par `npm run build` (Tailwind compilé)"),
     (r"^frontend/package-lock\.json$", "généré par `npm install`"),
-    (r"^apps/[^/]+/migrations/", "généré par `python manage.py makemigrations`"),
+    (r"^apps/[^/]+/migrations/(?!0002_plan_comptable_seed\.py$)",
+     "généré par `python manage.py makemigrations` (sauf la migration de données du plan comptable, "
+     "écrite à la main : voir le chapitre « La comptabilité en partie double »)"),
     (r"^static/img/", "identité visuelle de DEN Source Group : à copier depuis le dépôt (voir le chapitre « Le socle de l'interface »)"),
     (r"\.(docx|pptx)$", "documents de présentation, sans rapport avec le fonctionnement"),
     (r"^(cahier-des-charges|architecture|conventions|glossaire-metier|audit-checklist|GUIDE-INTERFACE|GUIDE-PARCOURS|GUIDE-DEPLOIEMENT|avenant-[\w-]+)\.md$",

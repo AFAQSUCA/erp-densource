@@ -32,10 +32,10 @@ modèle. Leurs **écrans** viennent au chapitre 27, une fois le tableau de bord 
 place.
 
 > Le **plan comptable de départ** est une liste de travail, à valider par un expert-comptable avant mise
-> en production (aucun cabinet externe consulté à ce stade). Ce tutoriel ne le préremplit pas par une
-> migration de données (les migrations, générées par `makemigrations`, ne sont jamais recopiées ici — voir
-> la couverture en fin de tutoriel) : l'essai de ce chapitre crée les quelques comptes nécessaires à la
-> main, avec `services.creer_compte` — exactement ce que fera l'écran « Plan comptable » du chapitre 27.
+> en production (aucun cabinet externe consulté à ce stade). Il est chargé par une **migration de
+> données** que vous écrivez à la main dans ce chapitre (Étape 7) — la seule migration de tout ce
+> tutoriel à ne pas être générée par `makemigrations` : les autres, purement schéma, sont reproductibles
+> depuis les modèles et ne sont donc jamais recopiées (voir la couverture en fin de tutoriel).
 
 ## Prérequis
 
@@ -64,6 +64,12 @@ place.
   rejoue les événements déjà enregistrés **avant** la mise en service de la comptabilisation automatique
   — à lancer une fois, à la main, jamais dans une migration (le choix d'inclure ou non l'historique avant
   un solde d'ouverture appartient à qui déploie, pas au code).
+- **Migration de données (`RunPython`)** : contrairement à une migration de schéma (déduite de
+  `models.py` par `makemigrations`), une migration de données est écrite à la main — ici pour peupler le
+  plan comptable de départ. `apps.get_model("accounting", "Compte")` (et non un `import` direct du
+  modèle) fige la version du modèle **au moment de cette migration** : le code continue de fonctionner
+  même si `Compte` change de forme plus tard. `update_or_create` la rend **idempotente** (rejouable sans
+  doublon), et son second argument (`retirer`) permet de la défaire avec `migrate accounting 0001`.
 
 ## Étape 1 — Créer l'application
 
@@ -163,6 +169,15 @@ Dans `ready()`, on branche l'audit (module `COMPTABILITE`) sur les quatre modèl
 entrées de menu : « Plan comptable », « Opérations diverses », « Exercices comptables » et « Rapports
 comptables » — ces écrans n'existent pas encore, l'entrée reste simplement inactive jusqu'au chapitre 27.
 
+La migration de données du plan comptable de départ — la seule migration de tout ce tutoriel à être
+montrée : les autres, purement schéma, sont reproduites par `makemigrations` (voir l'Étape 7) :
+
+{{FICHIER apps/accounting/migrations/0002_plan_comptable_seed.py}}
+
+Seuls `411000`, `706100`, `443300` et les 3 comptes de trésorerie sont mobilisés par ce chapitre ; le
+reste est seedé maintenant pour ne pas fragmenter cette migration quand les dépenses automatiques et la
+saisie manuelle (déjà couvertes par `services.py`) s'en serviront.
+
 {{RESTANTS}}
 
 ## Étape 7 — Déclarer l'application et migrer
@@ -178,6 +193,17 @@ python manage.py migrate
 `Create model LigneEcriture`, `Create model ExerciceComptable`, les contraintes, puis
 `Applying accounting.0001_initial... OK`.
 
+Puis la migration de données ci-dessus — vous ne pouvez pas la générer avec `makemigrations` (elle ne se
+devine pas depuis `models.py`) : créez une migration **vide**, puis complétez-la avec le contenu montré
+plus haut :
+
+```bash
+python manage.py makemigrations accounting --empty --name plan_comptable_seed
+python manage.py migrate
+```
+
+**Résultat attendu :** `Applying accounting.0002_plan_comptable_seed... OK`.
+
 ## Vérifier le chapitre
 
 ```bash
@@ -188,11 +214,10 @@ python manage.py check
 
 (Les tests d'écrans de `accounting` sont présentés au chapitre 27.)
 
-Essai dans le shell : deux comptes créés à la main (comme le fera l'écran « Plan comptable »), puis une
-écriture équilibrée.
+Essai dans le shell : une écriture équilibrée sur deux comptes du plan comptable déjà seedé.
 
 ```bash
-python manage.py shell -c "from datetime import date; from decimal import Decimal; from apps.accounts.models import User; from apps.accounting import services as s; a = User.objects.get(username='demo_admin'); s.creer_compte(a, numero='411000', libelle='Clients', nature='ACTIF'); s.creer_compte(a, numero='706100', libelle='Ventes de transport', nature='PRODUIT'); lignes = [s.LigneSaisie(compte='411000', sens='DEBIT', montant=Decimal('118000')), s.LigneSaisie(compte='706100', sens='CREDIT', montant=Decimal('118000'))]; e = s.passer_ecriture(journal='VTE', date_ecriture=date.today(), libelle='Essai', lignes=lignes); print(e.numero, e.lignes.count())"
+python manage.py shell -c "from datetime import date; from decimal import Decimal; from apps.accounting import services as s; lignes = [s.LigneSaisie(compte='411000', sens='DEBIT', montant=Decimal('118000')), s.LigneSaisie(compte='706100', sens='CREDIT', montant=Decimal('118000'))]; e = s.passer_ecriture(journal='VTE', date_ecriture=date.today(), libelle='Essai', lignes=lignes); print(e.numero, e.lignes.count())"
 ```
 
 **Résultat attendu :** `VTE-<année>-0001 2` (le numéro commence par le journal Ventes, suivi de
