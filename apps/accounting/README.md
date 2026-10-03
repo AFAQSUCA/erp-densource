@@ -36,8 +36,15 @@ Entités : `Compte` (plan comptable, table de référence), `EcritureComptable` 
 par journal via `core.services.prochain_numero` — vide tant qu'elle est en `BROUILLON`),
 `LigneEcriture` (ligne débit/crédit, append-only une fois l'écriture validée, modifiable tant
 qu'elle est en brouillon), `ExerciceComptable` (année, période, statut `OUVERT`/`CLOTURE`).
-Une écriture validée ne se modifie ni ne se supprime : seule une contre-passation (non livrée) la
-corrige. Un exercice clôturé ne se rouvre jamais.
+Une écriture validée ne se modifie ni ne se supprime : seule une contre-passation la corrige
+(`services.contre_passer` : écriture inverse, même journal et même pièce, datée du jour — donc dans
+l'exercice ouvert même si l'original est dans un exercice clos ; idempotente ; refusée pour un brouillon
+et pour une contre-passation). Annuler un règlement (`billing.annuler_reglement`) ou un mouvement manuel
+(`finance.annuler_mouvement`) contre-passe automatiquement son écriture (signaux `reglement_annule` et
+`mouvement_annule`, `send()` brut : si la contre-passation est impossible — exercice du jour clos, compte
+désactivé — l'annulation est refusée avec son message) et défait le pointage bancaire éventuel. Reprise des
+annulations antérieures : `python manage.py contre_passer_historique_annulations [--dry-run]`. Un exercice
+clôturé ne se rouvre jamais.
 
 Service central : `services.passer_ecriture(...)` — garantit lui-même l'équilibre (débit ==
 crédit), l'idempotence par `(origine, origine_id)` et que l'exercice de la date n'est pas

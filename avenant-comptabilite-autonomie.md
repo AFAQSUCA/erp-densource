@@ -22,7 +22,8 @@ Chaque lot est livré, testé, documenté et fusionné séparément (même princ
 | D | TVA déductible réelle sur les dépenses | ✅ Fusionnée (PR #33) |
 | E | Déclaration TVA (synthèse collectée / déductible) | ✅ Fusionnée (PR #34) |
 | F | Écran de gestion du plan comptable | ✅ Fusionnée (PR #35) |
-| G | Rapprochement bancaire | **✅ Ce lot** — voir ci-dessous |
+| G | Rapprochement bancaire | ✅ Fusionnée (PR #36) |
+| H | Contre-passation (annulation d'un règlement ou d'un mouvement) | **✅ Ce lot** — voir ci-dessous |
 
 ## Lot A — Rapports comptables : exclure les brouillons non validés
 
@@ -250,8 +251,37 @@ des listes « non pointées » des deux côtés ; « Dépointer » → pointage 
 `LigneRelevePointerView` / `LigneReleveDepointerView`,
 `finance/templates/finance/rapprochement.html`.
 
+## Lot H — Contre-passation
+
+Trouvé par la 2e passe d'audit global (ACC-07) : annuler un règlement ou un mouvement manuel le retirait de
+la trésorerie mais laissait son écriture au grand livre (comptes 411, 521, 571). Les deux vues divergeaient
+sans trace ni alerte, et une écriture validée, jamais modifiable, n'avait aucun moyen d'être corrigée.
+
+**Décisions de conception** (écriture inverse standard, pas de question business ouverte) :
+- `accounting.services.contre_passer` crée une écriture aux sens inversés, dans le même journal, avec la
+  même pièce, **datée du jour** : l'écriture d'origine reste intacte (append-only) et, si elle est dans un
+  exercice clôturé, la correction tombe dans l'exercice ouvert.
+- Idempotente (une seule contre-passation par écriture), refusée pour un brouillon (il s'abandonne) et pour
+  une contre-passation (pas de chaîne).
+- Câblée par des signaux **bloquants** (`billing.reglement_annule`, `finance.mouvement_annule`) : si la
+  contre-passation est impossible (exercice du jour clos, compte désactivé), l'annulation est refusée avec
+  son message plutôt que de laisser trésorerie et grand livre diverger.
+- L'annulation défait aussi le pointage bancaire d'une ligne de relevé associée (elle redevient à pointer).
+- Reprise de l'existant : `contre_passer_historique_annulations [--dry-run]` contre-passe les annulations
+  faites avant ce lot (datées du jour de l'annulation) et signale celles qui tombent dans un exercice clos.
+
+**Limites connues** : pas d'écran pour contre-passer à la main une opération diverse validée (la correction
+manuelle d'une saisie reste à livrer) ; la ligne « encaissement » du suivi de trésorerie d'une mission
+(`missions.FraisMission`, type ENCAISSEMENT) n'est pas retirée quand son règlement est annulé, faute de lien
+entre les deux.
+
+**Implémentation** : `accounting.services.contre_passer` / `contre_passer_origine`,
+`accounting.exceptions.ContrePassationImpossible`, `accounting.receivers`, `billing.signals.reglement_annule`,
+`finance.signals.mouvement_annule`, `finance.services.depointer_mouvement`,
+`accounting.management.commands.contre_passer_historique_annulations`.
+
 ---
 
-Les 7 lots sont désormais fusionnés : l'ERP est complet pour un usage autonome de comptable, à
+Les 8 lots sont désormais livrés : l'ERP est complet pour un usage autonome de comptable, à
 l'exception volontaire du contrôle Finances/Direction sur les écritures manuelles (séparation des
 tâches, confirmée comme devant rester en place dès l'ouverture de cet avenant).
