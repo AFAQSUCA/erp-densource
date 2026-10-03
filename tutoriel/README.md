@@ -64,7 +64,7 @@ d'un chapitre avec un projet qui fonctionne.
 | 25 | [Écrans : carburant](25-ecrans-carburant.md) | 9 | 1674 |
 | 26 | [Écrans : facturation, dépenses et trésorerie](26-ecrans-finances.md) | 38 | 6277 |
 | 27 | [Écrans : plan comptable, opérations diverses et rapports comptables](27-ecrans-comptabilite.md) | 22 | 1969 |
-| 28 | [La page d'accueil : le tableau de bord](28-tableau-de-bord.md) | 13 | 2166 |
+| 28 | [La page d'accueil : le tableau de bord](28-tableau-de-bord.md) | 13 | 2168 |
 | 29 | [L'espace mobile du chauffeur](29-mobile.md) | 31 | 2523 |
 | 30 | [L'API REST](30-api.md) | 20 | 2664 |
 | 31 | [Finalisation, vérifications et déploiement](31-finalisation.md) | 1 | 132 |

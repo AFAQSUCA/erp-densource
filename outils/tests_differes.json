@@ -30,9 +30,5 @@
   "apps/core/tests/test_graphiques.py::test_un_graphique_vide_affiche_le_message_sans_barre": {
     "presente_au": 2,
     "vert_au": 17
-  },
-  "apps/dashboard/tests/test_series_mensuelles.py::test_le_graphique_des_creances_est_affiche_a_la_finance": {
-    "presente_au": 28,
-    "vert_au": null
   }
 }

@@ -1,6 +1,6 @@
 # Chapitre 28 — La page d'accueil : le tableau de bord
 
-> 13 fichier(s) dans ce chapitre, 2166 lignes de code.
+> 13 fichier(s) dans ce chapitre, 2168 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -1979,7 +1979,7 @@ def test_pleins_a_surveiller_peut_se_limiter_aux_pleins_recents():
 
 #### `apps/dashboard/tests/test_series_mensuelles.py`
 
-*194 lignes* — Séries mensuelles, créances par ancienneté et sélecteur de période des graphiques du tableau de bord.
+*196 lignes* — Séries mensuelles, créances par ancienneté et sélecteur de période des graphiques du tableau de bord.
 
 ```python
 """Séries mensuelles, créances par ancienneté et sélecteur de période des graphiques du tableau de bord."""
@@ -1997,6 +1997,7 @@ from apps.billing import services as billing
 from apps.billing.models import ModePaiement
 from apps.billing.tests.helpers import emise, finances
 from apps.core import services as core
+from apps.customers.models import DELAI_PAIEMENT_DEFAUT
 from apps.customers.tests.factories import ClientFactory
 from apps.dashboard import services
 from apps.finance import services as finance_services
@@ -2159,7 +2160,8 @@ def test_chaque_barre_de_statut_mene_a_la_liste_filtree(client):
 
 def test_le_graphique_des_creances_est_affiche_a_la_finance(client):
     client.force_login(UserFactory(role=Role.FINANCES))
-    emise(prix="1000000", aujourd_hui=date(2026, 8, 1))
+    # Émise il y a délai + 15 j : échue depuis 15 j, au milieu de la tranche « 1 à 30 jours », quelle que soit la date du jour.
+    emise(prix="1000000", aujourd_hui=timezone.localdate() - timedelta(days=DELAI_PAIEMENT_DEFAUT + 15))
 
     reponse = client.get(reverse("home"))
 
@@ -2368,12 +2370,6 @@ python -m pytest apps/dashboard/tests/test_dashboard.py apps/dashboard/tests/tes
 
 Les cinq tests qui échouaient au chapitre 22 (`test_web.py` : accueil, menu par rôle, déconnexion, chauffeur
 renvoyé vers son espace) **passent enfin**.
-
-> Un échec distinct, **sans rapport avec ce tutoriel** : `test_series_mensuelles.py::
-> test_le_graphique_des_creances_est_affiche_a_la_finance` fige une facture au 1ᵉʳ août 2026 pour la
-> ranger dans une tranche d'ancienneté précise du graphique des créances — un test daté dans l'absolu plutôt
-> que relativement à aujourd'hui finit par tomber dans une autre tranche. Il échoue déjà sur le dépôt
-> complet, indépendamment du tutoriel ; pas la peine d'enquêter si vous le voyez échouer.
 
 **Dans le navigateur** : reconnectez-vous avec chacun des sept comptes (la MFA pour ADMIN et DIRECTION) et
 comparez les tableaux de bord :

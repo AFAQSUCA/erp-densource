@@ -95,12 +95,6 @@ python manage.py check
 Les cinq tests qui échouaient au chapitre 22 (`test_web.py` : accueil, menu par rôle, déconnexion, chauffeur
 renvoyé vers son espace) **passent enfin**.
 
-> Un échec distinct, **sans rapport avec ce tutoriel** : `test_series_mensuelles.py::
-> test_le_graphique_des_creances_est_affiche_a_la_finance` fige une facture au 1ᵉʳ août 2026 pour la
-> ranger dans une tranche d'ancienneté précise du graphique des créances — un test daté dans l'absolu plutôt
-> que relativement à aujourd'hui finit par tomber dans une autre tranche. Il échoue déjà sur le dépôt
-> complet, indépendamment du tutoriel ; pas la peine d'enquêter si vous le voyez échouer.
-
 **Dans le navigateur** : reconnectez-vous avec chacun des sept comptes (la MFA pour ADMIN et DIRECTION) et
 comparez les tableaux de bord :
 
