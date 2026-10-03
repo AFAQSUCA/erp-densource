@@ -3,6 +3,8 @@
 from datetime import date, datetime
 from datetime import timezone as dt_timezone
 
+from unittest import mock
+
 import pytest
 from django.urls import reverse
 
@@ -24,11 +26,13 @@ def _entree(**surcharges):
         utilisateur_nom="Awa Koné", role=Role.PARCAUTO, adresse_ip="10.0.0.1",
     )
     donnees.update(surcharges)
-    entree = AuditLog.objects.create(**donnees)
     if "date_heure" in surcharges:
-        AuditLog.objects.filter(pk=entree.pk).update(date_heure=surcharges["date_heure"])
-        entree.refresh_from_db()
-    return entree
+        # ``date_heure`` est posée à la création (auto_now_add) et le journal est append-only, y compris en base
+        # PostgreSQL (trigger) : on fixe donc l'horloge le temps de la création plutôt que de modifier la ligne.
+        donnees.pop("date_heure")
+        with mock.patch("django.utils.timezone.now", return_value=surcharges["date_heure"]):
+            return AuditLog.objects.create(**donnees)
+    return AuditLog.objects.create(**donnees)
 
 
 # --- accès ---

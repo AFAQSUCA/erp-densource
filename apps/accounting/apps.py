@@ -15,7 +15,12 @@ class AccountingConfig(AppConfig):
         from .models import Compte, EcritureComptable, ExerciceComptable, LigneEcriture
 
         audit_model(Compte, module="COMPTABILITE")
-        audit_model(EcritureComptable, module="COMPTABILITE")
+        audit_model(
+            EcritureComptable,
+            module="COMPTABILITE",
+            validation=("statut", ("VALIDEE",)),
+            auto_validation=("cree_par", ("valide_par",)),
+        )
         audit_model(LigneEcriture, module="COMPTABILITE")
         audit_model(ExerciceComptable, module="COMPTABILITE")
         enregistrer(

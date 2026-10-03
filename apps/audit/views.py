@@ -4,6 +4,7 @@
 """
 
 import csv
+import json
 
 from django.http import HttpResponse
 from django.views.generic import ListView
@@ -45,6 +46,25 @@ COLONNES_EXPORT = (
     ("Action", "get_action_display"), ("Module", "module"), ("Entité", "entite"),
     ("ID entité", lambda e: e.entite_id if e.entite_id is not None else "—"),
     ("Statut", "get_statut_display"), ("Adresse IP", lambda e: e.adresse_ip or "—"),
+)
+
+
+def _json(valeur):
+    return json.dumps(valeur, ensure_ascii=False, sort_keys=True, default=str) if valeur is not None else ""
+
+
+def _texte_sur(valeur: str) -> str:
+    """Neutralise l'injection de formule d'un tableur : un texte qui commence par = + - @ s'exécuterait à
+    l'ouverture dans Excel (le user-agent est fourni par le client)."""
+    return f"'{valeur}" if valeur[:1] in ("=", "+", "-", "@", "\t", "\r") else valeur
+
+
+# Le CSV sert aux audits externes : en plus des colonnes de l'écran, ce qui a réellement changé (anciennes et
+# nouvelles valeurs) et le navigateur utilisé. Le rapport imprimable garde les colonnes de l'écran.
+COLONNES_CSV = COLONNES_EXPORT + (
+    ("Ancienne valeur", lambda e: _texte_sur(_json(e.ancienne_valeur))),
+    ("Nouvelle valeur", lambda e: _texte_sur(_json(e.nouvelle_valeur))),
+    ("User-agent", lambda e: _texte_sur(e.user_agent)),
 )
 
 
@@ -91,7 +111,7 @@ class JournalExporterCsvView(RoleRequiredMixin, ListView):
         reponse["Content-Disposition"] = 'attachment; filename="journal_audit.csv"'
         reponse.write("﻿")  # BOM : Excel ouvre l'UTF-8 sans le déformer
         redacteur = csv.writer(reponse, delimiter=";")
-        redacteur.writerow([libelle for libelle, _ in COLONNES_EXPORT])
+        redacteur.writerow([libelle for libelle, _ in COLONNES_CSV])
         for entree in self.get_queryset():
-            redacteur.writerow([ImpressionListeMixin._valeur(entree, cle) for _, cle in COLONNES_EXPORT])
+            redacteur.writerow([ImpressionListeMixin._valeur(entree, cle) for _, cle in COLONNES_CSV])
         return reponse

@@ -13,10 +13,20 @@ class BillingConfig(AppConfig):
         from . import permissions
         from .models import Depense, Facture, Proforma, Reglement
 
-        audit_model(Facture, module="FINANCES")
+        audit_model(
+            Facture,
+            module="FINANCES",
+            validation=("statut", ("EMISE",)),
+            auto_validation=("cree_par", ("validee_par",)),
+        )
         audit_model(Reglement, module="FINANCES")
         audit_model(Depense, module="FINANCES")
-        audit_model(Proforma, module="FINANCES")
+        audit_model(
+            Proforma,
+            module="FINANCES",
+            validation=("statut", ("VALIDEE",)),
+            auto_validation=("cree_par", ("valide_par_finances", "valide_par_direction")),
+        )
         enregistrer(
             EntreeMenu(
                 "Facturation", "billing:factures", "fa-file-invoice-dollar",

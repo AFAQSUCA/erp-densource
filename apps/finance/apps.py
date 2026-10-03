@@ -16,7 +16,12 @@ class FinanceConfig(AppConfig):
 
         audit_model(MouvementManuel, module="FINANCES")
         audit_model(EnveloppeDepense, module="FINANCES")
-        audit_model(DemandeDepense, module="FINANCES")
+        audit_model(
+            DemandeDepense,
+            module="FINANCES",
+            validation=("statut", ("VALIDEE",)),
+            auto_validation=("demandeur", ("valide_par",)),
+        )
         audit_model(OrdreDecaissement, module="FINANCES")
         audit_model(LigneReleve, module="FINANCES")
         enregistrer_media("demandes_depense", permissions.DEMANDE_CONSULTATION)

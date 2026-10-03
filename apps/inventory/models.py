@@ -5,6 +5,7 @@ from django.db import models
 from django.db.models import Q
 from django.utils.translation import gettext_lazy as _
 
+from apps.core.immuable import AppendOnlyQuerySet
 from apps.core.models import BaseModel
 
 
@@ -141,6 +142,8 @@ class MouvementStock(models.Model):
 
     def __str__(self):
         return f"{self.get_type_mouvement_display()} {self.variation:+d} {self.article.reference}"
+
+    objects = AppendOnlyQuerySet.as_manager()
 
     def save(self, *args, **kwargs):
         if self.pk is not None:
