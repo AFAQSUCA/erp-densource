@@ -38,7 +38,7 @@
         {% empty %}
           <tr><td colspan="2">Aucun compte de passif mouvementé.</td></tr>
         {% endfor %}
-        <tr><td>Résultat de l'exercice {{ exercice.annee }} (calculé)</td><td class="droite">{{ rapport_bilan.resultat_net|floatformat:0|intcomma }}</td></tr>
+        {% if rapport_bilan.resultat_net %}<tr><td>Résultat en cours, pas encore viré au 120000 (calculé)</td><td class="droite">{{ rapport_bilan.resultat_net|floatformat:0|intcomma }}</td></tr>{% endif %}
       </tbody>
       <tfoot><tr><td><strong>Total passif</strong></td><td class="droite"><strong>{{ rapport_bilan.total_passif_avec_resultat|floatformat:0|intcomma }}</strong></td></tr></tfoot>
     </table>
