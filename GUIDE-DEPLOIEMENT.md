@@ -17,8 +17,8 @@ manquent à l'essai local.
 Internet ──► Nginx (80/443) ──► Gunicorn (web, 3 workers) ──► PostgreSQL
                  │                      │                         ▲
                  │                      └──► Celery worker ───────┤
-                 ├── /static/, /media/       Celery beat ─────────┘
-                 │   (disque, pas Gunicorn)        │
+                 ├── /static/, /medias/*     Celery beat ─────────┘
+                 │   (disque ; /medias/* : Django contrôle le rôle)        │
                  ├── /ws/ ──► Daphne (realtime) ───┤  suivi des missions en direct
                  │                                 │
                  └────────────────────────────► Redis (cache + file Celery + messages WebSocket)
@@ -180,7 +180,9 @@ attendu, à corriger maintenant.
        ssl_certificate_key /etc/nginx/certs/live/erp.densourcegroup.ci/privkey.pem;
 
        location /static/ { alias /app/staticfiles/; expires 30d; access_log off; }
-       location /media/  { alias /app/media/;       expires 7d;  access_log off; }
+       # Fichiers téléversés : jamais en libre accès. Django contrôle le rôle sur /medias/... puis
+       # répond X-Accel-Redirect vers cet emplacement interne.
+       location /medias-internes/ { internal; alias /app/media/; add_header X-Content-Type-Options nosniff always; }
        location / {
            proxy_pass http://django;
            proxy_set_header Host $host;

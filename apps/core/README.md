@@ -29,6 +29,12 @@ filtres, sans pagination, plafonné à 500 lignes) — voir les `*ImprimerView` 
 `drivers`, `inventory`, `garage`, `fuel`, `customers`, `billing` et `audit`. La trésorerie (`finance`) et le
 tableau de bord (`dashboard`) ont chacun leur propre vue, plus riches qu'une simple liste. Un nouveau rapport
 de liste : sous-classer le `ListView` existant, ajouter `titre_impression` et `colonnes`, l'inscrire dans
-`urls.py`, ajouter le bouton dans le gabarit avec `?{{ request.GET.urlencode }}` pour reprendre les filtres.
-
-En-tête commune (`_entete_impression.html`) : logo (`static/img/logo-emblem.jpg`), raison sociale en bordeaux (`#8b0319`) et filet orange (`#f28a14`) — les couleurs du logo (`frontend/tailwind.config.js`), reprises aussi par le PDF des codes de mission (`apps/missions/documents.py`, ReportLab). Tout nouveau document imprimable doit inclure `_style_impression.html` et `_entete_impression.html` pour rester cohérent avec les autres ; c'est aussi le cas de la facture (`billing.facture_print`), qui les réutilise pour son propre en-tête.
+`urls.py`, ajouter le bouton dans le gabarit avec `?{{ request.GET.urlencode }}` pour reprendre les filtres.
+
+
+
+En-tête commune (`_entete_impression.html`) : logo (`static/img/logo-emblem.jpg`), raison sociale en bordeaux (`#8b0319`) et filet orange (`#f28a14`) — les couleurs du logo (`frontend/tailwind.config.js`), reprises aussi par le PDF des codes de mission (`apps/missions/documents.py`, ReportLab). Tout nouveau document imprimable doit inclure `_style_impression.html` et `_entete_impression.html` pour rester cohérent avec les autres ; c'est aussi le cas de la facture (`billing.facture_print`), qui les réutilise pour son propre en-tête.
+
+**Fichiers téléversés** (`medias.py`) : jamais servis en libre accès. Une app qui stocke des fichiers déclare le préfixe de son `upload_to` et les rôles autorisés (`enregistrer_media("demandes_depense", permissions.X)` dans `AppConfig.ready()`) ; `/medias/<chemin>` (`MediaProtegeView`) exige la connexion et le rôle, refuse les chemins avec `..`, et ne sert à personne un préfixe non déclaré. Seuls les PDF et images courantes s'affichent dans le navigateur, le reste (HTML, SVG...) est téléchargé. En production (`MEDIA_ACCEL_REDIRECT`), Django répond `X-Accel-Redirect` et Nginx envoie le fichier depuis `/medias-internes/`, emplacement `internal` : Django ne lit pas le fichier. `MEDIA_URL` vaut `medias/`, donc `champ.url` pointe déjà vers cette vue.
+
+**Erreurs métier** (`exceptions.ErreurMetier`, `middleware.ErreurMetierMiddleware`) : une opération peut échouer à cause d'une autre app (plein refusé parce que l'enveloppe de dépense est dépassée) ; l'erreur traverse alors l'écran d'origine, qui ne connaît pas cette famille. Les erreurs métier héritent d'`ErreurMetier` (`BillingError` pour l'instant) et, si l'écran ne les attrape pas, le middleware les transforme en message avec retour à la page d'origine au lieu d'une erreur 500 (l'API a son propre gestionnaire, `apps/api/exceptions.py`). Un GET sans page d'origine n'est pas masqué (pas de boucle de redirections).

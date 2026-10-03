@@ -9,6 +9,7 @@ class FinanceConfig(AppConfig):
     def ready(self):
         from apps.accounts.navigation import EntreeMenu, enregistrer
         from apps.audit.registry import audit_model
+        from apps.core.medias import enregistrer_media
 
         from . import permissions, receivers  # noqa: F401  (connecte les récepteurs)
         from .models import DemandeDepense, EnveloppeDepense, LigneReleve, MouvementManuel, OrdreDecaissement
@@ -18,6 +19,8 @@ class FinanceConfig(AppConfig):
         audit_model(DemandeDepense, module="FINANCES")
         audit_model(OrdreDecaissement, module="FINANCES")
         audit_model(LigneReleve, module="FINANCES")
+        enregistrer_media("demandes_depense", permissions.DEMANDE_CONSULTATION)
+        enregistrer_media("ordres_decaissement", permissions.DEMANDE_CONSULTATION)
         enregistrer(
             EntreeMenu(
                 "Trésorerie", "finance:tresorerie", "fa-wallet", permissions.CONSULTATION, ordre=62

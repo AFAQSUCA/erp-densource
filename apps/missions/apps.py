@@ -10,6 +10,7 @@ class MissionsConfig(AppConfig):
         from apps.accounts.navigation import EntreeMenu, enregistrer
         from apps.audit.registry import audit_model
 
+        from apps.core.medias import enregistrer_media
         from apps.customers.sections import DETAIL_CLIENT
         from apps.hr.sections import DETAIL_CONGE
 
@@ -23,6 +24,7 @@ class MissionsConfig(AppConfig):
             Mission, module="MISSION", exclure=("code_expediteur", "code_destinataire")
         )
         audit_model(FraisMission, module="FINANCES")
+        enregistrer_media("frais_mission", permissions.FRAIS_CONSULTATION)
         # Suivi en direct : tout changement d'une mission est diffusé aux écrans ouverts.
         post_save.connect(
             temps_reel.diffuser_apres_enregistrement, sender=Mission, dispatch_uid="missions.suivi_en_direct"

@@ -102,6 +102,7 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "apps.core.middleware.CurrentRequestMiddleware",
+    "apps.core.middleware.ErreurMetierMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -159,8 +160,10 @@ STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_DIRS = [BASE_DIR / "static"] if (BASE_DIR / "static").exists() else []
 
-MEDIA_URL = "media/"
+# Les fichiers téléversés ne sont jamais servis en libre accès : ``apps.core.medias`` contrôle le rôle.
+MEDIA_URL = "medias/"
 MEDIA_ROOT = BASE_DIR / "media"
+MEDIA_ACCEL_REDIRECT = False
 
 # Tables BDD `app_modele` : conventions.md §1. BigAutoField requis pour
 # cohérence avec audit_log.id (BIGINT) — cahier-des-charges.md:60.
