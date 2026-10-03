@@ -12,6 +12,7 @@ Directives (une par ligne dans une source) :
     {{VIDES}}              commandes de création des fichiers vides du chapitre
     {{RESTANTS}}           insère tous les autres fichiers du chapitre, dans l'ordre de présentation
     {{CONFIG}}             état (chapitre 1) ou modifications de config/settings/base.py et config/urls.py
+    {{AJOUT chemin}}       modifications d'un fichier déjà présenté dont un bloc était différé (CHAMPS_DIFFERES)
     {{TESTS}}              résultat attendu de pytest pour ce chapitre, et tests différés le cas échéant
     {{PYTEST}}             commande pytest sur les fichiers de tests du chapitre + résultat attendu
     {{RESULTAT_FINAL}}     nombre total de tests du projet (mesuré par tester_tutoriel.py)
@@ -59,8 +60,8 @@ def differes() -> dict:
 
 # --- blocs ------------------------------------------------------------------------------------------
 
-def bloc_fichier(chemin: str) -> str:
-    contenu = lire(chemin)
+def bloc_fichier(chemin: str, numero: int) -> str:
+    contenu = t.sans_champs_differes(chemin, numero) if chemin in t.CHAMPS_DIFFERES else lire(chemin)
     if not contenu.endswith("\n"):
         contenu += "\n"
     role = t.role_du_fichier(chemin)
@@ -89,6 +90,20 @@ def bloc_fichiers_vides(fichiers: list[str]) -> str:
     )
 
 
+def bloc_diff(chemin: str, avant: str, apres: str) -> str:
+    diff = list(difflib.unified_diff(
+        avant.split("\n"), apres.split("\n"), fromfile=f"{chemin} (avant)", tofile=f"{chemin} (après)",
+        lineterm="", n=2,
+    ))
+    corps = "\n".join(diff)
+    delim = t.fence(corps)
+    return (
+        f"#### `{chemin}` — modifications\n\n"
+        f"*Les lignes précédées de `+` sont à ajouter ; les autres sont là pour vous repérer.*\n\n"
+        f"{delim}diff\n{corps}\n{delim}\n"
+    )
+
+
 def bloc_config(numero: int) -> str:
     sortie = []
     for chemin in t.FICHIERS_PROGRESSIFS:
@@ -105,19 +120,17 @@ def bloc_config(numero: int) -> str:
                 f"{delim}python\n{etat}\n{delim}\n"
             )
         else:
-            avant = t.etat_config(chemin, numero - 1)
-            diff = list(difflib.unified_diff(
-                avant.split("\n"), etat.split("\n"), fromfile=f"{chemin} (avant)", tofile=f"{chemin} (après)",
-                lineterm="", n=2,
-            ))
-            corps = "\n".join(diff)
-            delim = t.fence(corps)
-            sortie.append(
-                f"#### `{chemin}` — modifications\n\n"
-                f"*Les lignes précédées de `+` sont à ajouter ; les autres sont là pour vous repérer.*\n\n"
-                f"{delim}diff\n{corps}\n{delim}\n"
-            )
+            sortie.append(bloc_diff(chemin, t.etat_config(chemin, numero - 1), etat))
     return "\n".join(sortie)
+
+
+def bloc_ajout(chemin: str, numero: int) -> str:
+    """Modifications d'un fichier déjà présenté, dues à un bloc différé (``CHAMPS_DIFFERES``)."""
+    avant = t.sans_champs_differes(chemin, numero - 1)
+    apres = t.sans_champs_differes(chemin, numero)
+    if avant == apres:
+        raise SystemExit(f"{chemin} : rien n'est ajouté au chapitre {numero} (directive {{{{AJOUT}}}} inutile ici)")
+    return bloc_diff(chemin, avant, apres)
 
 
 def bloc_tests(numero: int) -> str:
@@ -235,7 +248,7 @@ def generer_chapitre(numero: int, suivis: list[str], deja: set[str]) -> str:
             if argument in deja:
                 raise SystemExit(f"{source_fichier.name} : « {argument} » est déjà présenté")
             deja.add(argument)
-            return bloc_fichier(argument)
+            return bloc_fichier(argument, numero)
         if directive == "VIDES":
             vides = [f for f in du_chapitre if t.est_vide(f) and f not in deja]
             deja.update(vides)
@@ -245,9 +258,15 @@ def generer_chapitre(numero: int, suivis: list[str], deja: set[str]) -> str:
             vides = [f for f in restants if t.est_vide(f)]
             pleins = [f for f in restants if f not in vides]
             deja.update(restants)
-            return bloc_fichiers_vides(vides) + ("\n" if vides else "") + "\n".join(bloc_fichier(f) for f in pleins)
+            return bloc_fichiers_vides(vides) + ("\n" if vides else "") + "\n".join(bloc_fichier(f, numero) for f in pleins)
         if directive == "CONFIG":
             return bloc_config(numero)
+        if directive == "AJOUT":
+            if argument not in t.CHAMPS_DIFFERES:
+                raise SystemExit(f"{source_fichier.name} : « {argument} » n'a pas de bloc différé (CHAMPS_DIFFERES)")
+            if argument not in deja:
+                raise SystemExit(f"{source_fichier.name} : « {argument} » n'a pas encore été présenté")
+            return bloc_ajout(argument, numero)
         if directive == "TESTS":
             return bloc_tests(numero)
         if directive == "RESULTAT_FINAL":

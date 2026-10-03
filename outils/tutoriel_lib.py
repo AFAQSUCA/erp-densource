@@ -7,10 +7,14 @@ Le tutoriel (dossier ``tutoriel/``) est **généré depuis le code du dépôt** 
 - quels fichiers sont volontairement absents du tutoriel, et pourquoi (``EXCLUS``) ;
 - l'état d'avancement de ``config/settings/base.py`` et ``config/urls.py`` à chaque chapitre
   (``etat_config``) : ces deux fichiers évoluent tout au long du projet, le tutoriel montre donc leur
-  version du chapitre puis, ensuite, seulement ce qui s'ajoute.
+  version du chapitre puis, ensuite, seulement ce qui s'ajoute ;
+- les blocs dont l'apparition dans un fichier déjà présenté est volontairement retardée
+  (``CHAMPS_DIFFERES``) : un champ (ou une section de documentation) qui référence une app pas encore
+  créée à ce stade de la lecture est montré sans ce bloc à son chapitre, puis le bloc apparaît — comme la
+  vraie migration qui l'ajoute — une fois l'app référencée créée.
 
-Deux phases : d'abord le « cerveau » (modèles, règles métier, tests : chapitres 2 à 15), ensuite le
-« visage » (écrans, gabarits, API : chapitres 16 à 29). Une app est créée dans l'ordre de ses dépendances
+Deux phases : d'abord le « cerveau » (modèles, règles métier, tests : chapitres 2 à 16), ensuite le
+« visage » (écrans, gabarits, API : chapitres 17 à 31). Une app est créée dans l'ordre de ses dépendances
 (``ORDRE_APPS``), vérifié par l'analyse des imports.
 """
 
@@ -42,6 +46,7 @@ _LISTE = [
     ("fuel", "Le carburant : l'app fuel"),
     ("billing", "La facturation : l'app billing"),
     ("finance", "La trésorerie : l'app finance"),
+    ("accounting", "La comptabilité en partie double : l'app accounting"),
     ("notifications", "Les notifications : l'app notifications"),
     ("interface", "Le socle de l'interface : gabarits, styles, connexion, notifications"),
     ("ecrans-rh", "Écrans : personnel et congés"),
@@ -53,6 +58,7 @@ _LISTE = [
     ("ecrans-stock", "Écrans : stock de pièces"),
     ("ecrans-carburant", "Écrans : carburant"),
     ("ecrans-finances", "Écrans : facturation, dépenses et trésorerie"),
+    ("ecrans-comptabilite", "Écrans : plan comptable, opérations diverses et rapports comptables"),
     ("tableau-de-bord", "La page d'accueil : le tableau de bord"),
     ("mobile", "L'espace mobile du chauffeur"),
     ("api", "L'API REST"),
@@ -65,7 +71,7 @@ DERNIER = len(_LISTE) - 1
 # Ordre de création des apps (chaque app ne dépend que de celles qui la précèdent).
 ORDRE_APPS = [
     "core", "accounts", "audit", "hr", "drivers", "customers", "fleet", "missions", "garage",
-    "inventory", "fuel", "billing", "finance", "notifications", "dashboard", "mobile_api", "api",
+    "inventory", "fuel", "billing", "finance", "accounting", "notifications", "dashboard", "mobile_api", "api",
 ]
 RANG = {a: i for i, a in enumerate(ORDRE_APPS)}
 
@@ -75,6 +81,7 @@ CH_METIER = {
     "drivers": NUM["drivers"], "customers": NUM["customers"], "fleet": NUM["fleet"],
     "missions": NUM["missions"], "garage": NUM["garage"], "inventory": NUM["inventory"],
     "fuel": NUM["fuel"], "billing": NUM["billing"], "finance": NUM["finance"],
+    "accounting": NUM["accounting"],
     "notifications": NUM["notifications"], "dashboard": NUM["tableau-de-bord"],
     "mobile_api": NUM["mobile"], "api": NUM["api"],
 }
@@ -85,6 +92,7 @@ CH_ECRANS = {
     "customers": NUM["ecrans-clients"], "fleet": NUM["ecrans-flotte"], "missions": NUM["ecrans-missions"],
     "garage": NUM["ecrans-garage"], "inventory": NUM["ecrans-stock"], "fuel": NUM["ecrans-carburant"],
     "billing": NUM["ecrans-finances"], "finance": NUM["ecrans-finances"],
+    "accounting": NUM["ecrans-comptabilite"],
     "dashboard": NUM["tableau-de-bord"], "mobile_api": NUM["mobile"], "api": NUM["api"],
 }
 CH_TESTS_DASHBOARD = NUM["tableau-de-bord"]
@@ -95,12 +103,16 @@ EXCLUS = [
     (r"^static/vendor/", "généré par `npm run build` (bibliothèques Alpine.js et Font Awesome)"),
     (r"^static/css/tailwind\.css$", "généré par `npm run build` (Tailwind compilé)"),
     (r"^frontend/package-lock\.json$", "généré par `npm install`"),
-    (r"^apps/[^/]+/migrations/", "généré par `python manage.py makemigrations`"),
+    (r"^apps/[^/]+/migrations/(?!0002_plan_comptable_seed\.py$)",
+     "généré par `python manage.py makemigrations` (sauf la migration de données du plan comptable, "
+     "écrite à la main : voir le chapitre « La comptabilité en partie double »)"),
     (r"^static/img/", "identité visuelle de DEN Source Group : à copier depuis le dépôt (voir le chapitre « Le socle de l'interface »)"),
     (r"\.(docx|pptx)$", "documents de présentation, sans rapport avec le fonctionnement"),
-    (r"^(cahier-des-charges|architecture|conventions|glossaire-metier|audit-checklist|GUIDE-INTERFACE|GUIDE-PARCOURS)\.md$",
+    (r"^(cahier-des-charges|architecture|conventions|glossaire-metier|audit-checklist|GUIDE-INTERFACE|GUIDE-PARCOURS|GUIDE-DEPLOIEMENT|avenant-[\w-]+)\.md$",
      "documents de référence à lire (ils décrivent le besoin), pas à recopier"),
     (r"^(outils|tutoriel)/", "outils et sources de ce tutoriel"),
+    (r"^(Dockerfile|\.dockerignore|docker-compose\.yml)$|^nginx/|^ops/",
+     "mise en production (Docker, Nginx, Gunicorn) : hors périmètre de ce tutoriel de développement — voir GUIDE-DEPLOIEMENT.md"),
 ]
 
 # --- classement des fichiers ------------------------------------------------------------------------
@@ -185,13 +197,14 @@ def _freres_importes(chemin: str) -> list[str]:
 _PREFIXES_URL = {
     "missions": "missions", "clients": "customers", "flotte": "fleet", "rh": "hr", "chauffeurs": "drivers",
     "garage": "garage", "carburant": "fuel", "stock": "inventory", "facturation": "billing",
-    "finances": "finance", "chauffeur": "mobile_api", "api": "api", "notifications": "notifications",
+    "finances": "finance", "comptabilite": "accounting", "chauffeur": "mobile_api", "api": "api",
+    "notifications": "notifications",
 }
 _ESPACES_NOMS = {
     "missions": "missions", "customers": "customers", "fleet": "fleet", "hr": "hr", "drivers": "drivers",
     "garage": "garage", "fuel": "fuel", "inventory": "inventory", "billing": "billing",
-    "finance": "finance", "chauffeur": "mobile_api", "notifications": "notifications", "api": "api",
-    "mobile": "api",
+    "finance": "finance", "accounting": "accounting", "chauffeur": "mobile_api",
+    "notifications": "notifications", "api": "api", "mobile": "api",
 }
 
 
@@ -213,6 +226,16 @@ def _app_de(chemin: str) -> str | None:
 # des sections d'une autre app) : ils sont présentés avec la partie métier.
 FORCES_AU_METIER = {"apps/core/forms.py": 2, "apps/inventory/forms.py": 11}
 
+# Tests qui ouvrent des pages d'une autre app *indirectement* : le récepteur qu'ils exercent construit
+# un lien (``reverse(...)``) vers une app dont les écrans n'existent pas encore, mais le test lui-même
+# ne contient ni ``reverse(`` ni de chaîne "app:route" — rien dans sa source ne le révèle à
+# ``_chapitre_test_seul``. Ancré par nom de fichier plutôt que deviné.
+FORCES_AUX_ECRANS = {
+    "apps/notifications/tests/test_receivers_proforma.py": NUM["ecrans-finances"],
+    "apps/notifications/tests/test_receivers_demandes.py": NUM["ecrans-finances"],
+    "apps/notifications/tests/test_receivers_frais_mission.py": NUM["ecrans-missions"],
+}
+
 
 def chapitre_de(chemin: str) -> int | None:
     """Numéro du chapitre qui présente ce fichier (``None`` : fichier exclu)."""
@@ -226,6 +249,8 @@ def chapitre_de(chemin: str) -> int | None:
             return NUM["interface"]
         if chemin in ("static/js/sw-register.js", "static/js/scanner.js"):
             return NUM["mobile"]
+        if chemin == "static/js/suivi-missions.js":
+            return NUM["ecrans-missions"]
         if chemin == "README.md":
             return NUM["finalisation"]
         return 1  # squelette : manage.py, config/, requirements/, .gitignore, pytest.ini...
@@ -259,6 +284,8 @@ def _chapitre_test(chemin: str, app: str, _en_cours: frozenset = frozenset()) ->
 
 def _chapitre_test_seul(chemin: str, app: str) -> int:
     """Un test est présenté dès que tout ce qu'il importe existe ; s'il ouvre des pages, avec les écrans."""
+    if chemin in FORCES_AUX_ECRANS:
+        return FORCES_AUX_ECRANS[chemin]
     utilises = _imports_apps(chemin) | {app}
     plus_haute = max(utilises, key=lambda a: RANG[a])
     if plus_haute == "dashboard":
@@ -357,13 +384,15 @@ _REGLES_SETTINGS = [
     (r'apps\.notifications\.context_processors\.', NUM["interface"]),
 ]
 _REGLES_URLS = [
-    (r'apps\.dashboard|DashboardView', NUM["tableau-de-bord"]),
+    (r'apps\.dashboard|Dashboard\w*View', NUM["tableau-de-bord"]),
     (r'apps\.accounts\.urls', NUM["interface"]), (r'apps\.notifications\.urls', NUM["interface"]),
+    (r'apps\.audit\.urls', NUM["interface"]),
     (r'apps\.hr\.urls', NUM["ecrans-rh"]), (r'apps\.drivers\.urls', NUM["ecrans-chauffeurs"]),
     (r'apps\.customers\.urls', NUM["ecrans-clients"]), (r'apps\.fleet\.urls', NUM["ecrans-flotte"]),
     (r'apps\.missions\.urls', NUM["ecrans-missions"]), (r'apps\.garage\.urls', NUM["ecrans-garage"]),
     (r'apps\.inventory\.urls', NUM["ecrans-stock"]), (r'apps\.fuel\.urls', NUM["ecrans-carburant"]),
     (r'apps\.billing\.urls', NUM["ecrans-finances"]), (r'apps\.finance\.urls', NUM["ecrans-finances"]),
+    (r'apps\.accounting\.urls', NUM["ecrans-comptabilite"]),
     (r'apps\.mobile_api\.urls_web', NUM["mobile"]), (r'apps\.api\.urls', NUM["api"]),
 ]
 # Fichier écrit seulement pour le tutoriel : une page d'accueil provisoire, le temps que les écrans
@@ -428,6 +457,73 @@ def chapitres_ou_config_change(chemin: str) -> list[int]:
             changements.append(k)
         precedent = etat
     return changements
+
+
+# --- blocs dont l'apparition dans un fichier déjà présenté est retardée -----------------------------
+
+# ``apps/missions/models.py`` déclare ``Mission.proforma``, qui référence ``billing.Proforma`` — mais
+# l'app ``billing`` n'existe qu'au chapitre 13, bien après ``missions`` (chapitre 9). Ce n'est pas un
+# accident : ``billing`` dépend elle-même de ``missions`` (``billing.services`` importe ``Mission``),
+# donc les deux apps ne peuvent pas être réordonnées l'une avant l'autre dans ``ORDRE_APPS``. C'est
+# exactement ce que montre la vraie migration : ``apps/missions/migrations/0002_mission_proforma.py``
+# (qui ajoute ce champ) dépend de ``billing.0004_proforma``, alors que ``missions.0001_initial`` (qui crée
+# ``Mission``) n'en dépend pas. Le tutoriel reproduit cet ordre : le modèle (et la section du README qui
+# décrit ce champ) sont montrés sans lui au chapitre 9, puis il est ajouté — avec une seconde migration —
+# au chapitre 13.
+#
+# (motif de début, motif de fin, premier chapitre où le bloc apparaît, la ligne de fin fait-elle partie
+# du bloc retiré ?) Fin incluse (``True``) : la ligne de fin — ex. la parenthèse qui referme un champ —
+# est retirée avec le bloc. Fin exclue (``False``) : la ligne de fin — ex. le prochain titre ``###`` —
+# n'appartient pas au bloc et reste toujours affichée ; elle ne sert qu'à borner la recherche.
+CHAMPS_DIFFERES: dict[str, list[tuple[str, str, int, bool]]] = {
+    "apps/missions/models.py": [
+        (r'^\s*proforma = models\.OneToOneField\(\s*$', r'^\s*\)\s*$', NUM["billing"], True),
+    ],
+    "apps/missions/README.md": [
+        (r'^### Mission créée depuis un devis accepté \(R6\)$', r'^### ', NUM["billing"], False),
+    ],
+}
+
+
+def sans_champs_differes(chemin: str, chapitre: int) -> str:
+    """Contenu de ``chemin`` tel qu'il doit apparaître au ``chapitre`` : les blocs de ``CHAMPS_DIFFERES``
+    pas encore disponibles à ce chapitre sont retirés."""
+    blocs = CHAMPS_DIFFERES.get(chemin, [])
+    lignes = (RACINE / chemin).read_text(encoding="utf-8").split("\n")
+    gardees = []
+    en_bloc = False
+    disponible = True
+    fin_regex = ""
+    fin_incluse = True
+    for ligne in lignes:
+        if en_bloc:
+            fin_ici = re.search(fin_regex, ligne) is not None
+            if fin_ici and fin_incluse:
+                if disponible:
+                    gardees.append(ligne)
+                en_bloc = False
+                continue
+            if not fin_ici:
+                if disponible:
+                    gardees.append(ligne)
+                continue
+            en_bloc = False  # fin exclue : cette ligne n'appartient pas au bloc, traitée normalement plus bas
+        debut = next((b for b in blocs if re.search(b[0], ligne)), None)
+        if debut is not None:
+            _, fin_regex, chapitre_disponible, fin_incluse = debut
+            disponible = chapitre >= chapitre_disponible
+            en_bloc = True
+            if disponible:
+                gardees.append(ligne)
+            continue
+        gardees.append(ligne)
+    return "\n".join(gardees)
+
+
+def chapitres_ou_champ_differe(chemin: str) -> list[int]:
+    """Chapitres où il faut (ré)écrire ``chemin`` à cause de ses ``CHAMPS_DIFFERES`` : son chapitre
+    d'apparition, puis celui où chaque bloc retardé devient disponible."""
+    return sorted({chapitre_de(chemin), *(c for _, _, c, _ in CHAMPS_DIFFERES.get(chemin, []))})
 
 
 def fence(contenu: str) -> str:

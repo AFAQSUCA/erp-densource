@@ -1,6 +1,6 @@
 # Chapitre 1 — Le squelette du projet
 
-> 29 fichier(s) dans ce chapitre, 1941 lignes de code.
+> 18 fichier(s) dans ce chapitre, 753 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -89,7 +89,7 @@ Ce que chaque bibliothèque apporte (vous les rencontrerez toutes) :
 | Bibliothèque | Rôle |
 |---|---|
 | **Django** | le framework : base de données, URL, vues, gabarits, administration, sécurité |
-| **djangorestframework** (DRF) | l'API REST (chapitre 28) |
+| **djangorestframework** (DRF) | l'API REST (chapitre 30) |
 | **django-environ** | lire le fichier `.env` |
 | **djangorestframework-simplejwt** | jetons JWT courts pour l'API mobile |
 | **django-filter** | filtres des listes de l'API |
@@ -343,6 +343,48 @@ application = ProtocolTypeRouter({
 
 `wsgi.py` et `asgi.py` sont les portes d'entrée que les serveurs de production (Gunicorn, Uvicorn)
 utilisent. Vous n'y touchez jamais, mais Django en a besoin.
+
+#### `config/__init__.py`
+
+*3 lignes*
+
+```python
+from .celery import app as celery_app
+
+__all__ = ("celery_app",)
+```
+
+#### `config/celery.py`
+
+*19 lignes* — Application Celery : tâches asynchrones (étape 7 lot 2, ADR-004 architecture.md:493-497).
+
+```python
+"""Application Celery : tâches asynchrones (étape 7 lot 2, ADR-004 architecture.md:493-497).
+
+En développement et en test, ``CELERY_TASK_ALWAYS_EAGER`` (config/settings/base.py) exécute chaque
+tâche immédiatement, dans le même processus, sans courtier Redis : le comportement observé est
+identique à un appel de fonction normal. En production, un vrai courtier (Redis) et un processus
+``celery worker`` séparé sont nécessaires (voir README).
+"""
+
+from __future__ import annotations
+
+import os
+
+from celery import Celery
+
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.dev")
+
+app = Celery("erp_den_source")
+app.config_from_object("django.conf:settings", namespace="CELERY")
+app.autodiscover_tasks()
+```
+
+Les tâches asynchrones (envoi d'e-mail, tâches quotidiennes planifiées) passent par **Celery** :
+`redis` et `celery` sont déjà dans `requirements/base.txt`. En développement et en test,
+`CELERY_TASK_ALWAYS_EAGER` (réglage ci-dessous) exécute chaque tâche **immédiatement, dans le même
+processus** : pas besoin d'un courtier Redis ni d'un processus `celery worker` pour suivre ce
+tutoriel — `.delay()` se comporte comme un appel de fonction normal.
 
 ## Étape 5 — Les réglages
 
@@ -666,10 +708,8 @@ from django.views.generic import RedirectView
 
 
 urlpatterns = [
-    path("imprimer/", DashboardImprimerView.as_view(), name="home_imprimer"),
     # Les navigateurs (et l'administration Django) réclament /favicon.ico : on renvoie vers l'icône du site.
     path("favicon.ico", RedirectView.as_view(url=settings.STATIC_URL + "img/favicon.png", permanent=True)),
-    path("audit/", include("apps.audit.urls")),
     path("admin/", admin.site.urls),
 ]
 
@@ -685,9 +725,10 @@ Les blocs à repérer dans `base.py` :
 | `TEMPLATES` | où chercher les gabarits HTML |
 | `PASSWORD_HASHERS`, `AUTH_PASSWORD_VALIDATORS` | Argon2 et règles de mot de passe (10 caractères minimum) |
 | `LANGUAGE_CODE = "fr"`, `TIME_ZONE = "Africa/Abidjan"` | langue et fuseau horaire |
-| `REST_FRAMEWORK`, `SIMPLE_JWT`, `SPECTACULAR_SETTINGS`, `CORS_…` | l'API (utilisés au chapitre 28) |
+| `REST_FRAMEWORK`, `SIMPLE_JWT`, `SPECTACULAR_SETTINGS`, `CORS_…` | l'API (utilisés au chapitre 30) |
 | `MFA_…`, `LOGIN_MAX_ECHECS_…` | double authentification et anti force brute (chapitre 3) |
-| `CSP`, `PERMISSIONS_POLICY` | politique de sécurité du contenu (chapitre 16) |
+| `CSP`, `PERMISSIONS_POLICY` | politique de sécurité du contenu (chapitre 17) |
+| `CELERY_…` | tâches asynchrones ; `CELERY_BEAT_SCHEDULE` planifie `taches_quotidiennes` (chapitre 16) |
 
 > **Pourquoi des lignes « à venir » dans des réglages qui ne servent pas encore ?** Les blocs API et
 > sécurité sont écrits une fois pour toutes ici, parce qu'ils ne dépendent d'aucune de nos applications.
@@ -898,7 +939,7 @@ if SENTRY_DSN:
 ```
 
 En production : HTTPS obligatoire, cookies sécurisés, base PostgreSQL et Redis fournis par l'environnement.
-Ce fichier n'est pas utilisé dans ce tutoriel (voir « Aller plus loin », chapitre 29).
+Ce fichier n'est pas utilisé dans ce tutoriel (voir « Aller plus loin », chapitre 31).
 
 ## Étape 6 — Les adresses et la configuration des tests
 

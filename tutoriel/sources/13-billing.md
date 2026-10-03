@@ -35,6 +35,10 @@ Brouillon → À valider → Émise → Partiellement payée → Payée
   Mobile Money).
 - **Signaux** : `facture_a_valider`, `facture_validee`, `facture_refusee` : `notifications` prévient les bonnes
   personnes.
+- **Une migration en deux temps** : `Mission.proforma` référence `billing.Proforma`, mais `missions`
+  (chapitre 9) est créée avant `billing`. Le champ apparaît donc seulement **maintenant** (Étape 6),
+  avec sa propre migration `missions` qui dépend de `billing` — exactement ce que fait la vraie
+  migration du projet.
 
 ## Étape 1 — Créer l'application
 
@@ -106,6 +110,26 @@ python manage.py migrate
 **Résultat attendu :** `Create model Facture`, `Create model LigneFacture`, `Create model Reglement`,
 `Create model Depense`, les contraintes, puis `Applying billing.0001_initial... OK`.
 
+## Étape 6 — Relier une mission à son devis d'origine
+
+Au chapitre 9, `Mission` ne pouvait pas référencer un devis : `billing` n'existait pas encore.
+Maintenant qu'elle existe, on referme cette boucle (R6 : une mission créée depuis un devis accepté
+reprend son trajet et son prix). C'est exactement ce que fait la vraie migration du projet,
+`apps/missions/migrations/0002_mission_proforma.py` : elle dépend de `billing.0004_proforma`, alors que
+`missions.0001_initial` (qui crée `Mission`) n'en dépendait pas.
+
+{{AJOUT apps/missions/models.py}}
+
+{{AJOUT apps/missions/README.md}}
+
+```bash
+python manage.py makemigrations missions
+python manage.py migrate
+```
+
+**Résultat attendu :** `Add field proforma to mission`, puis une migration `missions` appliquée sans
+erreur.
+
 ## Vérifier le chapitre
 
 ```bash
@@ -114,7 +138,7 @@ python manage.py check
 
 {{PYTEST}}
 
-(Les tests d'écrans de `billing` sont présentés au chapitre 25.)
+(Les tests d'écrans de `billing` sont présentés au chapitre 26.)
 
 Essai dans le shell : l'arrondi au franc.
 

@@ -69,7 +69,7 @@ Lisez les fonctions dans cet ordre, elles se lisent comme la spécification :
 
 {{FICHIER apps/fuel/permissions.py}}
 
-Le CDC réserve la saisie au **chauffeur** (depuis son téléphone, chapitre 27). Côté bureau, le **Parc Auto** et
+Le CDC réserve la saisie au **chauffeur** (depuis son téléphone, chapitre 29). Côté bureau, le **Parc Auto** et
 l'**ADMIN** saisissent à partir des tickets ; la **DIRECTION** consulte.
 
 ## Étape 3 — Administration, démarrage, tests

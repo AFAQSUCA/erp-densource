@@ -62,7 +62,7 @@ touch apps/missions/tests/__init__.py
 
 #### `apps/missions/models.py`
 
-*277 lignes*
+*268 lignes*
 
 ```python
 from django.conf import settings
@@ -115,15 +115,6 @@ class Mission(BaseModel):
         verbose_name=_("client"),
         on_delete=models.PROTECT,
         related_name="missions",
-    )
-    proforma = models.OneToOneField(
-        "billing.Proforma",
-        verbose_name=_("devis d'origine"),
-        null=True,
-        blank=True,
-        on_delete=models.PROTECT,
-        related_name="mission_creee",
-        help_text=_("Devis accepté dont cette mission reprend le trajet et le prix (R6)."),
     )
     vehicule = models.ForeignKey(
         "fleet.Vehicule",
@@ -1251,7 +1242,7 @@ class MissionFactory(factory.django.DjangoModelFactory):
 
 #### `apps/missions/README.md`
 
-*137 lignes* — missions
+*125 lignes* — missions
 
 ```markdown
 # missions
@@ -1345,18 +1336,6 @@ pas diffusé, contrairement à un changement fait par le serveur lui-même.
 Le formulaire de création propose (liste `datalist`) les lieux de chargement et de livraison déjà saisis,
 les plus fréquents d'abord, dès les premières lettres (`services.lieux_deja_utilises`) ; un lieu écrit avec
 une autre casse ou sans accent ne compte qu'une fois. La saisie libre reste possible.
-
-### Mission créée depuis un devis accepté (R6)
-
-`Mission.proforma` (`OneToOneField` vers `billing.Proforma`, PROTECT) garantit **1 devis = 1
-mission** au niveau base. `billing.services.convertir_en_mission(proforma)` (pas `missions` :
-le graphe de dépendance des apps, architecture.md:95-163, interdit à `missions` de dépendre de
-`billing` — l'inverse est permis, `billing` appelle donc `missions.services.creer_mission`)
-recopie tel quel le trajet, la marchandise, le poids et le **prix HT** du devis (la facture
-recalculera la TVA plus tard, avec le taux du client en vigueur ce jour-là) ; le devis passe à
-`CONVERTIE`. Déclenché sur `POST /facturation/devis/<id>/creer-mission/`, réservé au rôle
-`missions.permissions.CREATION`. Refusé si le devis n'est pas `ACCEPTEE` (y compris s'il l'a
-déjà été converti).
 
 ### Prévision de trésorerie des missions (`terrain.py`, R4 — avenant-separation-des-taches.md)
 
@@ -3140,7 +3119,7 @@ python manage.py check
 python -m pytest apps/missions/tests/test_frais_mission.py apps/missions/tests/test_models.py apps/missions/tests/test_permissions.py apps/missions/tests/test_services.py apps/missions/tests/test_temps_reel.py -q --no-cov
 ```
 
-**Résultat attendu :** `69 passed` (pour les 3 fichier(s) de tests présentés dans ce chapitre).
+**Résultat attendu :** `125 passed` (pour les 5 fichier(s) de tests présentés dans ce chapitre).
 
 Essais dans le shell (avec le client `Cimaf CI` créé au chapitre 7) :
 
