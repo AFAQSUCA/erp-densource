@@ -20,6 +20,8 @@ from .serializers import (
     ChecklistEntreeSerializer,
     ChecklistSerializer,
     CodeSerializer,
+    CongeEntreeSerializer,
+    CongeSerializer,
     FraisImprevuEntreeSerializer,
     FraisMissionSerializer,
     IncidentEntreeSerializer,
@@ -178,3 +180,28 @@ class FraisImprevusView(ChauffeurAPIView):
             description=valeurs.get("description", ""),
         )
         return Response(FraisMissionSerializer(frais).data, status=status.HTTP_201_CREATED)
+
+
+class CongesView(ChauffeurAPIView):
+    @extend_schema(tags=TAG, summary="Mes demandes de congé", responses=CongeSerializer(many=True))
+    def get(self, request):
+        return Response(CongeSerializer(services.conges_du_chauffeur(self.chauffeur), many=True).data)
+
+    @extend_schema(
+        tags=TAG, summary="Demander un congé",
+        description="Le supérieur hiérarchique valide en N1 (48 h), puis la RH en N2 (24 h). Refusé si le "
+                    "solde est insuffisant, si la période chevauche un autre congé ou si aucun supérieur "
+                    "n'est renseigné.",
+        request=CongeEntreeSerializer, responses={201: CongeSerializer},
+    )
+    def post(self, request):
+        donnees = CongeEntreeSerializer(data=request.data)
+        donnees.is_valid(raise_exception=True)
+        conge = services.demander_conge(self.chauffeur, **donnees.validated_data)
+        return Response(CongeSerializer(conge).data, status=status.HTTP_201_CREATED)
+
+
+class SoldeCongesView(ChauffeurAPIView):
+    @extend_schema(tags=TAG, summary="Mon solde de congés de l'année (jours ouvrés)")
+    def get(self, request):
+        return Response(services.droits_conges_du_chauffeur(self.chauffeur))

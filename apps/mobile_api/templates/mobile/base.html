@@ -31,11 +31,11 @@
   </main>
 
   <nav aria-label="Navigation de l'espace chauffeur" class="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white pb-[env(safe-area-inset-bottom)] shadow-[0_-2px_8px_rgba(0,0,0,0.06)]">
-    <ul class="mx-auto grid max-w-lg grid-cols-4">
+    <ul class="mx-auto grid max-w-lg grid-cols-6">
       {% for cle, url, icone, libelle in navigation %}
         <li>
           <a href="{{ url }}" {% if nav == cle %}aria-current="page"{% endif %}
-             class="flex flex-col items-center gap-1 px-2 py-3 text-xs font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 {% if nav == cle %}text-marque-700{% else %}text-slate-600{% endif %}">
+             class="flex flex-col items-center gap-1 px-1 py-3 text-xs font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 {% if nav == cle %}text-marque-700{% else %}text-slate-600{% endif %}">
             <i class="fa-solid {{ icone }} text-xl" aria-hidden="true"></i>{{ libelle }}
           </a>
         </li>

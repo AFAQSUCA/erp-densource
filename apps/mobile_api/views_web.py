@@ -26,6 +26,7 @@ from apps.drivers import services as drivers_services
 from apps.fuel.exceptions import CarburantError, SaisieSuspecte
 from apps.fuel.models import NiveauAlerte
 from apps.garage.exceptions import GarageError
+from apps.hr.exceptions import CongeError
 from apps.missions.exceptions import MissionError
 
 from . import services
@@ -33,13 +34,14 @@ from .exceptions import MissionIntrouvable, MobileError
 from .forms import (
     ChecklistForm,
     CodeForm,
+    CongeChauffeurForm,
     FraisImprevuChauffeurForm,
     IncidentChauffeurForm,
     LivraisonForm,
     PleinChauffeurForm,
 )
 
-ERREURS = (MissionError, CarburantError, GarageError, MobileError)
+ERREURS = (MissionError, CarburantError, GarageError, MobileError, CongeError)
 
 
 class ChauffeurRequisMixin(RoleRequiredMixin):
@@ -55,6 +57,7 @@ class ChauffeurRequisMixin(RoleRequiredMixin):
             ("plein", reverse("chauffeur:plein"), "fa-gas-pump", "Plein"),
             ("incident", reverse("chauffeur:incident"), "fa-triangle-exclamation", "Panne"),
             ("imprevu", reverse("chauffeur:imprevu"), "fa-money-bill-transfer", "Imprévu"),
+            ("conges", reverse("chauffeur:conges"), "fa-umbrella-beach", "Congés"),
         ]
         return contexte
 
@@ -343,6 +346,39 @@ class FraisImprevuView(ChauffeurRequisMixin, TemplateView):
             return self.render_to_response(self.get_context_data(form=form))
         messages.success(request, "Imprévu signalé : le Parc Auto est prévenu.")
         return redirect("chauffeur:accueil")
+
+
+class CongesView(ChauffeurRequisMixin, TemplateView):
+    """Mes congés : solde, demande et suivi des décisions (supérieur en N1, puis RH en N2)."""
+
+    template_name = "mobile/conges.html"
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        contexte.update(
+            form=kwargs.get("form") or CongeChauffeurForm(),
+            droits=services.droits_conges_du_chauffeur(self.chauffeur),
+            conges=services.conges_du_chauffeur(self.chauffeur, limite=10),
+            nav="conges",
+        )
+        return contexte
+
+    def post(self, request):
+        form = CongeChauffeurForm(request.POST)
+        if not form.is_valid():
+            return self.render_to_response(self.get_context_data(form=form))
+        try:
+            conge = services.demander_conge(self.chauffeur, **form.cleaned_data)
+        except ERREURS as erreur:
+            form.add_error(None, str(erreur))
+            return self.render_to_response(self.get_context_data(form=form))
+        pluriel = "s" if conge.jours > 1 else ""
+        messages.success(
+            request,
+            f"Demande envoyée : {conge.jours} jour{pluriel} ouvré{pluriel}. "
+            "Votre supérieur doit la valider sous 48 h, puis la RH.",
+        )
+        return redirect("chauffeur:conges")
 
 
 # --- application installable (PWA) ---

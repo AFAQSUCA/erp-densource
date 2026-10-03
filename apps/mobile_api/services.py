@@ -21,6 +21,7 @@ from apps.fuel import services as fuel_services
 from apps.fuel.models import Plein
 from apps.garage import terrain as garage_terrain
 from apps.garage.models import ChecklistVehicule, Incident
+from apps.hr import services as hr_services
 from apps.missions import services as missions_services
 from apps.missions import terrain as missions_terrain
 from apps.missions.models import FraisMission, Mission, StatutMission
@@ -253,3 +254,26 @@ def tableau(chauffeur: Chauffeur, *, aujourd_hui: date | None = None) -> dict:
         "km_mois": km_mois,
         "consommation": fuel_services.consommation_moyenne(chauffeur=chauffeur),
     }
+
+
+# --- congés (le chauffeur demande lui-même ; son supérieur valide en N1, la RH en N2) ---
+
+
+def conges_du_chauffeur(chauffeur: Chauffeur, *, limite: int | None = None) -> QuerySet:
+    """Les congés du chauffeur, du plus récent au plus ancien : jamais ceux d'un autre."""
+    conges = hr_services.conges_de(chauffeur.personnel)
+    return conges[:limite] if limite else conges
+
+
+def droits_conges_du_chauffeur(chauffeur: Chauffeur, *, aujourd_hui: date | None = None) -> dict:
+    """Solde de congés de l'année en cours (jours ouvrés) : droit annuel, exceptionnels, pris, disponible."""
+    annee = (aujourd_hui or timezone.localdate()).year
+    return {"annee": annee, **hr_services.droits_conges(chauffeur.personnel, annee)}
+
+
+def demander_conge(chauffeur: Chauffeur, *, date_debut: date, date_fin: date, motif: str):
+    """Demande de congé du chauffeur : mêmes règles que pour tout employé (solde suffisant, pas de
+    chevauchement, supérieur hiérarchique renseigné), appliquées par ``hr.services.demander_conge``."""
+    return hr_services.demander_conge(
+        chauffeur.personnel, date_debut=date_debut, date_fin=date_fin, motif=motif
+    )

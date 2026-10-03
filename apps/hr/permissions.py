@@ -8,8 +8,8 @@ n'accèdent pas à la fiche du personnel.
 
 Les congés sont ouverts à tout employé qui a un compte (il demande son congé, et son
 supérieur hiérarchique valide en N1) : le droit de décision ne dépend pas du rôle mais de
-la hiérarchie, il est contrôlé par ``services.py``. Le chauffeur passera par l'espace
-mobile (étape 6).
+la hiérarchie, il est contrôlé par ``services.py``. Le chauffeur n'a pas d'écran RH : il demande
+son congé lui-même depuis l'espace mobile (``mobile_api``, ``/chauffeur/conges/``).
 """
 
 from apps.accounts.models import Role
