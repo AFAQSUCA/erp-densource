@@ -137,6 +137,13 @@ TVA saisi en direct → écriture à 3 lignes (628100 débit 10 000, 445200 déb
 11 800), balance équilibrée, compte de résultat n'inclut pas la TVA déductible dans les charges
 (c'est un compte d'actif, pas une charge).
 
+**Suite (audit global, marge nette)** : l'indicateur « Marge nette » du tableau de bord retranchait les
+charges **TTC** d'un CA **HT**, donc sous-estimait la marge de la TVA récupérable et divergeait du compte de
+résultat comptable. Il se calcule désormais hors taxes des deux côtés : CA HT − (charges − TVA déductible).
+`finance.charges()` garde `total` en TTC (même total que la page Dépenses et la trésorerie) et expose
+`tva_deductible` et `total_ht` ; la carte des charges affiche « dont X de TVA récupérable » quand il y en a.
+Le graphique mensuel « Charges » reste en TTC (flux payé), comme la carte.
+
 **Implémentation** : `billing.models.Depense.montant_tva`/`montant_ht`,
 `billing.services.enregistrer_depense`, `billing.forms.DepenseForm`,
 `accounting.constants.COMPTE_TVA_DEDUCTIBLE`,

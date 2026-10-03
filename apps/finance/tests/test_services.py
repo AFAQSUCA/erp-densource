@@ -224,6 +224,8 @@ def test_charges_regroupe_depenses_carburant_pieces_et_main_d_oeuvre():
         "maintenance": Decimal("80000"),
         "frais_mission": Decimal("0"),
         "total": Decimal("165500"),
+        "tva_deductible": Decimal("0"),
+        "total_ht": Decimal("165500"),
     }
 
 
@@ -242,6 +244,49 @@ def test_indicateurs_du_mois():
     assert kpi["creances"]["total"] == Decimal("1180000") - Decimal("600000") + Decimal("590000")
     assert kpi["creances"]["nombre_echues"] == 0
     assert kpi["tresorerie"] == Decimal("500000")  # 600 000 encaissés - 100 000 dépensés
+
+
+def _depense_avec_tva(montant, tva, jour=JOUR):
+    return billing.enregistrer_depense(
+        finances(), categorie="PEAGES", date_depense=jour, libelle="Péage", montant=Decimal(montant),
+        mode=ModePaiement.ESPECES, montant_tva=Decimal(tva),
+    )
+
+
+def test_la_marge_nette_se_calcule_hors_taxes_des_deux_cotes():
+    """Audit : la marge retranchait des charges TTC d'un CA HT, donc sous-estimée de la TVA récupérable."""
+    emise(prix="1000000", aujourd_hui=date(2026, 9, 10))  # CA HT 1 000 000
+    _depense_avec_tva("118000", "18000", jour=date(2026, 9, 5))  # 100 000 HT + 18 000 de TVA récupérable
+
+    kpi = services.indicateurs(*SEPT, aujourd_hui=date(2026, 9, 20))
+
+    assert kpi["chiffre_affaires"] == Decimal("1000000")
+    assert kpi["charges"]["total"] == Decimal("118000")  # ce qui a été payé : égal à la page Dépenses
+    assert kpi["charges"]["tva_deductible"] == Decimal("18000")
+    assert kpi["charges"]["total_ht"] == Decimal("100000")
+    assert kpi["marge_nette"] == Decimal("900000")  # et non 882 000
+
+
+def test_la_marge_nette_est_celle_du_compte_de_resultat_comptable():
+    """Même résultat que la comptabilité : la TVA déductible est un actif (445200), pas une charge."""
+    from apps.accounting import services as compta
+
+    emise(prix="1000000", aujourd_hui=date(2026, 9, 10))
+    _depense_avec_tva("118000", "18000", jour=date(2026, 9, 5))
+
+    resultat = compta.compte_de_resultat(compta.exercice_pour(date(2026, 9, 20)))
+
+    assert services.indicateurs(*SEPT, aujourd_hui=date(2026, 9, 20))["marge_nette"] == resultat["resultat_net"]
+
+
+def test_sans_tva_la_marge_est_inchangee():
+    emise(prix="1000000", aujourd_hui=date(2026, 9, 10))
+    _depense("100000", jour=date(2026, 9, 5))
+
+    kpi = services.indicateurs(*SEPT)
+
+    assert kpi["charges"]["tva_deductible"] == Decimal("0")
+    assert kpi["marge_nette"] == Decimal("900000")
 
 
 def test_la_marge_peut_etre_negative():

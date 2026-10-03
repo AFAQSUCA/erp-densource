@@ -4,8 +4,10 @@ Trésorerie = ce qui a réellement bougé : règlements reçus (entrées), dépe
 et mouvements manuels. Le compte (banque, caisse, mobile money) se déduit du mode de paiement.
 
 Charges du mois (indicateur, distinct de la trésorerie) = dépenses saisies + carburant (pleins)
-+ coût des OR clôturés (main-d'œuvre et pièces). Marge nette = CA HT - charges. Les trois
-composantes restent visibles séparément.
++ coût des OR clôturés (main-d'œuvre et pièces). Les trois composantes restent visibles séparément.
+Les charges sont comptées TTC (ce qui a été payé : même total que la page Dépenses et la trésorerie) ;
+la marge nette, elle, se calcule **hors taxes**, comme le compte de résultat : CA HT - (charges - TVA
+déductible). Retrancher des charges TTC d'un CA HT sous-estimait la marge de la TVA récupérable.
 
 Rapprochement bancaire (avenant-comptabilite-autonomie.md § Lot G) : confronte les lignes du
 relevé bancaire, saisies à la main, aux mouvements de trésorerie déjà enregistrés sur le compte
@@ -393,7 +395,8 @@ def charges(debut: date, fin: date) -> dict:
     (avance, dépense prévue, imprévu — R4) sont des dépenses comme les autres (``finance.receivers``) :
     la page Dépenses, la trésorerie et ces charges donnent le même total. Ventilation : ``carburant``,
     ``pieces`` (achetées), ``main_oeuvre`` (des OR), ``maintenance`` (pièces + main-d'œuvre),
-    ``frais_mission`` et ``depenses`` (le reste : péages, frais, saisies à la main).
+    ``frais_mission`` et ``depenses`` (le reste : péages, frais, saisies à la main). ``total`` est TTC (payé) ;
+    ``tva_deductible`` en est la part récupérable et ``total_ht`` la charge réelle (``total - tva_deductible``).
     """
     par_categorie = {c["code"]: c["total"] for c in billing_services.depenses_par_categorie(debut, fin)}
     carburant = par_categorie[CategorieDepense.CARBURANT]
@@ -401,6 +404,7 @@ def charges(debut: date, fin: date) -> dict:
     main_oeuvre = par_categorie[CategorieDepense.MAINTENANCE]
     frais_mission = par_categorie[CategorieDepense.FRAIS_MISSION]
     total = sum(par_categorie.values(), ZERO)
+    tva_deductible = billing_services.total_tva_deductible(debut, fin)
     return {
         "depenses": total - carburant - pieces - main_oeuvre - frais_mission,
         "carburant": carburant,
@@ -409,6 +413,8 @@ def charges(debut: date, fin: date) -> dict:
         "maintenance": pieces + main_oeuvre,
         "frais_mission": frais_mission,
         "total": total,
+        "tva_deductible": tva_deductible,
+        "total_ht": total - tva_deductible,
     }
 
 
@@ -448,7 +454,7 @@ def indicateurs(debut: date, fin: date, *, aujourd_hui: date | None = None) -> d
         "chiffre_affaires": ca,
         "encaisse": billing_services.encaissements(debut, fin),
         "charges": charges_periode,
-        "marge_nette": ca - charges_periode["total"],
+        "marge_nette": ca - charges_periode["total_ht"],  # HT des deux côtés, comme le compte de résultat
         "creances": billing_services.creances(aujourd_hui),
         "tresorerie": soldes_par_compte()["total"],
     }

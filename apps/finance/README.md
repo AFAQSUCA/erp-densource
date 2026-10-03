@@ -90,7 +90,7 @@ pour le graphique du tableau de bord ; le mois en cours reprend les indicateurs 
 - CA facturé = total **HT** des factures émises ; encaissé = règlements du mois ;
 - charges = **toutes les dépenses** (`services.charges`), y compris celles du parc auto et des missions qui se
   créent toutes seules (voir ci-dessous) ; ventilées en carburant, pièces, main-d'œuvre, frais de mission et autres ;
-- marge nette = CA HT - charges ; créances = reste à recouvrer (dont échu) ; trésorerie = solde.
+- marge nette = CA HT - charges HT (charges TTC moins TVA déductible, comme le compte de résultat) ; créances = reste à recouvrer (dont échu) ; trésorerie = solde.
   Les charges (économiques) et la trésorerie (réelle) ne sont volontairement pas les mêmes chiffres.
 
 **Rapprochement bancaire** (`/finances/rapprochement/`, Lot G — avenant-comptabilite-autonomie.md) :
