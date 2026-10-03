@@ -24,6 +24,10 @@ visite à renouveler), fiche avec l'état du permis et de la visite médicale (a
 / réactivation. Accès : ADMIN, DIRECTION, RH (`permissions.py`). Matricule, nom et
 prénom viennent de la fiche du personnel et ne se modifient pas ici ; « En mission » et
 « En congé » sont posés par les missions et les congés et ne se changent pas à la main.
+Un congé ne pose « En congé » que depuis « Disponible » : un chauffeur (ou copilote) suspendu ou inactif
+le reste, jamais remis « Disponible » à la fin du congé ; en mission, il le reste jusqu'au retour, où
+`rappeler_de_mission` le passe « En congé » si un congé est en cours (sinon « Disponible »). Lever une suspension
+en plein congé le garde « En congé » (`_statut_de_retour`).
 Services ajoutés : `rechercher_chauffeurs`, `etat_echeances`, `modifier_chauffeur`,
 `changer_statut_manuel`, `chauffeurs_avec_echeance_proche`.
 
