@@ -22,7 +22,7 @@
   "14": {
     "differes": 0,
     "fichiers_de_tests": 3,
-    "reussis": 51
+    "reussis": 67
   },
   "15": {
     "differes": 0,
@@ -85,9 +85,9 @@
     "reussis": 171
   },
   "26": {
-    "differes": 5,
-    "fichiers_de_tests": 12,
-    "reussis": 214
+    "differes": 7,
+    "fichiers_de_tests": 13,
+    "reussis": 233
   },
   "27": {
     "differes": 0,
@@ -112,7 +112,7 @@
   "30": {
     "differes": 0,
     "fichiers_de_tests": 8,
-    "reussis": 358
+    "reussis": 359
   },
   "4": {
     "differes": 0,
@@ -139,5 +139,5 @@
     "fichiers_de_tests": 5,
     "reussis": 125
   },
-  "total": 2511
+  "total": 2547
 }

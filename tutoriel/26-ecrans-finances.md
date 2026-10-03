@@ -6586,7 +6586,7 @@ python manage.py check
 python -m pytest apps/accounts/tests/test_web.py apps/billing/tests/test_proforma_views.py apps/billing/tests/test_views.py apps/core/tests/test_impression_listes.py apps/finance/tests/test_demandes_views.py apps/finance/tests/test_depenses_parc_auto.py apps/finance/tests/test_impression.py apps/finance/tests/test_rapprochement_views.py apps/finance/tests/test_versements.py apps/finance/tests/test_views.py apps/notifications/tests/test_facturation.py apps/notifications/tests/test_receivers_demandes.py apps/notifications/tests/test_receivers_proforma.py -q --no-cov
 ```
 
-**Résultat attendu :** `214 passed, 5 failed` (pour les 12 fichier(s) de tests présentés dans ce chapitre).
+**Résultat attendu :** `233 passed, 7 failed` (pour les 13 fichier(s) de tests présentés dans ce chapitre).
 
 Des tests échouent à ce stade, **c'est normal** : ils vérifient des écrans qui n'existent pas encore (par exemple la page d'accueil). Ils passeront au chapitre indiqué :
 

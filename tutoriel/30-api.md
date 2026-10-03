@@ -2892,7 +2892,7 @@ python manage.py check
 python -m pytest apps/accounts/tests/test_mfa.py apps/accounts/tests/test_securite_connexion.py apps/api/tests/test_auth.py apps/api/tests/test_auth_mfa.py apps/api/tests/test_v1.py apps/core/tests/test_csp.py apps/mobile_api/tests/test_api.py apps/mobile_api/tests/test_frais_mission.py -q --no-cov
 ```
 
-**Résultat attendu :** `358 passed` (pour les 8 fichier(s) de tests présentés dans ce chapitre).
+**Résultat attendu :** `359 passed` (pour les 8 fichier(s) de tests présentés dans ce chapitre).
 
 **Essayez l'API à la main** (avec `python manage.py runserver` dans un autre terminal). Le compte `demo_chauffeur`
 n'est pas soumis à la MFA :
