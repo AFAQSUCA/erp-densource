@@ -5,8 +5,12 @@ et mouvements manuels. Le compte (banque, caisse, mobile money) se déduit du mo
 
 Charges du mois (indicateur, distinct de la trésorerie) = dépenses saisies + carburant (pleins)
 + coût des OR clôturés (main-d'œuvre et pièces). Marge nette = CA HT - charges. Les trois
-composantes restent visibles séparément. Le rapprochement bancaire n'est pas géré (décision
-de l'utilisateur).
+composantes restent visibles séparément.
+
+Rapprochement bancaire (avenant-comptabilite-autonomie.md § Lot G) : confronte les lignes du
+relevé bancaire, saisies à la main, aux mouvements de trésorerie déjà enregistrés sur le compte
+Banque (``mouvements(compte="BANQUE")``) — jamais la Caisse ni le Mobile Money, un relevé bancaire
+ne concerne que la banque.
 """
 
 from __future__ import annotations
@@ -37,7 +41,7 @@ from apps.garage.models import OrdreReparation, StatutOr
 from apps.inventory.models import MouvementStock, TypeMouvement
 
 from . import signals
-from .models import MouvementManuel, NatureMouvement, SensMouvement
+from .models import LigneReleve, MouvementManuel, NatureMouvement, SensMouvement
 
 ZERO = Decimal("0")
 
@@ -182,6 +186,117 @@ def mouvements(
         lignes = [ligne for ligne in lignes if ligne["compte"] == compte]
     lignes.sort(key=lambda l: (l["date"], l["origine"], l["pk"]), reverse=True)
     return lignes
+
+
+# --- rapprochement bancaire (Lot G) ---
+
+
+def _mouvements_deja_pointes() -> set[tuple[str, int]]:
+    return set(
+        LigneReleve.objects.filter(pointee=True).values_list("mouvement_origine", "mouvement_id")
+    )
+
+
+def saisir_ligne_releve(
+    acteur, *, date_operation: date, libelle: str, montant: Decimal, sens: str, reference: str = ""
+) -> LigneReleve:
+    """Ajoute une ligne au relevé bancaire (pas encore pointée) — saisie manuelle, le relevé n'est
+    importé depuis aucun format de fichier (décision confirmée avec l'entreprise)."""
+    if acteur.role_effectif not in billing_permissions.SAISIE:
+        raise ActionFactureNonAutorisee("Vous n'avez pas le droit de saisir une ligne de relevé.")
+    libelle = libelle.strip()
+    if not libelle:
+        raise MontantInvalide("Le libellé est obligatoire.")
+    montant = Decimal(montant)
+    if montant <= 0:
+        raise MontantInvalide("Le montant doit être strictement positif.")
+    if sens not in SensMouvement.values:
+        raise MontantInvalide("Sens inconnu.")
+    if date_operation > timezone.localdate():
+        raise MontantInvalide("La date ne peut pas être dans le futur.")
+    return LigneReleve.objects.create(
+        date_operation=date_operation,
+        libelle=libelle,
+        montant=montant,
+        sens=sens,
+        reference=reference.strip(),
+        saisi_par=acteur,
+    )
+
+
+def suggestions_pointage(ligne: LigneReleve) -> list[dict]:
+    """Mouvements de trésorerie Banque non encore pointés, de même sens et montant que la ligne de
+    relevé, triés par date la plus proche — l'accountant confirme ou cherche ailleurs."""
+    deja_pointes = _mouvements_deja_pointes()
+    candidats = [
+        m
+        for m in mouvements(compte=CompteTresorerie.BANQUE)
+        if m["sens"] == ligne.sens
+        and m["montant"] == ligne.montant
+        and (m["origine"], m["pk"]) not in deja_pointes
+    ]
+    candidats.sort(key=lambda m: abs((m["date"] - ligne.date_operation).days))
+    return candidats
+
+
+@transaction.atomic
+def pointer_ligne_releve(ligne: LigneReleve, acteur, *, origine: str, mouvement_id: int) -> LigneReleve:
+    """Associe la ligne de relevé à un mouvement de trésorerie précis (un règlement, une dépense
+    ou un mouvement manuel), identifié par son origine et son identifiant."""
+    if acteur.role_effectif not in billing_permissions.SAISIE:
+        raise ActionFactureNonAutorisee("Vous n'avez pas le droit de pointer une ligne de relevé.")
+    if origine not in {"REGLEMENT", "DEPENSE", "MANUEL"}:
+        raise MontantInvalide("Origine de mouvement inconnue.")
+    if (origine, mouvement_id) in _mouvements_deja_pointes():
+        raise MontantInvalide("Ce mouvement est déjà pointé sur une autre ligne du relevé.")
+    ligne.pointee = True
+    ligne.mouvement_origine = origine
+    ligne.mouvement_id = mouvement_id
+    ligne.save(update_fields=["pointee", "mouvement_origine", "mouvement_id", "updated_at"])
+    return ligne
+
+
+def depointer_ligne_releve(ligne: LigneReleve, acteur) -> LigneReleve:
+    """Annule le pointage d'une ligne, par exemple pour corriger une association faite par erreur."""
+    if acteur.role_effectif not in billing_permissions.SAISIE:
+        raise ActionFactureNonAutorisee("Vous n'avez pas le droit de dépointer une ligne de relevé.")
+    ligne.pointee = False
+    ligne.mouvement_origine = ""
+    ligne.mouvement_id = None
+    ligne.save(update_fields=["pointee", "mouvement_origine", "mouvement_id", "updated_at"])
+    return ligne
+
+
+def rapprochement_bancaire(*, debut: date, fin: date) -> dict:
+    """État du rapprochement sur la période : solde du relevé, solde des mouvements Banque déjà
+    enregistrés, écart entre les deux, et le détail de chaque côté non encore pointé (un écart
+    persistant après pointage signale une opération jamais saisie — frais bancaires, par exemple —
+    à corriger via une écriture manuelle existante, pas un nouveau mécanisme ici)."""
+    lignes_releve = list(
+        LigneReleve.objects.filter(date_operation__gte=debut, date_operation__lte=fin)
+    )
+    mouvements_banque = mouvements(date_debut=debut, date_fin=fin, compte=CompteTresorerie.BANQUE)
+    deja_pointes = _mouvements_deja_pointes()
+    solde_releve = sum(
+        (l.montant if l.sens == SensMouvement.ENTREE else -l.montant for l in lignes_releve), ZERO
+    )
+    solde_comptable = sum(
+        (m["montant"] if m["sens"] == SensMouvement.ENTREE else -m["montant"] for m in mouvements_banque),
+        ZERO,
+    )
+    return {
+        "debut": debut,
+        "fin": fin,
+        "lignes_releve": lignes_releve,
+        "lignes_non_pointees": [l for l in lignes_releve if not l.pointee],
+        "mouvements_banque": mouvements_banque,
+        "mouvements_non_pointes": [
+            m for m in mouvements_banque if (m["origine"], m["pk"]) not in deja_pointes
+        ],
+        "solde_releve": solde_releve,
+        "solde_comptable": solde_comptable,
+        "ecart": solde_releve - solde_comptable,
+    }
 
 
 def _somme(queryset, champ: str = "montant") -> Decimal:

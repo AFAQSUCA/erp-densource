@@ -253,3 +253,148 @@ def test_la_marge_peut_etre_negative():
 def test_un_utilisateur_de_role_rh_saisit_desormais_comme_la_finance():
     """Retour réunion : la RH fait tout ce que fait la FINANCES, y compris la trésorerie."""
     assert _manuel(acteur=UserFactory(role=Role.RH)).pk
+
+
+# --- rapprochement bancaire (Lot G) ---
+
+
+def _ligne_releve(sens=SensMouvement.ENTREE, montant="100000", jour=JOUR, libelle="Virement client",
+                   acteur=None, reference=""):
+    return services.saisir_ligne_releve(
+        acteur or finances(), date_operation=jour, libelle=libelle, montant=Decimal(montant), sens=sens,
+        reference=reference,
+    )
+
+
+def test_une_ligne_de_releve_se_saisit_a_la_main():
+    ligne = _ligne_releve(reference="REF1")
+
+    assert ligne.pk
+    assert ligne.pointee is False
+    assert ligne.reference == "REF1"
+
+
+@pytest.mark.parametrize(
+    ("libelle", "montant", "sens", "jour", "message"),
+    [
+        ("  ", "10", SensMouvement.ENTREE, JOUR, "libellé"),
+        ("x", "0", SensMouvement.ENTREE, JOUR, "strictement positif"),
+        ("x", "10", "AUTRE", JOUR, "Sens inconnu"),
+        ("x", "10", SensMouvement.ENTREE, date(2999, 1, 1), "futur"),
+    ],
+)
+def test_saisie_de_ligne_de_releve_invalide(libelle, montant, sens, jour, message):
+    with pytest.raises(MontantInvalide, match=message):
+        services.saisir_ligne_releve(
+            finances(), date_operation=jour, libelle=libelle, montant=Decimal(montant), sens=sens,
+        )
+
+
+def test_la_saisie_d_une_ligne_de_releve_est_reservee_a_la_saisie_facturation():
+    with pytest.raises(ActionFactureNonAutorisee):
+        _ligne_releve(acteur=UserFactory(role=Role.PARCAUTO))
+
+
+def test_les_suggestions_proposent_le_mouvement_banque_de_meme_sens_et_montant_le_plus_proche():
+    facture = emise(prix="1000000")
+    proche = _reglement(facture, "100000", ModePaiement.VIREMENT, jour=date(2026, 9, 4))
+    _reglement(facture, "200000", ModePaiement.VIREMENT, jour=date(2026, 9, 3))  # autre montant
+    _depense("100000", ModePaiement.ESPECES, jour=date(2026, 9, 4))  # autre compte (Caisse)
+    ligne = _ligne_releve(montant="100000", jour=date(2026, 9, 5))
+
+    suggestions = services.suggestions_pointage(ligne)
+
+    assert len(suggestions) == 1
+    assert suggestions[0]["origine"] == "REGLEMENT" and suggestions[0]["pk"] == proche.pk
+
+
+def test_pointer_associe_la_ligne_au_mouvement_choisi():
+    facture = emise(prix="1000000")
+    reglement = _reglement(facture, "100000", ModePaiement.VIREMENT)
+    ligne = _ligne_releve(montant="100000")
+
+    pointee = services.pointer_ligne_releve(ligne, finances(), origine="REGLEMENT", mouvement_id=reglement.pk)
+
+    assert pointee.pointee is True
+    assert pointee.mouvement_origine == "REGLEMENT" and pointee.mouvement_id == reglement.pk
+
+
+def test_pointer_refuse_un_mouvement_deja_pointe_sur_une_autre_ligne():
+    facture = emise(prix="1000000")
+    reglement = _reglement(facture, "100000", ModePaiement.VIREMENT)
+    premiere = _ligne_releve(montant="100000")
+    services.pointer_ligne_releve(premiere, finances(), origine="REGLEMENT", mouvement_id=reglement.pk)
+    seconde = _ligne_releve(montant="100000", libelle="Doublon")
+
+    with pytest.raises(MontantInvalide, match="déjà pointé"):
+        services.pointer_ligne_releve(seconde, finances(), origine="REGLEMENT", mouvement_id=reglement.pk)
+
+
+def test_pointer_refuse_une_origine_inconnue():
+    ligne = _ligne_releve()
+    with pytest.raises(MontantInvalide, match="Origine"):
+        services.pointer_ligne_releve(ligne, finances(), origine="AUTRE", mouvement_id=1)
+
+
+def test_pointer_est_reserve_a_la_saisie_facturation():
+    ligne = _ligne_releve()
+    with pytest.raises(ActionFactureNonAutorisee):
+        services.pointer_ligne_releve(ligne, UserFactory(role=Role.PARCAUTO), origine="MANUEL", mouvement_id=1)
+
+
+def test_depointer_annule_le_pointage():
+    facture = emise(prix="1000000")
+    reglement = _reglement(facture, "100000", ModePaiement.VIREMENT)
+    ligne = _ligne_releve(montant="100000")
+    services.pointer_ligne_releve(ligne, finances(), origine="REGLEMENT", mouvement_id=reglement.pk)
+
+    depointee = services.depointer_ligne_releve(ligne, finances())
+
+    assert depointee.pointee is False
+    assert depointee.mouvement_origine == "" and depointee.mouvement_id is None
+
+
+def test_depointer_est_reserve_a_la_saisie_facturation():
+    ligne = _ligne_releve()
+    with pytest.raises(ActionFactureNonAutorisee):
+        services.depointer_ligne_releve(ligne, UserFactory(role=Role.PARCAUTO))
+
+
+def test_le_rapprochement_calcule_les_deux_soldes_et_l_ecart_quand_ils_concordent():
+    facture = emise(prix="1000000")
+    reglement = _reglement(facture, "100000", ModePaiement.VIREMENT, jour=date(2026, 9, 4))
+    ligne = _ligne_releve(montant="100000", jour=date(2026, 9, 4))
+    services.pointer_ligne_releve(ligne, finances(), origine="REGLEMENT", mouvement_id=reglement.pk)
+
+    etat = services.rapprochement_bancaire(debut=date(2026, 9, 1), fin=date(2026, 9, 30))
+
+    assert etat["solde_releve"] == Decimal("100000")
+    assert etat["solde_comptable"] == Decimal("100000")
+    assert etat["ecart"] == 0
+    assert etat["lignes_non_pointees"] == []
+    assert etat["mouvements_non_pointes"] == []
+
+
+def test_le_rapprochement_signale_un_ecart_quand_une_operation_n_a_pas_ete_saisie():
+    facture = emise(prix="1000000")
+    _reglement(facture, "100000", ModePaiement.VIREMENT, jour=date(2026, 9, 4))  # jamais pointé
+    _ligne_releve(montant="50000", jour=date(2026, 9, 5))  # frais bancaires jamais comptabilisés
+
+    etat = services.rapprochement_bancaire(debut=date(2026, 9, 1), fin=date(2026, 9, 30))
+
+    assert etat["solde_releve"] == Decimal("50000")
+    assert etat["solde_comptable"] == Decimal("100000")
+    assert etat["ecart"] == Decimal("-50000")
+    assert len(etat["lignes_non_pointees"]) == 1
+    assert len(etat["mouvements_non_pointes"]) == 1
+
+
+def test_le_rapprochement_ignore_la_caisse_et_le_mobile_money():
+    _depense("20000", ModePaiement.ESPECES, jour=date(2026, 9, 4))
+    facture = emise(prix="1000000")
+    _reglement(facture, "30000", ModePaiement.WAVE, jour=date(2026, 9, 4))
+
+    etat = services.rapprochement_bancaire(debut=date(2026, 9, 1), fin=date(2026, 9, 30))
+
+    assert etat["solde_comptable"] == 0
+    assert etat["mouvements_banque"] == []

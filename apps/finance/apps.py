@@ -11,12 +11,13 @@ class FinanceConfig(AppConfig):
         from apps.audit.registry import audit_model
 
         from . import permissions, receivers  # noqa: F401  (connecte les récepteurs)
-        from .models import DemandeDepense, EnveloppeDepense, MouvementManuel, OrdreDecaissement
+        from .models import DemandeDepense, EnveloppeDepense, LigneReleve, MouvementManuel, OrdreDecaissement
 
         audit_model(MouvementManuel, module="FINANCES")
         audit_model(EnveloppeDepense, module="FINANCES")
         audit_model(DemandeDepense, module="FINANCES")
         audit_model(OrdreDecaissement, module="FINANCES")
+        audit_model(LigneReleve, module="FINANCES")
         enregistrer(
             EntreeMenu(
                 "Trésorerie", "finance:tresorerie", "fa-wallet", permissions.CONSULTATION, ordre=62
@@ -26,5 +27,11 @@ class FinanceConfig(AppConfig):
             EntreeMenu(
                 "Demandes de dépense", "finance:demandes", "fa-file-invoice",
                 permissions.DEMANDE_CONSULTATION, ordre=63,
+            )
+        )
+        enregistrer(
+            EntreeMenu(
+                "Rapprochement bancaire", "finance:rapprochement", "fa-money-check-alt",
+                permissions.CONSULTATION, ordre=64,
             )
         )
