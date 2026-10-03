@@ -52,6 +52,9 @@ CHANNEL_LAYERS = {
 CELERY_TASK_ALWAYS_EAGER = False
 CELERY_BROKER_URL = env("REDIS_URL")
 
+# Nginx envoie les fichiers téléversés sur ordre de Django (X-Accel-Redirect), après contrôle du rôle.
+MEDIA_ACCEL_REDIRECT = True
+
 # HTTPS/TLS obligatoire + en-têtes de sécurité — cahier-des-charges.md:270-281.
 SECURE_SSL_REDIRECT = True
 SESSION_COOKIE_SECURE = True

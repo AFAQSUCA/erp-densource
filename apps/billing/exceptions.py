@@ -1,4 +1,7 @@
-class BillingError(Exception):
+from apps.core.exceptions import ErreurMetier
+
+
+class BillingError(ErreurMetier):
     """Erreur métier de la facturation."""
 
 

@@ -9,6 +9,7 @@ from django.contrib import admin
 from django.urls import include, path
 from django.views.generic import RedirectView
 
+from apps.core.medias import MediaProtegeView
 from apps.dashboard.views import DashboardImprimerView, DashboardView
 
 urlpatterns = [
@@ -16,6 +17,7 @@ urlpatterns = [
     path("imprimer/", DashboardImprimerView.as_view(), name="home_imprimer"),
     # Les navigateurs (et l'administration Django) réclament /favicon.ico : on renvoie vers l'icône du site.
     path("favicon.ico", RedirectView.as_view(url=settings.STATIC_URL + "img/favicon.png", permanent=True)),
+    path("medias/<path:chemin>", MediaProtegeView.as_view(), name="media"),
     path("", include("apps.accounts.urls")),
     path("missions/", include("apps.missions.urls")),
     path("clients/", include("apps.customers.urls")),

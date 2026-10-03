@@ -8,6 +8,7 @@ logique produit alors une ligne ``audit_log`` avec les valeurs avant/après.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from decimal import Decimal
 
@@ -39,10 +40,18 @@ def _valeur(field, valeur):
     return valeur
 
 
-def _snapshot(instance: Model, exclure: frozenset[str] = frozenset()) -> dict:
+def _empreinte(valeur) -> str:
+    """Trace d'un secret (mot de passe haché) : prouve qu'il a changé sans jamais l'écrire dans le journal."""
+    return "masqué:" + hashlib.sha256(str(valeur).encode()).hexdigest()[:8]
+
+
+def _snapshot(
+    instance: Model, exclure: frozenset[str] = frozenset(), masquer: frozenset[str] = frozenset()
+) -> dict:
     """Valeurs des colonnes de l'instance, sérialisables en JSON."""
     data = {
-        f.attname: _valeur(f, getattr(instance, f.attname))
+        f.attname: _empreinte(getattr(instance, f.attname)) if f.attname in masquer
+        else _valeur(f, getattr(instance, f.attname))
         for f in instance._meta.concrete_fields
         if f.attname not in CHAMPS_IGNORES and f.attname not in exclure
     }
@@ -50,16 +59,18 @@ def _snapshot(instance: Model, exclure: frozenset[str] = frozenset()) -> dict:
 
 
 def audit_model(
-    model: type[Model], module: str, exclure: tuple[str, ...] = ()
+    model: type[Model], module: str, exclure: tuple[str, ...] = (), masquer: tuple[str, ...] = ()
 ) -> None:
     """Active l'audit automatique de ``model`` sous le nom de module ``module``.
 
     ``exclure`` liste les champs à ne jamais écrire dans le journal (secrets :
     codes de mission, etc.). Un changement sur ces seuls champs ne produit
-    aucune entrée.
+    aucune entrée. ``masquer`` liste les champs dont seule une empreinte est journalisée : le
+    changement reste visible (mot de passe modifié) sans que la valeur soit écrite.
     """
     label = model._meta.label
     exclus = frozenset(exclure)
+    masques = frozenset(masquer)
     entite = model.__name__
 
     def capturer_avant(sender, instance, raw=False, **kwargs):
@@ -69,12 +80,12 @@ def audit_model(
         if instance.pk:
             ancien = sender._base_manager.filter(pk=instance.pk).first()
             if ancien is not None:
-                instance._audit_avant = _snapshot(ancien, exclus)
+                instance._audit_avant = _snapshot(ancien, exclus, masques)
 
     def journaliser(sender, instance, created, raw=False, **kwargs):
         if raw:
             return
-        apres = _snapshot(instance, exclus)
+        apres = _snapshot(instance, exclus, masques)
         avant = getattr(instance, "_audit_avant", None)
 
         if created or avant is None:

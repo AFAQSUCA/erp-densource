@@ -1,6 +1,14 @@
+import logging
 import threading
 
 from django.conf import settings
+from django.contrib import messages
+from django.shortcuts import redirect
+from django.utils.http import url_has_allowed_host_and_scheme
+
+from .exceptions import ErreurMetier
+
+logger = logging.getLogger(__name__)
 
 _local = threading.local()
 
@@ -24,6 +32,36 @@ class CurrentRequestMiddleware:
             return self.get_response(request)
         finally:
             _local.request = None
+
+
+class ErreurMetierMiddleware:
+    """Filet de sécurité : une erreur métier non interceptée par son écran devient un message.
+
+    L'opération est déjà annulée (les services sont atomiques). L'utilisateur revient à la page d'où
+    il vient avec le message de l'erreur, au lieu d'une erreur 500. L'API a son propre gestionnaire
+    (``apps.api.exceptions``) et n'est pas concernée.
+    """
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        return self.get_response(request)
+
+    def process_exception(self, request, exception):
+        if not isinstance(exception, ErreurMetier) or request.path.startswith("/api/"):
+            return None
+        origine = request.META.get("HTTP_REFERER", "")
+        if not url_has_allowed_host_and_scheme(
+            origine, allowed_hosts={request.get_host()}, require_https=request.is_secure()
+        ):
+            origine = ""
+        # Un GET qui échoue ne doit pas se renvoyer vers lui-même (boucle de redirections).
+        if request.method == "GET" and (not origine or origine.split("?")[0].endswith(request.path)):
+            return None
+        logger.warning("Erreur métier non interceptée sur %s : %s", request.path, exception)
+        messages.error(request, str(exception))
+        return redirect(origine or "/")
 
 
 def get_current_request():
