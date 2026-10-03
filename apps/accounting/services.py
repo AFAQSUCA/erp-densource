@@ -23,6 +23,7 @@ from apps.core.services import prochain_numero
 from .constants import (
     CATEGORIE_DEPENSE_VERS_COMPTE,
     COMPTE_CLIENTS,
+    COMPTE_RESULTAT,
     COMPTE_TRESORERIE_VERS_COMPTE,
     COMPTE_TRESORERIE_VERS_JOURNAL,
     COMPTE_TVA_COLLECTEE,
@@ -140,6 +141,8 @@ def cloturer_exercice(exercice: ExerciceComptable, acteur) -> ExerciceComptable:
     avant de clôturer, pour ne jamais clôturer une année à l'insu d'une saisie en attente. Refusé aussi
     tant que l'année n'est pas terminée : toute opération datée d'ici là (règlement, dépense, plein...)
     serait alors refusée.
+    Pose l'**écriture de clôture** (:func:`ecriture_de_cloture`) : le résultat de l'exercice est
+    viré au compte 120000 pour que le bilan de l'exercice suivant l'y retrouve.
     Contrôle **strict** (``acteur.role``) : réservé à la DIRECTION, comme ``Facture.valider`` —
     jamais l'ADMIN ni un superutilisateur à sa place. Jamais rouvert ensuite."""
     _exiger_role(acteur, permissions.CLOTURE_EXERCICE, "clôturer un exercice", strict=True)
@@ -160,11 +163,71 @@ def cloturer_exercice(exercice: ExerciceComptable, acteur) -> ExerciceComptable:
             f"{brouillons} écriture(s) en brouillon reste(nt) dans cette période : "
             "validez-les ou abandonnez-les avant de clôturer."
         )
+    ecriture_de_cloture(exercice)
     exercice.statut = StatutExercice.CLOTURE
     exercice.cloture_par = acteur
     exercice.date_cloture = timezone.now()
     exercice.save(update_fields=["statut", "cloture_par", "date_cloture", "updated_at"])
     return exercice
+
+
+ORIGINE_CLOTURE = "CLOTURE"
+
+
+def _lignes_de_resultat(exercice: ExerciceComptable) -> QuerySet[LigneEcriture]:
+    """Lignes validées des comptes de charge/produit de la période, écriture de clôture exclue."""
+    return LigneEcriture.objects.filter(
+        ecriture__statut=StatutEcriture.VALIDEE,
+        ecriture__date_ecriture__gte=exercice.date_debut,
+        ecriture__date_ecriture__lte=exercice.date_fin,
+        compte__nature__in=[NatureCompte.CHARGE, NatureCompte.PRODUIT],
+    ).exclude(ecriture__origine=ORIGINE_CLOTURE)
+
+
+@transaction.atomic
+def ecriture_de_cloture(exercice: ExerciceComptable) -> EcritureComptable | None:
+    """Vire le résultat de l'exercice au compte 120000 : chaque compte de charge ou de produit est
+    soldé (sens inverse de son solde), la différence est portée au crédit (bénéfice) ou au débit
+    (perte) du 120000. Sans cela le résultat de l'année N disparaîtrait du bilan de l'année N+1
+    (cumulé depuis l'origine, il ne verrait que ses propres charges et produits).
+
+    Datée du dernier jour de l'exercice, journal des opérations diverses, validée d'office.
+    Idempotente (``origine`` = ``CLOTURE``, ``origine_id`` = exercice) ; ``None`` si l'exercice n'a
+    mouvementé aucun compte de charge ou de produit. Le compte de résultat et la balance l'ignorent
+    pour continuer d'afficher l'activité de l'année."""
+    lignes = []
+    total_debit = total_credit = ZERO
+    for compte in _agreger_par_compte(_lignes_de_resultat(exercice)):
+        solde = compte["total_debit"] - compte["total_credit"]
+        if solde == 0:
+            continue
+        sens = SensEcriture.CREDIT if solde > 0 else SensEcriture.DEBIT
+        lignes.append(LigneSaisie(compte=compte["compte__numero"], sens=sens, montant=abs(solde)))
+        if sens == SensEcriture.DEBIT:
+            total_debit += abs(solde)
+        else:
+            total_credit += abs(solde)
+    if not lignes:
+        return None
+    ecart = total_debit - total_credit  # > 0 : produits > charges, bénéfice
+    if ecart != 0:
+        lignes.append(
+            LigneSaisie(
+                compte=COMPTE_RESULTAT,
+                sens=SensEcriture.CREDIT if ecart > 0 else SensEcriture.DEBIT,
+                montant=abs(ecart),
+            )
+        )
+    return passer_ecriture(
+        journal=Journal.OPERATIONS_DIVERSES,
+        date_ecriture=exercice.date_fin,
+        libelle=f"Clôture de l'exercice {exercice.annee} — virement du résultat",
+        lignes=lignes,
+        origine=ORIGINE_CLOTURE,
+        origine_id=exercice.pk,
+        piece_reference=f"CLOTURE-{exercice.annee}",
+        ignorer_cloture=True,
+    )
 
 
 def _comptes_actifs(numeros: set[str]) -> dict[str, Compte]:
@@ -187,6 +250,7 @@ def passer_ecriture(
     origine: str = "",
     origine_id: int | None = None,
     piece_reference: str = "",
+    ignorer_cloture: bool = False,
 ) -> EcritureComptable:
     """Crée une écriture équilibrée (débit == crédit) et ses lignes.
 
@@ -200,7 +264,8 @@ def passer_ecriture(
         if existante is not None:
             return existante
 
-    _exiger_exercice_ouvert(date_ecriture)
+    if not ignorer_cloture:  # seule l'écriture de clôture elle-même s'écrit dans un exercice clôturé
+        _exiger_exercice_ouvert(date_ecriture)
 
     if len(lignes) < 2:
         raise EcritureNonEquilibree("Une écriture comptable a au moins 2 lignes.")
@@ -432,6 +497,10 @@ def contre_passer(
         )
     if ecriture.origine == ORIGINE_CONTRE_PASSATION:
         raise ContrePassationImpossible("Une contre-passation ne se contre-passe pas.")
+    if ecriture.origine == ORIGINE_CLOTURE:
+        raise ContrePassationImpossible(
+            "L'écriture de clôture ne se contre-passe pas : un exercice clôturé ne se rouvre jamais."
+        )
     inverse = {SensEcriture.DEBIT: SensEcriture.CREDIT, SensEcriture.CREDIT: SensEcriture.DEBIT}
     lignes = [
         LigneSaisie(
@@ -591,12 +660,18 @@ def _agreger_par_compte(lignes: QuerySet[LigneEcriture]) -> list[dict]:
     )
 
 
-def balance(*, debut: date | None = None, fin: date | None = None) -> list[dict]:
+def balance(
+    *, debut: date | None = None, fin: date | None = None, avec_cloture: bool = False
+) -> list[dict]:
     """Balance générale : total débit/crédit et solde de chaque compte mouvementé sur la période
     (tous comptes confondus, toutes dates si ``debut``/``fin`` omis). Seules les écritures
     VALIDEE comptent — un brouillon d'opération diverse ne doit jamais fausser la balance
-    officielle avant l'approbation de la DIRECTION."""
+    officielle avant l'approbation de la DIRECTION. Les écritures de clôture sont écartées par
+    défaut (balance avant clôture : les charges et produits d'un exercice clôturé restent
+    lisibles) ; elles sont équilibrées, le total débit = total crédit tient dans les deux cas."""
     lignes = LigneEcriture.objects.filter(ecriture__statut=StatutEcriture.VALIDEE)
+    if not avec_cloture:
+        lignes = lignes.exclude(ecriture__origine=ORIGINE_CLOTURE)
     if debut is not None:
         lignes = lignes.filter(ecriture__date_ecriture__gte=debut)
     if fin is not None:
@@ -640,17 +715,12 @@ def declaration_tva(*, debut: date, fin: date) -> dict:
 
 
 def compte_de_resultat(exercice: ExerciceComptable) -> dict:
-    """Produits moins charges de l'exercice = résultat net (bénéfice ou perte). Calculé à la
-    demande à partir des lignes de la période (rapport de situation) : aucune écriture de
-    clôture n'existe encore pour transférer ce résultat dans le bilan de l'exercice suivant —
-    voir « Limite connue », avenant-comptabilite-syscohada.md § P6. Seules les écritures VALIDEE
-    comptent, jamais un brouillon d'opération diverse non encore approuvé par la DIRECTION."""
-    lignes = LigneEcriture.objects.filter(
-        ecriture__statut=StatutEcriture.VALIDEE,
-        ecriture__date_ecriture__gte=exercice.date_debut,
-        ecriture__date_ecriture__lte=exercice.date_fin,
-        compte__nature__in=[NatureCompte.CHARGE, NatureCompte.PRODUIT],
-    )
+    """Produits moins charges de l'exercice = résultat net (bénéfice ou perte), calculé à la demande
+    sur les lignes de la période. L'écriture de clôture (:func:`ecriture_de_cloture`) est ignorée :
+    elle solde ces comptes pour le bilan, mais le compte de résultat d'un exercice clôturé doit
+    continuer d'afficher son activité. Seules les écritures VALIDEE comptent, jamais un brouillon
+    d'opération diverse non encore approuvé par la DIRECTION."""
+    lignes = _lignes_de_resultat(exercice)
     charges, produits = [], []
     total_charges = total_produits = ZERO
     for ligne in _agreger_par_compte(lignes):
@@ -673,11 +743,13 @@ def compte_de_resultat(exercice: ExerciceComptable) -> dict:
 
 def bilan(exercice: ExerciceComptable) -> dict:
     """Actif et passif cumulés depuis l'origine jusqu'à la fin de l'exercice (un bilan est une
-    photo à une date, pas une période — contrairement au compte de résultat). Le résultat net de
-    l'exercice (voir :func:`compte_de_resultat`) est ajouté au passif pour équilibrer le bilan,
-    puisqu'il n'existe pas encore d'écriture de clôture qui l'impute au compte 120000. Seules les
-    écritures VALIDEE comptent, jamais un brouillon d'opération diverse non encore approuvé par
-    la DIRECTION."""
+    photo à une date, pas une période — contrairement au compte de résultat). Le résultat des
+    exercices clôturés est déjà au compte 120000 (:func:`ecriture_de_cloture`). Reste à ajouter au
+    passif le résultat **non encore viré** : celui de l'exercice en cours, et celui d'un exercice
+    antérieur qui ne serait pas encore clôturé. C'est la somme, depuis l'origine, des charges et
+    produits écriture de clôture comprise (elle annule le résultat qu'elle a viré) : le bilan
+    s'équilibre donc à tout moment, quel que soit le nombre d'exercices. Seules les écritures
+    VALIDEE comptent, jamais un brouillon d'opération diverse non encore approuvé par la DIRECTION."""
     lignes = LigneEcriture.objects.filter(
         ecriture__statut=StatutEcriture.VALIDEE,
         ecriture__date_ecriture__lte=exercice.date_fin,
@@ -694,7 +766,19 @@ def bilan(exercice: ExerciceComptable) -> dict:
             montant = ligne["total_credit"] - ligne["total_debit"]
             passif.append({**ligne, "montant": montant})
             total_passif += montant
-    resultat_net = compte_de_resultat(exercice)["resultat_net"]
+    resultat_net = sum(
+        (
+            ligne["total_credit"] - ligne["total_debit"]
+            for ligne in _agreger_par_compte(
+                LigneEcriture.objects.filter(
+                    ecriture__statut=StatutEcriture.VALIDEE,
+                    ecriture__date_ecriture__lte=exercice.date_fin,
+                    compte__nature__in=[NatureCompte.CHARGE, NatureCompte.PRODUIT],
+                )
+            )
+        ),
+        ZERO,
+    )
     return {
         "actif": actif,
         "passif": passif,

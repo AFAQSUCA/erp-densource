@@ -25,7 +25,11 @@ par la DIRECTION, cycle calqué sur `Facture`).
 seul à la première écriture qui le concerne ; la DIRECTION peut le clôturer (contrôle strict),
 ce qui verrouille définitivement toute nouvelle écriture datée dans sa période. Refusé s'il reste
 des brouillons non résolus dans la période, et tant que l'année n'est pas terminée (clôturée avant, elle
-refuserait toutes les opérations datées d'ici là : règlements, dépenses, pleins...).
+refuserait toutes les opérations datées d'ici là : règlements, dépenses, pleins...). La clôture pose
+l'**écriture de clôture** (`services.ecriture_de_cloture`, journal OD, datée du 31/12) : chaque compte de
+charge ou de produit est soldé et le résultat est viré au compte 120000 (crédit si bénéfice, débit si perte),
+pour que le bilan de l'exercice suivant le retrouve. Reprise des exercices clôturés avant ce lot :
+`manage.py ecrire_clotures_historiques [--dry-run]`.
 
 **Phase 6 (ce lot, dernière de la feuille de route)** : rapports en lecture seule — grand livre
 d'un compte avec solde cumulé, balance générale de tous les comptes mouvementés, bilan (cumulé
@@ -67,10 +71,10 @@ verrouille la période (DIRECTION, strict), refusé s'il reste des brouillons da
 Rapports (Phase 6, lecture seule) : `services.grand_livre_avec_solde(compte, debut=, fin=)`
 (lignes d'un compte + solde cumulé), `services.balance(debut=, fin=)` (tous les comptes
 mouvementés, total débit/crédit et solde par compte), `services.compte_de_resultat(exercice)`
-(produits/charges strictement dans l'exercice), `services.bilan(exercice)` (actif/passif cumulés
-depuis l'origine jusqu'à la fin de l'exercice, résultat net ajouté au passif pour l'affichage —
-**aucune écriture de clôture ne l'impute réellement au compte 120000**, voir « Limite connue »
-dans `avenant-comptabilite-syscohada.md` § P6).
+(produits/charges strictement dans l'exercice, écriture de clôture ignorée), `services.bilan(exercice)`
+(actif/passif cumulés depuis l'origine jusqu'à la fin de l'exercice ; le résultat des exercices clôturés est
+au compte 120000, le résultat pas encore viré est ajouté au passif — le bilan s'équilibre à tout moment).
+`balance()` écarte les écritures de clôture par défaut (`avec_cloture=True` pour les inclure).
 
 Déclenchement (automatique) : signaux `billing.signals.facture_a_comptabiliser`,
 `reglement_a_comptabiliser`, `depense_a_comptabiliser`, `depense_mode_a_reclasser`, et

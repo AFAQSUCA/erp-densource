@@ -316,13 +316,17 @@ lecture sur les écritures déjà comptabilisées par les P1-P5.
   date basse — contrairement au compte de résultat, les comptes de bilan (trésorerie, créances,
   capital…) portent un solde qui survit d'un exercice à l'autre.
 
-**Limite connue (documentée dans l'écran du bilan lui-même)** : le résultat net de l'exercice est
-**calculé à la volée** par `compte_de_resultat` et simplement ajouté au passif du bilan
-(`total_passif_avec_resultat`) pour l'équilibrer à l'affichage — il n'existe **aucune écriture de
-clôture** qui transfère réellement ce résultat dans le compte 120000 "Résultat de l'exercice" au
-moment de `cloturer_exercice` (P5). Une clôture comptable complète (contre-passation des comptes de
-classe 6/7 vers le 120000) est un chantier à part, non demandé pour ce lot — le bilan reste donc une
-photo cohérente mais pas une écriture posée dans le grand livre.
+**Limite connue, résolue depuis** (audit : bilan déséquilibré dès le 2e exercice) : le résultat net
+n'était qu'ajouté au passif à l'affichage, sans écriture de clôture. Or le bilan est cumulé depuis
+l'origine : celui de 2027 ne voyait que le résultat 2027, et le résultat 2026, jamais viré au compte 120000,
+manquait au passif. `cloturer_exercice` pose désormais l'**écriture de clôture**
+(`services.ecriture_de_cloture`) : journal OD, datée du dernier jour de l'exercice, elle solde chaque
+compte de charge/produit et vire la différence au 120000 (crédit = bénéfice, débit = perte). Idempotente
+(`origine` = `CLOTURE`), refusée à la contre-passation. Pour que les rapports restent lisibles :
+`compte_de_resultat` et `balance` l'ignorent (activité de l'année conservée) ; `bilan` l'inclut, ce qui
+annule le résultat déjà viré et ne laisse en « résultat en cours » que celui qui ne l'est pas encore (exercice
+en cours, ou exercice antérieur non clôturé). Reprise des exercices déjà clôturés :
+`manage.py ecrire_clotures_historiques [--dry-run]`.
 
 **Permissions** : inchangées, `CONSULTATION` (voir P1) — ces 4 écrans sont uniquement de la
 lecture, aucune saisie.

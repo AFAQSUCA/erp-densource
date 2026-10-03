@@ -23,7 +23,8 @@ Chaque lot est livré, testé, documenté et fusionné séparément (même princ
 | E | Déclaration TVA (synthèse collectée / déductible) | ✅ Fusionnée (PR #34) |
 | F | Écran de gestion du plan comptable | ✅ Fusionnée (PR #35) |
 | G | Rapprochement bancaire | ✅ Fusionnée (PR #36) |
-| H | Contre-passation (annulation d'un règlement ou d'un mouvement) | **✅ Ce lot** — voir ci-dessous |
+| H | Contre-passation (annulation d'un règlement ou d'un mouvement) | ✅ Fusionnée (PR #41) |
+| I | Écriture de clôture : le résultat est viré au 120000, le bilan du 2e exercice s'équilibre | **✅ Ce lot** — voir ci-dessous |
 
 ## Lot A — Rapports comptables : exclure les brouillons non validés
 
@@ -280,8 +281,33 @@ entre les deux.
 `finance.signals.mouvement_annule`, `finance.services.depointer_mouvement`,
 `accounting.management.commands.contre_passer_historique_annulations`.
 
+
+## Lot I — Écriture de clôture (résultat → compte 120000)
+
+**Problème** (audit global, écart n°8) : `bilan()` cumule l'actif et le passif depuis l'origine, mais le
+résultat n'était ajouté au passif qu'à l'affichage, pour l'exercice demandé seulement. Aucune écriture de
+clôture ne le virait au compte 120000 : dès le 2e exercice, le bilan perdait le résultat du 1er et le total
+du passif ne rejoignait plus le total de l'actif.
+
+**Décisions de conception** (pratique comptable standard, pas de question business ouverte) :
+- `cloturer_exercice` pose l'écriture de clôture (`accounting.services.ecriture_de_cloture`), journal OD,
+  datée du dernier jour : chaque compte de charge ou de produit est soldé et la différence est portée au
+  crédit (bénéfice) ou au débit (perte) du 120000. Aucune écriture si l'exercice n'a ni charge ni produit.
+  Atomique avec la clôture : sans 120000 actif, l'exercice reste ouvert.
+- Idempotente (`origine` = `CLOTURE`) ; seule écriture autorisée dans un exercice clôturé (paramètre
+  `ignorer_cloture` de `passer_ecriture`) ; ne se contre-passe pas (un exercice clôturé ne se rouvre jamais).
+- Lisibilité des rapports : `compte_de_resultat` et `balance` ignorent l'écriture de clôture (un exercice
+  clôturé garde son activité visible ; `balance(avec_cloture=True)` pour l'inclure) ; `bilan` l'inclut, ce qui
+  annule le résultat déjà viré et n'ajoute au passif que le résultat pas encore viré — il s'équilibre à tout
+  moment, même si un exercice antérieur n'a pas été clôturé.
+- Reprise de l'existant : `ecrire_clotures_historiques [--dry-run]` pose l'écriture des exercices clôturés
+  avant ce lot (rejouable).
+
+**Implémentation** : `accounting.services.ecriture_de_cloture`, `ORIGINE_CLOTURE`, `constants.COMPTE_RESULTAT`,
+`accounting.management.commands.ecrire_clotures_historiques`, `templates/accounting/bilan*.html`.
+
 ---
 
-Les 8 lots sont désormais livrés : l'ERP est complet pour un usage autonome de comptable, à
+Les 9 lots sont désormais livrés : l'ERP est complet pour un usage autonome de comptable, à
 l'exception volontaire du contrôle Finances/Direction sur les écritures manuelles (séparation des
 tâches, confirmée comme devant rester en place dès l'ouverture de cet avenant).
