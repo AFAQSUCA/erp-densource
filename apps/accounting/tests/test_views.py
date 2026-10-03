@@ -169,7 +169,7 @@ def test_seule_la_direction_voit_le_bouton_cloturer(client):
 
 
 def test_cloturer_via_l_ecran_est_reserve_a_la_direction(client):
-    exercice = services.exercice_pour(date(2026, 9, 5))
+    exercice = services.exercice_pour(date(2024, 6, 5))
 
     _connecte(client, Role.FINANCES)
     assert client.post(reverse("accounting:exercice_cloturer", args=[exercice.pk])).status_code == 403

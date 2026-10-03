@@ -18,6 +18,7 @@ from rest_framework import exceptions, status
 from rest_framework.response import Response
 from rest_framework.views import exception_handler as gestionnaire_drf
 
+from apps.accounting.exceptions import AccountingError, ActionComptableNonAutorisee
 from apps.billing.exceptions import ActionFactureNonAutorisee, BillingError
 from apps.customers.exceptions import ClientError
 from apps.drivers.exceptions import ChauffeurError
@@ -31,10 +32,11 @@ from apps.mobile_api.exceptions import MissionIntrouvable, MobileError
 
 ERREURS_METIER = (
     BillingError, ClientError, ChauffeurError, FlotteError, CarburantError, GarageError,
-    CongeError, PersonnelError, StockError, MissionError, MobileError,
+    CongeError, PersonnelError, StockError, MissionError, MobileError, AccountingError,
 )
 ERREURS_DE_DROIT = (
     ChauffeurNonAutorise, ActionFactureNonAutorisee, ActionNonAutorisee, ActionFraisNonAutorisee,
+    ActionComptableNonAutorisee,
 )
 
 

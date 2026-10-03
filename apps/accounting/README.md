@@ -24,7 +24,8 @@ par la DIRECTION, cycle calqué sur `Facture`).
 **Phase 5** : exercice comptable et clôture — un exercice (année civile) s'ouvre tout
 seul à la première écriture qui le concerne ; la DIRECTION peut le clôturer (contrôle strict),
 ce qui verrouille définitivement toute nouvelle écriture datée dans sa période. Refusé s'il reste
-des brouillons non résolus dans la période.
+des brouillons non résolus dans la période, et tant que l'année n'est pas terminée (clôturée avant, elle
+refuserait toutes les opérations datées d'ici là : règlements, dépenses, pleins...).
 
 **Phase 6 (ce lot, dernière de la feuille de route)** : rapports en lecture seule — grand livre
 d'un compte avec solde cumulé, balance générale de tous les comptes mouvementés, bilan (cumulé
@@ -68,7 +69,10 @@ Déclenchement (automatique) : signaux `billing.signals.facture_a_comptabiliser`
 `reglement_a_comptabiliser`, `depense_a_comptabiliser`, `depense_mode_a_reclasser`, et
 `finance.signals.mouvement_a_comptabiliser` — tous émis en `send()` **brut** (pas
 `emettre()`/`send_robust`) : une écriture qui échoue à s'équilibrer (ou tombe dans un exercice
-clôturé) annule l'opération d'origine plutôt que de laisser un grand livre incomplet.
+clôturé) annule l'opération d'origine plutôt que de laisser un grand livre incomplet. Les erreurs
+comptables héritent de `core.ErreurMetier` : un écran qui ne les attrape pas affiche leur message (retour à
+la page d'origine, `core.middleware.ErreurMetierMiddleware`) et l'API répond 400 (403 pour un droit refusé),
+jamais une erreur 500.
 
 Reprise de l'historique (événements déjà enregistrés avant la mise en service de chaque lot) :
 `python manage.py comptabiliser_historique_factures`, `comptabiliser_historique_reglements`,

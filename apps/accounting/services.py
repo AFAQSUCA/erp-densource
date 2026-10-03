@@ -136,12 +136,19 @@ def _exiger_exercice_ouvert(date_ecriture: date) -> None:
 def cloturer_exercice(exercice: ExerciceComptable, acteur) -> ExerciceComptable:
     """Clôture un exercice : verrouille toute nouvelle écriture datée dans sa période. Refusé s'il
     reste des brouillons (saisie manuelle non validée) dans la période — à valider ou abandonner
-    avant de clôturer, pour ne jamais clôturer une année à l'insu d'une saisie en attente.
+    avant de clôturer, pour ne jamais clôturer une année à l'insu d'une saisie en attente. Refusé aussi
+    tant que l'année n'est pas terminée : toute opération datée d'ici là (règlement, dépense, plein...)
+    serait alors refusée.
     Contrôle **strict** (``acteur.role``) : réservé à la DIRECTION, comme ``Facture.valider`` —
     jamais l'ADMIN ni un superutilisateur à sa place. Jamais rouvert ensuite."""
     _exiger_role(acteur, permissions.CLOTURE_EXERCICE, "clôturer un exercice", strict=True)
     if exercice.statut == StatutExercice.CLOTURE:
         raise ExerciceCloture(f"L'exercice {exercice.annee} est déjà clôturé.")
+    if timezone.localdate() <= exercice.date_fin:
+        raise ClotureImpossible(
+            f"L'exercice {exercice.annee} ne peut être clôturé qu'après le {exercice.date_fin:%d/%m/%Y} : "
+            "clôturé avant, il bloquerait toutes les opérations datées d'ici là (règlements, dépenses, pleins...)."
+        )
     brouillons = EcritureComptable.objects.filter(
         statut=StatutEcriture.BROUILLON,
         date_ecriture__gte=exercice.date_debut,
