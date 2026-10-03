@@ -101,6 +101,8 @@ def annuler_mouvement(mouvement: MouvementManuel, acteur, *, motif: str) -> None
     mouvement.motif_annulation = motif.strip()
     mouvement.save(update_fields=["motif_annulation", "updated_at"])
     mouvement.delete(deleted_by=acteur)
+    depointer_mouvement("MANUEL", mouvement.pk)
+    signals.mouvement_annule.send(sender=MouvementManuel, mouvement=mouvement)
 
 
 # --- lecture ---
@@ -254,6 +256,15 @@ def pointer_ligne_releve(ligne: LigneReleve, acteur, *, origine: str, mouvement_
     ligne.mouvement_id = mouvement_id
     ligne.save(update_fields=["pointee", "mouvement_origine", "mouvement_id", "updated_at"])
     return ligne
+
+
+def depointer_mouvement(origine: str, mouvement_id: int) -> int:
+    """Défait le pointage d'une ligne de relevé sur un mouvement qui vient d'être annulé : la ligne
+    redevient à pointer, au lieu de rester associée à un mouvement qui n'existe plus. Renvoie le
+    nombre de lignes concernées."""
+    return LigneReleve.objects.filter(
+        pointee=True, mouvement_origine=origine, mouvement_id=mouvement_id
+    ).update(pointee=False, mouvement_origine="", mouvement_id=None, updated_at=timezone.now())
 
 
 def depointer_ligne_releve(ligne: LigneReleve, acteur) -> LigneReleve:

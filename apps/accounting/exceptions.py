@@ -30,6 +30,10 @@ class ExerciceCloture(AccountingError):
     datée, ni y être clôturé une seconde fois."""
 
 
+class ContrePassationImpossible(AccountingError):
+    """Cette écriture ne peut pas être contre-passée (brouillon, ou déjà une contre-passation)."""
+
+
 class ClotureImpossible(AccountingError):
     """L'exercice ne peut pas être clôturé : brouillons non résolus (saisie manuelle) ou année pas
     encore terminée."""

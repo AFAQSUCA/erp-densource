@@ -16,8 +16,9 @@ from apps.billing.signals import (
     depense_mode_a_reclasser,
     facture_a_comptabiliser,
     reglement_a_comptabiliser,
+    reglement_annule,
 )
-from apps.finance.signals import mouvement_a_comptabiliser
+from apps.finance.signals import mouvement_a_comptabiliser, mouvement_annule
 
 from . import services
 
@@ -45,3 +46,13 @@ def reclasser_le_mode_d_une_depense(sender, depense, ancien_mode, **kwargs) -> N
 @receiver(mouvement_a_comptabiliser)
 def comptabiliser_un_mouvement(sender, mouvement, **kwargs) -> None:
     services.comptabiliser_un_mouvement_manuel(mouvement)
+
+
+@receiver(reglement_annule)
+def contre_passer_un_reglement_annule(sender, reglement, **kwargs) -> None:
+    services.contre_passer_origine("REGLEMENT", reglement.pk, motif=reglement.motif_annulation)
+
+
+@receiver(mouvement_annule)
+def contre_passer_un_mouvement_annule(sender, mouvement, **kwargs) -> None:
+    services.contre_passer_origine("MOUVEMENT", mouvement.pk, motif=mouvement.motif_annulation)

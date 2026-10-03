@@ -35,7 +35,7 @@ rapports de la P6 restent des écrans internes à l'app, aucune intégration au 
 - `EcritureComptable` (`BaseModel`) : en-tête (numéro `JOURNAL-AAAA-XXXX` via
   `core.services.prochain_numero`, journal, date, libellé, pièce justificative, origine générique
   `(origine, origine_id)` pour l'idempotence, statut BROUILLON/VALIDEE). Une écriture `VALIDEE` ne
-  se modifie ni ne se supprime : seule une contre-passation la corrige (non livrée en P1).
+  se modifie ni ne se supprime : seule une contre-passation la corrige (livrée depuis : voir avenant-comptabilite-autonomie.md § Lot H).
 - `LigneEcriture` : ligne débit ou crédit, append-only (comme `inventory.MouvementStock`), montant
   strictement positif, rattachement générique optionnel à un tiers (`tiers_type`/`tiers_id`, ex.
   un client pour le compte 411).
@@ -123,11 +123,9 @@ nouvel écran.
 **Reprise de l'historique** : `python manage.py comptabiliser_historique_reglements [--depuis
 AAAA-MM-JJ] [--dry-run]`, même gabarit que `comptabiliser_historique_factures` (P1).
 
-**Limite connue** : l'annulation d'un règlement (`billing.services.annuler_reglement`) n'émet
-aucun signal et ne génère aucune contre-passation — l'écriture d'origine reste en l'état,
-orpheline de son règlement annulé. La contre-passation d'une écriture arrive avec une phase
-future, une fois le mécanisme de correction (par écriture inverse plutôt que par édition) posé
-pour l'ensemble du chantier plutôt que traité au cas par cas.
+**Limite connue, résolue depuis** : l'annulation d'un règlement n'émettait aucun signal et ne
+générait aucune contre-passation. Elle contre-passe désormais l'écriture d'origine
+(avenant-comptabilite-autonomie.md § Lot H).
 
 **Implémentation** : `apps.accounting.services.comptabiliser_un_reglement`,
 `apps.accounting.receivers.comptabiliser_un_reglement_recu`, signal
@@ -207,8 +205,9 @@ la trésorerie et crédite la contrepartie ; une sortie fait l'inverse. Déclenc
 `MouvementManuel` est un modèle `finance`, et le graphe de dépendances gagne l'arête `FIN → ACCT`
 (`architecture.md`) pour que `accounting` puisse lire `finance.models.NatureMouvement`.
 
-**Limite connue** (même principe que l'annulation d'un règlement, P2) : l'annulation d'un
-mouvement (`annuler_mouvement`) n'émet aucun signal, aucune contre-passation.
+**Limite connue, résolue depuis** (même principe que l'annulation d'un règlement, P2) :
+`annuler_mouvement` contre-passe désormais l'écriture du mouvement (§ Lot H de
+avenant-comptabilite-autonomie.md).
 
 **Limite de périmètre, résolue depuis** : les dépenses manuelles de `billing.Depense` (catégories
 PEAGES, ENTRETIEN, FRAIS_ADMIN, AUTRE) sont restées hors périmètre jusqu'à ce lot — voir

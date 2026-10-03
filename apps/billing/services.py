@@ -489,6 +489,7 @@ def annuler_reglement(reglement: Reglement, acteur, *, motif: str) -> Facture:
     reglement.delete(deleted_by=acteur)
     facture.statut = _statut_selon_reste(facture)
     facture.save(update_fields=["statut", "updated_at"])
+    signals.reglement_annule.send(sender=Reglement, reglement=reglement)
     return facture
 
 

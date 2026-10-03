@@ -27,6 +27,11 @@ ordre_depassement = Signal()
 # trésorerie non tracé). Argument : ``mouvement``.
 mouvement_a_comptabiliser = Signal()
 
+# Un mouvement manuel vient d'être annulé (``annuler_mouvement``) : son écriture comptable doit être
+# contre-passée. ``send()`` brut, même principe que ``mouvement_a_comptabiliser``. Argument :
+# ``mouvement`` (déjà supprimé logiquement, ``motif_annulation`` renseigné).
+mouvement_annule = Signal()
+
 
 def emettre(signal: Signal, **arguments) -> None:
     for recepteur, resultat in signal.send_robust(sender=None, **arguments):

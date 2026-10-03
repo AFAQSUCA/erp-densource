@@ -35,6 +35,7 @@ from .exceptions import (
     ActionComptableNonAutorisee,
     ClotureImpossible,
     CompteDejaExistant,
+    ContrePassationImpossible,
     CompteInconnu,
     EcritureNonEquilibree,
     EcritureVerrouillee,
@@ -405,6 +406,68 @@ def comptabiliser_un_mouvement_manuel(mouvement) -> EcritureComptable:
         origine_id=mouvement.pk,
         piece_reference=mouvement.reference,
     )
+
+
+# --- contre-passation ---
+
+ORIGINE_CONTRE_PASSATION = "CONTRE_PASSATION"
+
+
+@transaction.atomic
+def contre_passer(
+    ecriture: EcritureComptable, *, date_ecriture: date | None = None, motif: str = ""
+) -> EcritureComptable:
+    """Annule une écriture **validée** par une écriture inverse (mêmes comptes, sens opposés, même
+    journal et même pièce), datée du jour par défaut : l'écriture d'origine reste intacte
+    (append-only) et le grand livre garde la trace des deux. Une écriture dans un exercice
+    déjà clôturé se corrige ainsi dans l'exercice ouvert.
+
+    Idempotente : une écriture n'est contre-passée qu'une fois (``origine`` = ``CONTRE_PASSATION``,
+    ``origine_id`` = identifiant de l'écriture d'origine). Refusée pour un brouillon (il
+    s'abandonne) et pour une contre-passation (pas de chaîne). Si un compte de l'écriture a été
+    désactivé depuis, ``passer_ecriture`` refuse : le réactiver d'abord."""
+    if ecriture.statut != StatutEcriture.VALIDEE:
+        raise ContrePassationImpossible(
+            "Seule une écriture validée se contre-passe : un brouillon s'abandonne."
+        )
+    if ecriture.origine == ORIGINE_CONTRE_PASSATION:
+        raise ContrePassationImpossible("Une contre-passation ne se contre-passe pas.")
+    inverse = {SensEcriture.DEBIT: SensEcriture.CREDIT, SensEcriture.CREDIT: SensEcriture.DEBIT}
+    lignes = [
+        LigneSaisie(
+            compte=ligne.compte.numero,
+            sens=inverse[ligne.sens],
+            montant=ligne.montant,
+            libelle=ligne.libelle,
+            tiers_type=ligne.tiers_type,
+            tiers_id=ligne.tiers_id,
+        )
+        for ligne in ecriture.lignes.select_related("compte")
+    ]
+    libelle = f"Contre-passation {ecriture.numero} — {ecriture.libelle}"
+    if motif.strip():
+        libelle = f"{libelle} ({motif.strip()})"
+    return passer_ecriture(
+        journal=ecriture.journal,
+        date_ecriture=date_ecriture or timezone.localdate(),
+        libelle=libelle[:255],
+        lignes=lignes,
+        origine=ORIGINE_CONTRE_PASSATION,
+        origine_id=ecriture.pk,
+        piece_reference=ecriture.piece_reference,
+    )
+
+
+def contre_passer_origine(
+    origine: str, origine_id: int, *, date_ecriture: date | None = None, motif: str = ""
+) -> EcritureComptable | None:
+    """Contre-passe l'écriture générée par un événement source (règlement, mouvement manuel...) quand
+    celui-ci est annulé. Ne fait rien (``None``) si cet événement n'a jamais été comptabilisé (saisi
+    avant la mise en service de la comptabilité) : il n'y a rien à annuler."""
+    ecriture = EcritureComptable.objects.filter(origine=origine, origine_id=origine_id).first()
+    if ecriture is None:
+        return None
+    return contre_passer(ecriture, date_ecriture=date_ecriture, motif=motif)
 
 
 # --- saisie manuelle (opérations diverses) ---

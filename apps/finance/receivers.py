@@ -17,7 +17,7 @@ from django.utils import timezone
 
 from apps.billing import services as billing_services
 from apps.billing.models import CategorieDepense, OrigineDepense
-from apps.billing.signals import reglement_enregistre
+from apps.billing.signals import reglement_annule, reglement_enregistre
 from apps.fuel.signals import plein_enregistre
 from apps.garage.signals import or_cloture
 from apps.inventory.signals import entree_stock_enregistree
@@ -25,7 +25,7 @@ from apps.missions import terrain as missions_terrain
 from apps.missions.models import TypeFraisMission
 from apps.missions.signals import frais_mission_confirme
 
-from . import demandes
+from . import demandes, services
 
 
 @receiver(plein_enregistre)
@@ -102,3 +102,10 @@ def refleter_l_encaissement_sur_la_mission(sender, reglement, **kwargs):
         libelle=f"Règlement {reglement.facture.numero} ({reglement.get_mode_display()})",
         saisi_par=reglement.saisi_par,
     )
+
+
+@receiver(reglement_annule)
+def defaire_le_pointage_d_un_reglement_annule(sender, reglement, **kwargs):
+    """Une ligne de relevé pointée sur ce règlement redevient à pointer (``send()`` brut : avec la
+    contre-passation comptable, l'annulation d'un règlement est tout ou rien)."""
+    services.depointer_mouvement("REGLEMENT", reglement.pk)

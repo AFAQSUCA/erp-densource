@@ -44,6 +44,13 @@ facture_a_comptabiliser = Signal()
 # ``send()`` brut). Argument : ``reglement``.
 reglement_a_comptabiliser = Signal()
 
+# Un règlement vient d'être annulé (``annuler_reglement``) : son écriture comptable doit être contre-passée
+# et un éventuel pointage bancaire défait. ``send()`` brut, comme les signaux « à comptabiliser » :
+# une contre-passation impossible (exercice clos, compte désactivé) annule l'annulation, plutôt que
+# de laisser la trésorerie et le grand livre diverger. Argument : ``reglement`` (déjà supprimé
+# logiquement, ``motif_annulation`` renseigné).
+reglement_annule = Signal()
+
 # Une dépense automatique (plein, achat de pièces, main-d'œuvre d'OR, frais de mission, ordre de
 # décaissement) vient d'être créée : à comptabiliser (même principe, ``send()`` brut). N'est émis
 # que lors de la création réelle (pas quand ``comptabiliser_depense_automatique`` retombe sur une
