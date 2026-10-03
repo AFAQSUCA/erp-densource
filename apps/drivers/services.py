@@ -11,7 +11,7 @@ from django.utils import timezone
 from apps.core.constants import DELAI_ALERTE_JOURS
 from apps.core.search import filtrer_par_texte
 from apps.core.services import etat_echeance
-from apps.hr.models import Personnel
+from apps.hr.models import Conge, Personnel, StatutConge
 
 from .exceptions import CategorieInvalide, StatutNonModifiable
 from .models import CategoriePermis, Chauffeur, Copilote, StatutChauffeur
@@ -64,17 +64,29 @@ def mettre_en_mission(chauffeur: Chauffeur) -> Chauffeur:
     return changer_statut(chauffeur, StatutChauffeur.EN_MISSION)
 
 
+def _statut_de_retour(personnel_id: int) -> str:
+    """Statut d'un chauffeur (ou copilote) qui redevient libre : « En congé » si un congé est en cours
+    (il est parti en congé pendant sa mission, ou sa suspension vient d'être levée en plein congé),
+    « Disponible » sinon. Sans cela il serait affectable pendant son congé."""
+    en_conge = Conge.objects.filter(employe_id=personnel_id, statut=StatutConge.EN_COURS).exists()
+    return StatutChauffeur.EN_CONGE if en_conge else StatutChauffeur.DISPONIBLE
+
+
 def rappeler_de_mission(chauffeur: Chauffeur) -> Chauffeur:
-    """Fin de mission : « Disponible », sauf statut changé entre-temps
-    (En congé, Suspendu, Inactif), qui reste alors conservé."""
+    """Fin de mission : « Disponible » (ou « En congé » si un congé a démarré pendant la mission),
+    sauf statut changé entre-temps (En congé, Suspendu, Inactif), qui reste alors conservé."""
     if chauffeur.statut == StatutChauffeur.EN_MISSION:
-        return changer_statut(chauffeur, StatutChauffeur.DISPONIBLE)
+        return changer_statut(chauffeur, _statut_de_retour(chauffeur.personnel_id))
     return chauffeur
 
 
 def mettre_en_conge(chauffeur: Chauffeur) -> Chauffeur:
-    """Début d'un congé : statut « En congé »."""
-    return changer_statut(chauffeur, StatutChauffeur.EN_CONGE)
+    """Début d'un congé : « En congé », mais seulement depuis « Disponible ». Un chauffeur suspendu ou
+    inactif le reste (le congé ne lève pas une sanction) ; un chauffeur en mission le reste jusqu'à la fin
+    de sa mission (``rappeler_de_mission`` le passe alors en congé)."""
+    if chauffeur.statut == StatutChauffeur.DISPONIBLE:
+        return changer_statut(chauffeur, StatutChauffeur.EN_CONGE)
+    return chauffeur
 
 
 def rappeler_de_conge(chauffeur: Chauffeur) -> Chauffeur:
@@ -124,12 +136,15 @@ def mettre_en_mission_copilote(copilote: Copilote) -> Copilote:
 
 def rappeler_copilote_de_mission(copilote: Copilote) -> Copilote:
     if copilote.statut == StatutChauffeur.EN_MISSION:
-        return changer_statut_copilote(copilote, StatutChauffeur.DISPONIBLE)
+        return changer_statut_copilote(copilote, _statut_de_retour(copilote.personnel_id))
     return copilote
 
 
 def mettre_copilote_en_conge(copilote: Copilote) -> Copilote:
-    return changer_statut_copilote(copilote, StatutChauffeur.EN_CONGE)
+    """Même règle que ``mettre_en_conge`` : seulement depuis « Disponible »."""
+    if copilote.statut == StatutChauffeur.DISPONIBLE:
+        return changer_statut_copilote(copilote, StatutChauffeur.EN_CONGE)
+    return copilote
 
 
 def rappeler_copilote_de_conge(copilote: Copilote) -> Copilote:
@@ -279,6 +294,8 @@ def changer_statut_manuel(chauffeur: Chauffeur, statut: str) -> Chauffeur:
             f"Le chauffeur est « {chauffeur.get_statut_display()} » : ce statut est géré "
             "par les missions et les congés."
         )
+    if statut == StatutChauffeur.DISPONIBLE:
+        statut = _statut_de_retour(chauffeur.personnel_id)  # suspension levée en plein congé : reste en congé
     return changer_statut(chauffeur, statut)
 
 
