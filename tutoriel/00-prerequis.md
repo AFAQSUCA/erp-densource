@@ -104,6 +104,59 @@ vous le créez. Les fichiers marqués entre parenthèses sont **générés ou co
 ```text
 erp-densource/
 ├── apps/
+│   ├── accounting/
+│   │   ├── management/
+│   │   │   ├── commands/
+│   │   │   │   ├── __init__.py  ← ch. 14
+│   │   │   │   ├── comptabiliser_historique_depenses.py  ← ch. 14
+│   │   │   │   ├── comptabiliser_historique_factures.py  ← ch. 14
+│   │   │   │   └── comptabiliser_historique_reglements.py  ← ch. 14
+│   │   │   └── __init__.py  ← ch. 14
+│   │   ├── migrations/
+│   │   │   ├── 0001_initial.py  ← (généré par `python manage.py makemigrations`)
+│   │   │   ├── 0002_plan_comptable_seed.py  ← ch. 14
+│   │   │   ├── 0003_exercicecomptable.py  ← (généré par `python manage.py makemigrations`)
+│   │   │   └── __init__.py  ← (généré par `python manage.py makemigrations`)
+│   │   ├── templates/
+│   │   │   └── accounting/
+│   │   │       ├── _nav_rapports.html  ← ch. 25
+│   │   │       ├── balance.html  ← ch. 25
+│   │   │       ├── balance_print.html  ← ch. 25
+│   │   │       ├── bilan.html  ← ch. 25
+│   │   │       ├── bilan_print.html  ← ch. 25
+│   │   │       ├── compte_form.html  ← ch. 25
+│   │   │       ├── compte_modifier_form.html  ← ch. 25
+│   │   │       ├── compte_resultat.html  ← ch. 25
+│   │   │       ├── compte_resultat_print.html  ← ch. 25
+│   │   │       ├── declaration_tva.html  ← ch. 25
+│   │   │       ├── declaration_tva_print.html  ← ch. 25
+│   │   │       ├── ecriture_manuelle_detail.html  ← ch. 25
+│   │   │       ├── ecriture_manuelle_form.html  ← ch. 25
+│   │   │       ├── ecriture_manuelle_list.html  ← ch. 25
+│   │   │       ├── exercice_list.html  ← ch. 25
+│   │   │       ├── grand_livre.html  ← ch. 25
+│   │   │       ├── grand_livre_print.html  ← ch. 25
+│   │   │       └── plan_comptable_list.html  ← ch. 25
+│   │   ├── tests/
+│   │   │   ├── __init__.py  ← ch. 14
+│   │   │   ├── factories.py  ← ch. 14
+│   │   │   ├── test_models.py  ← ch. 14
+│   │   │   ├── test_receivers.py  ← ch. 14
+│   │   │   ├── test_services.py  ← ch. 14
+│   │   │   └── test_views.py  ← ch. 25
+│   │   ├── README.md  ← ch. 14
+│   │   ├── __init__.py  ← ch. 14
+│   │   ├── admin.py  ← ch. 14
+│   │   ├── apps.py  ← ch. 14
+│   │   ├── constants.py  ← ch. 14
+│   │   ├── exceptions.py  ← ch. 14
+│   │   ├── forms.py  ← ch. 25
+│   │   ├── models.py  ← ch. 14
+│   │   ├── permissions.py  ← ch. 14
+│   │   ├── receivers.py  ← ch. 14
+│   │   ├── services.py  ← ch. 14
+│   │   ├── urls.py  ← ch. 25
+│   │   └── views.py  ← ch. 25
 │   ├── accounts/
 │   │   ├── management/
 │   │   │   ├── commands/
@@ -190,6 +243,7 @@ erp-densource/
 │   │   │   ├── 0002_depenses_automatiques_parc_auto.py  ← (généré par `python manage.py makemigrations`)
 │   │   │   ├── 0003_depense_vehicule_alter_depense_categorie_and_more.py  ← (généré par `python manage.py makemigrations`)
 │   │   │   ├── 0004_proforma.py  ← (généré par `python manage.py makemigrations`)
+│   │   │   ├── 0005_depense_montant_tva_alter_depense_montant_and_more.py  ← (généré par `python manage.py makemigrations`)
 │   │   │   └── __init__.py  ← (généré par `python manage.py makemigrations`)
 │   │   ├── templates/
 │   │   │   └── billing/
@@ -342,6 +396,8 @@ erp-densource/
 │   │   ├── migrations/
 │   │   │   ├── 0001_initial.py  ← (généré par `python manage.py makemigrations`)
 │   │   │   ├── 0002_demandedepense_enveloppedepense_ordredecaissement_and_more.py  ← (généré par `python manage.py makemigrations`)
+│   │   │   ├── 0003_mouvementmanuel_nature.py  ← (généré par `python manage.py makemigrations`)
+│   │   │   ├── 0004_lignereleve.py  ← (généré par `python manage.py makemigrations`)
 │   │   │   └── __init__.py  ← (généré par `python manage.py makemigrations`)
 │   │   ├── templates/
 │   │   │   └── finance/
@@ -349,6 +405,7 @@ erp-densource/
 │   │   │       ├── demande_form.html  ← ch. 25
 │   │   │       ├── demande_list.html  ← ch. 25
 │   │   │       ├── enveloppe_list.html  ← ch. 25
+│   │   │       ├── rapprochement.html  ← ch. 25
 │   │   │       ├── tresorerie.html  ← ch. 25
 │   │   │       ├── tresorerie_print.html  ← ch. 25
 │   │   │       └── versement_confirmer.html  ← ch. 25
@@ -359,6 +416,7 @@ erp-densource/
 │   │   │   ├── test_depenses_parc_auto.py  ← ch. 25
 │   │   │   ├── test_frais_mission_receivers.py  ← ch. 14
 │   │   │   ├── test_impression.py  ← ch. 25
+│   │   │   ├── test_rapprochement_views.py  ← ch. 25
 │   │   │   ├── test_services.py  ← ch. 14
 │   │   │   ├── test_versements.py  ← ch. 25
 │   │   │   └── test_views.py  ← ch. 25
@@ -485,6 +543,8 @@ erp-densource/
 │   │   │   ├── 0006_droits_conges_annuels.py  ← (généré par `python manage.py makemigrations`)
 │   │   │   ├── 0007_libelle_niveau_superieur.py  ← (généré par `python manage.py makemigrations`)
 │   │   │   ├── 0008_report_conge.py  ← (généré par `python manage.py makemigrations`)
+│   │   │   ├── 0009_alter_personnel_departement.py  ← (généré par `python manage.py makemigrations`)
+│   │   │   ├── 0010_alter_personnel_departement.py  ← (généré par `python manage.py makemigrations`)
 │   │   │   └── __init__.py  ← (généré par `python manage.py makemigrations`)
 │   │   ├── templates/
 │   │   │   └── hr/
@@ -663,9 +723,9 @@ erp-densource/
 │   │   │   ├── __init__.py  ← ch. 15
 │   │   │   ├── test_facturation.py  ← ch. 25
 │   │   │   ├── test_receivers.py  ← ch. 24
-│   │   │   ├── test_receivers_demandes.py  ← ch. 15
-│   │   │   ├── test_receivers_frais_mission.py  ← ch. 15
-│   │   │   ├── test_receivers_proforma.py  ← ch. 15
+│   │   │   ├── test_receivers_demandes.py  ← ch. 25
+│   │   │   ├── test_receivers_frais_mission.py  ← ch. 25
+│   │   │   ├── test_receivers_proforma.py  ← ch. 25
 │   │   │   ├── test_services.py  ← ch. 23
 │   │   │   ├── test_taches.py  ← ch. 20
 │   │   │   ├── test_tasks.py  ← ch. 15
@@ -781,6 +841,8 @@ erp-densource/
 ├── README.md  ← ch. 29
 ├── architecture.md  ← (documents de référence à lire)
 ├── audit-checklist.md  ← (documents de référence à lire)
+├── avenant-comptabilite-autonomie.md  ← ch. 1
+├── avenant-comptabilite-syscohada.md  ← ch. 1
 ├── avenant-separation-des-taches.md  ← ch. 1
 ├── cahier-des-charges.md  ← (documents de référence à lire)
 ├── conventions.md  ← (documents de référence à lire)

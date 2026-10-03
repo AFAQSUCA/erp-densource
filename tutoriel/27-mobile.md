@@ -1,6 +1,6 @@
 # Chapitre 27 — L'espace mobile du chauffeur
 
-> 31 fichier(s) dans ce chapitre, 2522 lignes de code.
+> 31 fichier(s) dans ce chapitre, 2523 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -1867,7 +1867,7 @@ s'affiche même sans réseau.
 
 #### `apps/mobile_api/README.md`
 
-*35 lignes* — mobile_api
+*36 lignes* — mobile_api
 
 ```markdown
 # mobile_api
@@ -1902,7 +1902,8 @@ qui ne la propose pas, le bouton n'apparaît pas et le chauffeur saisit le code 
 
 Pas encore fait :
 - **Mode hors ligne** (file d'attente des saisies, synchronisation différée, conflits) : écarté sur
-  décision de l'utilisateur pour cette étape. Sans réseau, une page « hors connexion » s'affiche.
+  décision confirmée de l'entreprise le 29/09/2026 (cahier-des-charges.md:303). Sans réseau, une
+  page « hors connexion » s'affiche.
 - Photos des incidents (stockage S3 ou MinIO, étape 7) ; notifications push (Firebase).
 - Avoir une position GPS ; envoi du code par SMS à l'expéditeur.
 ```
@@ -2806,7 +2807,7 @@ def test_les_formulaires_du_chauffeur_exigent_le_csrf():
 ```diff
 --- config/settings/base.py (avant)
 +++ config/settings/base.py (après)
-@@ -67,4 +67,5 @@
+@@ -68,4 +68,5 @@
      "apps.notifications",
      "apps.dashboard",
 +    "apps.mobile_api",
@@ -2821,7 +2822,7 @@ def test_les_formulaires_du_chauffeur_exigent_le_csrf():
 ```diff
 --- config/urls.py (avant)
 +++ config/urls.py (après)
-@@ -30,4 +30,5 @@
+@@ -31,4 +31,5 @@
      path("audit/", include("apps.audit.urls")),
      path("notifications/", include("apps.notifications.urls")),
 +    path("chauffeur/", include("apps.mobile_api.urls_web")),

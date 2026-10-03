@@ -2847,7 +2847,7 @@ l'**API mobile** (`mobile_api/tests/test_api.py`).
 ```diff
 --- config/settings/base.py (avant)
 +++ config/settings/base.py (après)
-@@ -67,4 +67,5 @@
+@@ -68,4 +68,5 @@
      "apps.notifications",
      "apps.dashboard",
 +    "apps.api",
@@ -2862,7 +2862,7 @@ l'**API mobile** (`mobile_api/tests/test_api.py`).
 ```diff
 --- config/urls.py (avant)
 +++ config/urls.py (après)
-@@ -30,4 +30,5 @@
+@@ -31,4 +31,5 @@
      path("audit/", include("apps.audit.urls")),
      path("notifications/", include("apps.notifications.urls")),
 +    path("api/v1/", include("apps.api.urls")),

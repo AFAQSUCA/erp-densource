@@ -60,9 +60,9 @@ touch apps/missions/tests/__init__.py
 
 ## Étape 2 — Le modèle
 
-#### `apps/missions/models.py`
+#### `apps/missions/models.py` — état au chapitre 9
 
-*277 lignes*
+*Ce fichier évolue au fil du tutoriel : voici sa version à ce stade. Les chapitres suivants n'en montrent que les ajouts.*
 
 ```python
 from django.conf import settings
@@ -115,15 +115,6 @@ class Mission(BaseModel):
         verbose_name=_("client"),
         on_delete=models.PROTECT,
         related_name="missions",
-    )
-    proforma = models.OneToOneField(
-        "billing.Proforma",
-        verbose_name=_("devis d'origine"),
-        null=True,
-        blank=True,
-        on_delete=models.PROTECT,
-        related_name="mission_creee",
-        help_text=_("Devis accepté dont cette mission reprend le trajet et le prix (R6)."),
     )
     vehicule = models.ForeignKey(
         "fleet.Vehicule",
@@ -342,6 +333,7 @@ class FraisMission(BaseModel):
     def attend_la_finance(self) -> bool:
         """Prévu, et déjà passé (ou pas concerné) par la première validation du Parc Auto."""
         return self.statut == StatutFraisMission.PREVU and not self.attend_le_parc_auto
+
 ```
 
 Points clés :

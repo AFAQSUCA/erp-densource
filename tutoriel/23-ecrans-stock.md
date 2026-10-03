@@ -340,7 +340,7 @@ urlpatterns = [
 ```diff
 --- config/urls.py (avant)
 +++ config/urls.py (après)
-@@ -23,4 +23,5 @@
+@@ -22,4 +22,5 @@
      path("chauffeurs/", include("apps.drivers.urls")),
      path("garage/", include("apps.garage.urls")),
 +    path("stock/", include("apps.inventory.urls")),

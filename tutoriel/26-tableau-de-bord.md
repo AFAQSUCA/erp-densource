@@ -1,6 +1,6 @@
 # Chapitre 26 — La page d'accueil : le tableau de bord
 
-> 13 fichier(s) dans ce chapitre, 2161 lignes de code.
+> 13 fichier(s) dans ce chapitre, 2168 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -873,7 +873,7 @@ class DashboardConfig(AppConfig):
 
 #### `apps/dashboard/README.md`
 
-*45 lignes* — dashboard
+*50 lignes* — dashboard
 
 ```markdown
 # dashboard
@@ -897,6 +897,10 @@ Blocs (selon les droits déjà définis dans chaque app) :
 - **Clientèle** (ADMIN, DIRECTION, CHARGE_CLIENTELE) : clients actifs (mission sur 90 jours),
   réclamations (30 jours), top 3 des clients (missions livrées ou clôturées sur 12 mois).
 
+Le tableau de bord du CHAUFFEUR (course du jour, km du mois, consommation, véhicule) n'est pas
+dans cette app : il vit dans l'espace mobile (`apps.mobile_api.services.tableau`), voir
+`apps/mobile_api/README.md`.
+
 Graphiques (`apps/core/graphiques.py`, balises `graphique_barres` / `graphique_colonnes`, styles `viz-*` de
 `frontend/input.css`) : camions et missions par statut, effectif par département, top des clients, charges du
 mois, créances par ancienneté, missions créées / livrées par mois, et facturé / encaissé / charges par mois.
@@ -917,8 +921,9 @@ test) via le cache Django, donc partagé entre processus dès que Redis est conf
 centre d'alertes est toujours recalculé.
 
 Reste à faire :
-- Dashboard **chauffeur** (course du jour, km, conso, prochaine mission) : espace mobile, étape 6.
-- Clientèle : **satisfaction** et **contrats à renouveler** (aucune donnée ne les porte encore).
+- Clientèle : **satisfaction** et **contrats à renouveler** (aucune donnée ne les porte encore ;
+  confirmé non prioritaire par l'entreprise le 29/09/2026, cahier-des-charges.md:236-237 —
+  à reprendre si le besoin redevient prioritaire).
 
 Rapport imprimable (`/imprimer/`, bouton « Imprimer » sur l'écran) : mêmes blocs et mêmes droits que le tableau de bord de l'utilisateur connecté, en tableaux (voir `apps/core/README.md`).
 ```
@@ -1619,14 +1624,14 @@ def test_le_parc_auto_ne_voit_pas_le_graphique_des_missions(client):
 
 
 def test_le_graphique_de_l_effectif_reprend_les_departements(client):
-    PersonnelFactory(departement="EXPLOITATION")
-    PersonnelFactory(departement="EXPLOITATION")
+    PersonnelFactory(departement="PARC_AUTO")
+    PersonnelFactory(departement="PARC_AUTO")
     PersonnelFactory(departement="DIRECTION")
 
     reponse = _page(client, Role.RH)
 
     lignes = {l["libelle"]: (l["valeur_texte"], l["largeur"]) for l in reponse.context["ressources_humaines"]["graphique_departements"]["lignes"]}
-    assert lignes["Exploitation"] == ("2", 100) and lignes["Direction"] == ("1", 50) and lignes["Comptabilité"] == ("0", 0)
+    assert lignes["Parc Auto"] == ("2", 100) and lignes["Direction"] == ("1", 50) and lignes["Ressources Humaines et Finances"] == ("0", 0)
 
 
 def test_le_graphique_des_clients_renvoie_a_la_fiche_client(client):
@@ -1974,7 +1979,7 @@ def test_pleins_a_surveiller_peut_se_limiter_aux_pleins_recents():
 
 #### `apps/dashboard/tests/test_series_mensuelles.py`
 
-*194 lignes* — Séries mensuelles, créances par ancienneté et sélecteur de période des graphiques du tableau de bord.
+*196 lignes* — Séries mensuelles, créances par ancienneté et sélecteur de période des graphiques du tableau de bord.
 
 ```python
 """Séries mensuelles, créances par ancienneté et sélecteur de période des graphiques du tableau de bord."""
@@ -1992,6 +1997,7 @@ from apps.billing import services as billing
 from apps.billing.models import ModePaiement
 from apps.billing.tests.helpers import emise, finances
 from apps.core import services as core
+from apps.customers.models import DELAI_PAIEMENT_DEFAUT
 from apps.customers.tests.factories import ClientFactory
 from apps.dashboard import services
 from apps.finance import services as finance_services
@@ -2154,7 +2160,8 @@ def test_chaque_barre_de_statut_mene_a_la_liste_filtree(client):
 
 def test_le_graphique_des_creances_est_affiche_a_la_finance(client):
     client.force_login(UserFactory(role=Role.FINANCES))
-    emise(prix="1000000", aujourd_hui=date(2026, 8, 1))
+    # Émise il y a délai + 15 j : échue depuis 15 j, au milieu de la tranche « 1 à 30 jours », quelle que soit la date du jour.
+    emise(prix="1000000", aujourd_hui=timezone.localdate() - timedelta(days=DELAI_PAIEMENT_DEFAUT + 15))
 
     reponse = client.get(reverse("home"))
 
@@ -2312,8 +2319,8 @@ Et remplacez, dans `config/urls.py`, la page provisoire par le vrai tableau de b
 ```diff
 --- config/settings/base.py (avant)
 +++ config/settings/base.py (après)
-@@ -66,4 +66,5 @@
-     "apps.finance",
+@@ -67,4 +67,5 @@
+     "apps.accounting",
      "apps.notifications",
 +    "apps.dashboard",
  ]
@@ -2327,7 +2334,7 @@ Et remplacez, dans `config/urls.py`, la page provisoire par le vrai tableau de b
 ```diff
 --- config/urls.py (avant)
 +++ config/urls.py (après)
-@@ -8,9 +8,10 @@
+@@ -8,9 +8,11 @@
  from django.contrib import admin
  from django.urls import include, path
 -from django.views.generic import RedirectView, TemplateView
@@ -2338,8 +2345,9 @@ Et remplacez, dans `config/urls.py`, la page provisoire par le vrai tableau de b
  urlpatterns = [
 -    path("", TemplateView.as_view(template_name="accueil_provisoire.html"), name="home"),
 +    path("", DashboardView.as_view(), name="home"),
-     path("imprimer/", DashboardImprimerView.as_view(), name="home_imprimer"),
++    path("imprimer/", DashboardImprimerView.as_view(), name="home_imprimer"),
      # Les navigateurs (et l'administration Django) réclament /favicon.ico : on renvoie vers l'icône du site.
+     path("favicon.ico", RedirectView.as_view(url=settings.STATIC_URL + "img/favicon.png", permanent=True)),
 ```
 
 ```bash

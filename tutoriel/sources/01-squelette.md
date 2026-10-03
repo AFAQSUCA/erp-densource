@@ -162,6 +162,10 @@ navigateur vers l'icône du site.
 `pytest.ini` dit à pytest d'utiliser les réglages `config.settings.test`, de chercher les fichiers
 `test_*.py` dans `apps/`, et déclare un *marqueur* utilisé par un test du chapitre 2.
 
+Il reste les autres fichiers du squelette : Docker, Celery, les guides de déploiement et les avenants du dépôt.
+
+{{RESTANTS}}
+
 ## Vérifier le chapitre
 
 ```bash

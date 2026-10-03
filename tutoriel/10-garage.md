@@ -1,6 +1,6 @@
 # Chapitre 10 — Le garage : l'app garage
 
-> 17 fichier(s) dans ce chapitre, 1579 lignes de code.
+> 17 fichier(s) dans ce chapitre, 1599 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -323,7 +323,7 @@ class TransitionIncidentInterdite(GarageError):
 
 #### `apps/garage/services.py`
 
-*181 lignes* — Logique métier du garage — cahier-des-charges.md:161-168.
+*187 lignes* — Logique métier du garage — cahier-des-charges.md:161-168.
 
 ```python
 """Logique métier du garage — cahier-des-charges.md:161-168.
@@ -376,6 +376,11 @@ def ouvrir_or(
 
     Autorisé même si le camion est en mission : c'est le cas d'une panne en
     route. La mission continue ; le statut sera recalculé à la clôture.
+
+    Règle 3 du CDC appliquée dès l'ouverture (et pas seulement à la clôture) :
+    un camion déjà Immobilisé/Hors service garde ce statut, sinon la clôture
+    ne pourrait plus le restaurer — elle relit le statut en base, qui aurait
+    été écrasé en « En maintenance » ici.
     """
     _verrouiller(vehicule)
     ordre = OrdreReparation.objects.create(
@@ -385,7 +390,8 @@ def ouvrir_or(
         lieu=lieu,
         motif=motif,
     )
-    fleet_services.definir_statut(vehicule, StatutVehicule.EN_MAINTENANCE)
+    if vehicule.statut not in (StatutVehicule.IMMOBILISE, StatutVehicule.HORS_SERVICE):
+        fleet_services.definir_statut(vehicule, StatutVehicule.EN_MAINTENANCE)
     return ordre
 
 
@@ -1274,7 +1280,7 @@ def test_une_mission_affectee_peut_demarrer_apres_la_reparation_de_son_camion():
 
 #### `apps/garage/tests/test_statut_vehicule.py`
 
-*180 lignes* — Immobilisation, mise hors service et remise en service — cahier-des-charges.md:91-100.
+*194 lignes* — Immobilisation, mise hors service et remise en service — cahier-des-charges.md:91-100.
 
 ```python
 """Immobilisation, mise hors service et remise en service — cahier-des-charges.md:91-100."""
@@ -1372,6 +1378,20 @@ def test_immobiliser_un_camion_pendant_un_or_conserve_l_immobilisation_a_la_clot
     services.cloturer_or(ordre)
 
     assert _statut(camion) == StatutVehicule.IMMOBILISE  # règle 3 du CDC
+
+
+@pytest.mark.parametrize("statut", [StatutVehicule.IMMOBILISE, StatutVehicule.HORS_SERVICE])
+def test_ouvrir_un_or_sur_un_camion_deja_immobilise_ou_hors_service_le_conserve_a_la_cloture(
+    statut,
+):
+    camion = VehiculeFactory(statut=statut)
+    ordre = _ouvrir(camion)
+
+    assert _statut(camion) == statut  # l'ouverture ne doit pas écraser le statut
+
+    services.cloturer_or(ordre)
+
+    assert _statut(camion) == statut  # règle 3 du CDC
 
 
 # --- remise en service ---

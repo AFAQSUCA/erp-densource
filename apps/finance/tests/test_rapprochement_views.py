@@ -57,12 +57,13 @@ def test_le_rapprochement_exige_la_connexion(client):
 
 def test_les_soldes_et_l_ecart_s_affichent(client):
     _connecte(client, Role.FINANCES)
+    aujourd_hui = timezone.localdate()  # la page affiche le mois en cours : les opérations doivent y tomber
     facture = emise(prix="1000000")
     reglement = services.confirmer_versement(
-        facture, finances(), montant=Decimal("100000"), mode=ModePaiement.VIREMENT, date_reglement=JOUR
+        facture, finances(), montant=Decimal("100000"), mode=ModePaiement.VIREMENT, date_reglement=aujourd_hui
     )[0]
     services.saisir_ligne_releve(
-        finances(), date_operation=JOUR, libelle="Virement client", montant=Decimal("100000"), sens=SensMouvement.ENTREE
+        finances(), date_operation=aujourd_hui, libelle="Virement client", montant=Decimal("100000"), sens=SensMouvement.ENTREE
     )
 
     reponse = client.get(reverse("finance:rapprochement"))
@@ -98,12 +99,13 @@ def test_saisie_de_ligne_invalide_donne_un_message_sans_rien_enregistrer(client,
 
 def test_une_suggestion_apparait_pour_un_mouvement_banque_correspondant(client):
     _connecte(client, Role.FINANCES)
+    aujourd_hui = timezone.localdate()  # la page affiche le mois en cours : les opérations doivent y tomber
     facture = emise(prix="1000000")
     reglement, _ = services.confirmer_versement(
-        facture, finances(), montant=Decimal("100000"), mode=ModePaiement.VIREMENT, date_reglement=JOUR
+        facture, finances(), montant=Decimal("100000"), mode=ModePaiement.VIREMENT, date_reglement=aujourd_hui
     )
     services.saisir_ligne_releve(
-        finances(), date_operation=JOUR, libelle="Virement client", montant=Decimal("100000"), sens=SensMouvement.ENTREE
+        finances(), date_operation=aujourd_hui, libelle="Virement client", montant=Decimal("100000"), sens=SensMouvement.ENTREE
     )
 
     reponse = client.get(reverse("finance:rapprochement"))

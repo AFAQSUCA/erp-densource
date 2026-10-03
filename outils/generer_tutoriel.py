@@ -11,7 +11,7 @@ Directives (une par ligne dans une source) :
     {{FICHIER chemin}}     insère un fichier (titre, rôle, code complet)
     {{VIDES}}              commandes de création des fichiers vides du chapitre
     {{RESTANTS}}           insère tous les autres fichiers du chapitre, dans l'ordre de présentation
-    {{CONFIG}}             état (chapitre 1) ou modifications de config/settings/base.py et config/urls.py
+    {{CONFIG}}             état ou modifications de config/settings/base.py, config/urls.py et apps/missions/models.py
     {{TESTS}}              résultat attendu de pytest pour ce chapitre, et tests différés le cas échéant
     {{PYTEST}}             commande pytest sur les fichiers de tests du chapitre + résultat attendu
     {{RESULTAT_FINAL}}     nombre total de tests du projet (mesuré par tester_tutoriel.py)
@@ -89,6 +89,22 @@ def bloc_fichiers_vides(fichiers: list[str]) -> str:
     )
 
 
+# fichiers progressifs présentés à leur étape de code (directive {{ETAT}}) plutôt que dans le bloc de configuration
+PRESENTES_PAR_ETAT = {"apps/missions/models.py"}
+
+
+def bloc_etat(chemin: str, numero: int) -> str:
+    """Première version d'un fichier progressif, telle qu'elle est à ce chapitre."""
+    etat = t.etat_config(chemin, numero)
+    delim = t.fence(etat)
+    return (
+        f"#### `{chemin}` — état au chapitre {numero}\n\n"
+        f"*Ce fichier évolue au fil du tutoriel : voici sa version à ce stade. "
+        f"Les chapitres suivants n'en montrent que les ajouts.*\n\n"
+        f"{delim}python\n{etat}\n{delim}\n"
+    )
+
+
 def bloc_config(numero: int) -> str:
     sortie = []
     for chemin in t.FICHIERS_PROGRESSIFS:
@@ -97,13 +113,8 @@ def bloc_config(numero: int) -> str:
             continue
         etat = t.etat_config(chemin, numero)
         if numero == changements[0]:
-            delim = t.fence(etat)
-            sortie.append(
-                f"#### `{chemin}` — état au chapitre {numero}\n\n"
-                f"*Ce fichier évolue au fil du tutoriel : voici sa version à ce stade. "
-                f"Les chapitres suivants n'en montrent que les ajouts.*\n\n"
-                f"{delim}python\n{etat}\n{delim}\n"
-            )
+            if chemin not in PRESENTES_PAR_ETAT:
+                sortie.append(bloc_etat(chemin, numero))
         else:
             avant = t.etat_config(chemin, numero - 1)
             diff = list(difflib.unified_diff(
@@ -241,13 +252,18 @@ def generer_chapitre(numero: int, suivis: list[str], deja: set[str]) -> str:
             deja.update(vides)
             return bloc_fichiers_vides(vides)
         if directive == "RESTANTS":
-            restants = [f for f in du_chapitre if f not in deja]
+            # les migrations écrites à la main sont insérées à l'étape qui suit leur makemigrations, pas en vrac
+            restants = [f for f in du_chapitre if f not in deja and f not in t.MIGRATIONS_A_LA_MAIN]
             vides = [f for f in restants if t.est_vide(f)]
             pleins = [f for f in restants if f not in vides]
             deja.update(restants)
             return bloc_fichiers_vides(vides) + ("\n" if vides else "") + "\n".join(bloc_fichier(f) for f in pleins)
         if directive == "CONFIG":
             return bloc_config(numero)
+        if directive == "ETAT":
+            if argument not in PRESENTES_PAR_ETAT or numero != t.chapitres_ou_config_change(argument)[0]:
+                raise SystemExit(f"{source_fichier.name} : {{{{ETAT {argument}}}}} n'est pas le chapitre où ce fichier apparaît")
+            return bloc_etat(argument, numero)
         if directive == "TESTS":
             return bloc_tests(numero)
         if directive == "RESULTAT_FINAL":

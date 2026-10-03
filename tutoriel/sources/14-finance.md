@@ -81,11 +81,19 @@ Elle **réutilise** celles de `billing` : mêmes droits, écrits une seule fois.
 {{CONFIG}}
 
 ```bash
+python manage.py makemigrations accounting
+```
+
+Le fichier ci-dessous n'est pas généré par Django : c'est une **migration de données**, écrite à la main, qui charge le plan comptable de départ. Elle dépend de la migration générée à l'instant ; elle ne peut donc être créée qu'après elle.
+
+{{FICHIER apps/accounting/migrations/0002_plan_comptable_seed.py}}
+
+```bash
 python manage.py makemigrations finance
 python manage.py migrate
 ```
 
-**Résultat attendu :** `Create model MouvementManuel`, puis `Applying finance.0001_initial... OK`.
+**Résultat attendu :** `Create model MouvementManuel`, puis `Applying accounting.0001_initial... OK`, `Applying accounting.0002_plan_comptable_seed... OK` et `Applying finance.0001_initial... OK`.
 
 ## Vérifier le chapitre
 

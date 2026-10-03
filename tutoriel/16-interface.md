@@ -2925,7 +2925,7 @@ def test_le_rendu_echappe_les_libelles():
 ```diff
 --- config/settings/base.py (avant)
 +++ config/settings/base.py (après)
-@@ -113,4 +113,6 @@
+@@ -114,4 +114,6 @@
                  "django.contrib.auth.context_processors.auth",
                  "django.contrib.messages.context_processors.messages",
 +                "apps.accounts.context_processors.menu",
@@ -2941,7 +2941,7 @@ def test_le_rendu_echappe_les_libelles():
 ```diff
 --- config/urls.py (avant)
 +++ config/urls.py (après)
-@@ -8,12 +8,15 @@
+@@ -8,10 +8,14 @@
  from django.contrib import admin
  from django.urls import include, path
 -from django.views.generic import RedirectView
@@ -2950,11 +2950,10 @@ def test_le_rendu_echappe_les_libelles():
  
  urlpatterns = [
 +    path("", TemplateView.as_view(template_name="accueil_provisoire.html"), name="home"),
-     path("imprimer/", DashboardImprimerView.as_view(), name="home_imprimer"),
      # Les navigateurs (et l'administration Django) réclament /favicon.ico : on renvoie vers l'icône du site.
      path("favicon.ico", RedirectView.as_view(url=settings.STATIC_URL + "img/favicon.png", permanent=True)),
 +    path("", include("apps.accounts.urls")),
-     path("audit/", include("apps.audit.urls")),
++    path("audit/", include("apps.audit.urls")),
 +    path("notifications/", include("apps.notifications.urls")),
      path("admin/", admin.site.urls),
  ]

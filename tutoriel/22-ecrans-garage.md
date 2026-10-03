@@ -526,7 +526,7 @@ urlpatterns = [
 ```diff
 --- config/urls.py (avant)
 +++ config/urls.py (après)
-@@ -22,4 +22,5 @@
+@@ -21,4 +21,5 @@
      path("rh/", include("apps.hr.urls")),
      path("chauffeurs/", include("apps.drivers.urls")),
 +    path("garage/", include("apps.garage.urls")),

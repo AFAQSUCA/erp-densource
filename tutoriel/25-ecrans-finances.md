@@ -1,6 +1,6 @@
 # Chapitre 25 — Écrans : facturation, dépenses et trésorerie
 
-> 34 fichier(s) dans ce chapitre, 5569 lignes de code.
+> 61 fichier(s) dans ce chapitre, 8339 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -38,9 +38,11 @@ DIRECTION valide**.
 
 #### `apps/billing/forms.py`
 
-*253 lignes*
+*270 lignes*
 
 ```python
+from decimal import Decimal
+
 from django import forms
 from django.utils import timezone
 
@@ -128,7 +130,12 @@ class DepenseForm(StyleTailwindMixin, forms.Form):
     )
     date_depense = forms.DateField(label="Date", widget=forms.DateInput(attrs={"type": "date"}))
     libelle = forms.CharField(label="Libellé", max_length=200)
-    montant = forms.DecimalField(label="Montant (FCFA)", min_value=0, decimal_places=2, max_digits=14)
+    montant = forms.DecimalField(label="Montant TTC (FCFA)", min_value=0, decimal_places=2, max_digits=14)
+    montant_tva = forms.DecimalField(
+        label="dont TVA déductible (FCFA)", min_value=0, decimal_places=2, max_digits=14,
+        required=False, initial=0,
+        help_text="Si le fournisseur l'a facturée (ex. 18 % : montant TTC × 18 ÷ 118) — sinon laisser à 0.",
+    )
     mode = forms.ChoiceField(label="Mode de paiement", choices=ModePaiement.choices)
     reference = forms.CharField(label="N° de pièce", max_length=100, required=False)
     mission = forms.ModelChoiceField(
@@ -141,6 +148,16 @@ class DepenseForm(StyleTailwindMixin, forms.Form):
         self.fields["mission"].queryset = Mission.objects.order_by("-created_at", "-pk")
         self.fields["mission"].label_from_instance = lambda m: f"{m.numero} · {m.client.raison_sociale}"
         self.fields["mission"].queryset = self.fields["mission"].queryset.select_related("client")
+
+    def clean_montant_tva(self):
+        return self.cleaned_data.get("montant_tva") or Decimal("0")
+
+    def clean(self):
+        cleaned = super().clean()
+        montant, montant_tva = cleaned.get("montant"), cleaned.get("montant_tva")
+        if montant is not None and montant_tva is not None and montant_tva >= montant:
+            self.add_error("montant_tva", "La TVA déductible doit être strictement inférieure au montant TTC.")
+        return cleaned
 
     def clean_date_depense(self):
         jour = self.cleaned_data["date_depense"]
@@ -298,7 +315,7 @@ class FiltreProformasForm(StyleTailwindMixin, forms.Form):
 
 #### `apps/finance/forms.py`
 
-*142 lignes*
+*193 lignes*
 
 ```python
 from django import forms
@@ -309,11 +326,12 @@ from apps.core.forms import StyleTailwindMixin
 from apps.fleet import services as fleet_services
 
 from .demandes import CATEGORIES_PARC_AUTO as CATEGORIES_PARC_AUTO_CODES
-from .models import SensMouvement
+from .models import NatureMouvement, SensMouvement
 
 
 class MouvementForm(StyleTailwindMixin, forms.Form):
     sens = forms.ChoiceField(label="Sens", choices=SensMouvement.choices)
+    nature = forms.ChoiceField(label="Nature", choices=NatureMouvement.choices)
     date_mouvement = forms.DateField(label="Date", widget=forms.DateInput(attrs={"type": "date"}))
     libelle = forms.CharField(label="Libellé", max_length=200)
     montant = forms.DecimalField(label="Montant (FCFA)", min_value=0, decimal_places=2, max_digits=14)
@@ -329,6 +347,56 @@ class MouvementForm(StyleTailwindMixin, forms.Form):
 
 class MotifForm(StyleTailwindMixin, forms.Form):
     motif = forms.CharField(label="Motif", widget=forms.Textarea(attrs={"rows": 2}))
+
+
+class LigneReleveForm(StyleTailwindMixin, forms.Form):
+    """Saisie manuelle d'une ligne du relevé bancaire (Lot G)."""
+
+    date_operation = forms.DateField(label="Date", widget=forms.DateInput(attrs={"type": "date"}))
+    libelle = forms.CharField(label="Libellé", max_length=200)
+    montant = forms.DecimalField(label="Montant (FCFA)", min_value=0, decimal_places=2, max_digits=14)
+    sens = forms.ChoiceField(label="Sens", choices=SensMouvement.choices)
+    reference = forms.CharField(label="Référence", max_length=100, required=False)
+
+    def clean_date_operation(self):
+        jour = self.cleaned_data["date_operation"]
+        if jour > timezone.localdate():
+            raise forms.ValidationError("La date ne peut pas être dans le futur.")
+        return jour
+
+
+class PeriodeRapprochementForm(StyleTailwindMixin, forms.Form):
+    """Période affichée pour le rapprochement bancaire ; par défaut le mois en cours."""
+
+    debut = forms.DateField(label="Du", required=False, widget=forms.DateInput(attrs={"type": "date"}))
+    fin = forms.DateField(label="Au", required=False, widget=forms.DateInput(attrs={"type": "date"}))
+
+    def clean(self):
+        donnees = super().clean()
+        debut, fin = donnees.get("debut"), donnees.get("fin")
+        if debut and fin and debut > fin:
+            self.add_error("fin", "La date de fin précède la date de début : période ignorée.")
+            donnees.pop("debut", None)
+            donnees.pop("fin", None)
+        return donnees
+
+    def periode(self) -> tuple:
+        self.is_valid()
+        donnees = getattr(self, "cleaned_data", {})
+        aujourd_hui = timezone.localdate()
+        return (
+            donnees.get("debut") or aujourd_hui.replace(day=1),
+            donnees.get("fin") or aujourd_hui,
+        )
+
+
+class PointerLigneReleveForm(StyleTailwindMixin, forms.Form):
+    """Choix du mouvement de trésorerie auquel associer une ligne de relevé."""
+
+    origine = forms.ChoiceField(
+        label="Origine", choices=[("REGLEMENT", "Règlement"), ("DEPENSE", "Dépense"), ("MANUEL", "Mouvement manuel")]
+    )
+    mouvement_id = forms.IntegerField(label="Mouvement", min_value=1, widget=forms.HiddenInput)
 
 
 class FiltreTresorerieForm(StyleTailwindMixin, forms.Form):
@@ -1182,7 +1250,7 @@ de faire** (`saisie`, `validation`) — jamais le gabarit.
 
 #### `apps/finance/views.py`
 
-*373 lignes* — Trésorerie : journal des mouvements, soldes par compte, mouvements manuels.
+*465 lignes* — Trésorerie : journal des mouvements, soldes par compte, mouvements manuels.
 
 ```python
 """Trésorerie : journal des mouvements, soldes par compte, mouvements manuels."""
@@ -1211,11 +1279,21 @@ from .forms import (
     EnveloppeForm,
     ExecuterOrdreForm,
     FiltreTresorerieForm,
+    LigneReleveForm,
     MotifForm,
     MouvementForm,
+    PeriodeRapprochementForm,
+    PointerLigneReleveForm,
     RevaliderOrdreForm,
 )
-from .models import DemandeDepense, MouvementManuel, OrdreDecaissement, StatutDemandeDepense, StatutOrdreDecaissement
+from .models import (
+    DemandeDepense,
+    LigneReleve,
+    MouvementManuel,
+    OrdreDecaissement,
+    StatutDemandeDepense,
+    StatutOrdreDecaissement,
+)
 
 
 class TresorerieView(RoleRequiredMixin, TemplateView):
@@ -1558,6 +1636,88 @@ class EnveloppeCreateView(RoleRequiredMixin, View):
         else:
             messages.success(request, "Enveloppe enregistrée.")
         return redirect("finance:enveloppes")
+
+
+# --- rapprochement bancaire (Lot G) ---
+
+
+class RapprochementBancaireView(RoleRequiredMixin, TemplateView):
+    roles = permissions.CONSULTATION
+    template_name = "finance/rapprochement.html"
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        periode_form = PeriodeRapprochementForm(self.request.GET)
+        debut, fin = periode_form.periode()
+        etat = services.rapprochement_bancaire(debut=debut, fin=fin)
+        peut_saisir = self.request.user.role_effectif in permissions.SAISIE
+        lignes_avec_suggestions = [
+            {"ligne": ligne, "suggestions": services.suggestions_pointage(ligne)}
+            for ligne in etat["lignes_non_pointees"]
+        ]
+        contexte.update(
+            periode_form=periode_form,
+            debut=debut,
+            fin=fin,
+            etat=etat,
+            lignes_avec_suggestions=lignes_avec_suggestions,
+            peut_saisir=peut_saisir,
+            form_ligne=LigneReleveForm(initial={"date_operation": timezone.localdate()}) if peut_saisir else None,
+            form_pointer=PointerLigneReleveForm() if peut_saisir else None,
+        )
+        return contexte
+
+
+class LigneReleveCreateView(RoleRequiredMixin, View):
+    roles = permissions.SAISIE
+    http_method_names = ["post"]
+
+    def post(self, request):
+        form = LigneReleveForm(request.POST)
+        if not form.is_valid():
+            _erreurs_en_messages(request, form)
+            return redirect("finance:rapprochement")
+        try:
+            services.saisir_ligne_releve(request.user, **form.cleaned_data)
+        except BillingError as erreur:
+            messages.error(request, str(erreur))
+        else:
+            messages.success(request, "Ligne de relevé ajoutée.")
+        return redirect("finance:rapprochement")
+
+
+class LigneRelevePointerView(RoleRequiredMixin, View):
+    roles = permissions.SAISIE
+    http_method_names = ["post"]
+
+    def post(self, request, pk):
+        ligne = get_object_or_404(LigneReleve, pk=pk)
+        form = PointerLigneReleveForm(request.POST)
+        if not form.is_valid():
+            _erreurs_en_messages(request, form)
+            return redirect("finance:rapprochement")
+        try:
+            services.pointer_ligne_releve(ligne, request.user, **form.cleaned_data)
+        except BillingError as erreur:
+            messages.error(request, str(erreur))
+        else:
+            messages.success(request, "Ligne pointée.")
+        return redirect("finance:rapprochement")
+
+
+class LigneReleveDepointerView(RoleRequiredMixin, View):
+    roles = permissions.SAISIE
+    http_method_names = ["post"]
+
+    def post(self, request, pk):
+        ligne = get_object_or_404(LigneReleve, pk=pk)
+        try:
+            services.depointer_ligne_releve(ligne, request.user)
+        except BillingError as erreur:
+            messages.error(request, str(erreur))
+        else:
+            messages.success(request, "Pointage annulé.")
+        return redirect("finance:rapprochement")
 ```
 
 #### `apps/billing/urls.py`
@@ -1637,7 +1797,7 @@ urlpatterns = [
 
 #### `apps/finance/urls.py`
 
-*25 lignes*
+*37 lignes*
 
 ```python
 from django.urls import path
@@ -1664,6 +1824,18 @@ urlpatterns = [
     path("ordres/<int:pk>/revalider/", views.OrdreRevaliderView.as_view(), name="ordre_revalider"),
     path("enveloppes/", views.EnveloppeListView.as_view(), name="enveloppes"),
     path("enveloppes/nouvelle/", views.EnveloppeCreateView.as_view(), name="enveloppe_nouvelle"),
+    path("rapprochement/", views.RapprochementBancaireView.as_view(), name="rapprochement"),
+    path("rapprochement/lignes/nouvelle/", views.LigneReleveCreateView.as_view(), name="ligne_releve_nouvelle"),
+    path(
+        "rapprochement/lignes/<int:pk>/pointer/",
+        views.LigneRelevePointerView.as_view(),
+        name="ligne_releve_pointer",
+    ),
+    path(
+        "rapprochement/lignes/<int:pk>/depointer/",
+        views.LigneReleveDepointerView.as_view(),
+        name="ligne_releve_depointer",
+    ),
 ]
 ```
 
@@ -1674,11 +1846,12 @@ urlpatterns = [
 ```diff
 --- config/urls.py (avant)
 +++ config/urls.py (après)
-@@ -25,4 +25,6 @@
+@@ -24,4 +24,7 @@
      path("carburant/", include("apps.fuel.urls")),
      path("stock/", include("apps.inventory.urls")),
 +    path("facturation/", include("apps.billing.urls")),
 +    path("finances/", include("apps.finance.urls")),
++    path("comptabilite/", include("apps.accounting.urls")),
      path("audit/", include("apps.audit.urls")),
      path("notifications/", include("apps.notifications.urls")),
 ```
@@ -2100,7 +2273,7 @@ mkdir -p apps/billing/templates/billing apps/finance/templates/finance
 
 #### `apps/billing/templates/billing/depense_list.html`
 
-*84 lignes*
+*87 lignes*
 
 ```django
 {% extends "base.html" %}
@@ -2171,7 +2344,10 @@ mkdir -p apps/billing/templates/billing apps/finance/templates/finance
                   </form>
                 {% else %}{{ d.get_mode_display }}{% endif %}
               </td>
-              <td class="whitespace-nowrap px-4 py-3 text-right font-medium text-slate-900">{{ d.montant|floatformat:0|intcomma }}</td>
+              <td class="whitespace-nowrap px-4 py-3 text-right font-medium text-slate-900">
+                {{ d.montant|floatformat:0|intcomma }}
+                {% if d.montant_tva %}<br><span class="text-xs font-normal text-slate-500">dont {{ d.montant_tva|floatformat:0|intcomma }} TVA déd.</span>{% endif %}
+              </td>
             </tr>
           {% endfor %}
         </tbody>
@@ -2191,7 +2367,7 @@ mkdir -p apps/billing/templates/billing apps/finance/templates/finance
 
 #### `apps/billing/templates/billing/depense_form.html`
 
-*34 lignes*
+*35 lignes*
 
 ```django
 {% extends "base.html" %}
@@ -2217,6 +2393,7 @@ mkdir -p apps/billing/templates/billing apps/finance/templates/finance
       {% include "components/_champ.html" with champ=form.date_depense %}
       <div class="sm:col-span-2">{% include "components/_champ.html" with champ=form.libelle %}</div>
       {% include "components/_champ.html" with champ=form.montant %}
+      {% include "components/_champ.html" with champ=form.montant_tva %}
       {% include "components/_champ.html" with champ=form.mode %}
       {% include "components/_champ.html" with champ=form.reference %}
       {% include "components/_champ.html" with champ=form.mission %}
@@ -2232,7 +2409,7 @@ mkdir -p apps/billing/templates/billing apps/finance/templates/finance
 
 #### `apps/finance/templates/finance/tresorerie.html`
 
-*146 lignes*
+*147 lignes*
 
 ```django
 {% extends "base.html" %}
@@ -2317,6 +2494,7 @@ mkdir -p apps/billing/templates/billing apps/finance/templates/finance
       <p class="text-xs text-slate-600">Solde d'ouverture, apport, frais bancaires, retrait… Les règlements et les dépenses se saisissent depuis la facturation.</p>
       <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
         {% include "components/_champ.html" with champ=form_mouvement.sens %}
+        {% include "components/_champ.html" with champ=form_mouvement.nature %}
         {% include "components/_champ.html" with champ=form_mouvement.date_mouvement %}
         {% include "components/_champ.html" with champ=form_mouvement.montant %}
         <div class="sm:col-span-3">{% include "components/_champ.html" with champ=form_mouvement.libelle %}</div>
@@ -2384,6 +2562,1619 @@ mkdir -p apps/billing/templates/billing apps/finance/templates/finance
 ```
 
 ## Étape 4 — Tests et compilation des styles
+
+#### `apps/accounting/forms.py`
+
+*71 lignes*
+
+```python
+from django import forms
+from django.utils import timezone
+
+from apps.core.forms import StyleTailwindMixin
+
+from .models import Compte, NatureCompte, SensEcriture
+
+
+class PeriodeForm(StyleTailwindMixin, forms.Form):
+    """Filtre de période, facultatif : la balance ou le grand livre portent sur toutes les dates
+    connues si les deux champs sont vides."""
+
+    debut = forms.DateField(label="Du", required=False, widget=forms.DateInput(attrs={"type": "date"}))
+    fin = forms.DateField(label="Au", required=False, widget=forms.DateInput(attrs={"type": "date"}))
+
+
+class GrandLivreForm(PeriodeForm):
+    """Choix du compte à consulter, plus la période facultative de ``PeriodeForm``."""
+
+    compte = forms.ModelChoiceField(queryset=None, label="Compte", to_field_name="numero")
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["compte"].queryset = Compte.objects.order_by("numero")
+        self.fields["compte"].label_from_instance = lambda c: f"{c.numero} — {c.libelle}"
+
+
+class CompteForm(StyleTailwindMixin, forms.Form):
+    """Ajout d'un compte au plan comptable : numéro et nature ne se saisissent qu'ici, ils ne se
+    modifient plus ensuite (voir ``services.modifier_compte``)."""
+
+    numero = forms.CharField(label="Numéro", max_length=10)
+    libelle = forms.CharField(label="Libellé", max_length=150)
+    nature = forms.ChoiceField(label="Nature", choices=NatureCompte.choices)
+
+
+class CompteModifierForm(StyleTailwindMixin, forms.Form):
+    """Correction du libellé et activation/désactivation d'un compte existant."""
+
+    libelle = forms.CharField(label="Libellé", max_length=150)
+    actif = forms.BooleanField(label="Actif (utilisable dans une nouvelle écriture)", required=False)
+
+
+class EcritureManuelleForm(StyleTailwindMixin, forms.Form):
+    """Ouverture d'un brouillon d'opération diverse : date et libellé seulement, les lignes
+    s'ajoutent ensuite une par une sur la fiche."""
+
+    date_ecriture = forms.DateField(label="Date", widget=forms.DateInput(attrs={"type": "date"}))
+    libelle = forms.CharField(label="Libellé", max_length=255)
+
+    def clean_date_ecriture(self):
+        jour = self.cleaned_data["date_ecriture"]
+        if jour > timezone.localdate():
+            raise forms.ValidationError("La date ne peut pas être dans le futur.")
+        return jour
+
+
+class LigneManuelleForm(StyleTailwindMixin, forms.Form):
+    """Une ligne débit ou crédit ajoutée à un brouillon d'opération diverse."""
+
+    compte = forms.ModelChoiceField(
+        queryset=None, label="Compte", to_field_name="numero", empty_label=None
+    )
+    sens = forms.ChoiceField(label="Sens", choices=SensEcriture.choices)
+    montant = forms.DecimalField(label="Montant (FCFA)", min_value=0.01, decimal_places=2, max_digits=14)
+    libelle = forms.CharField(label="Libellé", max_length=255, required=False)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["compte"].queryset = Compte.objects.filter(actif=True)
+        self.fields["compte"].label_from_instance = lambda c: f"{c.numero} — {c.libelle}"
+```
+
+#### `apps/accounting/views.py`
+
+*457 lignes* — Écrans de la saisie manuelle d'opérations diverses (Phase 4), de la clôture d'exercice
+
+```python
+"""Écrans de la saisie manuelle d'opérations diverses (Phase 4), de la clôture d'exercice
+(Phase 5) et des rapports en lecture seule — grand livre, balance, bilan, compte de résultat
+(Phase 6).
+
+Aucune règle métier ici : les vues contrôlent le rôle, lisent le formulaire et délèguent à
+``services.py`` (conventions.md:19-23).
+"""
+
+import calendar
+
+from django.contrib import messages
+from django.shortcuts import get_object_or_404, redirect
+from django.utils import timezone
+from django.views import View
+from django.views.generic import DetailView, FormView, ListView, TemplateView
+
+from apps.accounts.mixins import RoleRequiredMixin
+from apps.core.rapports import contexte_rapport
+from apps.core.views import PaginationTolerante
+
+from . import permissions, services
+from .exceptions import AccountingError, CompteDejaExistant
+from .forms import CompteForm, CompteModifierForm, EcritureManuelleForm, GrandLivreForm, LigneManuelleForm, PeriodeForm
+from .models import Compte, EcritureComptable, ExerciceComptable, Journal, LigneEcriture, SensEcriture, StatutEcriture
+
+
+def _erreurs_en_messages(request, form):
+    for erreurs in form.errors.values():
+        for erreur in erreurs:
+            messages.error(request, erreur)
+
+
+def _ecritures_manuelles_queryset():
+    return EcritureComptable.objects.filter(journal=Journal.OPERATIONS_DIVERSES)
+
+
+class EcritureManuelleListView(PaginationTolerante, RoleRequiredMixin, ListView):
+    roles = permissions.CONSULTATION
+    template_name = "accounting/ecriture_manuelle_list.html"
+    context_object_name = "ecritures"
+    paginate_by = 20
+
+    def get_queryset(self):
+        return _ecritures_manuelles_queryset()
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        contexte["peut_saisir"] = self.request.user.role_effectif in permissions.SAISIE_OD
+        return contexte
+
+
+class EcritureManuelleCreateView(RoleRequiredMixin, FormView):
+    roles = permissions.SAISIE_OD
+    form_class = EcritureManuelleForm
+    template_name = "accounting/ecriture_manuelle_form.html"
+
+    def form_valid(self, form):
+        ecriture = services.creer_ecriture_manuelle(self.request.user, **form.cleaned_data)
+        messages.success(self.request, "Brouillon créé : ajoutez au moins deux lignes équilibrées.")
+        return redirect("accounting:ecriture_manuelle", pk=ecriture.pk)
+
+
+class EcritureManuelleDetailView(RoleRequiredMixin, DetailView):
+    roles = permissions.CONSULTATION
+    template_name = "accounting/ecriture_manuelle_detail.html"
+    context_object_name = "ecriture"
+
+    def get_queryset(self):
+        return _ecritures_manuelles_queryset()
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        ecriture = self.object
+        role = self.request.user.role_effectif
+        est_brouillon = ecriture.statut == StatutEcriture.BROUILLON
+        peut_saisir = role in permissions.SAISIE_OD and est_brouillon
+        lignes = list(ecriture.lignes.select_related("compte"))
+        total_debit = sum((l.montant for l in lignes if l.sens == SensEcriture.DEBIT), start=0)
+        total_credit = sum((l.montant for l in lignes if l.sens == SensEcriture.CREDIT), start=0)
+        contexte.update(
+            lignes=lignes,
+            total_debit=total_debit,
+            total_credit=total_credit,
+            equilibree=len(lignes) >= 2 and total_debit == total_credit,
+            peut_saisir=peut_saisir,
+            peut_valider=(
+                self.request.user.role in permissions.VALIDATION_OD
+                and est_brouillon
+                and len(lignes) >= 2
+                and total_debit == total_credit
+            ),
+            form_ligne=LigneManuelleForm() if peut_saisir else None,
+        )
+        return contexte
+
+
+class LigneAjouterView(RoleRequiredMixin, View):
+    roles = permissions.SAISIE_OD
+    http_method_names = ["post"]
+
+    def post(self, request, pk):
+        ecriture = get_object_or_404(_ecritures_manuelles_queryset(), pk=pk)
+        form = LigneManuelleForm(request.POST)
+        if not form.is_valid():
+            _erreurs_en_messages(request, form)
+            return redirect("accounting:ecriture_manuelle", pk=pk)
+        donnees = form.cleaned_data
+        try:
+            services.ajouter_ligne_manuelle(
+                ecriture, request.user, compte=donnees["compte"].numero, sens=donnees["sens"],
+                montant=donnees["montant"], libelle=donnees["libelle"],
+            )
+        except AccountingError as erreur:
+            messages.error(request, str(erreur))
+        else:
+            messages.success(request, "Ligne ajoutée.")
+        return redirect("accounting:ecriture_manuelle", pk=pk)
+
+
+class LigneSupprimerView(RoleRequiredMixin, View):
+    roles = permissions.SAISIE_OD
+    http_method_names = ["post"]
+
+    def post(self, request, pk, ligne_pk):
+        ecriture = get_object_or_404(_ecritures_manuelles_queryset(), pk=pk)
+        ligne = get_object_or_404(LigneEcriture, pk=ligne_pk, ecriture=ecriture)
+        try:
+            services.supprimer_ligne_manuelle(ligne, request.user)
+        except AccountingError as erreur:
+            messages.error(request, str(erreur))
+        else:
+            messages.success(request, "Ligne supprimée.")
+        return redirect("accounting:ecriture_manuelle", pk=pk)
+
+
+class EcritureManuelleValiderView(RoleRequiredMixin, View):
+    roles = permissions.VALIDATION_OD
+    http_method_names = ["post"]
+
+    def post(self, request, pk):
+        ecriture = get_object_or_404(_ecritures_manuelles_queryset(), pk=pk)
+        try:
+            services.valider_ecriture_manuelle(ecriture, request.user)
+        except AccountingError as erreur:
+            messages.error(request, str(erreur))
+        else:
+            messages.success(request, f"Écriture {ecriture.numero} validée.")
+        return redirect("accounting:ecriture_manuelle", pk=pk)
+
+
+class EcritureManuelleAbandonnerView(RoleRequiredMixin, View):
+    roles = permissions.SAISIE_OD
+    http_method_names = ["post"]
+
+    def post(self, request, pk):
+        ecriture = get_object_or_404(_ecritures_manuelles_queryset(), pk=pk)
+        try:
+            services.abandonner_ecriture_manuelle(ecriture, request.user)
+        except AccountingError as erreur:
+            messages.error(request, str(erreur))
+            return redirect("accounting:ecriture_manuelle", pk=pk)
+        messages.success(request, "Brouillon abandonné.")
+        return redirect("accounting:ecritures_manuelles")
+
+
+class ExerciceListView(RoleRequiredMixin, ListView):
+    roles = permissions.CONSULTATION
+    template_name = "accounting/exercice_list.html"
+    context_object_name = "exercices"
+
+    def get_queryset(self):
+        return ExerciceComptable.objects.all()
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        contexte["peut_cloturer"] = self.request.user.role in permissions.CLOTURE_EXERCICE
+        return contexte
+
+
+class ExerciceCloturerView(RoleRequiredMixin, View):
+    roles = permissions.CLOTURE_EXERCICE
+    http_method_names = ["post"]
+
+    def post(self, request, pk):
+        exercice = get_object_or_404(ExerciceComptable, pk=pk)
+        try:
+            services.cloturer_exercice(exercice, request.user)
+        except AccountingError as erreur:
+            messages.error(request, str(erreur))
+        else:
+            messages.success(request, f"Exercice {exercice.annee} clôturé.")
+        return redirect("accounting:exercices")
+
+
+class PlanComptableListView(RoleRequiredMixin, ListView):
+    roles = permissions.CONSULTATION
+    template_name = "accounting/plan_comptable_list.html"
+    context_object_name = "comptes"
+
+    def get_queryset(self):
+        return Compte.objects.all()
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        contexte["peut_gerer"] = self.request.user.role_effectif in permissions.GESTION_PLAN_COMPTABLE
+        return contexte
+
+
+class CompteCreateView(RoleRequiredMixin, FormView):
+    roles = permissions.GESTION_PLAN_COMPTABLE
+    form_class = CompteForm
+    template_name = "accounting/compte_form.html"
+
+    def form_valid(self, form):
+        try:
+            services.creer_compte(self.request.user, **form.cleaned_data)
+        except CompteDejaExistant as erreur:
+            form.add_error("numero", str(erreur))
+            return self.form_invalid(form)
+        except AccountingError as erreur:
+            form.add_error(None, str(erreur))
+            return self.form_invalid(form)
+        messages.success(self.request, "Compte créé.")
+        return redirect("accounting:plan_comptable")
+
+
+class CompteModifierView(RoleRequiredMixin, FormView):
+    roles = permissions.GESTION_PLAN_COMPTABLE
+    form_class = CompteModifierForm
+    template_name = "accounting/compte_modifier_form.html"
+
+    def dispatch(self, request, *args, **kwargs):
+        self.compte = get_object_or_404(Compte, pk=kwargs["pk"])
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_initial(self):
+        return {"libelle": self.compte.libelle, "actif": self.compte.actif}
+
+    def get_context_data(self, **kwargs):
+        return super().get_context_data(compte=self.compte, **kwargs)
+
+    def form_valid(self, form):
+        try:
+            services.modifier_compte(self.compte, self.request.user, **form.cleaned_data)
+        except AccountingError as erreur:
+            form.add_error(None, str(erreur))
+            return self.form_invalid(form)
+        messages.success(self.request, "Compte modifié.")
+        return redirect("accounting:plan_comptable")
+
+
+class GrandLivreView(RoleRequiredMixin, TemplateView):
+    roles = permissions.CONSULTATION
+    template_name = "accounting/grand_livre.html"
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        form = GrandLivreForm(self.request.GET or None)
+        lignes = None
+        if form.is_valid() and form.cleaned_data.get("compte"):
+            lignes = services.grand_livre_avec_solde(
+                form.cleaned_data["compte"],
+                debut=form.cleaned_data.get("debut"),
+                fin=form.cleaned_data.get("fin"),
+            )
+        contexte.update(form=form, lignes=lignes)
+        return contexte
+
+
+class GrandLivreImprimerView(RoleRequiredMixin, TemplateView):
+    roles = permissions.CONSULTATION
+    template_name = "accounting/grand_livre_print.html"
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        form = GrandLivreForm(self.request.GET or None)
+        compte = lignes = None
+        morceaux = []
+        if form.is_valid() and form.cleaned_data.get("compte"):
+            compte = form.cleaned_data["compte"]
+            debut, fin = form.cleaned_data.get("debut"), form.cleaned_data.get("fin")
+            lignes = services.grand_livre_avec_solde(compte, debut=debut, fin=fin)
+            morceaux.append(f"{compte.numero} — {compte.libelle}")
+            if debut or fin:
+                debut_texte = f"{debut:%d/%m/%Y}" if debut else "l'origine"
+                fin_texte = f"{fin:%d/%m/%Y}" if fin else "aujourd'hui"
+                morceaux.append(f"du {debut_texte} au {fin_texte}")
+        rapport = contexte_rapport(self.request, titre="Grand livre", sous_titre=" · ".join(morceaux))
+        contexte.update(rapport, compte=compte, lignes=lignes)
+        return contexte
+
+
+class BalanceView(RoleRequiredMixin, TemplateView):
+    roles = permissions.CONSULTATION
+    template_name = "accounting/balance.html"
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        form = PeriodeForm(self.request.GET or None)
+        debut = fin = None
+        if form.is_valid():
+            debut, fin = form.cleaned_data.get("debut"), form.cleaned_data.get("fin")
+        lignes = services.balance(debut=debut, fin=fin)
+        totaux = {
+            "debit": sum((l["total_debit"] for l in lignes), start=0),
+            "credit": sum((l["total_credit"] for l in lignes), start=0),
+        }
+        contexte.update(form=form, lignes=lignes, totaux=totaux)
+        return contexte
+
+
+class BalanceImprimerView(RoleRequiredMixin, TemplateView):
+    roles = permissions.CONSULTATION
+    template_name = "accounting/balance_print.html"
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        form = PeriodeForm(self.request.GET or None)
+        debut = fin = None
+        if form.is_valid():
+            debut, fin = form.cleaned_data.get("debut"), form.cleaned_data.get("fin")
+        if debut or fin:
+            debut_texte = f"{debut:%d/%m/%Y}" if debut else "l'origine"
+            fin_texte = f"{fin:%d/%m/%Y}" if fin else "aujourd'hui"
+            sous_titre = f"du {debut_texte} au {fin_texte}"
+        else:
+            sous_titre = "Depuis l'origine"
+        lignes = services.balance(debut=debut, fin=fin)
+        totaux = {
+            "debit": sum((l["total_debit"] for l in lignes), start=0),
+            "credit": sum((l["total_credit"] for l in lignes), start=0),
+        }
+        rapport = contexte_rapport(self.request, titre="Balance générale", sous_titre=sous_titre)
+        contexte.update(rapport, lignes=lignes, totaux=totaux)
+        return contexte
+
+
+def _periode_declaration_tva(form):
+    """Période d'une déclaration TVA : toujours bornée, le mois en cours par défaut (une
+    déclaration ne porte jamais sur « depuis l'origine », contrairement à la balance)."""
+    debut = fin = None
+    if form.is_valid():
+        debut, fin = form.cleaned_data.get("debut"), form.cleaned_data.get("fin")
+    if debut is None and fin is None:
+        aujourd_hui = timezone.localdate()
+        debut = aujourd_hui.replace(day=1)
+        fin = aujourd_hui.replace(day=calendar.monthrange(aujourd_hui.year, aujourd_hui.month)[1])
+    elif debut is None:
+        debut = fin.replace(day=1)
+    elif fin is None:
+        fin = debut.replace(day=calendar.monthrange(debut.year, debut.month)[1])
+    return debut, fin
+
+
+class DeclarationTvaView(RoleRequiredMixin, TemplateView):
+    roles = permissions.CONSULTATION
+    template_name = "accounting/declaration_tva.html"
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        form = PeriodeForm(self.request.GET or None)
+        debut, fin = _periode_declaration_tva(form)
+        contexte.update(form=form, rapport=services.declaration_tva(debut=debut, fin=fin))
+        return contexte
+
+
+class DeclarationTvaImprimerView(RoleRequiredMixin, TemplateView):
+    roles = permissions.CONSULTATION
+    template_name = "accounting/declaration_tva_print.html"
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        form = PeriodeForm(self.request.GET or None)
+        debut, fin = _periode_declaration_tva(form)
+        sous_titre = f"du {debut:%d/%m/%Y} au {fin:%d/%m/%Y}"
+        rapport = contexte_rapport(self.request, titre="Déclaration TVA", sous_titre=sous_titre)
+        contexte.update(rapport, rapport_tva=services.declaration_tva(debut=debut, fin=fin))
+        return contexte
+
+
+class _RapportExerciceView(RoleRequiredMixin, TemplateView):
+    """Un rapport (bilan, compte de résultat) porte toujours sur un exercice choisi dans la
+    liste existante — le plus récent par défaut."""
+
+    roles = permissions.CONSULTATION
+
+    def get_exercice(self):
+        exercices = ExerciceComptable.objects.order_by("-annee")
+        annee = self.request.GET.get("exercice")
+        if annee:
+            exercice = exercices.filter(annee=annee).first()
+            if exercice is not None:
+                return exercice, exercices
+        return exercices.first(), exercices
+
+
+class BilanView(_RapportExerciceView):
+    template_name = "accounting/bilan.html"
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        exercice, exercices = self.get_exercice()
+        contexte.update(
+            exercices=exercices,
+            exercice=exercice,
+            rapport=services.bilan(exercice) if exercice else None,
+        )
+        return contexte
+
+
+class BilanImprimerView(_RapportExerciceView):
+    template_name = "accounting/bilan_print.html"
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        exercice, _ = self.get_exercice()
+        sous_titre = f"Exercice {exercice.annee}, au {exercice.date_fin:%d/%m/%Y}" if exercice else ""
+        rapport = contexte_rapport(self.request, titre="Bilan", sous_titre=sous_titre)
+        contexte.update(
+            rapport,
+            exercice=exercice,
+            rapport_bilan=services.bilan(exercice) if exercice else None,
+        )
+        return contexte
+
+
+class CompteDeResultatView(_RapportExerciceView):
+    template_name = "accounting/compte_resultat.html"
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        exercice, exercices = self.get_exercice()
+        contexte.update(
+            exercices=exercices,
+            exercice=exercice,
+            rapport=services.compte_de_resultat(exercice) if exercice else None,
+        )
+        return contexte
+
+
+class CompteDeResultatImprimerView(_RapportExerciceView):
+    template_name = "accounting/compte_resultat_print.html"
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        exercice, _ = self.get_exercice()
+        sous_titre = (
+            f"Exercice {exercice.annee}, du {exercice.date_debut:%d/%m/%Y} au {exercice.date_fin:%d/%m/%Y}"
+            if exercice else ""
+        )
+        rapport = contexte_rapport(self.request, titre="Compte de résultat", sous_titre=sous_titre)
+        contexte.update(
+            rapport,
+            exercice=exercice,
+            rapport_resultat=services.compte_de_resultat(exercice) if exercice else None,
+        )
+        return contexte
+```
+
+#### `apps/accounting/urls.py`
+
+*30 lignes*
+
+```python
+from django.urls import path
+
+from . import views
+
+app_name = "accounting"
+
+urlpatterns = [
+    path("operations-diverses/", views.EcritureManuelleListView.as_view(), name="ecritures_manuelles"),
+    path("operations-diverses/nouvelle/", views.EcritureManuelleCreateView.as_view(), name="ecriture_manuelle_nouvelle"),
+    path("operations-diverses/<int:pk>/", views.EcritureManuelleDetailView.as_view(), name="ecriture_manuelle"),
+    path("operations-diverses/<int:pk>/valider/", views.EcritureManuelleValiderView.as_view(), name="ecriture_manuelle_valider"),
+    path("operations-diverses/<int:pk>/abandonner/", views.EcritureManuelleAbandonnerView.as_view(), name="ecriture_manuelle_abandonner"),
+    path("operations-diverses/<int:pk>/lignes/", views.LigneAjouterView.as_view(), name="ligne_ajouter"),
+    path("operations-diverses/<int:pk>/lignes/<int:ligne_pk>/supprimer/", views.LigneSupprimerView.as_view(), name="ligne_supprimer"),
+    path("exercices/", views.ExerciceListView.as_view(), name="exercices"),
+    path("exercices/<int:pk>/cloturer/", views.ExerciceCloturerView.as_view(), name="exercice_cloturer"),
+    path("plan-comptable/", views.PlanComptableListView.as_view(), name="plan_comptable"),
+    path("plan-comptable/nouveau/", views.CompteCreateView.as_view(), name="compte_nouveau"),
+    path("plan-comptable/<int:pk>/modifier/", views.CompteModifierView.as_view(), name="compte_modifier"),
+    path("grand-livre/", views.GrandLivreView.as_view(), name="grand_livre"),
+    path("grand-livre/imprimer/", views.GrandLivreImprimerView.as_view(), name="grand_livre_imprimer"),
+    path("balance/", views.BalanceView.as_view(), name="balance"),
+    path("balance/imprimer/", views.BalanceImprimerView.as_view(), name="balance_imprimer"),
+    path("bilan/", views.BilanView.as_view(), name="bilan"),
+    path("bilan/imprimer/", views.BilanImprimerView.as_view(), name="bilan_imprimer"),
+    path("compte-de-resultat/", views.CompteDeResultatView.as_view(), name="compte_resultat"),
+    path("compte-de-resultat/imprimer/", views.CompteDeResultatImprimerView.as_view(), name="compte_resultat_imprimer"),
+    path("declaration-tva/", views.DeclarationTvaView.as_view(), name="declaration_tva"),
+    path("declaration-tva/imprimer/", views.DeclarationTvaImprimerView.as_view(), name="declaration_tva_imprimer"),
+]
+```
+
+#### `apps/accounting/templates/accounting/_nav_rapports.html`
+
+*7 lignes*
+
+```django
+<nav aria-label="Rapports comptables" class="mt-4 flex flex-wrap gap-2 text-sm">
+  <a href="{% url 'accounting:grand_livre' %}" class="rounded-lg px-3 py-1.5 font-medium {% if request.resolver_match.url_name == 'grand_livre' %}bg-slate-900 text-white{% else %}border border-slate-300 bg-white text-slate-800 hover:bg-slate-50{% endif %}">Grand livre</a>
+  <a href="{% url 'accounting:balance' %}" class="rounded-lg px-3 py-1.5 font-medium {% if request.resolver_match.url_name == 'balance' %}bg-slate-900 text-white{% else %}border border-slate-300 bg-white text-slate-800 hover:bg-slate-50{% endif %}">Balance</a>
+  <a href="{% url 'accounting:bilan' %}" class="rounded-lg px-3 py-1.5 font-medium {% if request.resolver_match.url_name == 'bilan' %}bg-slate-900 text-white{% else %}border border-slate-300 bg-white text-slate-800 hover:bg-slate-50{% endif %}">Bilan</a>
+  <a href="{% url 'accounting:compte_resultat' %}" class="rounded-lg px-3 py-1.5 font-medium {% if request.resolver_match.url_name == 'compte_resultat' %}bg-slate-900 text-white{% else %}border border-slate-300 bg-white text-slate-800 hover:bg-slate-50{% endif %}">Compte de résultat</a>
+  <a href="{% url 'accounting:declaration_tva' %}" class="rounded-lg px-3 py-1.5 font-medium {% if request.resolver_match.url_name == 'declaration_tva' %}bg-slate-900 text-white{% else %}border border-slate-300 bg-white text-slate-800 hover:bg-slate-50{% endif %}">Déclaration TVA</a>
+</nav>
+```
+
+#### `apps/accounting/templates/accounting/balance.html`
+
+*62 lignes*
+
+```django
+{% extends "base.html" %}
+{% load ui humanize %}
+{% block titre %}Balance{% endblock %}
+{% block entete %}Comptabilité{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-4xl">
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <h1 class="text-2xl font-bold text-slate-900">Rapports comptables</h1>
+    <a href="{% url 'accounting:balance_imprimer' %}?{{ request.GET.urlencode }}" target="_blank" rel="noopener"
+       class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+      <i class="fa-solid fa-print" aria-hidden="true"></i> Imprimer
+    </a>
+  </div>
+  {% include "accounting/_nav_rapports.html" %}
+
+  <form method="get" class="mt-5 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    {% include "components/_champ.html" with champ=form.debut %}
+    {% include "components/_champ.html" with champ=form.fin %}
+    <button type="submit" class="rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">Afficher</button>
+  </form>
+
+  <div class="mt-5 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+    <table class="min-w-full divide-y divide-slate-200 text-sm">
+      <caption class="sr-only">Balance générale des comptes</caption>
+      <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+        <tr>
+          <th scope="col" class="px-4 py-3">Compte</th>
+          <th scope="col" class="px-4 py-3 text-right">Total débit</th>
+          <th scope="col" class="px-4 py-3 text-right">Total crédit</th>
+          <th scope="col" class="px-4 py-3 text-right">Solde débiteur</th>
+          <th scope="col" class="px-4 py-3 text-right">Solde créditeur</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for l in lignes %}
+          <tr class="hover:bg-slate-50">
+            <td class="whitespace-nowrap px-4 py-3 text-slate-900">{{ l.compte__numero }} — {{ l.compte__libelle }}</td>
+            <td class="whitespace-nowrap px-4 py-3 text-right text-slate-700">{{ l.total_debit|floatformat:0|intcomma }}</td>
+            <td class="whitespace-nowrap px-4 py-3 text-right text-slate-700">{{ l.total_credit|floatformat:0|intcomma }}</td>
+            <td class="whitespace-nowrap px-4 py-3 text-right font-semibold text-slate-900">{% if l.solde_debiteur %}{{ l.solde_debiteur|floatformat:0|intcomma }}{% endif %}</td>
+            <td class="whitespace-nowrap px-4 py-3 text-right font-semibold text-slate-900">{% if l.solde_crediteur %}{{ l.solde_crediteur|floatformat:0|intcomma }}{% endif %}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="5" class="px-4 py-6 text-center text-slate-600">Aucun compte mouvementé sur cette période.</td></tr>
+        {% endfor %}
+      </tbody>
+      {% if lignes %}
+        <tfoot class="border-t border-slate-200 font-semibold text-slate-900">
+          <tr>
+            <td class="px-4 py-3">Total</td>
+            <td class="whitespace-nowrap px-4 py-3 text-right">{{ totaux.debit|floatformat:0|intcomma }}</td>
+            <td class="whitespace-nowrap px-4 py-3 text-right">{{ totaux.credit|floatformat:0|intcomma }}</td>
+            <td></td>
+            <td></td>
+          </tr>
+        </tfoot>
+      {% endif %}
+    </table>
+  </div>
+</div>
+{% endblock %}
+```
+
+#### `apps/accounting/templates/accounting/balance_print.html`
+
+*51 lignes*
+
+```django
+{% load static humanize %}<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Balance générale · {{ entreprise.nom }}</title>
+  {% include "rapports/_style_impression.html" %}
+</head>
+<body>
+  {% include "rapports/_entete_impression.html" %}
+
+  <table>
+    <thead>
+      <tr>
+        <th>Compte</th>
+        <th class="droite">Total débit</th>
+        <th class="droite">Total crédit</th>
+        <th class="droite">Solde débiteur</th>
+        <th class="droite">Solde créditeur</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for l in lignes %}
+        <tr>
+          <td>{{ l.compte__numero }} — {{ l.compte__libelle }}</td>
+          <td class="droite">{{ l.total_debit|floatformat:0|intcomma }}</td>
+          <td class="droite">{{ l.total_credit|floatformat:0|intcomma }}</td>
+          <td class="droite">{% if l.solde_debiteur %}{{ l.solde_debiteur|floatformat:0|intcomma }}{% endif %}</td>
+          <td class="droite">{% if l.solde_crediteur %}{{ l.solde_crediteur|floatformat:0|intcomma }}{% endif %}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="5">Aucun compte mouvementé sur cette période.</td></tr>
+      {% endfor %}
+    </tbody>
+    {% if lignes %}
+      <tfoot>
+        <tr>
+          <td><strong>Total</strong></td>
+          <td class="droite"><strong>{{ totaux.debit|floatformat:0|intcomma }}</strong></td>
+          <td class="droite"><strong>{{ totaux.credit|floatformat:0|intcomma }}</strong></td>
+          <td></td>
+          <td></td>
+        </tr>
+      </tfoot>
+    {% endif %}
+  </table>
+
+  {% include "rapports/_pied_impression.html" %}
+  <script src="{% static 'js/app.js' %}" defer></script>
+</body>
+</html>
+```
+
+#### `apps/accounting/templates/accounting/bilan.html`
+
+*66 lignes*
+
+```django
+{% extends "base.html" %}
+{% load ui humanize %}
+{% block titre %}Bilan{% endblock %}
+{% block entete %}Comptabilité{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-4xl">
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <h1 class="text-2xl font-bold text-slate-900">Rapports comptables</h1>
+    <a href="{% url 'accounting:bilan_imprimer' %}?{{ request.GET.urlencode }}" target="_blank" rel="noopener"
+       class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+      <i class="fa-solid fa-print" aria-hidden="true"></i> Imprimer
+    </a>
+  </div>
+  {% include "accounting/_nav_rapports.html" %}
+
+  {% if exercices %}
+    <nav class="mt-4 flex flex-wrap items-center gap-2 text-sm" aria-label="Exercice">
+      <span class="text-slate-600">Exercice :</span>
+      {% for e in exercices %}
+        <a href="?exercice={{ e.annee }}"
+           class="rounded-lg border px-3 py-1.5 font-medium {% if e.annee == exercice.annee %}border-slate-900 bg-slate-900 text-white{% else %}border-slate-300 bg-white text-slate-800 hover:bg-slate-50{% endif %}">{{ e.annee }}</a>
+      {% endfor %}
+    </nav>
+  {% endif %}
+
+  {% if rapport %}
+    <p class="mt-3 text-sm text-slate-600">
+      Photo cumulée depuis l'origine jusqu'au {{ exercice.date_fin|date:"d/m/Y" }} — le résultat de
+      l'exercice {{ exercice.annee }} est ajouté au passif pour équilibrer le bilan (aucune écriture
+      de clôture ne l'a encore imputé au compte 120000, voir « Limite connue », avenant-comptabilite-syscohada.md § P6).
+    </p>
+    <div class="mt-4 grid grid-cols-1 gap-5 sm:grid-cols-2">
+      <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-actif">
+        <h2 id="titre-actif" class="text-base font-semibold text-slate-900">Actif</h2>
+        <dl class="mt-3 space-y-2 text-sm">
+          {% for l in rapport.actif %}
+            <div class="flex justify-between gap-3"><dt class="text-slate-600">{{ l.compte__numero }} — {{ l.compte__libelle }}</dt><dd class="font-medium text-slate-900">{{ l.montant|floatformat:0|intcomma }}</dd></div>
+          {% empty %}
+            <p class="text-slate-600">Aucun compte d'actif mouvementé.</p>
+          {% endfor %}
+        </dl>
+        <p class="mt-3 flex justify-between border-t border-slate-200 pt-3 font-semibold text-slate-900"><span>Total actif</span><span>{{ rapport.total_actif|floatformat:0|intcomma }}</span></p>
+      </section>
+
+      <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-passif">
+        <h2 id="titre-passif" class="text-base font-semibold text-slate-900">Passif</h2>
+        <dl class="mt-3 space-y-2 text-sm">
+          {% for l in rapport.passif %}
+            <div class="flex justify-between gap-3"><dt class="text-slate-600">{{ l.compte__numero }} — {{ l.compte__libelle }}</dt><dd class="font-medium text-slate-900">{{ l.montant|floatformat:0|intcomma }}</dd></div>
+          {% empty %}
+            <p class="text-slate-600">Aucun compte de passif mouvementé.</p>
+          {% endfor %}
+          <div class="flex justify-between gap-3"><dt class="text-slate-600">Résultat de l'exercice {{ exercice.annee }} (calculé)</dt><dd class="font-medium text-slate-900">{{ rapport.resultat_net|floatformat:0|intcomma }}</dd></div>
+        </dl>
+        <p class="mt-3 flex justify-between border-t border-slate-200 pt-3 font-semibold text-slate-900"><span>Total passif</span><span>{{ rapport.total_passif_avec_resultat|floatformat:0|intcomma }}</span></p>
+      </section>
+    </div>
+  {% else %}
+    <div class="mt-5 rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center">
+      <p class="font-semibold text-slate-900">Aucun exercice pour l'instant</p>
+      <p class="mt-1 text-sm text-slate-600">Un exercice apparaît dès la première écriture comptable de son année.</p>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}
+```
+
+#### `apps/accounting/templates/accounting/bilan_print.html`
+
+*52 lignes*
+
+```django
+{% load static humanize %}<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bilan · {{ entreprise.nom }}</title>
+  {% include "rapports/_style_impression.html" %}
+</head>
+<body>
+  {% include "rapports/_entete_impression.html" %}
+
+  {% if rapport_bilan %}
+    <p class="petit">
+      Photo cumulée depuis l'origine jusqu'au {{ exercice.date_fin|date:"d/m/Y" }} — le résultat de
+      l'exercice {{ exercice.annee }} est ajouté au passif pour équilibrer le bilan (aucune écriture
+      de clôture ne l'a encore imputé au compte 120000).
+    </p>
+
+    <h2>Actif</h2>
+    <table>
+      <thead><tr><th>Compte</th><th class="droite">Montant</th></tr></thead>
+      <tbody>
+        {% for l in rapport_bilan.actif %}
+          <tr><td>{{ l.compte__numero }} — {{ l.compte__libelle }}</td><td class="droite">{{ l.montant|floatformat:0|intcomma }}</td></tr>
+        {% empty %}
+          <tr><td colspan="2">Aucun compte d'actif mouvementé.</td></tr>
+        {% endfor %}
+      </tbody>
+      <tfoot><tr><td><strong>Total actif</strong></td><td class="droite"><strong>{{ rapport_bilan.total_actif|floatformat:0|intcomma }}</strong></td></tr></tfoot>
+    </table>
+
+    <h2>Passif</h2>
+    <table>
+      <thead><tr><th>Compte</th><th class="droite">Montant</th></tr></thead>
+      <tbody>
+        {% for l in rapport_bilan.passif %}
+          <tr><td>{{ l.compte__numero }} — {{ l.compte__libelle }}</td><td class="droite">{{ l.montant|floatformat:0|intcomma }}</td></tr>
+        {% empty %}
+          <tr><td colspan="2">Aucun compte de passif mouvementé.</td></tr>
+        {% endfor %}
+        <tr><td>Résultat de l'exercice {{ exercice.annee }} (calculé)</td><td class="droite">{{ rapport_bilan.resultat_net|floatformat:0|intcomma }}</td></tr>
+      </tbody>
+      <tfoot><tr><td><strong>Total passif</strong></td><td class="droite"><strong>{{ rapport_bilan.total_passif_avec_resultat|floatformat:0|intcomma }}</strong></td></tr></tfoot>
+    </table>
+  {% else %}
+    <p class="petit">Aucun exercice pour l'instant.</p>
+  {% endif %}
+
+  {% include "rapports/_pied_impression.html" %}
+  <script src="{% static 'js/app.js' %}" defer></script>
+</body>
+</html>
+```
+
+#### `apps/accounting/templates/accounting/compte_form.html`
+
+*31 lignes*
+
+```django
+{% extends "base.html" %}
+{% block titre %}Nouveau compte{% endblock %}
+{% block entete %}Comptabilité{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-2xl">
+  <nav aria-label="Fil d'Ariane" class="text-sm text-slate-600">
+    <a href="{% url 'accounting:plan_comptable' %}" class="underline-offset-2 hover:underline">Plan comptable</a>
+    <span aria-hidden="true">/</span> Nouveau compte
+  </nav>
+  <h1 class="mt-2 text-2xl font-bold text-slate-900">Nouveau compte</h1>
+  <p class="mt-1 text-sm text-slate-600">
+    Le numéro et la nature ne se modifient plus une fois le compte créé — seuls le libellé et
+    l'activation le pourront ensuite.
+  </p>
+
+  <form method="post" novalidate class="mt-6 space-y-4 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+      <div role="alert" class="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">{% for erreur in form.non_field_errors %}<p>{{ erreur }}</p>{% endfor %}</div>
+    {% endif %}
+    {% include "components/_champ.html" with champ=form.numero %}
+    {% include "components/_champ.html" with champ=form.libelle %}
+    {% include "components/_champ.html" with champ=form.nature %}
+    <div class="flex items-center justify-end gap-3 border-t border-slate-100 pt-5">
+      <a href="{% url 'accounting:plan_comptable' %}" class="rounded-lg px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Annuler</a>
+      <button type="submit" class="rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">Créer le compte</button>
+    </div>
+  </form>
+</div>
+{% endblock %}
+```
+
+#### `apps/accounting/templates/accounting/compte_modifier_form.html`
+
+*31 lignes*
+
+```django
+{% extends "base.html" %}
+{% block titre %}Modifier {{ compte.numero }}{% endblock %}
+{% block entete %}Comptabilité{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-2xl">
+  <nav aria-label="Fil d'Ariane" class="text-sm text-slate-600">
+    <a href="{% url 'accounting:plan_comptable' %}" class="underline-offset-2 hover:underline">Plan comptable</a>
+    <span aria-hidden="true">/</span> {{ compte.numero }}
+  </nav>
+  <h1 class="mt-2 text-2xl font-bold text-slate-900">{{ compte.numero }} — {{ compte.libelle }}</h1>
+  <p class="mt-1 text-sm text-slate-600">
+    Nature : {{ compte.get_nature_display }} (fixée à la création, ne se modifie plus). Désactiver
+    un compte l'empêche d'être utilisé dans une nouvelle écriture ; son historique reste visible
+    dans le grand livre.
+  </p>
+
+  <form method="post" novalidate class="mt-6 space-y-4 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+      <div role="alert" class="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">{% for erreur in form.non_field_errors %}<p>{{ erreur }}</p>{% endfor %}</div>
+    {% endif %}
+    {% include "components/_champ.html" with champ=form.libelle %}
+    {% include "components/_champ.html" with champ=form.actif %}
+    <div class="flex items-center justify-end gap-3 border-t border-slate-100 pt-5">
+      <a href="{% url 'accounting:plan_comptable' %}" class="rounded-lg px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Annuler</a>
+      <button type="submit" class="rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">Enregistrer</button>
+    </div>
+  </form>
+</div>
+{% endblock %}
+```
+
+#### `apps/accounting/templates/accounting/compte_resultat.html`
+
+*71 lignes*
+
+```django
+{% extends "base.html" %}
+{% load ui humanize %}
+{% block titre %}Compte de résultat{% endblock %}
+{% block entete %}Comptabilité{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-4xl">
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <h1 class="text-2xl font-bold text-slate-900">Rapports comptables</h1>
+    <a href="{% url 'accounting:compte_resultat_imprimer' %}?{{ request.GET.urlencode }}" target="_blank" rel="noopener"
+       class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+      <i class="fa-solid fa-print" aria-hidden="true"></i> Imprimer
+    </a>
+  </div>
+  {% include "accounting/_nav_rapports.html" %}
+
+  {% if exercices %}
+    <nav class="mt-4 flex flex-wrap items-center gap-2 text-sm" aria-label="Exercice">
+      <span class="text-slate-600">Exercice :</span>
+      {% for e in exercices %}
+        <a href="?exercice={{ e.annee }}"
+           class="rounded-lg border px-3 py-1.5 font-medium {% if e.annee == exercice.annee %}border-slate-900 bg-slate-900 text-white{% else %}border-slate-300 bg-white text-slate-800 hover:bg-slate-50{% endif %}">{{ e.annee }}</a>
+      {% endfor %}
+    </nav>
+  {% endif %}
+
+  {% if rapport %}
+    <p class="mt-3 text-sm text-slate-600">
+      Produits et charges du {{ exercice.date_debut|date:"d/m/Y" }} au {{ exercice.date_fin|date:"d/m/Y" }} seulement
+      (contrairement au bilan, qui est cumulé depuis l'origine).
+    </p>
+    <div class="mt-4 grid grid-cols-1 gap-5 sm:grid-cols-2">
+      <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-produits">
+        <h2 id="titre-produits" class="text-base font-semibold text-slate-900">Produits</h2>
+        <dl class="mt-3 space-y-2 text-sm">
+          {% for l in rapport.produits %}
+            <div class="flex justify-between gap-3"><dt class="text-slate-600">{{ l.compte__numero }} — {{ l.compte__libelle }}</dt><dd class="font-medium text-slate-900">{{ l.montant|floatformat:0|intcomma }}</dd></div>
+          {% empty %}
+            <p class="text-slate-600">Aucun produit sur la période.</p>
+          {% endfor %}
+        </dl>
+        <p class="mt-3 flex justify-between border-t border-slate-200 pt-3 font-semibold text-slate-900"><span>Total produits</span><span>{{ rapport.total_produits|floatformat:0|intcomma }}</span></p>
+      </section>
+
+      <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-charges">
+        <h2 id="titre-charges" class="text-base font-semibold text-slate-900">Charges</h2>
+        <dl class="mt-3 space-y-2 text-sm">
+          {% for l in rapport.charges %}
+            <div class="flex justify-between gap-3"><dt class="text-slate-600">{{ l.compte__numero }} — {{ l.compte__libelle }}</dt><dd class="font-medium text-slate-900">{{ l.montant|floatformat:0|intcomma }}</dd></div>
+          {% empty %}
+            <p class="text-slate-600">Aucune charge sur la période.</p>
+          {% endfor %}
+        </dl>
+        <p class="mt-3 flex justify-between border-t border-slate-200 pt-3 font-semibold text-slate-900"><span>Total charges</span><span>{{ rapport.total_charges|floatformat:0|intcomma }}</span></p>
+      </section>
+    </div>
+
+    <section class="mt-5 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      <p class="flex justify-between text-base font-semibold {% if rapport.resultat_net >= 0 %}text-green-800{% else %}text-red-800{% endif %}">
+        <span>Résultat net {% if rapport.resultat_net >= 0 %}(bénéfice){% else %}(perte){% endif %}</span>
+        <span>{{ rapport.resultat_net|floatformat:0|intcomma }} FCFA</span>
+      </p>
+    </section>
+  {% else %}
+    <div class="mt-5 rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center">
+      <p class="font-semibold text-slate-900">Aucun exercice pour l'instant</p>
+      <p class="mt-1 text-sm text-slate-600">Un exercice apparaît dès la première écriture comptable de son année.</p>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}
+```
+
+#### `apps/accounting/templates/accounting/compte_resultat_print.html`
+
+*54 lignes*
+
+```django
+{% load static humanize %}<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Compte de résultat · {{ entreprise.nom }}</title>
+  {% include "rapports/_style_impression.html" %}
+</head>
+<body>
+  {% include "rapports/_entete_impression.html" %}
+
+  {% if rapport_resultat %}
+    <p class="petit">
+      Produits et charges de l'exercice seulement (contrairement au bilan, qui est cumulé
+      depuis l'origine).
+    </p>
+
+    <h2>Produits</h2>
+    <table>
+      <thead><tr><th>Compte</th><th class="droite">Montant</th></tr></thead>
+      <tbody>
+        {% for l in rapport_resultat.produits %}
+          <tr><td>{{ l.compte__numero }} — {{ l.compte__libelle }}</td><td class="droite">{{ l.montant|floatformat:0|intcomma }}</td></tr>
+        {% empty %}
+          <tr><td colspan="2">Aucun produit sur la période.</td></tr>
+        {% endfor %}
+      </tbody>
+      <tfoot><tr><td><strong>Total produits</strong></td><td class="droite"><strong>{{ rapport_resultat.total_produits|floatformat:0|intcomma }}</strong></td></tr></tfoot>
+    </table>
+
+    <h2>Charges</h2>
+    <table>
+      <thead><tr><th>Compte</th><th class="droite">Montant</th></tr></thead>
+      <tbody>
+        {% for l in rapport_resultat.charges %}
+          <tr><td>{{ l.compte__numero }} — {{ l.compte__libelle }}</td><td class="droite">{{ l.montant|floatformat:0|intcomma }}</td></tr>
+        {% empty %}
+          <tr><td colspan="2">Aucune charge sur la période.</td></tr>
+        {% endfor %}
+      </tbody>
+      <tfoot><tr><td><strong>Total charges</strong></td><td class="droite"><strong>{{ rapport_resultat.total_charges|floatformat:0|intcomma }}</strong></td></tr></tfoot>
+    </table>
+
+    <div class="cartouche">
+      <div><dt>Résultat net {% if rapport_resultat.resultat_net >= 0 %}(bénéfice){% else %}(perte){% endif %}</dt><dd>{{ rapport_resultat.resultat_net|floatformat:0|intcomma }} FCFA</dd></div>
+    </div>
+  {% else %}
+    <p class="petit">Aucun exercice pour l'instant.</p>
+  {% endif %}
+
+  {% include "rapports/_pied_impression.html" %}
+  <script src="{% static 'js/app.js' %}" defer></script>
+</body>
+</html>
+```
+
+#### `apps/accounting/templates/accounting/declaration_tva.html`
+
+*50 lignes*
+
+```django
+{% extends "base.html" %}
+{% load ui humanize %}
+{% block titre %}Déclaration TVA{% endblock %}
+{% block entete %}Comptabilité{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-4xl">
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <h1 class="text-2xl font-bold text-slate-900">Rapports comptables</h1>
+    <a href="{% url 'accounting:declaration_tva_imprimer' %}?{{ request.GET.urlencode }}" target="_blank" rel="noopener"
+       class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+      <i class="fa-solid fa-print" aria-hidden="true"></i> Imprimer
+    </a>
+  </div>
+  {% include "accounting/_nav_rapports.html" %}
+
+  <form method="get" class="mt-5 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    {% include "components/_champ.html" with champ=form.debut %}
+    {% include "components/_champ.html" with champ=form.fin %}
+    <button type="submit" class="rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">Afficher</button>
+  </form>
+
+  <p class="mt-3 text-sm text-slate-600">
+    Période du {{ rapport.debut|date:"d/m/Y" }} au {{ rapport.fin|date:"d/m/Y" }} — le mois en cours par
+    défaut si aucune date n'est choisie. Comptes 443300 (TVA facturée sur ventes) et 445200 (TVA
+    déductible sur achats/dépenses).
+  </p>
+
+  <div class="mt-4 grid grid-cols-1 gap-5 sm:grid-cols-2">
+    <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      <dt class="text-sm text-slate-600">TVA collectée (ventes)</dt>
+      <dd class="mt-1 text-2xl font-bold text-slate-900">{{ rapport.tva_collectee|floatformat:0|intcomma }} FCFA</dd>
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      <dt class="text-sm text-slate-600">TVA déductible (dépenses)</dt>
+      <dd class="mt-1 text-2xl font-bold text-slate-900">{{ rapport.tva_deductible|floatformat:0|intcomma }} FCFA</dd>
+    </div>
+  </div>
+
+  <section class="mt-5 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+    <p class="flex justify-between text-base font-semibold {% if rapport.tva_nette >= 0 %}text-red-800{% else %}text-green-800{% endif %}">
+      <span>{% if rapport.tva_nette >= 0 %}TVA nette à payer{% else %}Crédit de TVA reportable{% endif %}</span>
+      <span>{{ rapport.tva_nette|floatformat:0|intcomma }} FCFA</span>
+    </p>
+    <p class="mt-2 text-xs text-slate-500">
+      TVA collectée − TVA déductible. {% if rapport.tva_nette >= 0 %}Montant à reverser au Trésor Public.{% else %}Négative : crédit de TVA à reporter sur la période suivante.{% endif %}
+    </p>
+  </section>
+</div>
+{% endblock %}
+```
+
+#### `apps/accounting/templates/accounting/declaration_tva_print.html`
+
+*31 lignes*
+
+```django
+{% load static humanize %}<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Déclaration TVA · {{ entreprise.nom }}</title>
+  {% include "rapports/_style_impression.html" %}
+</head>
+<body>
+  {% include "rapports/_entete_impression.html" %}
+
+  <p class="petit">Comptes 443300 (TVA facturée sur ventes) et 445200 (TVA déductible sur achats/dépenses).</p>
+
+  <table>
+    <thead><tr><th>Ligne</th><th class="droite">Montant</th></tr></thead>
+    <tbody>
+      <tr><td>TVA collectée (ventes)</td><td class="droite">{{ rapport_tva.tva_collectee|floatformat:0|intcomma }}</td></tr>
+      <tr><td>TVA déductible (dépenses)</td><td class="droite">{{ rapport_tva.tva_deductible|floatformat:0|intcomma }}</td></tr>
+    </tbody>
+    <tfoot>
+      <tr>
+        <td><strong>{% if rapport_tva.tva_nette >= 0 %}TVA nette à payer{% else %}Crédit de TVA reportable{% endif %}</strong></td>
+        <td class="droite"><strong>{{ rapport_tva.tva_nette|floatformat:0|intcomma }}</strong></td>
+      </tr>
+    </tfoot>
+  </table>
+
+  {% include "rapports/_pied_impression.html" %}
+  <script src="{% static 'js/app.js' %}" defer></script>
+</body>
+</html>
+```
+
+#### `apps/accounting/templates/accounting/ecriture_manuelle_detail.html`
+
+*102 lignes*
+
+```django
+{% extends "base.html" %}
+{% load ui humanize %}
+{% block titre %}{{ ecriture.numero|default:"Brouillon" }}{% endblock %}
+{% block entete %}Comptabilité{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-4xl">
+  <nav aria-label="Fil d'Ariane" class="text-sm text-slate-600">
+    <a href="{% url 'accounting:ecritures_manuelles' %}" class="underline-offset-2 hover:underline">Opérations diverses</a>
+    <span aria-hidden="true">/</span> {{ ecriture.numero|default:"Brouillon" }}
+  </nav>
+
+  <div class="mt-2 flex flex-wrap items-center gap-3">
+    <h1 class="text-2xl font-bold text-slate-900">{{ ecriture.numero|default:"Brouillon" }}</h1>
+    {% badge ecriture.statut ecriture.get_statut_display %}
+  </div>
+  <p class="mt-1 text-sm text-slate-600">{{ ecriture.date_ecriture|date:"d/m/Y" }} · {{ ecriture.libelle }}</p>
+
+  <section class="mt-5 rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-lignes">
+    <h2 id="titre-lignes" class="text-base font-semibold text-slate-900">Lignes</h2>
+
+    {% if lignes %}
+      <div class="mt-3 overflow-x-auto">
+        <table class="min-w-full divide-y divide-slate-200 text-sm">
+          <caption class="sr-only">Lignes débit/crédit de l'écriture</caption>
+          <thead class="text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+            <tr>
+              <th scope="col" class="py-2 pr-4">Compte</th>
+              <th scope="col" class="py-2 pr-4">Libellé</th>
+              <th scope="col" class="py-2 pr-4 text-right">Débit</th>
+              <th scope="col" class="py-2 pr-4 text-right">Crédit</th>
+              {% if peut_saisir %}<th scope="col" class="py-2 pr-4"><span class="sr-only">Actions</span></th>{% endif %}
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            {% for l in lignes %}
+              <tr>
+                <td class="whitespace-nowrap py-2 pr-4 text-slate-900">{{ l.compte.numero }} — {{ l.compte.libelle }}</td>
+                <td class="py-2 pr-4 text-slate-700">{{ l.libelle|default:"—" }}</td>
+                <td class="whitespace-nowrap py-2 pr-4 text-right text-slate-900">{% if l.sens == "DEBIT" %}{{ l.montant|floatformat:0|intcomma }}{% endif %}</td>
+                <td class="whitespace-nowrap py-2 pr-4 text-right text-slate-900">{% if l.sens == "CREDIT" %}{{ l.montant|floatformat:0|intcomma }}{% endif %}</td>
+                {% if peut_saisir %}
+                  <td class="whitespace-nowrap py-2 pr-4 text-right">
+                    <form method="post" action="{% url 'accounting:ligne_supprimer' ecriture.pk l.pk %}" data-confirm="Supprimer cette ligne ?">{% csrf_token %}
+                      <button type="submit" class="text-sm font-medium text-red-800 underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-red-700"><i class="fa-solid fa-trash-can" aria-hidden="true"></i><span class="sr-only">Supprimer la ligne</span></button>
+                    </form>
+                  </td>
+                {% endif %}
+              </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot class="border-t border-slate-200 font-semibold text-slate-900">
+            <tr>
+              <td class="py-2 pr-4" colspan="2">Total</td>
+              <td class="whitespace-nowrap py-2 pr-4 text-right">{{ total_debit|floatformat:0|intcomma }}</td>
+              <td class="whitespace-nowrap py-2 pr-4 text-right">{{ total_credit|floatformat:0|intcomma }}</td>
+              {% if peut_saisir %}<td></td>{% endif %}
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      <p class="mt-3 text-sm {% if equilibree %}text-green-800{% else %}text-amber-800{% endif %}">
+        {% if equilibree %}<i class="fa-solid fa-check" aria-hidden="true"></i> Écriture équilibrée, prête à valider.
+        {% else %}<i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> Écriture déséquilibrée ou incomplète (2 lignes minimum, débit = crédit).{% endif %}
+      </p>
+    {% else %}
+      <p class="mt-3 text-sm text-slate-700">Aucune ligne pour l'instant.</p>
+    {% endif %}
+
+    {% if form_ligne %}
+      <form method="post" action="{% url 'accounting:ligne_ajouter' ecriture.pk %}" class="mt-5 space-y-3 rounded-lg bg-slate-50 p-4">{% csrf_token %}
+        <h3 class="text-sm font-semibold text-slate-900">Ajouter une ligne</h3>
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-4">
+          <div class="sm:col-span-2">{% include "components/_champ.html" with champ=form_ligne.compte %}</div>
+          {% include "components/_champ.html" with champ=form_ligne.sens %}
+          {% include "components/_champ.html" with champ=form_ligne.montant %}
+        </div>
+        {% include "components/_champ.html" with champ=form_ligne.libelle %}
+        <button type="submit" class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2">Ajouter</button>
+      </form>
+    {% endif %}
+  </section>
+
+  {% if peut_valider or peut_saisir %}
+    <section class="mt-5 rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-actions">
+      <h2 id="titre-actions" class="text-base font-semibold text-slate-900">Actions</h2>
+      <div class="mt-3 flex flex-wrap gap-3">
+        {% if peut_valider %}
+          <form method="post" action="{% url 'accounting:ecriture_manuelle_valider' ecriture.pk %}" data-confirm="Valider cette écriture ? Elle ne pourra plus être modifiée ensuite.">{% csrf_token %}
+            <button type="submit" class="rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">Valider</button>
+          </form>
+        {% endif %}
+        {% if peut_saisir %}
+          <form method="post" action="{% url 'accounting:ecriture_manuelle_abandonner' ecriture.pk %}" data-confirm="Abandonner ce brouillon ? Cette action est irréversible.">{% csrf_token %}
+            <button type="submit" class="rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-800 hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-700">Abandonner le brouillon</button>
+          </form>
+        {% endif %}
+      </div>
+    </section>
+  {% endif %}
+</div>
+{% endblock %}
+```
+
+#### `apps/accounting/templates/accounting/ecriture_manuelle_form.html`
+
+*30 lignes*
+
+```django
+{% extends "base.html" %}
+{% block titre %}Nouvelle écriture{% endblock %}
+{% block entete %}Comptabilité{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-2xl">
+  <nav aria-label="Fil d'Ariane" class="text-sm text-slate-600">
+    <a href="{% url 'accounting:ecritures_manuelles' %}" class="underline-offset-2 hover:underline">Opérations diverses</a>
+    <span aria-hidden="true">/</span> Nouvelle écriture
+  </nav>
+  <h1 class="mt-2 text-2xl font-bold text-slate-900">Nouvelle écriture</h1>
+  <p class="mt-1 text-sm text-slate-600">
+    Ouvre un brouillon (journal Opérations diverses) : les lignes débit/crédit s'ajoutent ensuite
+    sur la fiche, puis la direction valide une fois l'écriture équilibrée.
+  </p>
+
+  <form method="post" novalidate class="mt-6 space-y-4 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+      <div role="alert" class="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">{% for erreur in form.non_field_errors %}<p>{{ erreur }}</p>{% endfor %}</div>
+    {% endif %}
+    {% include "components/_champ.html" with champ=form.date_ecriture %}
+    {% include "components/_champ.html" with champ=form.libelle %}
+    <div class="flex items-center justify-end gap-3 border-t border-slate-100 pt-5">
+      <a href="{% url 'accounting:ecritures_manuelles' %}" class="rounded-lg px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Annuler</a>
+      <button type="submit" class="rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">Créer le brouillon</button>
+    </div>
+  </form>
+</div>
+{% endblock %}
+```
+
+#### `apps/accounting/templates/accounting/ecriture_manuelle_list.html`
+
+*54 lignes*
+
+```django
+{% extends "base.html" %}
+{% load ui humanize %}
+{% block titre %}Opérations diverses{% endblock %}
+{% block entete %}Comptabilité{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-6xl">
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <div>
+      <h1 class="text-2xl font-bold text-slate-900">Opérations diverses</h1>
+      <p class="mt-1 text-sm text-slate-600">{{ paginator.count|default:0 }} écriture{{ paginator.count|pluralize }} — saisie manuelle, journal OD.</p>
+    </div>
+    {% if peut_saisir %}
+      <a href="{% url 'accounting:ecriture_manuelle_nouvelle' %}" class="inline-flex items-center gap-2 rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700">
+        <i class="fa-solid fa-plus" aria-hidden="true"></i> Nouvelle écriture
+      </a>
+    {% endif %}
+  </div>
+
+  {% if ecritures %}
+    <div class="mt-5 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+      <table class="min-w-full divide-y divide-slate-200 text-sm">
+        <caption class="sr-only">Liste des écritures d'opérations diverses</caption>
+        <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+          <tr>
+            <th scope="col" class="px-4 py-3">Écriture</th>
+            <th scope="col" class="px-4 py-3">Date</th>
+            <th scope="col" class="px-4 py-3">Libellé</th>
+            <th scope="col" class="px-4 py-3">Statut</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          {% for e in ecritures %}
+            <tr class="hover:bg-slate-50">
+              <td class="whitespace-nowrap px-4 py-3 font-semibold">
+                <a href="{% url 'accounting:ecriture_manuelle' e.pk %}" class="text-marque-700 underline-offset-2 hover:underline">{{ e.numero|default:"Brouillon" }}</a>
+              </td>
+              <td class="whitespace-nowrap px-4 py-3 text-slate-700">{{ e.date_ecriture|date:"d/m/Y" }}</td>
+              <td class="px-4 py-3 text-slate-700">{{ e.libelle }}</td>
+              <td class="whitespace-nowrap px-4 py-3">{% badge e.statut e.get_statut_display %}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% include "components/_pagination.html" %}
+  {% else %}
+    <div class="mt-5 rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center">
+      <span class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-600"><i class="fa-solid fa-scale-balanced" aria-hidden="true"></i></span>
+      <p class="mt-3 font-semibold text-slate-900">Aucune écriture</p>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}
+```
+
+#### `apps/accounting/templates/accounting/exercice_list.html`
+
+*58 lignes*
+
+```django
+{% extends "base.html" %}
+{% load ui %}
+{% block titre %}Exercices comptables{% endblock %}
+{% block entete %}Comptabilité{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-4xl">
+  <h1 class="text-2xl font-bold text-slate-900">Exercices comptables</h1>
+  <p class="mt-1 text-sm text-slate-600">
+    Un exercice s'ouvre tout seul à la première écriture de son année. Une fois clôturé, aucune
+    écriture ne peut plus y être datée — la clôture est définitive.
+  </p>
+
+  {% if exercices %}
+    <div class="mt-5 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+      <table class="min-w-full divide-y divide-slate-200 text-sm">
+        <caption class="sr-only">Liste des exercices comptables</caption>
+        <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+          <tr>
+            <th scope="col" class="px-4 py-3">Année</th>
+            <th scope="col" class="px-4 py-3">Période</th>
+            <th scope="col" class="px-4 py-3">Statut</th>
+            <th scope="col" class="px-4 py-3">Clôturé par</th>
+            {% if peut_cloturer %}<th scope="col" class="px-4 py-3"><span class="sr-only">Actions</span></th>{% endif %}
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          {% for e in exercices %}
+            <tr class="hover:bg-slate-50">
+              <td class="whitespace-nowrap px-4 py-3 font-semibold text-slate-900">{{ e.annee }}</td>
+              <td class="whitespace-nowrap px-4 py-3 text-slate-700">{{ e.date_debut|date:"d/m/Y" }} – {{ e.date_fin|date:"d/m/Y" }}</td>
+              <td class="whitespace-nowrap px-4 py-3">{% badge e.statut e.get_statut_display %}</td>
+              <td class="whitespace-nowrap px-4 py-3 text-slate-700">
+                {% if e.cloture_par %}{{ e.cloture_par }} · {{ e.date_cloture|date:"d/m/Y" }}{% else %}—{% endif %}
+              </td>
+              {% if peut_cloturer %}
+                <td class="whitespace-nowrap px-4 py-3 text-right">
+                  {% if e.statut == "OUVERT" %}
+                    <form method="post" action="{% url 'accounting:exercice_cloturer' e.pk %}" data-confirm="Clôturer l'exercice {{ e.annee }} ? Aucune écriture ne pourra plus y être datée, et cette action est définitive.">{% csrf_token %}
+                      <button type="submit" class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">Clôturer</button>
+                    </form>
+                  {% endif %}
+                </td>
+              {% endif %}
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="mt-5 rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center">
+      <span class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-600"><i class="fa-solid fa-calendar-days" aria-hidden="true"></i></span>
+      <p class="mt-3 font-semibold text-slate-900">Aucun exercice pour l'instant</p>
+      <p class="mt-1 text-sm text-slate-600">Un exercice apparaît dès la première écriture comptable de son année.</p>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}
+```
+
+#### `apps/accounting/templates/accounting/grand_livre.html`
+
+*56 lignes*
+
+```django
+{% extends "base.html" %}
+{% load ui humanize %}
+{% block titre %}Grand livre{% endblock %}
+{% block entete %}Comptabilité{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-4xl">
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <h1 class="text-2xl font-bold text-slate-900">Rapports comptables</h1>
+    <a href="{% url 'accounting:grand_livre_imprimer' %}?{{ request.GET.urlencode }}" target="_blank" rel="noopener"
+       class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+      <i class="fa-solid fa-print" aria-hidden="true"></i> Imprimer
+    </a>
+  </div>
+  {% include "accounting/_nav_rapports.html" %}
+
+  <form method="get" class="mt-5 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    {% include "components/_champ.html" with champ=form.compte %}
+    {% include "components/_champ.html" with champ=form.debut %}
+    {% include "components/_champ.html" with champ=form.fin %}
+    <button type="submit" class="rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">Afficher</button>
+  </form>
+
+  {% if lignes is not None %}
+    <div class="mt-5 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+      <table class="min-w-full divide-y divide-slate-200 text-sm">
+        <caption class="sr-only">Grand livre du compte sélectionné</caption>
+        <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+          <tr>
+            <th scope="col" class="px-4 py-3">Date</th>
+            <th scope="col" class="px-4 py-3">Écriture</th>
+            <th scope="col" class="px-4 py-3">Libellé</th>
+            <th scope="col" class="px-4 py-3 text-right">Débit</th>
+            <th scope="col" class="px-4 py-3 text-right">Crédit</th>
+            <th scope="col" class="px-4 py-3 text-right">Solde cumulé</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          {% for entree in lignes %}
+            <tr class="hover:bg-slate-50">
+              <td class="whitespace-nowrap px-4 py-3 text-slate-700">{{ entree.ligne.ecriture.date_ecriture|date:"d/m/Y" }}</td>
+              <td class="whitespace-nowrap px-4 py-3 font-semibold text-slate-900">{{ entree.ligne.ecriture.numero|default:"Brouillon" }}</td>
+              <td class="px-4 py-3 text-slate-700">{{ entree.ligne.libelle|default:entree.ligne.ecriture.libelle }}</td>
+              <td class="whitespace-nowrap px-4 py-3 text-right text-slate-900">{% if entree.ligne.sens == "DEBIT" %}{{ entree.ligne.montant|floatformat:0|intcomma }}{% endif %}</td>
+              <td class="whitespace-nowrap px-4 py-3 text-right text-slate-900">{% if entree.ligne.sens == "CREDIT" %}{{ entree.ligne.montant|floatformat:0|intcomma }}{% endif %}</td>
+              <td class="whitespace-nowrap px-4 py-3 text-right font-semibold text-slate-900">{{ entree.solde_cumule|floatformat:0|intcomma }}</td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="6" class="px-4 py-6 text-center text-slate-600">Aucun mouvement pour ce compte sur cette période.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}
+```
+
+#### `apps/accounting/templates/accounting/grand_livre_print.html`
+
+*46 lignes*
+
+```django
+{% load static humanize %}<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Grand livre · {{ entreprise.nom }}</title>
+  {% include "rapports/_style_impression.html" %}
+</head>
+<body>
+  {% include "rapports/_entete_impression.html" %}
+
+  {% if lignes is not None %}
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Écriture</th>
+          <th>Libellé</th>
+          <th class="droite">Débit</th>
+          <th class="droite">Crédit</th>
+          <th class="droite">Solde cumulé</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for entree in lignes %}
+          <tr>
+            <td>{{ entree.ligne.ecriture.date_ecriture|date:"d/m/Y" }}</td>
+            <td>{{ entree.ligne.ecriture.numero|default:"Brouillon" }}</td>
+            <td>{{ entree.ligne.libelle|default:entree.ligne.ecriture.libelle }}</td>
+            <td class="droite">{% if entree.ligne.sens == "DEBIT" %}{{ entree.ligne.montant|floatformat:0|intcomma }}{% endif %}</td>
+            <td class="droite">{% if entree.ligne.sens == "CREDIT" %}{{ entree.ligne.montant|floatformat:0|intcomma }}{% endif %}</td>
+            <td class="droite">{{ entree.solde_cumule|floatformat:0|intcomma }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6">Aucun mouvement pour ce compte sur cette période.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="petit">Aucun compte sélectionné.</p>
+  {% endif %}
+
+  {% include "rapports/_pied_impression.html" %}
+  <script src="{% static 'js/app.js' %}" defer></script>
+</body>
+</html>
+```
+
+#### `apps/accounting/templates/accounting/plan_comptable_list.html`
+
+*56 lignes*
+
+```django
+{% extends "base.html" %}
+{% load ui %}
+{% block titre %}Plan comptable{% endblock %}
+{% block entete %}Comptabilité{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-4xl">
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <div>
+      <h1 class="text-2xl font-bold text-slate-900">Plan comptable</h1>
+      <p class="mt-1 text-sm text-slate-600">
+        Liste de départ à valider par un expert-comptable avant mise en production. Un compte ne
+        se supprime jamais, il se désactive seulement (son historique reste lisible dans le grand
+        livre).
+      </p>
+    </div>
+    {% if peut_gerer %}
+      <a href="{% url 'accounting:compte_nouveau' %}" class="inline-flex items-center gap-2 rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">
+        <i class="fa-solid fa-plus" aria-hidden="true"></i> Nouveau compte
+      </a>
+    {% endif %}
+  </div>
+
+  <div class="mt-5 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+    <table class="min-w-full divide-y divide-slate-200 text-sm">
+      <caption class="sr-only">Plan comptable</caption>
+      <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+        <tr>
+          <th scope="col" class="px-4 py-3">Numéro</th>
+          <th scope="col" class="px-4 py-3">Libellé</th>
+          <th scope="col" class="px-4 py-3">Nature</th>
+          <th scope="col" class="px-4 py-3">Statut</th>
+          {% if peut_gerer %}<th scope="col" class="px-4 py-3"><span class="sr-only">Actions</span></th>{% endif %}
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for c in comptes %}
+          <tr class="hover:bg-slate-50">
+            <td class="whitespace-nowrap px-4 py-3 font-semibold text-slate-900">{{ c.numero }}</td>
+            <td class="px-4 py-3 text-slate-700">{{ c.libelle }}</td>
+            <td class="whitespace-nowrap px-4 py-3 text-slate-700">{{ c.get_nature_display }}</td>
+            <td class="whitespace-nowrap px-4 py-3">
+              {% if c.actif %}{% badge "DISPONIBLE" "Actif" %}{% else %}{% badge "INACTIF" "Désactivé" %}{% endif %}
+            </td>
+            {% if peut_gerer %}
+              <td class="whitespace-nowrap px-4 py-3 text-right">
+                <a href="{% url 'accounting:compte_modifier' c.pk %}" class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">Modifier</a>
+              </td>
+            {% endif %}
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+```
 
 #### `apps/billing/templates/billing/proforma_detail.html`
 
@@ -3115,6 +4906,179 @@ mkdir -p apps/billing/templates/billing apps/finance/templates/finance
 {% endblock %}
 ```
 
+#### `apps/finance/templates/finance/rapprochement.html`
+
+*166 lignes*
+
+```django
+{% extends "base.html" %}
+{% load ui humanize %}
+{% block titre %}Rapprochement bancaire{% endblock %}
+{% block entete %}Rapprochement bancaire{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-7xl" x-data="{ saisie: false }">
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <div>
+      <h1 class="text-2xl font-bold text-slate-900">Rapprochement bancaire</h1>
+      <p class="mt-1 text-sm text-slate-600">Confrontez le relevé de la banque aux mouvements déjà enregistrés sur le compte Banque.</p>
+    </div>
+    {% if peut_saisir %}
+      <button type="button" @click="saisie = !saisie" :aria-expanded="saisie.toString()"
+              class="inline-flex items-center gap-2 rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">
+        <i class="fa-solid fa-plus" aria-hidden="true"></i> Ligne de relevé
+      </button>
+    {% endif %}
+  </div>
+
+  <form method="get" class="mt-5 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    {% include "components/_champ.html" with champ=periode_form.debut %}
+    {% include "components/_champ.html" with champ=periode_form.fin %}
+    <button type="submit" class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2">Filtrer</button>
+  </form>
+
+  <dl class="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
+    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <dt class="text-sm text-slate-600">Solde du relevé</dt>
+      <dd class="mt-1 text-xl font-bold text-slate-900">{{ etat.solde_releve|floatformat:0|intcomma }} <span class="text-sm font-medium text-slate-600">FCFA</span></dd>
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <dt class="text-sm text-slate-600">Solde des mouvements enregistrés</dt>
+      <dd class="mt-1 text-xl font-bold text-slate-900">{{ etat.solde_comptable|floatformat:0|intcomma }} <span class="text-sm font-medium text-slate-600">FCFA</span></dd>
+    </div>
+    <div class="rounded-xl border {% if etat.ecart == 0 %}border-emerald-300{% else %}border-red-300{% endif %} bg-white p-4 shadow-sm">
+      <dt class="text-sm text-slate-600">Écart</dt>
+      <dd class="mt-1 text-xl font-bold {% if etat.ecart == 0 %}text-emerald-800{% else %}text-red-800{% endif %}">{{ etat.ecart|floatformat:0|intcomma }} <span class="text-sm font-medium text-slate-600">FCFA</span></dd>
+    </div>
+  </dl>
+  {% if etat.ecart != 0 %}
+    <p class="mt-2 text-xs text-slate-600">Un écart qui persiste après avoir pointé toutes les lignes concordantes signale une opération jamais saisie (frais bancaires, par exemple) : à corriger par une opération diverse.</p>
+  {% endif %}
+
+  {% if peut_saisir %}
+    <form method="post" action="{% url 'finance:ligne_releve_nouvelle' %}" x-show="saisie" x-cloak class="mt-5 space-y-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      {% csrf_token %}
+      <h2 class="text-base font-semibold text-slate-900">Nouvelle ligne du relevé</h2>
+      <div class="grid grid-cols-1 gap-4 sm:grid-cols-4">
+        {% include "components/_champ.html" with champ=form_ligne.date_operation %}
+        <div class="sm:col-span-2">{% include "components/_champ.html" with champ=form_ligne.libelle %}</div>
+        {% include "components/_champ.html" with champ=form_ligne.sens %}
+        {% include "components/_champ.html" with champ=form_ligne.montant %}
+        {% include "components/_champ.html" with champ=form_ligne.reference %}
+      </div>
+      <button type="submit" class="rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">Enregistrer</button>
+    </form>
+  {% endif %}
+
+  <section class="mt-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+    <h2 class="text-base font-semibold text-slate-900">Lignes du relevé non pointées</h2>
+    {% if lignes_avec_suggestions %}
+      <div class="mt-3 space-y-3">
+        {% for entree in lignes_avec_suggestions %}
+          <div class="rounded-lg border border-slate-200 p-3">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <span class="font-medium text-slate-900">{{ entree.ligne.date_operation|date:"d/m/Y" }} · {{ entree.ligne.libelle }}</span>
+                {% if entree.ligne.reference %}<span class="text-xs text-slate-600"> · {{ entree.ligne.reference }}</span>{% endif %}
+              </div>
+              <span class="font-semibold {% if entree.ligne.sens == 'ENTREE' %}text-emerald-800{% else %}text-red-800{% endif %}">{% if entree.ligne.sens == 'ENTREE' %}+{% else %}−{% endif %}{{ entree.ligne.montant|floatformat:0|intcomma }} FCFA</span>
+            </div>
+            {% if peut_saisir %}
+              {% if entree.suggestions %}
+                <p class="mt-2 text-xs font-medium text-slate-600">Suggestions (même sens et montant) :</p>
+                <ul class="mt-1 space-y-1">
+                  {% for s in entree.suggestions %}
+                    <li class="flex flex-wrap items-center justify-between gap-2 rounded bg-slate-50 px-2 py-1.5 text-sm">
+                      <span class="text-slate-800">{{ s.date|date:"d/m/Y" }} · {{ s.libelle }}</span>
+                      <form method="post" action="{% url 'finance:ligne_releve_pointer' entree.ligne.pk %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="origine" value="{{ s.origine }}">
+                        <input type="hidden" name="mouvement_id" value="{{ s.pk }}">
+                        <button type="submit" class="rounded-lg bg-emerald-700 px-3 py-1 text-xs font-semibold text-white hover:bg-emerald-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:ring-offset-2">Associer</button>
+                      </form>
+                    </li>
+                  {% endfor %}
+                </ul>
+              {% else %}
+                <p class="mt-2 text-xs text-slate-600">Aucun mouvement Banque correspondant trouvé.</p>
+              {% endif %}
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="mt-2 text-sm text-slate-600">Toutes les lignes du relevé sont pointées.</p>
+    {% endif %}
+  </section>
+
+  <section class="mt-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+    <h2 class="text-base font-semibold text-slate-900">Mouvements Banque non pointés</h2>
+    {% if etat.mouvements_non_pointes %}
+      <div class="mt-3 overflow-x-auto">
+        <table class="min-w-full divide-y divide-slate-200 text-sm">
+          <caption class="sr-only">Mouvements Banque non pointés</caption>
+          <thead class="text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+            <tr><th scope="col" class="py-2 pr-4">Date</th><th scope="col" class="px-4 py-2">Libellé</th><th scope="col" class="px-4 py-2 text-right">Montant</th></tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            {% for m in etat.mouvements_non_pointes %}
+              <tr>
+                <td class="whitespace-nowrap py-2 pr-4 text-slate-700">{{ m.date|date:"d/m/Y" }}</td>
+                <td class="px-4 py-2 text-slate-900">{{ m.libelle }}</td>
+                <td class="whitespace-nowrap px-4 py-2 text-right font-medium {% if m.sens == 'ENTREE' %}text-emerald-800{% else %}text-red-800{% endif %}">{% if m.sens == 'ENTREE' %}+{% else %}−{% endif %}{{ m.montant|floatformat:0|intcomma }} FCFA</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="mt-2 text-sm text-slate-600">Tous les mouvements Banque de la période sont pointés.</p>
+    {% endif %}
+  </section>
+
+  <section class="mt-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+    <h2 class="text-base font-semibold text-slate-900">Toutes les lignes du relevé de la période</h2>
+    {% with pointees=etat.lignes_releve %}
+      {% if pointees %}
+        <div class="mt-3 overflow-x-auto">
+          <table class="min-w-full divide-y divide-slate-200 text-sm">
+            <caption class="sr-only">Lignes du relevé pointées</caption>
+            <thead class="text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+              <tr><th scope="col" class="py-2 pr-4">Date</th><th scope="col" class="px-4 py-2">Libellé</th><th scope="col" class="px-4 py-2 text-right">Montant</th><th scope="col" class="px-4 py-2">Statut</th>{% if peut_saisir %}<th scope="col" class="py-2 pl-4"><span class="sr-only">Action</span></th>{% endif %}</tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              {% for ligne in pointees %}
+                <tr>
+                  <td class="whitespace-nowrap py-2 pr-4 text-slate-700">{{ ligne.date_operation|date:"d/m/Y" }}</td>
+                  <td class="px-4 py-2 text-slate-900">{{ ligne.libelle }}</td>
+                  <td class="whitespace-nowrap px-4 py-2 text-right font-medium {% if ligne.sens == 'ENTREE' %}text-emerald-800{% else %}text-red-800{% endif %}">{% if ligne.sens == 'ENTREE' %}+{% else %}−{% endif %}{{ ligne.montant|floatformat:0|intcomma }} FCFA</td>
+                  <td class="whitespace-nowrap px-4 py-2">
+                    {% if ligne.pointee %}<span class="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800"><i class="fa-solid fa-check" aria-hidden="true"></i> Pointée</span>{% else %}<span class="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">Non pointée</span>{% endif %}
+                  </td>
+                  {% if peut_saisir %}
+                    <td class="whitespace-nowrap py-2 pl-4 text-right">
+                      {% if ligne.pointee %}
+                        <form method="post" action="{% url 'finance:ligne_releve_depointer' ligne.pk %}">
+                          {% csrf_token %}
+                          <button type="submit" class="text-sm font-medium text-red-800 underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-red-700">Dépointer</button>
+                        </form>
+                      {% endif %}
+                    </td>
+                  {% endif %}
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="mt-2 text-sm text-slate-600">Aucune ligne saisie sur la période.</p>
+      {% endif %}
+    {% endwith %}
+  </section>
+</div>
+{% endblock %}
+```
+
 #### `apps/finance/templates/finance/tresorerie_print.html`
 
 *54 lignes*
@@ -3235,6 +5199,494 @@ mkdir -p apps/billing/templates/billing apps/finance/templates/finance
   </form>
 </div>
 {% endblock %}
+```
+
+#### `apps/accounting/tests/test_views.py`
+
+*481 lignes* — Écrans de la saisie manuelle d'opérations diverses (Phase 4) et des exercices comptables
+
+```python
+"""Écrans de la saisie manuelle d'opérations diverses (Phase 4) et des exercices comptables
+(Phase 5)."""
+
+from datetime import date
+from decimal import Decimal
+
+import pytest
+from django.urls import reverse
+
+from apps.accounts.models import Role
+from apps.accounts.tests.factories import UserFactory
+from apps.accounting import services
+from apps.accounting.models import (
+    Compte,
+    EcritureComptable,
+    Journal,
+    SensEcriture,
+    StatutEcriture,
+    StatutExercice,
+)
+
+from .factories import CompteFactory
+
+pytestmark = pytest.mark.django_db
+
+
+def _connecte(client, role):
+    compte = UserFactory(role=role)
+    client.force_login(compte)
+    return compte
+
+
+def _brouillon(**kwargs):
+    return services.creer_ecriture_manuelle(
+        UserFactory(role=Role.FINANCES), date_ecriture=date(2026, 9, 5), libelle="Test OD", **kwargs
+    )
+
+
+@pytest.mark.parametrize("role", [Role.ADMIN, Role.DIRECTION, Role.FINANCES, Role.RH])
+def test_la_liste_est_accessible_aux_roles_de_consultation(client, role):
+    _connecte(client, role)
+
+    assert client.get(reverse("accounting:ecritures_manuelles")).status_code == 200
+
+
+@pytest.mark.parametrize("role", [Role.PARCAUTO, Role.CHARGE_CLIENTELE, Role.CHAUFFEUR])
+def test_la_liste_est_interdite_aux_autres_roles(client, role):
+    _connecte(client, role)
+
+    assert client.get(reverse("accounting:ecritures_manuelles")).status_code == 403
+
+
+@pytest.mark.parametrize("role", [Role.PARCAUTO, Role.CHAUFFEUR])
+def test_seuls_les_roles_de_saisie_creent_une_ecriture(client, role):
+    _connecte(client, role)
+
+    assert client.get(reverse("accounting:ecriture_manuelle_nouvelle")).status_code == 403
+
+
+def test_creer_une_ecriture_manuelle_via_l_ecran(client):
+    _connecte(client, Role.FINANCES)
+
+    reponse = client.post(
+        reverse("accounting:ecriture_manuelle_nouvelle"),
+        {"date_ecriture": "2026-09-05", "libelle": "Régularisation caisse"},
+    )
+
+    ecriture = EcritureComptable.objects.get()
+    assert reponse.status_code == 302
+    assert ecriture.statut == StatutEcriture.BROUILLON
+    assert ecriture.libelle == "Régularisation caisse"
+
+
+def test_ajouter_puis_supprimer_une_ligne_via_l_ecran(client):
+    _connecte(client, Role.FINANCES)
+    charge, tresorerie = CompteFactory(), CompteFactory()
+    ecriture = _brouillon()
+
+    client.post(
+        reverse("accounting:ligne_ajouter", args=[ecriture.pk]),
+        {"compte": charge.numero, "sens": SensEcriture.DEBIT, "montant": "5000", "libelle": ""},
+    )
+    assert ecriture.lignes.count() == 1
+    ligne = ecriture.lignes.first()
+
+    reponse = client.post(reverse("accounting:ligne_supprimer", args=[ecriture.pk, ligne.pk]))
+
+    assert reponse.status_code == 302
+    assert ecriture.lignes.count() == 0
+
+
+def test_la_fiche_propose_la_validation_a_la_direction_une_fois_equilibree(client):
+    charge, tresorerie = CompteFactory(), CompteFactory()
+    ecriture = _brouillon()
+    services.ajouter_ligne_manuelle(
+        ecriture, UserFactory(role=Role.FINANCES), compte=charge.numero, sens=SensEcriture.DEBIT,
+        montant=Decimal("5000"),
+    )
+    services.ajouter_ligne_manuelle(
+        ecriture, UserFactory(role=Role.FINANCES), compte=tresorerie.numero, sens=SensEcriture.CREDIT,
+        montant=Decimal("5000"),
+    )
+
+    _connecte(client, Role.DIRECTION)
+    page = client.get(reverse("accounting:ecriture_manuelle", args=[ecriture.pk])).content.decode()
+    assert reverse("accounting:ecriture_manuelle_valider", args=[ecriture.pk]) in page
+
+    _connecte(client, Role.FINANCES)
+    page = client.get(reverse("accounting:ecriture_manuelle", args=[ecriture.pk])).content.decode()
+    assert reverse("accounting:ecriture_manuelle_valider", args=[ecriture.pk]) not in page
+
+
+def test_valider_via_l_ecran_est_reserve_a_la_direction(client):
+    charge, tresorerie = CompteFactory(), CompteFactory()
+    ecriture = _brouillon()
+    services.ajouter_ligne_manuelle(
+        ecriture, UserFactory(role=Role.FINANCES), compte=charge.numero, sens=SensEcriture.DEBIT,
+        montant=Decimal("5000"),
+    )
+    services.ajouter_ligne_manuelle(
+        ecriture, UserFactory(role=Role.FINANCES), compte=tresorerie.numero, sens=SensEcriture.CREDIT,
+        montant=Decimal("5000"),
+    )
+
+    _connecte(client, Role.FINANCES)
+    assert client.post(reverse("accounting:ecriture_manuelle_valider", args=[ecriture.pk])).status_code == 403
+
+    _connecte(client, Role.DIRECTION)
+    reponse = client.post(reverse("accounting:ecriture_manuelle_valider", args=[ecriture.pk]))
+    assert reponse.status_code == 302
+    ecriture.refresh_from_db()
+    assert ecriture.statut == StatutEcriture.VALIDEE
+
+
+def test_abandonner_via_l_ecran(client):
+    _connecte(client, Role.FINANCES)
+    ecriture = _brouillon()
+
+    reponse = client.post(reverse("accounting:ecriture_manuelle_abandonner", args=[ecriture.pk]))
+
+    assert reponse.status_code == 302
+    assert not EcritureComptable.objects.filter(pk=ecriture.pk).exists()
+
+
+# --- exercices comptables (Phase 5) ---
+
+
+def test_la_liste_des_exercices_est_accessible_en_consultation(client):
+    services.exercice_pour(date(2026, 9, 5))
+    _connecte(client, Role.FINANCES)
+
+    reponse = client.get(reverse("accounting:exercices"))
+
+    assert reponse.status_code == 200
+    assert "2026" in reponse.content.decode()
+
+
+def test_seule_la_direction_voit_le_bouton_cloturer(client):
+    exercice = services.exercice_pour(date(2026, 9, 5))
+    url_cloturer = reverse("accounting:exercice_cloturer", args=[exercice.pk])
+
+    _connecte(client, Role.DIRECTION)
+    page = client.get(reverse("accounting:exercices")).content.decode()
+    assert url_cloturer in page
+
+    _connecte(client, Role.FINANCES)
+    page = client.get(reverse("accounting:exercices")).content.decode()
+    assert url_cloturer not in page
+
+
+def test_cloturer_via_l_ecran_est_reserve_a_la_direction(client):
+    exercice = services.exercice_pour(date(2026, 9, 5))
+
+    _connecte(client, Role.FINANCES)
+    assert client.post(reverse("accounting:exercice_cloturer", args=[exercice.pk])).status_code == 403
+
+    _connecte(client, Role.DIRECTION)
+    reponse = client.post(reverse("accounting:exercice_cloturer", args=[exercice.pk]))
+    assert reponse.status_code == 302
+    exercice.refresh_from_db()
+    assert exercice.statut == StatutExercice.CLOTURE
+
+
+# --- plan comptable (Lot F, autonomie comptable) ---
+
+
+def test_le_plan_comptable_est_accessible_en_consultation(client):
+    _connecte(client, Role.FINANCES)
+
+    reponse = client.get(reverse("accounting:plan_comptable"))
+
+    assert reponse.status_code == 200
+    assert reponse.context["peut_gerer"] is True
+
+
+def test_le_bouton_nouveau_compte_apparait_pour_un_role_autorise(client):
+    _connecte(client, Role.RH)  # RH a la même largeur que Finances (CONSULTATION et GESTION)
+    page = client.get(reverse("accounting:plan_comptable")).content.decode()
+    assert reverse("accounting:compte_nouveau") in page
+
+
+def test_creer_un_compte_via_l_ecran(client):
+    _connecte(client, Role.FINANCES)
+
+    reponse = client.post(
+        reverse("accounting:compte_nouveau"),
+        {"numero": "999999", "libelle": "Compte de test", "nature": "CHARGE"},
+    )
+
+    assert reponse.status_code == 302
+    assert Compte.objects.filter(numero="999999", libelle="Compte de test").exists()
+
+
+def test_creer_un_compte_avec_un_numero_deja_pris_affiche_une_erreur(client):
+    CompteFactory(numero="999999")
+    _connecte(client, Role.FINANCES)
+
+    reponse = client.post(
+        reverse("accounting:compte_nouveau"),
+        {"numero": "999999", "libelle": "Doublon", "nature": "CHARGE"},
+    )
+
+    assert reponse.status_code == 200
+    assert "existe déjà" in reponse.content.decode()
+
+
+def test_modifier_un_compte_via_l_ecran(client):
+    compte = CompteFactory(libelle="Ancien", actif=True)
+    _connecte(client, Role.FINANCES)
+
+    reponse = client.post(
+        reverse("accounting:compte_modifier", args=[compte.pk]), {"libelle": "Nouveau"}
+    )
+
+    assert reponse.status_code == 302
+    compte.refresh_from_db()
+    assert compte.libelle == "Nouveau"
+    assert compte.actif is False  # case à cocher absente du POST = décochée
+
+
+def test_gestion_du_plan_comptable_est_interdite_aux_autres_roles(client):
+    compte = CompteFactory()
+    _connecte(client, Role.CHAUFFEUR)
+
+    assert client.get(reverse("accounting:plan_comptable")).status_code == 403
+    assert client.get(reverse("accounting:compte_nouveau")).status_code == 403
+    assert client.get(reverse("accounting:compte_modifier", args=[compte.pk])).status_code == 403
+
+
+# --- rapports comptables (Phase 6) ---
+
+
+def _passer_ecriture_od(charge, tresorerie, *, date_ecriture, montant="5000"):
+    return services.passer_ecriture(
+        journal=Journal.OPERATIONS_DIVERSES, date_ecriture=date_ecriture, libelle="Test",
+        lignes=[
+            services.LigneSaisie(compte=charge.numero, sens=SensEcriture.DEBIT, montant=Decimal(montant)),
+            services.LigneSaisie(compte=tresorerie.numero, sens=SensEcriture.CREDIT, montant=Decimal(montant)),
+        ],
+    )
+
+
+@pytest.mark.parametrize(
+    "nom_url",
+    ["accounting:grand_livre", "accounting:balance", "accounting:bilan", "accounting:compte_resultat"],
+)
+@pytest.mark.parametrize("role", [Role.ADMIN, Role.DIRECTION, Role.FINANCES, Role.RH])
+def test_les_rapports_sont_accessibles_aux_roles_de_consultation(client, role, nom_url):
+    _connecte(client, role)
+
+    assert client.get(reverse(nom_url)).status_code == 200
+
+
+@pytest.mark.parametrize(
+    "nom_url",
+    ["accounting:grand_livre", "accounting:balance", "accounting:bilan", "accounting:compte_resultat"],
+)
+@pytest.mark.parametrize("role", [Role.PARCAUTO, Role.CHAUFFEUR])
+def test_les_rapports_sont_interdits_aux_autres_roles(client, role, nom_url):
+    _connecte(client, role)
+
+    assert client.get(reverse(nom_url)).status_code == 403
+
+
+def test_grand_livre_sans_compte_selectionne_n_affiche_aucune_ligne(client):
+    _connecte(client, Role.FINANCES)
+
+    reponse = client.get(reverse("accounting:grand_livre"))
+
+    assert reponse.context["lignes"] is None
+
+
+def test_grand_livre_avec_compte_selectionne_affiche_les_lignes(client):
+    charge, tresorerie = CompteFactory(), CompteFactory()
+    _passer_ecriture_od(charge, tresorerie, date_ecriture=date(2026, 9, 5))
+    _connecte(client, Role.FINANCES)
+
+    reponse = client.get(reverse("accounting:grand_livre"), {"compte": charge.numero})
+
+    lignes = reponse.context["lignes"]
+    assert len(lignes) == 1
+    assert lignes[0]["solde_cumule"] == Decimal("5000")
+
+
+def test_balance_totalise_debit_et_credit(client):
+    charge, tresorerie = CompteFactory(), CompteFactory()
+    _passer_ecriture_od(charge, tresorerie, date_ecriture=date(2026, 9, 5), montant="7000")
+    _connecte(client, Role.FINANCES)
+
+    reponse = client.get(reverse("accounting:balance"))
+
+    assert reponse.context["totaux"] == {"debit": Decimal("7000"), "credit": Decimal("7000")}
+
+
+def test_bilan_sans_aucun_exercice_n_affiche_pas_de_rapport(client):
+    _connecte(client, Role.FINANCES)
+
+    reponse = client.get(reverse("accounting:bilan"))
+
+    assert reponse.context["exercice"] is None
+    assert reponse.context["rapport"] is None
+
+
+def test_bilan_choisit_l_exercice_le_plus_recent_par_defaut(client):
+    services.exercice_pour(date(2025, 6, 1))
+    exercice_2026 = services.exercice_pour(date(2026, 9, 5))
+    _connecte(client, Role.FINANCES)
+
+    reponse = client.get(reverse("accounting:bilan"))
+
+    assert reponse.context["exercice"] == exercice_2026
+    assert reponse.context["rapport"] is not None
+
+
+def test_bilan_change_d_exercice_via_le_parametre(client):
+    exercice_2025 = services.exercice_pour(date(2025, 6, 1))
+    services.exercice_pour(date(2026, 9, 5))
+    _connecte(client, Role.FINANCES)
+
+    reponse = client.get(reverse("accounting:bilan"), {"exercice": 2025})
+
+    assert reponse.context["exercice"] == exercice_2025
+
+
+def test_compte_de_resultat_choisit_l_exercice_le_plus_recent_par_defaut(client):
+    services.exercice_pour(date(2025, 6, 1))
+    exercice_2026 = services.exercice_pour(date(2026, 9, 5))
+    _connecte(client, Role.FINANCES)
+
+    reponse = client.get(reverse("accounting:compte_resultat"))
+
+    assert reponse.context["exercice"] == exercice_2026
+    assert reponse.context["rapport"] is not None
+
+
+def test_compte_de_resultat_sans_aucun_exercice_n_affiche_pas_de_rapport(client):
+    _connecte(client, Role.FINANCES)
+
+    reponse = client.get(reverse("accounting:compte_resultat"))
+
+    assert reponse.context["exercice"] is None
+    assert reponse.context["rapport"] is None
+
+
+# --- versions imprimables des rapports (Phase 6 bis) ---
+
+
+@pytest.mark.parametrize(
+    "nom_url",
+    [
+        "accounting:grand_livre_imprimer",
+        "accounting:balance_imprimer",
+        "accounting:bilan_imprimer",
+        "accounting:compte_resultat_imprimer",
+        "accounting:declaration_tva_imprimer",
+    ],
+)
+@pytest.mark.parametrize("role", [Role.ADMIN, Role.DIRECTION, Role.FINANCES, Role.RH])
+def test_les_versions_imprimables_sont_accessibles_aux_roles_de_consultation(client, role, nom_url):
+    _connecte(client, role)
+
+    assert client.get(reverse(nom_url)).status_code == 200
+
+
+@pytest.mark.parametrize(
+    "nom_url",
+    [
+        "accounting:grand_livre_imprimer",
+        "accounting:balance_imprimer",
+        "accounting:bilan_imprimer",
+        "accounting:compte_resultat_imprimer",
+        "accounting:declaration_tva_imprimer",
+    ],
+)
+def test_les_versions_imprimables_sont_interdites_aux_autres_roles(client, nom_url):
+    _connecte(client, Role.CHAUFFEUR)
+
+    assert client.get(reverse(nom_url)).status_code == 403
+
+
+def test_grand_livre_imprimer_affiche_les_lignes_du_compte(client):
+    charge, tresorerie = CompteFactory(), CompteFactory()
+    _passer_ecriture_od(charge, tresorerie, date_ecriture=date(2026, 9, 5))
+    _connecte(client, Role.FINANCES)
+
+    reponse = client.get(reverse("accounting:grand_livre_imprimer"), {"compte": charge.numero})
+
+    assert reponse.status_code == 200
+    assert reponse.context["lignes"] is not None
+    assert len(reponse.context["lignes"]) == 1
+    contenu = reponse.content.decode()
+    assert "Généré le" in contenu  # pied de rapport commun (apps/core/rapports.py)
+
+
+def test_balance_imprimer_affiche_les_totaux(client):
+    charge, tresorerie = CompteFactory(), CompteFactory()
+    _passer_ecriture_od(charge, tresorerie, date_ecriture=date(2026, 9, 5), montant="7000")
+    _connecte(client, Role.FINANCES)
+
+    reponse = client.get(reverse("accounting:balance_imprimer"))
+
+    assert reponse.context["totaux"] == {"debit": Decimal("7000"), "credit": Decimal("7000")}
+
+
+def test_bilan_imprimer_reprend_l_exercice_le_plus_recent(client):
+    exercice = services.exercice_pour(date(2026, 9, 5))
+    _connecte(client, Role.FINANCES)
+
+    reponse = client.get(reverse("accounting:bilan_imprimer"))
+
+    assert reponse.context["exercice"] == exercice
+    assert reponse.context["rapport_bilan"] is not None
+
+
+def test_compte_resultat_imprimer_reprend_l_exercice_le_plus_recent(client):
+    exercice = services.exercice_pour(date(2026, 9, 5))
+    _connecte(client, Role.FINANCES)
+
+    reponse = client.get(reverse("accounting:compte_resultat_imprimer"))
+
+    assert reponse.context["exercice"] == exercice
+    assert reponse.context["rapport_resultat"] is not None
+
+
+# --- déclaration TVA (Phase 6 ter) ---
+
+
+def test_declaration_tva_par_defaut_porte_sur_le_mois_en_cours(client):
+    _connecte(client, Role.FINANCES)
+
+    reponse = client.get(reverse("accounting:declaration_tva"))
+
+    assert reponse.status_code == 200
+    rapport = reponse.context["rapport"]
+    assert rapport["debut"].day == 1
+    assert rapport["fin"].month == rapport["debut"].month
+
+
+def test_declaration_tva_accepte_une_periode_choisie(client):
+    _connecte(client, Role.FINANCES)
+
+    reponse = client.get(
+        reverse("accounting:declaration_tva"), {"debut": "2026-01-01", "fin": "2026-03-31"}
+    )
+
+    rapport = reponse.context["rapport"]
+    assert (rapport["debut"], rapport["fin"]) == (date(2026, 1, 1), date(2026, 3, 31))
+
+
+def test_declaration_tva_imprimer_affiche_les_totaux(client):
+    _connecte(client, Role.FINANCES)
+
+    reponse = client.get(
+        reverse("accounting:declaration_tva_imprimer"), {"debut": "2026-01-01", "fin": "2026-03-31"}
+    )
+
+    assert reponse.status_code == 200
+    rapport = reponse.context["rapport_tva"]
+    assert (rapport["debut"], rapport["fin"]) == (date(2026, 1, 1), date(2026, 3, 31))
+    contenu = reponse.content.decode()
+    assert "Généré le" in contenu
 ```
 
 #### `apps/accounts/tests/test_web.py`
@@ -4389,11 +6841,11 @@ def test_impression_de_la_flotte(client):
 
 def test_impression_du_personnel_sans_le_salaire(client):
     client.force_login(UserFactory(role=Role.RH))
-    PersonnelFactory(nom="Diomandé", departement=Departement.EXPLOITATION, salaire_base=Decimal("999999"))
+    PersonnelFactory(nom="Diomandé", departement=Departement.PARC_AUTO, salaire_base=Decimal("999999"))
 
-    texte = _texte(client.get(reverse("hr:personnel_imprimer"), {"departement": Departement.EXPLOITATION}))
+    texte = _texte(client.get(reverse("hr:personnel_imprimer"), {"departement": Departement.PARC_AUTO}))
 
-    assert "Diomandé" in texte and "département : Exploitation" in texte
+    assert "Diomandé" in texte and "département : Parc Auto" in texte
     assert "999" not in texte.replace("999999", "")  # le salaire n'est pas dans les colonnes imprimées
 
 
@@ -5190,6 +7642,235 @@ def test_le_lien_imprimer_est_sur_la_page_tresorerie_avec_les_filtres(client):
     assert reverse("finance:imprimer") in page and "compte%3DCAISSE" in page or "compte=CAISSE" in page
 ```
 
+#### `apps/finance/tests/test_rapprochement_views.py`
+
+*222 lignes* — Écran de rapprochement bancaire (Lot G) : accès, saisie, suggestions, pointage.
+
+```python
+"""Écran de rapprochement bancaire (Lot G) : accès, saisie, suggestions, pointage."""
+
+from datetime import date
+from decimal import Decimal
+
+import pytest
+from django.test import Client
+from django.urls import reverse
+from django.utils import timezone
+
+from apps.accounts.models import Role
+from apps.accounts.tests.factories import UserFactory
+from apps.billing.models import ModePaiement
+from apps.billing.tests.helpers import JOUR, emise, finances
+from apps.finance import services
+from apps.finance.models import LigneReleve, SensMouvement
+
+pytestmark = pytest.mark.django_db
+
+
+def _connecte(client, role):
+    compte = UserFactory(role=role)
+    client.force_login(compte)
+    return compte
+
+
+def _messages(reponse):
+    return [str(m) for m in reponse.context["messages"]]
+
+
+def _donnees_ligne(**surcharges):
+    donnees = {
+        "date_operation": timezone.localdate().isoformat(), "libelle": "Virement client",
+        "montant": "100000", "sens": "ENTREE", "reference": "",
+    }
+    donnees.update(surcharges)
+    return donnees
+
+
+@pytest.mark.parametrize("role", [Role.ADMIN, Role.DIRECTION, Role.FINANCES, Role.RH])
+def test_le_rapprochement_est_accessible_a_admin_direction_finances_et_rh(client, role):
+    _connecte(client, role)
+
+    assert client.get(reverse("finance:rapprochement")).status_code == 200
+
+
+@pytest.mark.parametrize("role", [Role.PARCAUTO, Role.CHARGE_CLIENTELE, Role.CHAUFFEUR])
+def test_le_rapprochement_est_interdit_aux_autres_roles(client, role):
+    _connecte(client, role)
+
+    assert client.get(reverse("finance:rapprochement")).status_code == 403
+
+
+def test_le_rapprochement_exige_la_connexion(client):
+    assert client.get(reverse("finance:rapprochement")).status_code == 302
+
+
+def test_les_soldes_et_l_ecart_s_affichent(client):
+    _connecte(client, Role.FINANCES)
+    aujourd_hui = timezone.localdate()  # la page affiche le mois en cours : les opérations doivent y tomber
+    facture = emise(prix="1000000")
+    reglement = services.confirmer_versement(
+        facture, finances(), montant=Decimal("100000"), mode=ModePaiement.VIREMENT, date_reglement=aujourd_hui
+    )[0]
+    services.saisir_ligne_releve(
+        finances(), date_operation=aujourd_hui, libelle="Virement client", montant=Decimal("100000"), sens=SensMouvement.ENTREE
+    )
+
+    reponse = client.get(reverse("finance:rapprochement"))
+    texte = reponse.content.decode().replace("\xa0", " ").replace(" ", " ")
+
+    assert reponse.context["etat"]["solde_releve"] == Decimal("100000")
+    assert reponse.context["etat"]["solde_comptable"] == Decimal("100000")
+    assert "100 000" in texte
+    assert reglement.pk  # le règlement existe bien, utilisé comme mouvement de rapprochement
+
+
+def test_finances_saisit_une_ligne_de_releve(client):
+    _connecte(client, Role.FINANCES)
+
+    reponse = client.post(reverse("finance:ligne_releve_nouvelle"), _donnees_ligne(), follow=True)
+
+    ligne = LigneReleve.objects.get()
+    assert (ligne.sens, ligne.montant, ligne.libelle) == (SensMouvement.ENTREE, Decimal("100000"), "Virement client")
+    assert any("ajoutée" in m for m in _messages(reponse))
+
+
+@pytest.mark.parametrize(
+    "surcharges",
+    [{"montant": "0"}, {"libelle": ""}, {"date_operation": "2999-01-01"}, {"sens": "AUTRE"}],
+)
+def test_saisie_de_ligne_invalide_donne_un_message_sans_rien_enregistrer(client, surcharges):
+    _connecte(client, Role.FINANCES)
+
+    reponse = client.post(reverse("finance:ligne_releve_nouvelle"), _donnees_ligne(**surcharges), follow=True)
+
+    assert not LigneReleve.objects.exists() and _messages(reponse)
+
+
+def test_une_suggestion_apparait_pour_un_mouvement_banque_correspondant(client):
+    _connecte(client, Role.FINANCES)
+    aujourd_hui = timezone.localdate()  # la page affiche le mois en cours : les opérations doivent y tomber
+    facture = emise(prix="1000000")
+    reglement, _ = services.confirmer_versement(
+        facture, finances(), montant=Decimal("100000"), mode=ModePaiement.VIREMENT, date_reglement=aujourd_hui
+    )
+    services.saisir_ligne_releve(
+        finances(), date_operation=aujourd_hui, libelle="Virement client", montant=Decimal("100000"), sens=SensMouvement.ENTREE
+    )
+
+    reponse = client.get(reverse("finance:rapprochement"))
+
+    entrees = reponse.context["lignes_avec_suggestions"]
+    assert len(entrees) == 1
+    assert entrees[0]["suggestions"][0]["pk"] == reglement.pk
+
+
+def test_pointer_une_ligne_depuis_l_ecran(client):
+    _connecte(client, Role.FINANCES)
+    facture = emise(prix="1000000")
+    reglement, _ = services.confirmer_versement(
+        facture, finances(), montant=Decimal("100000"), mode=ModePaiement.VIREMENT, date_reglement=JOUR
+    )
+    ligne = services.saisir_ligne_releve(
+        finances(), date_operation=JOUR, libelle="Virement client", montant=Decimal("100000"), sens=SensMouvement.ENTREE
+    )
+
+    reponse = client.post(
+        reverse("finance:ligne_releve_pointer", args=[ligne.pk]),
+        {"origine": "REGLEMENT", "mouvement_id": reglement.pk},
+        follow=True,
+    )
+
+    ligne.refresh_from_db()
+    assert ligne.pointee is True and ligne.mouvement_id == reglement.pk
+    assert any("pointée" in m for m in _messages(reponse))
+
+
+def test_pointer_un_mouvement_deja_pointe_donne_un_message_d_erreur(client):
+    _connecte(client, Role.FINANCES)
+    facture = emise(prix="1000000")
+    reglement, _ = services.confirmer_versement(
+        facture, finances(), montant=Decimal("100000"), mode=ModePaiement.VIREMENT, date_reglement=JOUR
+    )
+    premiere = services.saisir_ligne_releve(
+        finances(), date_operation=JOUR, libelle="A", montant=Decimal("100000"), sens=SensMouvement.ENTREE
+    )
+    services.pointer_ligne_releve(premiere, finances(), origine="REGLEMENT", mouvement_id=reglement.pk)
+    seconde = services.saisir_ligne_releve(
+        finances(), date_operation=JOUR, libelle="B", montant=Decimal("100000"), sens=SensMouvement.ENTREE
+    )
+
+    reponse = client.post(
+        reverse("finance:ligne_releve_pointer", args=[seconde.pk]),
+        {"origine": "REGLEMENT", "mouvement_id": reglement.pk},
+        follow=True,
+    )
+
+    seconde.refresh_from_db()
+    assert seconde.pointee is False
+    assert any("déjà pointé" in m for m in _messages(reponse))
+
+
+def test_pointer_avec_un_formulaire_invalide_donne_un_message_sans_rien_pointer(client):
+    _connecte(client, Role.FINANCES)
+    ligne = services.saisir_ligne_releve(
+        finances(), date_operation=JOUR, libelle="A", montant=Decimal("100000"), sens=SensMouvement.ENTREE
+    )
+
+    reponse = client.post(
+        reverse("finance:ligne_releve_pointer", args=[ligne.pk]),
+        {"origine": "BIDON", "mouvement_id": ""},
+        follow=True,
+    )
+
+    ligne.refresh_from_db()
+    assert ligne.pointee is False and _messages(reponse)
+
+
+def test_pointer_une_ligne_inexistante_donne_404(client):
+    _connecte(client, Role.FINANCES)
+
+    reponse = client.post(
+        reverse("finance:ligne_releve_pointer", args=[999]), {"origine": "MANUEL", "mouvement_id": 1}
+    )
+
+    assert reponse.status_code == 404
+
+
+def test_depointer_une_ligne_depuis_l_ecran(client):
+    _connecte(client, Role.FINANCES)
+    facture = emise(prix="1000000")
+    reglement, _ = services.confirmer_versement(
+        facture, finances(), montant=Decimal("100000"), mode=ModePaiement.VIREMENT, date_reglement=JOUR
+    )
+    ligne = services.saisir_ligne_releve(
+        finances(), date_operation=JOUR, libelle="Virement client", montant=Decimal("100000"), sens=SensMouvement.ENTREE
+    )
+    services.pointer_ligne_releve(ligne, finances(), origine="REGLEMENT", mouvement_id=reglement.pk)
+
+    reponse = client.post(reverse("finance:ligne_releve_depointer", args=[ligne.pk]), follow=True)
+
+    ligne.refresh_from_db()
+    assert ligne.pointee is False
+    assert any("annulé" in m for m in _messages(reponse))
+
+
+def test_les_actions_de_rapprochement_exigent_post_et_csrf():
+    http = Client(enforce_csrf_checks=True)
+    http.force_login(UserFactory(role=Role.FINANCES))
+    ligne = services.saisir_ligne_releve(
+        UserFactory(role=Role.FINANCES), date_operation=JOUR, libelle="Apport",
+        montant=Decimal("1000"), sens=SensMouvement.ENTREE,
+    )
+
+    assert http.get(reverse("finance:ligne_releve_nouvelle")).status_code == 405
+    assert http.post(reverse("finance:ligne_releve_nouvelle"), _donnees_ligne()).status_code == 403
+    assert http.post(
+        reverse("finance:ligne_releve_pointer", args=[ligne.pk]), {"origine": "MANUEL", "mouvement_id": 1}
+    ).status_code == 403
+    assert http.post(reverse("finance:ligne_releve_depointer", args=[ligne.pk])).status_code == 403
+    assert LigneReleve.objects.count() == 1
+```
+
 #### `apps/finance/tests/test_versements.py`
 
 *249 lignes* — Versements attendus : la Finance confirme qu'une facture émise a été payée, et l'entrée apparaît en trésorerie.
@@ -5484,7 +8165,7 @@ def _messages(reponse):
 
 def _donnees(**surcharges):
     donnees = {
-        "sens": "ENTREE", "date_mouvement": timezone.localdate().isoformat(),
+        "sens": "ENTREE", "nature": "SOLDE_OUVERTURE", "date_mouvement": timezone.localdate().isoformat(),
         "libelle": "Solde d'ouverture", "montant": "250000", "mode": "VIREMENT", "reference": "",
     }
     donnees.update(surcharges)
@@ -5838,6 +8519,258 @@ def test_les_taches_quotidiennes_incluent_les_factures_echues():
     assert resultat["factures_echues"] == User.objects.filter(role__in=[Role.FINANCES, Role.DIRECTION]).count()
 ```
 
+#### `apps/notifications/tests/test_receivers_demandes.py`
+
+*69 lignes* — Qui est prévenu de quoi pour les dépenses du parc auto pré-approuvées (R2).
+
+```python
+"""Qui est prévenu de quoi pour les dépenses du parc auto pré-approuvées (R2)."""
+
+from decimal import Decimal
+
+import pytest
+
+from apps.accounts.models import Role
+from apps.accounts.tests.factories import UserFactory
+from apps.billing.models import CategorieDepense, ModePaiement
+from apps.finance import demandes as services
+from apps.notifications.models import CategorieNotification, Notification
+
+pytestmark = pytest.mark.django_db
+
+
+def _de(utilisateur):
+    return list(Notification.objects.filter(destinataire=utilisateur).order_by("pk"))
+
+
+def test_la_direction_est_prevenue_d_une_demande_manuelle():
+    direction = UserFactory(role=Role.DIRECTION)
+
+    services.soumettre_demande(
+        UserFactory(role=Role.PARCAUTO), categorie=CategorieDepense.PIECES,
+        montant_estime=Decimal("150000"), motif="Pièce rare",
+    )
+
+    (notification,) = _de(direction)
+    assert notification.categorie == CategorieNotification.DEMANDE_DEPENSE
+
+
+def test_le_demandeur_est_prevenu_de_la_validation():
+    parcauto = UserFactory(role=Role.PARCAUTO)
+    demande = services.soumettre_demande(
+        parcauto, categorie=CategorieDepense.PIECES, montant_estime=Decimal("150000"), motif="x"
+    )
+
+    services.valider_demande(demande, UserFactory(role=Role.DIRECTION))
+
+    notifications = [n for n in _de(parcauto) if n.categorie == CategorieNotification.DEMANDE_DEPENSE]
+    assert any("validée" in n.titre for n in notifications)
+
+
+def test_la_finance_est_prevenue_de_l_ordre_a_executer():
+    finance = UserFactory(role=Role.FINANCES)
+    demande = services.soumettre_demande(
+        UserFactory(role=Role.PARCAUTO), categorie=CategorieDepense.PIECES, montant_estime=Decimal("150000"), motif="x"
+    )
+
+    services.valider_demande(demande, UserFactory(role=Role.DIRECTION))
+
+    (notification,) = _de(finance)
+    assert notification.categorie == CategorieNotification.DEMANDE_DEPENSE
+    assert "à exécuter" in notification.titre.lower()
+
+
+def test_la_direction_est_prevenue_d_un_depassement_a_l_execution():
+    direction = UserFactory(role=Role.DIRECTION)
+    demande = services.soumettre_demande(
+        UserFactory(role=Role.PARCAUTO), categorie=CategorieDepense.PIECES, montant_estime=Decimal("100000"), motif="x"
+    )
+    services.valider_demande(demande, direction)
+    ordre = demande.ordre_decaissement
+
+    with pytest.raises(Exception):
+        services.executer_ordre(ordre, UserFactory(role=Role.FINANCES), mode_paiement=ModePaiement.ESPECES, montant_reel=Decimal("150000"))
+
+    notifications = [n for n in _de(direction) if n.categorie == CategorieNotification.DEMANDE_DEPENSE]
+    assert any("dépassement" in n.titre.lower() for n in notifications)
+```
+
+#### `apps/notifications/tests/test_receivers_frais_mission.py`
+
+*90 lignes* — Qui est prévenu de quoi pour la prévision de trésorerie des missions (R4).
+
+```python
+"""Qui est prévenu de quoi pour la prévision de trésorerie des missions (R4)."""
+
+from decimal import Decimal
+from io import BytesIO
+
+import pytest
+from django.core.files.uploadedfile import SimpleUploadedFile
+
+from apps.accounts.models import Role
+from apps.accounts.tests.factories import UserFactory
+from apps.missions import services as missions_services
+from apps.missions import terrain as missions_terrain
+from apps.missions.models import TypeFraisMission
+from apps.missions.tests.test_frais_mission import _chauffeur, _finances, _mission_affectee, _parcauto
+from apps.notifications.models import CategorieNotification, Notification
+
+pytestmark = pytest.mark.django_db
+
+
+def _de(utilisateur):
+    return list(Notification.objects.filter(destinataire=utilisateur).order_by("pk"))
+
+
+def _preuve():
+    return SimpleUploadedFile("p.jpg", BytesIO(b"x").read(), content_type="image/jpeg")
+
+
+def test_la_finance_est_prevenue_d_une_affectation():
+    finance = UserFactory(role=Role.FINANCES)
+    from apps.drivers.tests.factories import ChauffeurFactory
+    from apps.fleet.tests.factories import VehiculeFactory
+    from apps.missions.models import StatutMission
+    from apps.missions.tests.factories import MissionFactory
+
+    mission = MissionFactory(statut=StatutMission.PLANIFIEE)
+
+    missions_services.affecter_mission(mission, vehicule=VehiculeFactory(), chauffeur=ChauffeurFactory())
+
+    (notification,) = _de(finance)
+    assert notification.categorie == CategorieNotification.FRAIS_MISSION
+
+
+def test_le_parc_auto_est_prevenu_d_un_imprevu_declare():
+    parcauto = UserFactory(role=Role.PARCAUTO)
+    chauffeur = _chauffeur()
+    mission = _mission_affectee(chauffeur)
+
+    missions_terrain.declarer_imprevu(mission, chauffeur, montant=Decimal("9000"), justificatif=_preuve())
+
+    (notification,) = _de(parcauto)
+    assert notification.categorie == CategorieNotification.FRAIS_MISSION
+    assert mission.numero in notification.titre
+
+
+def test_la_finance_est_prevenue_apres_la_validation_du_parc_auto():
+    finance = UserFactory(role=Role.FINANCES)
+    chauffeur = _chauffeur()
+    mission = _mission_affectee(chauffeur)
+    frais = missions_terrain.declarer_imprevu(mission, chauffeur, montant=Decimal("9000"), justificatif=_preuve())
+
+    missions_terrain.valider_parcauto(frais, _parcauto())
+
+    (notification,) = _de(finance)
+    assert notification.categorie == CategorieNotification.FRAIS_MISSION
+    assert "Parc Auto" in notification.message
+
+
+def test_l_auteur_est_prevenu_du_rejet_d_une_avance():
+    mission = _mission_affectee()
+    parcauto = _parcauto()
+    frais = missions_terrain.planifier_frais(
+        mission, parcauto, type_frais=TypeFraisMission.AVANCE_ROUTE, montant=Decimal("50000")
+    )
+
+    missions_terrain.rejeter(frais, _finances(), motif="Montant excessif")
+
+    (notification,) = _de(parcauto)
+    assert "Montant excessif" in notification.message
+
+
+def test_le_chauffeur_est_prevenu_du_rejet_de_son_imprevu():
+    chauffeur = _chauffeur()
+    mission = _mission_affectee(chauffeur)
+    frais = missions_terrain.declarer_imprevu(mission, chauffeur, montant=Decimal("9000"), justificatif=_preuve())
+
+    missions_terrain.rejeter(frais, _parcauto(), motif="Aucune preuve valable")
+
+    utilisateur_chauffeur = chauffeur.personnel.utilisateur
+    (notification,) = _de(utilisateur_chauffeur)
+    assert "Aucune preuve valable" in notification.message
+```
+
+#### `apps/notifications/tests/test_receivers_proforma.py`
+
+*72 lignes* — Qui est prévenu de quoi pour un devis (R5) : finance, direction, chargé clientèle.
+
+```python
+"""Qui est prévenu de quoi pour un devis (R5) : finance, direction, chargé clientèle."""
+
+from decimal import Decimal
+
+import pytest
+
+from apps.accounts.models import Role
+from apps.accounts.tests.factories import UserFactory
+from apps.billing import services
+from apps.billing.models import SEUIL_VALIDATION_DIRECTION
+from apps.billing.tests.helpers import JOUR, charge_clientele, direction, finances, proforma_soumise
+from apps.notifications.models import CategorieNotification, Notification
+
+pytestmark = pytest.mark.django_db
+
+
+def _de(utilisateur):
+    return list(Notification.objects.filter(destinataire=utilisateur).order_by("pk"))
+
+
+def test_la_finance_est_prevenue_d_un_devis_soumis():
+    finance = UserFactory(role=Role.FINANCES)
+    proforma = proforma_soumise()
+
+    (notification,) = _de(finance)
+    assert notification.categorie == CategorieNotification.PROFORMA
+    assert proforma.client.raison_sociale in notification.titre
+
+
+def test_la_direction_est_prevenue_au_dela_du_seuil():
+    responsable = UserFactory(role=Role.DIRECTION)
+    proforma = proforma_soumise(prix=str(SEUIL_VALIDATION_DIRECTION))
+
+    services.valider_proforma(proforma, finances(), aujourd_hui=JOUR)
+
+    (notification,) = _de(responsable)
+    assert notification.categorie == CategorieNotification.PROFORMA
+    assert "direction" in notification.titre.lower() or "élevé" in notification.titre.lower()
+
+
+def test_l_auteur_est_prevenu_de_la_validation():
+    auteur = charge_clientele()
+    proforma = proforma_soumise(acteur=auteur)
+
+    services.valider_proforma(proforma, finances(), aujourd_hui=JOUR)
+
+    notifications = _de(auteur)
+    assert any(n.categorie == CategorieNotification.PROFORMA and proforma.numero in n.titre for n in notifications)
+
+
+def test_l_auteur_est_prevenu_d_une_contre_proposition():
+    auteur = charge_clientele()
+    proforma = proforma_soumise(acteur=auteur)
+
+    services.contre_proposer_proforma(proforma, finances(), motif="Prix trop bas")
+
+    notifications = [n for n in _de(auteur) if n.categorie == CategorieNotification.PROFORMA]
+    assert notifications and "Prix trop bas" in notifications[-1].message
+
+
+def test_l_auteur_est_prevenu_de_l_expiration():
+    auteur = charge_clientele()
+    proforma = proforma_soumise(acteur=auteur)
+    services.valider_proforma(proforma, finances(), aujourd_hui=JOUR)
+    services.envoyer_proforma_au_client(proforma, auteur, aujourd_hui=JOUR)
+
+    from datetime import timedelta
+
+    services.expirer_proformas(aujourd_hui=JOUR + timedelta(days=31))
+
+    notifications = [n for n in _de(auteur) if n.categorie == CategorieNotification.PROFORMA]
+    assert any("expiré" in n.titre.lower() for n in notifications)
+```
+
 ```bash
 cd frontend
 npm run build:css
@@ -5851,7 +8784,7 @@ python manage.py check
 ```
 
 ```bash
-python -m pytest apps/accounts/tests/test_web.py apps/billing/tests/test_proforma_views.py apps/billing/tests/test_views.py apps/core/tests/test_impression_listes.py apps/finance/tests/test_demandes_views.py apps/finance/tests/test_depenses_parc_auto.py apps/finance/tests/test_impression.py apps/finance/tests/test_versements.py apps/finance/tests/test_views.py apps/notifications/tests/test_facturation.py -q --no-cov
+python -m pytest apps/accounting/tests/test_views.py apps/accounts/tests/test_web.py apps/billing/tests/test_proforma_views.py apps/billing/tests/test_views.py apps/core/tests/test_impression_listes.py apps/finance/tests/test_demandes_views.py apps/finance/tests/test_depenses_parc_auto.py apps/finance/tests/test_impression.py apps/finance/tests/test_rapprochement_views.py apps/finance/tests/test_versements.py apps/finance/tests/test_views.py apps/notifications/tests/test_facturation.py apps/notifications/tests/test_receivers_demandes.py apps/notifications/tests/test_receivers_frais_mission.py apps/notifications/tests/test_receivers_proforma.py -q --no-cov
 ```
 
 **Résultat attendu :** `79 passed` (pour les 3 fichier(s) de tests présentés dans ce chapitre).

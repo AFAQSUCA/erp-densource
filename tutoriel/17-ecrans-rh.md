@@ -740,7 +740,7 @@ class PersonnelModeleImportView(RoleRequiredMixin, View):
         feuille = classeur.active
         feuille.title = "Personnel"
         feuille.append(services.COLONNES_IMPORT)
-        feuille.append(["Traoré", "Awa", "Comptable", "Comptabilité", "CDI", "01/09/2026", "250000"])
+        feuille.append(["Traoré", "Awa", "Comptable", "Ressources Humaines et Finances", "CDI", "01/09/2026", "250000"])
         reponse = HttpResponse(
             content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
@@ -894,7 +894,7 @@ Montez ces adresses : voici la modification à faire dans `config/urls.py` :
 ```diff
 --- config/urls.py (avant)
 +++ config/urls.py (après)
-@@ -17,4 +17,5 @@
+@@ -16,4 +16,5 @@
      path("favicon.ico", RedirectView.as_view(url=settings.STATIC_URL + "img/favicon.png", permanent=True)),
      path("", include("apps.accounts.urls")),
 +    path("rh/", include("apps.hr.urls")),
@@ -1832,7 +1832,7 @@ def _hierarchie(poste="Dispatcheur"):
         poste="Chef", departement=Departement.DIRECTION, utilisateur=UserFactory(role=Role.PARCAUTO)
     )
     employe = PersonnelFactory(
-        poste=poste, departement=Departement.EXPLOITATION, superieur=chef,
+        poste=poste, departement=Departement.PARC_AUTO, superieur=chef,
         utilisateur=UserFactory(role=Role.PARCAUTO),
     )
     return employe, chef.utilisateur

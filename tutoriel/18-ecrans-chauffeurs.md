@@ -287,7 +287,7 @@ Montez les adresses :
 ```diff
 --- config/urls.py (avant)
 +++ config/urls.py (après)
-@@ -18,4 +18,5 @@
+@@ -17,4 +17,5 @@
      path("", include("apps.accounts.urls")),
      path("rh/", include("apps.hr.urls")),
 +    path("chauffeurs/", include("apps.drivers.urls")),
@@ -592,7 +592,7 @@ from apps.hr.models import Departement, Personnel
 
 pytestmark = pytest.mark.django_db
 
-LIGNE_VALIDE = ["Traoré", "Awa", "Comptable", "Comptabilité", "CDI", "01/09/2026", "250000"]
+LIGNE_VALIDE = ["Traoré", "Awa", "Comptable", "Ressources Humaines et Finances", "CDI", "01/09/2026", "250000"]
 
 
 def _classeur(lignes, en_tete=None):
@@ -622,17 +622,17 @@ def test_importer_cree_les_fiches_valides():
     assert len(crees) == 1
     employe = Personnel.objects.get()
     assert (employe.nom, employe.prenom, employe.poste) == ("Traoré", "Awa", "Comptable")
-    assert employe.departement == Departement.COMPTABILITE
+    assert employe.departement == Departement.RH_FINANCE
     assert employe.date_embauche == date(2026, 9, 1)
     assert employe.matricule.startswith("PERS-")
 
 
 def test_importer_accepte_le_departement_par_code_ou_par_libelle():
-    ligne_code = ["A", "B", "Comptable", "COMPTABILITE", "", "01/09/2026", "100000"]
+    ligne_code = ["A", "B", "Comptable", "RH_FINANCE", "", "01/09/2026", "100000"]
 
     services.importer_personnel(_classeur([ligne_code]))
 
-    assert Personnel.objects.get().departement == Departement.COMPTABILITE
+    assert Personnel.objects.get().departement == Departement.RH_FINANCE
 
 
 def test_importer_ignore_les_lignes_vides():
@@ -644,7 +644,7 @@ def test_importer_ignore_les_lignes_vides():
 
 
 def test_importer_un_chauffeur_cree_sa_fiche_chauffeur():
-    ligne = ["Ouattara", "Moussa", "Chauffeur", "Exploitation", "CDI", "01/09/2026", "200000"]
+    ligne = ["Ouattara", "Moussa", "Chauffeur", "Parc Auto", "CDI", "01/09/2026", "200000"]
 
     services.importer_personnel(_classeur([ligne]))
 
@@ -652,7 +652,7 @@ def test_importer_un_chauffeur_cree_sa_fiche_chauffeur():
 
 
 def test_importer_tout_ou_rien_si_une_ligne_est_invalide():
-    ligne_invalide = ["Kone", "Ali", "Poste inexistant", "Comptabilité", "", "01/09/2026", "100000"]
+    ligne_invalide = ["Kone", "Ali", "Poste inexistant", "Ressources Humaines et Finances", "", "01/09/2026", "100000"]
 
     with pytest.raises(ImportPersonnelError) as exc:
         services.importer_personnel(_classeur([LIGNE_VALIDE, ligne_invalide]))
@@ -676,7 +676,7 @@ def test_importer_signale_chaque_type_d_erreur():
 
 
 def test_importer_refuse_un_salaire_negatif():
-    ligne = ["Kone", "Ali", "Comptable", "Comptabilité", "", "01/09/2026", "-100"]
+    ligne = ["Kone", "Ali", "Comptable", "Ressources Humaines et Finances", "", "01/09/2026", "-100"]
 
     with pytest.raises(ImportPersonnelError) as exc:
         services.importer_personnel(_classeur([ligne]))
@@ -726,7 +726,7 @@ def test_importer_un_fichier_valide_redirige_avec_un_message(client):
 
 def test_importer_un_fichier_invalide_affiche_les_erreurs_sans_rien_creer(client):
     _connecte(client, Role.RH)
-    ligne_invalide = ["Kone", "Ali", "Poste inexistant", "Comptabilité", "", "01/09/2026", "100000"]
+    ligne_invalide = ["Kone", "Ali", "Poste inexistant", "Ressources Humaines et Finances", "", "01/09/2026", "100000"]
     fichier = SimpleUploadedFile(
         "personnel.xlsx",
         _classeur([ligne_invalide]).read(),

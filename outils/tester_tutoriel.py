@@ -37,6 +37,11 @@ MIGRATIONS = {
         "inventory", "fuel", "billing", "finance", "notifications",
     )
 }
+# la facturation ajoute le champ « devis d'origine » à la mission : sa migration est écrite au chapitre de la facturation
+MIGRATIONS[t.NUM["billing"]].append("missions")
+# le plan comptable (migration de données écrite à la main) : le chapitre de la trésorerie génère d'abord la
+# migration de l'app « accounting », puis la sienne ; l'app « finance » suit
+MIGRATIONS[t.NUM["finance"]] = ["accounting", "finance"]
 
 
 # --- lecture du contenu des fichiers -----------------------------------------------------------------
@@ -115,7 +120,9 @@ def main() -> int:
             print(f"\n=== Chapitre {k} : {nom}")
             fichiers = t.fichiers_du_chapitre(k, suivis)
             for f in fichiers:
-                ecrire(destination, f, lire(f))
+                # ceux-là s'écrivent par étapes, plus bas (config) ou juste après leur makemigrations (migrations à la main)
+                if f not in t.FICHIERS_PROGRESSIFS and f not in t.MIGRATIONS_A_LA_MAIN:
+                    ecrire(destination, f, lire(f))
             for f in t.FICHIERS_PROGRESSIFS:
                 if k in t.chapitres_ou_config_change(f):
                     ecrire(destination, f, t.etat_config(f, k))
@@ -151,6 +158,9 @@ def main() -> int:
                 ok, sortie = lancer([PYTHON, "manage.py", "makemigrations", app], destination, f"makemigrations {app}")
                 if not ok:
                     print(sortie[-2500:]); echecs += 1; ok_chapitre = False; break
+                for f in fichiers:
+                    if f in t.MIGRATIONS_A_LA_MAIN and t._app_de(f) == app:
+                        ecrire(destination, f, lire(f))
             if not ok_chapitre:
                 break
             if k in MIGRATIONS and k >= t.NUM["accounts"]:

@@ -334,7 +334,7 @@ urlpatterns = [
 ```diff
 --- config/urls.py (avant)
 +++ config/urls.py (après)
-@@ -17,4 +17,5 @@
+@@ -16,4 +16,5 @@
      path("favicon.ico", RedirectView.as_view(url=settings.STATIC_URL + "img/favicon.png", permanent=True)),
      path("", include("apps.accounts.urls")),
 +    path("clients/", include("apps.customers.urls")),

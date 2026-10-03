@@ -65,7 +65,7 @@ DERNIER = len(_LISTE) - 1
 # Ordre de création des apps (chaque app ne dépend que de celles qui la précèdent).
 ORDRE_APPS = [
     "core", "accounts", "audit", "hr", "drivers", "customers", "fleet", "missions", "garage",
-    "inventory", "fuel", "billing", "finance", "notifications", "dashboard", "mobile_api", "api",
+    "inventory", "fuel", "billing", "finance", "accounting", "notifications", "dashboard", "mobile_api", "api",
 ]
 RANG = {a: i for i, a in enumerate(ORDRE_APPS)}
 
@@ -75,6 +75,7 @@ CH_METIER = {
     "drivers": NUM["drivers"], "customers": NUM["customers"], "fleet": NUM["fleet"],
     "missions": NUM["missions"], "garage": NUM["garage"], "inventory": NUM["inventory"],
     "fuel": NUM["fuel"], "billing": NUM["billing"], "finance": NUM["finance"],
+    "accounting": NUM["finance"],
     "notifications": NUM["notifications"], "dashboard": NUM["tableau-de-bord"],
     "mobile_api": NUM["mobile"], "api": NUM["api"],
 }
@@ -84,10 +85,15 @@ CH_ECRANS = {
     "notifications": NUM["interface"], "hr": NUM["ecrans-rh"], "drivers": NUM["ecrans-chauffeurs"],
     "customers": NUM["ecrans-clients"], "fleet": NUM["ecrans-flotte"], "missions": NUM["ecrans-missions"],
     "garage": NUM["ecrans-garage"], "inventory": NUM["ecrans-stock"], "fuel": NUM["ecrans-carburant"],
-    "billing": NUM["ecrans-finances"], "finance": NUM["ecrans-finances"],
+    "billing": NUM["ecrans-finances"], "finance": NUM["ecrans-finances"], "accounting": NUM["ecrans-finances"],
     "dashboard": NUM["tableau-de-bord"], "mobile_api": NUM["mobile"], "api": NUM["api"],
 }
 CH_TESTS_DASHBOARD = NUM["tableau-de-bord"]
+TESTS_APRES_ECRANS_FINANCES = {
+    "apps/notifications/tests/test_receivers_proforma.py",
+    "apps/notifications/tests/test_receivers_demandes.py",
+    "apps/notifications/tests/test_receivers_frais_mission.py",
+}
 
 # --- fichiers volontairement absents du tutoriel ----------------------------------------------------
 
@@ -122,7 +128,14 @@ def fichiers_suivis() -> list[str]:
     return [f for f in sortie.split("\n") if f]
 
 
+# Migrations écrites à la main (données, pas schéma) : présentées dans le tutoriel, écrites juste après la
+# migration générée de leur application (elles en dépendent, voir le chapitre de la trésorerie).
+MIGRATIONS_A_LA_MAIN = ["apps/accounting/migrations/0002_plan_comptable_seed.py"]
+
+
 def raison_exclusion(chemin: str) -> str | None:
+    if chemin in MIGRATIONS_A_LA_MAIN:
+        return None
     for motif, raison in EXCLUS:
         if re.search(motif, chemin):
             return raison
@@ -234,6 +247,10 @@ def chapitre_de(chemin: str) -> int | None:
     app = _app_de(chemin)
     if app is None:
         return 1
+    # les notifications liées aux devis, aux demandes et aux frais de mission construisent des liens vers
+    # les écrans de la facturation et de la trésorerie : elles ne peuvent passer qu'une fois ceux-ci montés
+    if chemin in TESTS_APRES_ECRANS_FINANCES:
+        return NUM["ecrans-finances"]
     # --- l'app « dashboard », mobile_api et api sont présentées d'un seul tenant ---
     if app in ("dashboard", "mobile_api", "api"):
         base = CH_METIER[app]
@@ -357,13 +374,15 @@ _REGLES_SETTINGS = [
     (r'apps\.notifications\.context_processors\.', NUM["interface"]),
 ]
 _REGLES_URLS = [
-    (r'apps\.dashboard|DashboardView', NUM["tableau-de-bord"]),
+    (r'apps\.dashboard|DashboardView|DashboardImprimerView', NUM["tableau-de-bord"]),
     (r'apps\.accounts\.urls', NUM["interface"]), (r'apps\.notifications\.urls', NUM["interface"]),
+    (r'apps\.audit\.urls', NUM["interface"]),
     (r'apps\.hr\.urls', NUM["ecrans-rh"]), (r'apps\.drivers\.urls', NUM["ecrans-chauffeurs"]),
     (r'apps\.customers\.urls', NUM["ecrans-clients"]), (r'apps\.fleet\.urls', NUM["ecrans-flotte"]),
     (r'apps\.missions\.urls', NUM["ecrans-missions"]), (r'apps\.garage\.urls', NUM["ecrans-garage"]),
     (r'apps\.inventory\.urls', NUM["ecrans-stock"]), (r'apps\.fuel\.urls', NUM["ecrans-carburant"]),
     (r'apps\.billing\.urls', NUM["ecrans-finances"]), (r'apps\.finance\.urls', NUM["ecrans-finances"]),
+    (r'apps\.accounting\.urls', NUM["ecrans-finances"]),
     (r'apps\.mobile_api\.urls_web', NUM["mobile"]), (r'apps\.api\.urls', NUM["api"]),
 ]
 # Fichier écrit seulement pour le tutoriel : une page d'accueil provisoire, le temps que les écrans
@@ -390,9 +409,18 @@ _REMPLACEMENTS_URLS = [
     (r'DashboardView\.as_view\(\)', CH_ACCUEIL_DEBUT, CH_ACCUEIL_FIN,
      '    path("", TemplateView.as_view(template_name="accueil_provisoire.html"), name="home"),'),
 ]
+# Blocs de code (sur plusieurs lignes) retirés tant que leur cible n'existe pas : (motif, premier chapitre).
+_BLOCS_MISSIONS = [
+    # le devis d'origine (Proforma) n'existe qu'à partir du chapitre de la facturation
+    (r'    proforma = models\.OneToOneField\(\n(?:.*\n)*?    \)\n', NUM["billing"]),
+]
 FICHIERS_PROGRESSIFS = {
     "config/settings/base.py": _REGLES_SETTINGS,
     "config/urls.py": _REGLES_URLS,
+    "apps/missions/models.py": [],
+}
+_BLOCS_PROGRESSIFS = {
+    "apps/missions/models.py": _BLOCS_MISSIONS,
 }
 
 
@@ -400,7 +428,11 @@ def etat_config(chemin: str, chapitre: int) -> str:
     """Contenu de ``chemin`` tel qu'il doit être à la fin du ``chapitre`` (lignes des chapitres suivants retirées)."""
     regles = FICHIERS_PROGRESSIFS[chemin]
     remplacements = _REMPLACEMENTS_URLS if chemin == "config/urls.py" else []
-    lignes = (RACINE / chemin).read_text(encoding="utf-8").split("\n")
+    texte = (RACINE / chemin).read_text(encoding="utf-8")
+    for motif, debut in _BLOCS_PROGRESSIFS.get(chemin, []):
+        if chapitre < debut:
+            texte = re.sub(motif, "", texte, count=1)
+    lignes = texte.split("\n")
     gardees = []
     for ligne in lignes:
         provisoire = next(
@@ -418,11 +450,10 @@ def etat_config(chemin: str, chapitre: int) -> str:
 
 
 def chapitres_ou_config_change(chemin: str) -> list[int]:
-    """Chapitres où l'état de ``chemin`` change (le premier est toujours 1)."""
-    etats = {}
+    """Chapitres où l'état de ``chemin`` change (le premier est celui où le fichier apparaît)."""
     changements = []
     precedent = None
-    for k in range(1, DERNIER + 1):
+    for k in range(chapitre_de(chemin), DERNIER + 1):
         etat = etat_config(chemin, k)
         if etat != precedent:
             changements.append(k)
