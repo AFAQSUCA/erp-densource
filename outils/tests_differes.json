@@ -34,13 +34,5 @@
   "apps/dashboard/tests/test_series_mensuelles.py::test_le_graphique_des_creances_est_affiche_a_la_finance": {
     "presente_au": 28,
     "vert_au": null
-  },
-  "apps/finance/tests/test_rapprochement_views.py::test_les_soldes_et_l_ecart_s_affichent": {
-    "presente_au": 26,
-    "vert_au": null
-  },
-  "apps/finance/tests/test_rapprochement_views.py::test_une_suggestion_apparait_pour_un_mouvement_banque_correspondant": {
-    "presente_au": 26,
-    "vert_au": null
   }
 }

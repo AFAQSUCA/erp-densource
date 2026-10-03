@@ -85,9 +85,9 @@
     "reussis": 171
   },
   "26": {
-    "differes": 7,
+    "differes": 5,
     "fichiers_de_tests": 13,
-    "reussis": 233
+    "reussis": 235
   },
   "27": {
     "differes": 0,
@@ -139,5 +139,5 @@
     "fichiers_de_tests": 5,
     "reussis": 125
   },
-  "total": 2547
+  "total": 2549
 }
