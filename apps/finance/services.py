@@ -246,13 +246,34 @@ def suggestions_pointage(ligne: LigneReleve) -> list[dict]:
 @transaction.atomic
 def pointer_ligne_releve(ligne: LigneReleve, acteur, *, origine: str, mouvement_id: int) -> LigneReleve:
     """Associe la ligne de relevé à un mouvement de trésorerie précis (un règlement, une dépense
-    ou un mouvement manuel), identifié par son origine et son identifiant."""
+    ou un mouvement manuel), identifié par son origine et son identifiant.
+
+    Le mouvement doit exister sur le compte Banque (un relevé bancaire ne concerne ni la caisse ni le Mobile
+    Money), avoir le même sens et le même montant que la ligne, et la ligne ne doit pas déjà être pointée :
+    sinon on rapprocherait deux choses qui ne se correspondent pas."""
     if acteur.role_effectif not in billing_permissions.SAISIE:
         raise ActionFactureNonAutorisee("Vous n'avez pas le droit de pointer une ligne de relevé.")
     if origine not in {"REGLEMENT", "DEPENSE", "MANUEL"}:
         raise MontantInvalide("Origine de mouvement inconnue.")
+    ligne = LigneReleve.objects.select_for_update().get(pk=ligne.pk)
+    if ligne.pointee:
+        raise MontantInvalide("Cette ligne du relevé est déjà pointée : dépointez-la d'abord pour la réassocier.")
     if (origine, mouvement_id) in _mouvements_deja_pointes():
         raise MontantInvalide("Ce mouvement est déjà pointé sur une autre ligne du relevé.")
+    mouvement = next(
+        (
+            m
+            for m in mouvements(compte=CompteTresorerie.BANQUE)
+            if m["origine"] == origine and m["pk"] == mouvement_id
+        ),
+        None,
+    )
+    if mouvement is None:
+        raise MontantInvalide("Ce mouvement n'existe pas sur le compte Banque.")
+    if mouvement["sens"] != ligne.sens or mouvement["montant"] != ligne.montant:
+        raise MontantInvalide(
+            "Ce mouvement ne correspond pas à la ligne du relevé : même sens et même montant attendus."
+        )
     ligne.pointee = True
     ligne.mouvement_origine = origine
     ligne.mouvement_id = mouvement_id
@@ -284,7 +305,8 @@ def rapprochement_bancaire(*, debut: date, fin: date) -> dict:
     """État du rapprochement sur la période : solde du relevé, solde des mouvements Banque déjà
     enregistrés, écart entre les deux, et le détail de chaque côté non encore pointé (un écart
     persistant après pointage signale une opération jamais saisie — frais bancaires, par exemple —
-    à corriger via une écriture manuelle existante, pas un nouveau mécanisme ici)."""
+    à enregistrer comme mouvement manuel de trésorerie (nature « Frais bancaires », compte Banque) : c'est lui
+    qui entre dans ``solde_comptable`` et dans le grand livre, pas une opération diverse comptable seule)."""
     lignes_releve = list(
         LigneReleve.objects.filter(date_operation__gte=debut, date_operation__lte=fin)
     )

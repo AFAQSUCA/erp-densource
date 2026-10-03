@@ -191,7 +191,7 @@ def _plein(litres, prix, jour, camion=None, km=1000, ticket="T"):
 def test_le_cout_du_carburant_est_litres_fois_prix_sur_la_periode():
     _plein("100", "655", date(2026, 9, 3), ticket="A")
     _plein("50", "660", date(2026, 9, 8), ticket="B")
-    _plein("999", "700", date(2026, 8, 30), ticket="C")  # hors période
+    _plein("500", "700", date(2026, 8, 30), ticket="C")  # hors période (500 L : dans le réservoir de 600 L)
 
     assert fuel.cout_carburant(*SEPT) == Decimal("98500")  # 65 500 + 33 000
 
@@ -443,3 +443,54 @@ def test_le_rapprochement_ignore_la_caisse_et_le_mobile_money():
 
     assert etat["solde_comptable"] == 0
     assert etat["mouvements_banque"] == []
+
+
+# --- pointage : le mouvement doit correspondre à la ligne (audit M10-03) ---
+
+
+def test_pointer_refuse_un_mouvement_qui_n_existe_pas():
+    ligne = _ligne_releve()
+
+    with pytest.raises(MontantInvalide, match="n'existe pas sur le compte Banque"):
+        services.pointer_ligne_releve(ligne, finances(), origine="REGLEMENT", mouvement_id=999999)
+
+    ligne.refresh_from_db()
+    assert ligne.pointee is False
+
+
+def test_pointer_refuse_un_mouvement_d_un_autre_compte_que_la_banque():
+    depense = _depense("100000", ModePaiement.ESPECES)  # Caisse
+    ligne = _ligne_releve(montant="100000", sens=SensMouvement.SORTIE)
+
+    with pytest.raises(MontantInvalide, match="Banque"):
+        services.pointer_ligne_releve(ligne, finances(), origine="DEPENSE", mouvement_id=depense.pk)
+
+
+def test_pointer_refuse_un_montant_different():
+    reglement = _reglement(emise(prix="1000000"), "100000", ModePaiement.VIREMENT)
+    ligne = _ligne_releve(montant="90000")
+
+    with pytest.raises(MontantInvalide, match="même sens et même montant"):
+        services.pointer_ligne_releve(ligne, finances(), origine="REGLEMENT", mouvement_id=reglement.pk)
+
+
+def test_pointer_refuse_un_sens_different():
+    reglement = _reglement(emise(prix="1000000"), "100000", ModePaiement.VIREMENT)  # entrée
+    ligne = _ligne_releve(montant="100000", sens=SensMouvement.SORTIE)
+
+    with pytest.raises(MontantInvalide, match="même sens et même montant"):
+        services.pointer_ligne_releve(ligne, finances(), origine="REGLEMENT", mouvement_id=reglement.pk)
+
+
+def test_pointer_refuse_une_ligne_deja_pointee():
+    facture = emise(prix="1000000")
+    premier = _reglement(facture, "100000", ModePaiement.VIREMENT)
+    second = _reglement(facture, "100000", ModePaiement.VIREMENT)
+    ligne = _ligne_releve(montant="100000")
+    services.pointer_ligne_releve(ligne, finances(), origine="REGLEMENT", mouvement_id=premier.pk)
+
+    with pytest.raises(MontantInvalide, match="déjà pointée"):
+        services.pointer_ligne_releve(ligne, finances(), origine="REGLEMENT", mouvement_id=second.pk)
+
+    ligne.refresh_from_db()
+    assert ligne.mouvement_id == premier.pk  # le premier pointage n'a pas été écrasé en silence

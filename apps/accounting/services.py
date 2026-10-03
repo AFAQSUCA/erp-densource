@@ -272,6 +272,9 @@ def passer_ecriture(
     for ligne in lignes:
         if ligne.montant <= 0:
             raise EcritureNonEquilibree("Chaque montant doit être strictement positif.")
+        if ligne.sens not in SensEcriture.values:
+            # Un sens inconnu serait stocké sans compter dans aucun des deux totaux : l'écriture paraîtrait équilibrée.
+            raise EcritureNonEquilibree(f"Sens inconnu « {ligne.sens} » : débit ou crédit attendu.")
 
     comptes = _comptes_actifs({ligne.compte for ligne in lignes})
 
@@ -525,6 +528,32 @@ def contre_passer(
         origine_id=ecriture.pk,
         piece_reference=ecriture.piece_reference,
     )
+
+
+def contre_passation_de(ecriture: EcritureComptable) -> EcritureComptable | None:
+    """L'écriture qui contre-passe celle-ci, s'il y en a une."""
+    return EcritureComptable.objects.filter(
+        origine=ORIGINE_CONTRE_PASSATION, origine_id=ecriture.pk
+    ).first()
+
+
+@transaction.atomic
+def contre_passer_ecriture_manuelle(ecriture: EcritureComptable, acteur, *, motif: str) -> EcritureComptable:
+    """Corrige une opération diverse **validée** saisie à la main : écriture inverse datée du jour, motif
+    obligatoire. Réservé à la DIRECTION (contrôle strict, comme la validation d'une écriture manuelle : défaire
+    une écriture engage autant que la poser). Les écritures automatiques (facture, règlement, dépense...) se
+    corrigent à la source — annulation du règlement, du mouvement — et la clôture ne se défait pas."""
+    _exiger_role(acteur, permissions.VALIDATION_OD, "contre-passer une écriture", strict=True)
+    if ecriture.origine:
+        raise ContrePassationImpossible(
+            "Seule une opération diverse saisie à la main se contre-passe ici : une écriture automatique se "
+            "corrige à la source (annulation du règlement, du mouvement…)."
+        )
+    if not motif.strip():
+        raise ContrePassationImpossible("Le motif de la contre-passation est obligatoire.")
+    if contre_passation_de(ecriture) is not None:
+        raise ContrePassationImpossible(f"L'écriture {ecriture.numero} est déjà contre-passée.")
+    return contre_passer(ecriture, motif=motif)
 
 
 def contre_passer_origine(
