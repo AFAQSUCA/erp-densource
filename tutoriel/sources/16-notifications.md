@@ -93,7 +93,7 @@ Cinq tâches indépendantes, regroupées par `executer_taches_quotidiennes` :
 {{RESTANTS}}
 
 Les **tests** de `notifications` sont nombreux (récepteurs, tâches, écrans) : ils sont présentés dans les
-chapitres où leurs dépendances existent (21, 24, 25, 26 et 28).
+chapitres où leurs dépendances existent (21, 22, 24, 25, 26 et 28).
 
 ## Étape 6 — Déclarer l'application et migrer
 

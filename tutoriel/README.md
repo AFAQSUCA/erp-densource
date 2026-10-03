@@ -52,17 +52,17 @@ d'un chapitre avec un projet qui fonctionne.
 | 13 | [La facturation : l'app billing](13-billing.md) | 13 | 2783 |
 | 14 | [La trésorerie : l'app finance](14-finance.md) | 16 | 1965 |
 | 15 | [La comptabilité en partie double : l'app accounting](15-accounting.md) | 21 | 2610 |
-| 16 | [Les notifications : l'app notifications](16-notifications.md) | 17 | 1371 |
+| 16 | [Les notifications : l'app notifications](16-notifications.md) | 14 | 1137 |
 | 17 | [Le socle de l'interface : gabarits, styles, connexion, notifications](17-interface.md) | 54 | 2421 |
 | 18 | [Écrans : personnel et congés](18-ecrans-rh.md) | 14 | 2513 |
 | 19 | [Écrans : chauffeurs](19-ecrans-chauffeurs.md) | 8 | 1042 |
 | 20 | [Écrans : clients](20-ecrans-clients.md) | 8 | 823 |
 | 21 | [Écrans : flotte](21-ecrans-flotte.md) | 8 | 1166 |
-| 22 | [Écrans : missions et codes QR](22-ecrans-missions.md) | 21 | 3592 |
+| 22 | [Écrans : missions et codes QR](22-ecrans-missions.md) | 22 | 3683 |
 | 23 | [Écrans : garage, incidents et check-lists](23-ecrans-garage.md) | 14 | 1533 |
 | 24 | [Écrans : stock de pièces](24-ecrans-stock.md) | 11 | 1850 |
 | 25 | [Écrans : carburant](25-ecrans-carburant.md) | 9 | 1674 |
-| 26 | [Écrans : facturation, dépenses et trésorerie](26-ecrans-finances.md) | 34 | 5592 |
+| 26 | [Écrans : facturation, dépenses et trésorerie](26-ecrans-finances.md) | 36 | 5735 |
 | 27 | [Écrans : plan comptable, opérations diverses et rapports comptables](27-ecrans-comptabilite.md) | 22 | 1969 |
 | 28 | [La page d'accueil : le tableau de bord](28-tableau-de-bord.md) | 13 | 2166 |
 | 29 | [L'espace mobile du chauffeur](29-mobile.md) | 31 | 2523 |

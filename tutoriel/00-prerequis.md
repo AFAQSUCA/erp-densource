@@ -720,9 +720,9 @@ erp-densource/
 │   │   │   ├── __init__.py  ← ch. 16
 │   │   │   ├── test_facturation.py  ← ch. 26
 │   │   │   ├── test_receivers.py  ← ch. 25
-│   │   │   ├── test_receivers_demandes.py  ← ch. 16
-│   │   │   ├── test_receivers_frais_mission.py  ← ch. 16
-│   │   │   ├── test_receivers_proforma.py  ← ch. 16
+│   │   │   ├── test_receivers_demandes.py  ← ch. 26
+│   │   │   ├── test_receivers_frais_mission.py  ← ch. 22
+│   │   │   ├── test_receivers_proforma.py  ← ch. 26
 │   │   │   ├── test_services.py  ← ch. 24
 │   │   │   ├── test_taches.py  ← ch. 21
 │   │   │   ├── test_tasks.py  ← ch. 16

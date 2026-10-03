@@ -1,6 +1,6 @@
 # Chapitre 26 — Écrans : facturation, dépenses et trésorerie
 
-> 34 fichier(s) dans ce chapitre, 5592 lignes de code.
+> 36 fichier(s) dans ce chapitre, 5735 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -5861,6 +5861,161 @@ def test_les_taches_quotidiennes_incluent_les_factures_echues():
     assert resultat["factures_echues"] == User.objects.filter(role__in=[Role.FINANCES, Role.DIRECTION]).count()
 ```
 
+#### `apps/notifications/tests/test_receivers_demandes.py`
+
+*69 lignes* — Qui est prévenu de quoi pour les dépenses du parc auto pré-approuvées (R2).
+
+```python
+"""Qui est prévenu de quoi pour les dépenses du parc auto pré-approuvées (R2)."""
+
+from decimal import Decimal
+
+import pytest
+
+from apps.accounts.models import Role
+from apps.accounts.tests.factories import UserFactory
+from apps.billing.models import CategorieDepense, ModePaiement
+from apps.finance import demandes as services
+from apps.notifications.models import CategorieNotification, Notification
+
+pytestmark = pytest.mark.django_db
+
+
+def _de(utilisateur):
+    return list(Notification.objects.filter(destinataire=utilisateur).order_by("pk"))
+
+
+def test_la_direction_est_prevenue_d_une_demande_manuelle():
+    direction = UserFactory(role=Role.DIRECTION)
+
+    services.soumettre_demande(
+        UserFactory(role=Role.PARCAUTO), categorie=CategorieDepense.PIECES,
+        montant_estime=Decimal("150000"), motif="Pièce rare",
+    )
+
+    (notification,) = _de(direction)
+    assert notification.categorie == CategorieNotification.DEMANDE_DEPENSE
+
+
+def test_le_demandeur_est_prevenu_de_la_validation():
+    parcauto = UserFactory(role=Role.PARCAUTO)
+    demande = services.soumettre_demande(
+        parcauto, categorie=CategorieDepense.PIECES, montant_estime=Decimal("150000"), motif="x"
+    )
+
+    services.valider_demande(demande, UserFactory(role=Role.DIRECTION))
+
+    notifications = [n for n in _de(parcauto) if n.categorie == CategorieNotification.DEMANDE_DEPENSE]
+    assert any("validée" in n.titre for n in notifications)
+
+
+def test_la_finance_est_prevenue_de_l_ordre_a_executer():
+    finance = UserFactory(role=Role.FINANCES)
+    demande = services.soumettre_demande(
+        UserFactory(role=Role.PARCAUTO), categorie=CategorieDepense.PIECES, montant_estime=Decimal("150000"), motif="x"
+    )
+
+    services.valider_demande(demande, UserFactory(role=Role.DIRECTION))
+
+    (notification,) = _de(finance)
+    assert notification.categorie == CategorieNotification.DEMANDE_DEPENSE
+    assert "à exécuter" in notification.titre.lower()
+
+
+def test_la_direction_est_prevenue_d_un_depassement_a_l_execution():
+    direction = UserFactory(role=Role.DIRECTION)
+    demande = services.soumettre_demande(
+        UserFactory(role=Role.PARCAUTO), categorie=CategorieDepense.PIECES, montant_estime=Decimal("100000"), motif="x"
+    )
+    services.valider_demande(demande, direction)
+    ordre = demande.ordre_decaissement
+
+    with pytest.raises(Exception):
+        services.executer_ordre(ordre, UserFactory(role=Role.FINANCES), mode_paiement=ModePaiement.ESPECES, montant_reel=Decimal("150000"))
+
+    notifications = [n for n in _de(direction) if n.categorie == CategorieNotification.DEMANDE_DEPENSE]
+    assert any("dépassement" in n.titre.lower() for n in notifications)
+```
+
+#### `apps/notifications/tests/test_receivers_proforma.py`
+
+*72 lignes* — Qui est prévenu de quoi pour un devis (R5) : finance, direction, chargé clientèle.
+
+```python
+"""Qui est prévenu de quoi pour un devis (R5) : finance, direction, chargé clientèle."""
+
+from decimal import Decimal
+
+import pytest
+
+from apps.accounts.models import Role
+from apps.accounts.tests.factories import UserFactory
+from apps.billing import services
+from apps.billing.models import SEUIL_VALIDATION_DIRECTION
+from apps.billing.tests.helpers import JOUR, charge_clientele, direction, finances, proforma_soumise
+from apps.notifications.models import CategorieNotification, Notification
+
+pytestmark = pytest.mark.django_db
+
+
+def _de(utilisateur):
+    return list(Notification.objects.filter(destinataire=utilisateur).order_by("pk"))
+
+
+def test_la_finance_est_prevenue_d_un_devis_soumis():
+    finance = UserFactory(role=Role.FINANCES)
+    proforma = proforma_soumise()
+
+    (notification,) = _de(finance)
+    assert notification.categorie == CategorieNotification.PROFORMA
+    assert proforma.client.raison_sociale in notification.titre
+
+
+def test_la_direction_est_prevenue_au_dela_du_seuil():
+    responsable = UserFactory(role=Role.DIRECTION)
+    proforma = proforma_soumise(prix=str(SEUIL_VALIDATION_DIRECTION))
+
+    services.valider_proforma(proforma, finances(), aujourd_hui=JOUR)
+
+    (notification,) = _de(responsable)
+    assert notification.categorie == CategorieNotification.PROFORMA
+    assert "direction" in notification.titre.lower() or "élevé" in notification.titre.lower()
+
+
+def test_l_auteur_est_prevenu_de_la_validation():
+    auteur = charge_clientele()
+    proforma = proforma_soumise(acteur=auteur)
+
+    services.valider_proforma(proforma, finances(), aujourd_hui=JOUR)
+
+    notifications = _de(auteur)
+    assert any(n.categorie == CategorieNotification.PROFORMA and proforma.numero in n.titre for n in notifications)
+
+
+def test_l_auteur_est_prevenu_d_une_contre_proposition():
+    auteur = charge_clientele()
+    proforma = proforma_soumise(acteur=auteur)
+
+    services.contre_proposer_proforma(proforma, finances(), motif="Prix trop bas")
+
+    notifications = [n for n in _de(auteur) if n.categorie == CategorieNotification.PROFORMA]
+    assert notifications and "Prix trop bas" in notifications[-1].message
+
+
+def test_l_auteur_est_prevenu_de_l_expiration():
+    auteur = charge_clientele()
+    proforma = proforma_soumise(acteur=auteur)
+    services.valider_proforma(proforma, finances(), aujourd_hui=JOUR)
+    services.envoyer_proforma_au_client(proforma, auteur, aujourd_hui=JOUR)
+
+    from datetime import timedelta
+
+    services.expirer_proformas(aujourd_hui=JOUR + timedelta(days=31))
+
+    notifications = [n for n in _de(auteur) if n.categorie == CategorieNotification.PROFORMA]
+    assert any("expiré" in n.titre.lower() for n in notifications)
+```
+
 ```bash
 cd frontend
 npm run build:css
@@ -5874,7 +6029,7 @@ python manage.py check
 ```
 
 ```bash
-python -m pytest apps/accounts/tests/test_web.py apps/billing/tests/test_proforma_views.py apps/billing/tests/test_views.py apps/core/tests/test_impression_listes.py apps/finance/tests/test_demandes_views.py apps/finance/tests/test_depenses_parc_auto.py apps/finance/tests/test_impression.py apps/finance/tests/test_versements.py apps/finance/tests/test_views.py apps/notifications/tests/test_facturation.py -q --no-cov
+python -m pytest apps/accounts/tests/test_web.py apps/billing/tests/test_proforma_views.py apps/billing/tests/test_views.py apps/core/tests/test_impression_listes.py apps/finance/tests/test_demandes_views.py apps/finance/tests/test_depenses_parc_auto.py apps/finance/tests/test_impression.py apps/finance/tests/test_versements.py apps/finance/tests/test_views.py apps/notifications/tests/test_facturation.py apps/notifications/tests/test_receivers_demandes.py apps/notifications/tests/test_receivers_proforma.py -q --no-cov
 ```
 
 

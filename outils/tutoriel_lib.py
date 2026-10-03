@@ -222,6 +222,16 @@ def _app_de(chemin: str) -> str | None:
 # des sections d'une autre app) : ils sont présentés avec la partie métier.
 FORCES_AU_METIER = {"apps/core/forms.py": 2, "apps/inventory/forms.py": 11}
 
+# Tests qui ouvrent des pages d'une autre app *indirectement* : le récepteur qu'ils exercent construit
+# un lien (``reverse(...)``) vers une app dont les écrans n'existent pas encore, mais le test lui-même
+# ne contient ni ``reverse(`` ni de chaîne "app:route" — rien dans sa source ne le révèle à
+# ``_chapitre_test_seul``. Ancré par nom de fichier plutôt que deviné.
+FORCES_AUX_ECRANS = {
+    "apps/notifications/tests/test_receivers_proforma.py": NUM["ecrans-finances"],
+    "apps/notifications/tests/test_receivers_demandes.py": NUM["ecrans-finances"],
+    "apps/notifications/tests/test_receivers_frais_mission.py": NUM["ecrans-missions"],
+}
+
 
 def chapitre_de(chemin: str) -> int | None:
     """Numéro du chapitre qui présente ce fichier (``None`` : fichier exclu)."""
@@ -270,6 +280,8 @@ def _chapitre_test(chemin: str, app: str, _en_cours: frozenset = frozenset()) ->
 
 def _chapitre_test_seul(chemin: str, app: str) -> int:
     """Un test est présenté dès que tout ce qu'il importe existe ; s'il ouvre des pages, avec les écrans."""
+    if chemin in FORCES_AUX_ECRANS:
+        return FORCES_AUX_ECRANS[chemin]
     utilises = _imports_apps(chemin) | {app}
     plus_haute = max(utilises, key=lambda a: RANG[a])
     if plus_haute == "dashboard":
