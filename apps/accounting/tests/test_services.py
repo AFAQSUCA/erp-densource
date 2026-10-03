@@ -35,6 +35,8 @@ from .factories import CompteFactory
 pytestmark = pytest.mark.django_db
 
 JOUR = date(2026, 9, 1)
+# Un exercice ne se clôture qu'une fois l'année terminée : les tests de clôture visent une année passée.
+JOUR_PASSE = date(2024, 6, 1)
 
 
 def _lignes_equilibrees(charge, tresorerie, montant="1000"):
@@ -432,16 +434,16 @@ def test_passer_une_ecriture_cree_son_exercice_au_passage():
 
 def test_cloturer_un_exercice_verrouille_les_nouvelles_ecritures():
     charge, tresorerie = CompteFactory(), CompteFactory()
-    exercice = services.exercice_pour(JOUR)
+    exercice = services.exercice_pour(JOUR_PASSE)
 
     services.cloturer_exercice(exercice, direction())
 
     exercice.refresh_from_db()
     assert exercice.statut == StatutExercice.CLOTURE
     assert exercice.cloture_par is not None
-    with pytest.raises(ExerciceCloture, match="2026"):
+    with pytest.raises(ExerciceCloture, match="2024"):
         services.passer_ecriture(
-            journal=Journal.OPERATIONS_DIVERSES, date_ecriture=JOUR, libelle="Trop tard",
+            journal=Journal.OPERATIONS_DIVERSES, date_ecriture=JOUR_PASSE, libelle="Trop tard",
             lignes=_lignes_equilibrees(charge, tresorerie),
         )
 
@@ -456,7 +458,7 @@ def test_cloturer_est_reserve_a_la_direction_strict():
 
 
 def test_cloturer_un_exercice_deja_cloture_est_refuse():
-    exercice = services.exercice_pour(JOUR)
+    exercice = services.exercice_pour(JOUR_PASSE)
     services.cloturer_exercice(exercice, direction())
 
     with pytest.raises(ExerciceCloture):
@@ -464,10 +466,10 @@ def test_cloturer_un_exercice_deja_cloture_est_refuse():
 
 
 def test_cloturer_refuse_s_il_reste_des_brouillons_dans_la_periode():
-    exercice = services.exercice_pour(JOUR)
-    services.creer_ecriture_manuelle(finances(), date_ecriture=JOUR, libelle="Encore en brouillon")
+    exercice = services.exercice_pour(JOUR_PASSE)
+    services.creer_ecriture_manuelle(finances(), date_ecriture=JOUR_PASSE, libelle="Encore en brouillon")
 
-    with pytest.raises(ClotureImpossible, match="1"):
+    with pytest.raises(ClotureImpossible, match="brouillon"):
         services.cloturer_exercice(exercice, direction())
 
     exercice.refresh_from_db()
@@ -475,11 +477,11 @@ def test_cloturer_refuse_s_il_reste_des_brouillons_dans_la_periode():
 
 
 def test_creer_une_ecriture_manuelle_dans_un_exercice_cloture_est_refuse():
-    exercice = services.exercice_pour(JOUR)
+    exercice = services.exercice_pour(JOUR_PASSE)
     services.cloturer_exercice(exercice, direction())
 
     with pytest.raises(ExerciceCloture):
-        services.creer_ecriture_manuelle(finances(), date_ecriture=JOUR, libelle="Trop tard")
+        services.creer_ecriture_manuelle(finances(), date_ecriture=JOUR_PASSE, libelle="Trop tard")
 
 
 def test_valider_une_ecriture_manuelle_est_refuse_si_l_exercice_est_devenu_cloture():

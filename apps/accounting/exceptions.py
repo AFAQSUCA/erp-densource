@@ -1,4 +1,7 @@
-class AccountingError(Exception):
+from apps.core.exceptions import ErreurMetier
+
+
+class AccountingError(ErreurMetier):
     """Erreur métier de la comptabilité."""
 
 
@@ -28,4 +31,5 @@ class ExerciceCloture(AccountingError):
 
 
 class ClotureImpossible(AccountingError):
-    """Des brouillons non résolus (saisie manuelle) empêchent de clôturer l'exercice."""
+    """L'exercice ne peut pas être clôturé : brouillons non résolus (saisie manuelle) ou année pas
+    encore terminée."""
