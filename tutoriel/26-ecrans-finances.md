@@ -1,6 +1,6 @@
 # Chapitre 26 — Écrans : facturation, dépenses et trésorerie
 
-> 36 fichier(s) dans ce chapitre, 5735 lignes de code.
+> 38 fichier(s) dans ce chapitre, 6277 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -315,7 +315,7 @@ class FiltreProformasForm(StyleTailwindMixin, forms.Form):
 
 #### `apps/finance/forms.py`
 
-*143 lignes*
+*193 lignes*
 
 ```python
 from django import forms
@@ -347,6 +347,56 @@ class MouvementForm(StyleTailwindMixin, forms.Form):
 
 class MotifForm(StyleTailwindMixin, forms.Form):
     motif = forms.CharField(label="Motif", widget=forms.Textarea(attrs={"rows": 2}))
+
+
+class LigneReleveForm(StyleTailwindMixin, forms.Form):
+    """Saisie manuelle d'une ligne du relevé bancaire (Lot G)."""
+
+    date_operation = forms.DateField(label="Date", widget=forms.DateInput(attrs={"type": "date"}))
+    libelle = forms.CharField(label="Libellé", max_length=200)
+    montant = forms.DecimalField(label="Montant (FCFA)", min_value=0, decimal_places=2, max_digits=14)
+    sens = forms.ChoiceField(label="Sens", choices=SensMouvement.choices)
+    reference = forms.CharField(label="Référence", max_length=100, required=False)
+
+    def clean_date_operation(self):
+        jour = self.cleaned_data["date_operation"]
+        if jour > timezone.localdate():
+            raise forms.ValidationError("La date ne peut pas être dans le futur.")
+        return jour
+
+
+class PeriodeRapprochementForm(StyleTailwindMixin, forms.Form):
+    """Période affichée pour le rapprochement bancaire ; par défaut le mois en cours."""
+
+    debut = forms.DateField(label="Du", required=False, widget=forms.DateInput(attrs={"type": "date"}))
+    fin = forms.DateField(label="Au", required=False, widget=forms.DateInput(attrs={"type": "date"}))
+
+    def clean(self):
+        donnees = super().clean()
+        debut, fin = donnees.get("debut"), donnees.get("fin")
+        if debut and fin and debut > fin:
+            self.add_error("fin", "La date de fin précède la date de début : période ignorée.")
+            donnees.pop("debut", None)
+            donnees.pop("fin", None)
+        return donnees
+
+    def periode(self) -> tuple:
+        self.is_valid()
+        donnees = getattr(self, "cleaned_data", {})
+        aujourd_hui = timezone.localdate()
+        return (
+            donnees.get("debut") or aujourd_hui.replace(day=1),
+            donnees.get("fin") or aujourd_hui,
+        )
+
+
+class PointerLigneReleveForm(StyleTailwindMixin, forms.Form):
+    """Choix du mouvement de trésorerie auquel associer une ligne de relevé."""
+
+    origine = forms.ChoiceField(
+        label="Origine", choices=[("REGLEMENT", "Règlement"), ("DEPENSE", "Dépense"), ("MANUEL", "Mouvement manuel")]
+    )
+    mouvement_id = forms.IntegerField(label="Mouvement", min_value=1, widget=forms.HiddenInput)
 
 
 class FiltreTresorerieForm(StyleTailwindMixin, forms.Form):
@@ -1200,7 +1250,7 @@ de faire** (`saisie`, `validation`) — jamais le gabarit.
 
 #### `apps/finance/views.py`
 
-*373 lignes* — Trésorerie : journal des mouvements, soldes par compte, mouvements manuels.
+*465 lignes* — Trésorerie : journal des mouvements, soldes par compte, mouvements manuels.
 
 ```python
 """Trésorerie : journal des mouvements, soldes par compte, mouvements manuels."""
@@ -1229,11 +1279,21 @@ from .forms import (
     EnveloppeForm,
     ExecuterOrdreForm,
     FiltreTresorerieForm,
+    LigneReleveForm,
     MotifForm,
     MouvementForm,
+    PeriodeRapprochementForm,
+    PointerLigneReleveForm,
     RevaliderOrdreForm,
 )
-from .models import DemandeDepense, MouvementManuel, OrdreDecaissement, StatutDemandeDepense, StatutOrdreDecaissement
+from .models import (
+    DemandeDepense,
+    LigneReleve,
+    MouvementManuel,
+    OrdreDecaissement,
+    StatutDemandeDepense,
+    StatutOrdreDecaissement,
+)
 
 
 class TresorerieView(RoleRequiredMixin, TemplateView):
@@ -1576,6 +1636,88 @@ class EnveloppeCreateView(RoleRequiredMixin, View):
         else:
             messages.success(request, "Enveloppe enregistrée.")
         return redirect("finance:enveloppes")
+
+
+# --- rapprochement bancaire (Lot G) ---
+
+
+class RapprochementBancaireView(RoleRequiredMixin, TemplateView):
+    roles = permissions.CONSULTATION
+    template_name = "finance/rapprochement.html"
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        periode_form = PeriodeRapprochementForm(self.request.GET)
+        debut, fin = periode_form.periode()
+        etat = services.rapprochement_bancaire(debut=debut, fin=fin)
+        peut_saisir = self.request.user.role_effectif in permissions.SAISIE
+        lignes_avec_suggestions = [
+            {"ligne": ligne, "suggestions": services.suggestions_pointage(ligne)}
+            for ligne in etat["lignes_non_pointees"]
+        ]
+        contexte.update(
+            periode_form=periode_form,
+            debut=debut,
+            fin=fin,
+            etat=etat,
+            lignes_avec_suggestions=lignes_avec_suggestions,
+            peut_saisir=peut_saisir,
+            form_ligne=LigneReleveForm(initial={"date_operation": timezone.localdate()}) if peut_saisir else None,
+            form_pointer=PointerLigneReleveForm() if peut_saisir else None,
+        )
+        return contexte
+
+
+class LigneReleveCreateView(RoleRequiredMixin, View):
+    roles = permissions.SAISIE
+    http_method_names = ["post"]
+
+    def post(self, request):
+        form = LigneReleveForm(request.POST)
+        if not form.is_valid():
+            _erreurs_en_messages(request, form)
+            return redirect("finance:rapprochement")
+        try:
+            services.saisir_ligne_releve(request.user, **form.cleaned_data)
+        except BillingError as erreur:
+            messages.error(request, str(erreur))
+        else:
+            messages.success(request, "Ligne de relevé ajoutée.")
+        return redirect("finance:rapprochement")
+
+
+class LigneRelevePointerView(RoleRequiredMixin, View):
+    roles = permissions.SAISIE
+    http_method_names = ["post"]
+
+    def post(self, request, pk):
+        ligne = get_object_or_404(LigneReleve, pk=pk)
+        form = PointerLigneReleveForm(request.POST)
+        if not form.is_valid():
+            _erreurs_en_messages(request, form)
+            return redirect("finance:rapprochement")
+        try:
+            services.pointer_ligne_releve(ligne, request.user, **form.cleaned_data)
+        except BillingError as erreur:
+            messages.error(request, str(erreur))
+        else:
+            messages.success(request, "Ligne pointée.")
+        return redirect("finance:rapprochement")
+
+
+class LigneReleveDepointerView(RoleRequiredMixin, View):
+    roles = permissions.SAISIE
+    http_method_names = ["post"]
+
+    def post(self, request, pk):
+        ligne = get_object_or_404(LigneReleve, pk=pk)
+        try:
+            services.depointer_ligne_releve(ligne, request.user)
+        except BillingError as erreur:
+            messages.error(request, str(erreur))
+        else:
+            messages.success(request, "Pointage annulé.")
+        return redirect("finance:rapprochement")
 ```
 
 #### `apps/billing/urls.py`
@@ -1655,7 +1797,7 @@ urlpatterns = [
 
 #### `apps/finance/urls.py`
 
-*25 lignes*
+*37 lignes*
 
 ```python
 from django.urls import path
@@ -1682,6 +1824,18 @@ urlpatterns = [
     path("ordres/<int:pk>/revalider/", views.OrdreRevaliderView.as_view(), name="ordre_revalider"),
     path("enveloppes/", views.EnveloppeListView.as_view(), name="enveloppes"),
     path("enveloppes/nouvelle/", views.EnveloppeCreateView.as_view(), name="enveloppe_nouvelle"),
+    path("rapprochement/", views.RapprochementBancaireView.as_view(), name="rapprochement"),
+    path("rapprochement/lignes/nouvelle/", views.LigneReleveCreateView.as_view(), name="ligne_releve_nouvelle"),
+    path(
+        "rapprochement/lignes/<int:pk>/pointer/",
+        views.LigneRelevePointerView.as_view(),
+        name="ligne_releve_pointer",
+    ),
+    path(
+        "rapprochement/lignes/<int:pk>/depointer/",
+        views.LigneReleveDepointerView.as_view(),
+        name="ligne_releve_depointer",
+    ),
 ]
 ```
 
@@ -3134,6 +3288,179 @@ mkdir -p apps/billing/templates/billing apps/finance/templates/finance
       <p class="text-sm text-slate-600">Aucune enveloppe définie : les dépenses automatiques du parc auto restent illimitées.</p>
     </div>
   {% endif %}
+</div>
+{% endblock %}
+```
+
+#### `apps/finance/templates/finance/rapprochement.html`
+
+*166 lignes*
+
+```django
+{% extends "base.html" %}
+{% load ui humanize %}
+{% block titre %}Rapprochement bancaire{% endblock %}
+{% block entete %}Rapprochement bancaire{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-7xl" x-data="{ saisie: false }">
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <div>
+      <h1 class="text-2xl font-bold text-slate-900">Rapprochement bancaire</h1>
+      <p class="mt-1 text-sm text-slate-600">Confrontez le relevé de la banque aux mouvements déjà enregistrés sur le compte Banque.</p>
+    </div>
+    {% if peut_saisir %}
+      <button type="button" @click="saisie = !saisie" :aria-expanded="saisie.toString()"
+              class="inline-flex items-center gap-2 rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">
+        <i class="fa-solid fa-plus" aria-hidden="true"></i> Ligne de relevé
+      </button>
+    {% endif %}
+  </div>
+
+  <form method="get" class="mt-5 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    {% include "components/_champ.html" with champ=periode_form.debut %}
+    {% include "components/_champ.html" with champ=periode_form.fin %}
+    <button type="submit" class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2">Filtrer</button>
+  </form>
+
+  <dl class="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
+    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <dt class="text-sm text-slate-600">Solde du relevé</dt>
+      <dd class="mt-1 text-xl font-bold text-slate-900">{{ etat.solde_releve|floatformat:0|intcomma }} <span class="text-sm font-medium text-slate-600">FCFA</span></dd>
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <dt class="text-sm text-slate-600">Solde des mouvements enregistrés</dt>
+      <dd class="mt-1 text-xl font-bold text-slate-900">{{ etat.solde_comptable|floatformat:0|intcomma }} <span class="text-sm font-medium text-slate-600">FCFA</span></dd>
+    </div>
+    <div class="rounded-xl border {% if etat.ecart == 0 %}border-emerald-300{% else %}border-red-300{% endif %} bg-white p-4 shadow-sm">
+      <dt class="text-sm text-slate-600">Écart</dt>
+      <dd class="mt-1 text-xl font-bold {% if etat.ecart == 0 %}text-emerald-800{% else %}text-red-800{% endif %}">{{ etat.ecart|floatformat:0|intcomma }} <span class="text-sm font-medium text-slate-600">FCFA</span></dd>
+    </div>
+  </dl>
+  {% if etat.ecart != 0 %}
+    <p class="mt-2 text-xs text-slate-600">Un écart qui persiste après avoir pointé toutes les lignes concordantes signale une opération jamais saisie (frais bancaires, par exemple) : à corriger par une opération diverse.</p>
+  {% endif %}
+
+  {% if peut_saisir %}
+    <form method="post" action="{% url 'finance:ligne_releve_nouvelle' %}" x-show="saisie" x-cloak class="mt-5 space-y-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      {% csrf_token %}
+      <h2 class="text-base font-semibold text-slate-900">Nouvelle ligne du relevé</h2>
+      <div class="grid grid-cols-1 gap-4 sm:grid-cols-4">
+        {% include "components/_champ.html" with champ=form_ligne.date_operation %}
+        <div class="sm:col-span-2">{% include "components/_champ.html" with champ=form_ligne.libelle %}</div>
+        {% include "components/_champ.html" with champ=form_ligne.sens %}
+        {% include "components/_champ.html" with champ=form_ligne.montant %}
+        {% include "components/_champ.html" with champ=form_ligne.reference %}
+      </div>
+      <button type="submit" class="rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">Enregistrer</button>
+    </form>
+  {% endif %}
+
+  <section class="mt-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+    <h2 class="text-base font-semibold text-slate-900">Lignes du relevé non pointées</h2>
+    {% if lignes_avec_suggestions %}
+      <div class="mt-3 space-y-3">
+        {% for entree in lignes_avec_suggestions %}
+          <div class="rounded-lg border border-slate-200 p-3">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <span class="font-medium text-slate-900">{{ entree.ligne.date_operation|date:"d/m/Y" }} · {{ entree.ligne.libelle }}</span>
+                {% if entree.ligne.reference %}<span class="text-xs text-slate-600"> · {{ entree.ligne.reference }}</span>{% endif %}
+              </div>
+              <span class="font-semibold {% if entree.ligne.sens == 'ENTREE' %}text-emerald-800{% else %}text-red-800{% endif %}">{% if entree.ligne.sens == 'ENTREE' %}+{% else %}−{% endif %}{{ entree.ligne.montant|floatformat:0|intcomma }} FCFA</span>
+            </div>
+            {% if peut_saisir %}
+              {% if entree.suggestions %}
+                <p class="mt-2 text-xs font-medium text-slate-600">Suggestions (même sens et montant) :</p>
+                <ul class="mt-1 space-y-1">
+                  {% for s in entree.suggestions %}
+                    <li class="flex flex-wrap items-center justify-between gap-2 rounded bg-slate-50 px-2 py-1.5 text-sm">
+                      <span class="text-slate-800">{{ s.date|date:"d/m/Y" }} · {{ s.libelle }}</span>
+                      <form method="post" action="{% url 'finance:ligne_releve_pointer' entree.ligne.pk %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="origine" value="{{ s.origine }}">
+                        <input type="hidden" name="mouvement_id" value="{{ s.pk }}">
+                        <button type="submit" class="rounded-lg bg-emerald-700 px-3 py-1 text-xs font-semibold text-white hover:bg-emerald-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:ring-offset-2">Associer</button>
+                      </form>
+                    </li>
+                  {% endfor %}
+                </ul>
+              {% else %}
+                <p class="mt-2 text-xs text-slate-600">Aucun mouvement Banque correspondant trouvé.</p>
+              {% endif %}
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="mt-2 text-sm text-slate-600">Toutes les lignes du relevé sont pointées.</p>
+    {% endif %}
+  </section>
+
+  <section class="mt-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+    <h2 class="text-base font-semibold text-slate-900">Mouvements Banque non pointés</h2>
+    {% if etat.mouvements_non_pointes %}
+      <div class="mt-3 overflow-x-auto">
+        <table class="min-w-full divide-y divide-slate-200 text-sm">
+          <caption class="sr-only">Mouvements Banque non pointés</caption>
+          <thead class="text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+            <tr><th scope="col" class="py-2 pr-4">Date</th><th scope="col" class="px-4 py-2">Libellé</th><th scope="col" class="px-4 py-2 text-right">Montant</th></tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            {% for m in etat.mouvements_non_pointes %}
+              <tr>
+                <td class="whitespace-nowrap py-2 pr-4 text-slate-700">{{ m.date|date:"d/m/Y" }}</td>
+                <td class="px-4 py-2 text-slate-900">{{ m.libelle }}</td>
+                <td class="whitespace-nowrap px-4 py-2 text-right font-medium {% if m.sens == 'ENTREE' %}text-emerald-800{% else %}text-red-800{% endif %}">{% if m.sens == 'ENTREE' %}+{% else %}−{% endif %}{{ m.montant|floatformat:0|intcomma }} FCFA</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="mt-2 text-sm text-slate-600">Tous les mouvements Banque de la période sont pointés.</p>
+    {% endif %}
+  </section>
+
+  <section class="mt-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+    <h2 class="text-base font-semibold text-slate-900">Toutes les lignes du relevé de la période</h2>
+    {% with pointees=etat.lignes_releve %}
+      {% if pointees %}
+        <div class="mt-3 overflow-x-auto">
+          <table class="min-w-full divide-y divide-slate-200 text-sm">
+            <caption class="sr-only">Lignes du relevé pointées</caption>
+            <thead class="text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+              <tr><th scope="col" class="py-2 pr-4">Date</th><th scope="col" class="px-4 py-2">Libellé</th><th scope="col" class="px-4 py-2 text-right">Montant</th><th scope="col" class="px-4 py-2">Statut</th>{% if peut_saisir %}<th scope="col" class="py-2 pl-4"><span class="sr-only">Action</span></th>{% endif %}</tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              {% for ligne in pointees %}
+                <tr>
+                  <td class="whitespace-nowrap py-2 pr-4 text-slate-700">{{ ligne.date_operation|date:"d/m/Y" }}</td>
+                  <td class="px-4 py-2 text-slate-900">{{ ligne.libelle }}</td>
+                  <td class="whitespace-nowrap px-4 py-2 text-right font-medium {% if ligne.sens == 'ENTREE' %}text-emerald-800{% else %}text-red-800{% endif %}">{% if ligne.sens == 'ENTREE' %}+{% else %}−{% endif %}{{ ligne.montant|floatformat:0|intcomma }} FCFA</td>
+                  <td class="whitespace-nowrap px-4 py-2">
+                    {% if ligne.pointee %}<span class="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800"><i class="fa-solid fa-check" aria-hidden="true"></i> Pointée</span>{% else %}<span class="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">Non pointée</span>{% endif %}
+                  </td>
+                  {% if peut_saisir %}
+                    <td class="whitespace-nowrap py-2 pl-4 text-right">
+                      {% if ligne.pointee %}
+                        <form method="post" action="{% url 'finance:ligne_releve_depointer' ligne.pk %}">
+                          {% csrf_token %}
+                          <button type="submit" class="text-sm font-medium text-red-800 underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-red-700">Dépointer</button>
+                        </form>
+                      {% endif %}
+                    </td>
+                  {% endif %}
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="mt-2 text-sm text-slate-600">Aucune ligne saisie sur la période.</p>
+      {% endif %}
+    {% endwith %}
+  </section>
 </div>
 {% endblock %}
 ```
@@ -5213,6 +5540,233 @@ def test_le_lien_imprimer_est_sur_la_page_tresorerie_avec_les_filtres(client):
     assert reverse("finance:imprimer") in page and "compte%3DCAISSE" in page or "compte=CAISSE" in page
 ```
 
+#### `apps/finance/tests/test_rapprochement_views.py`
+
+*220 lignes* — Écran de rapprochement bancaire (Lot G) : accès, saisie, suggestions, pointage.
+
+```python
+"""Écran de rapprochement bancaire (Lot G) : accès, saisie, suggestions, pointage."""
+
+from datetime import date
+from decimal import Decimal
+
+import pytest
+from django.test import Client
+from django.urls import reverse
+from django.utils import timezone
+
+from apps.accounts.models import Role
+from apps.accounts.tests.factories import UserFactory
+from apps.billing.models import ModePaiement
+from apps.billing.tests.helpers import JOUR, emise, finances
+from apps.finance import services
+from apps.finance.models import LigneReleve, SensMouvement
+
+pytestmark = pytest.mark.django_db
+
+
+def _connecte(client, role):
+    compte = UserFactory(role=role)
+    client.force_login(compte)
+    return compte
+
+
+def _messages(reponse):
+    return [str(m) for m in reponse.context["messages"]]
+
+
+def _donnees_ligne(**surcharges):
+    donnees = {
+        "date_operation": timezone.localdate().isoformat(), "libelle": "Virement client",
+        "montant": "100000", "sens": "ENTREE", "reference": "",
+    }
+    donnees.update(surcharges)
+    return donnees
+
+
+@pytest.mark.parametrize("role", [Role.ADMIN, Role.DIRECTION, Role.FINANCES, Role.RH])
+def test_le_rapprochement_est_accessible_a_admin_direction_finances_et_rh(client, role):
+    _connecte(client, role)
+
+    assert client.get(reverse("finance:rapprochement")).status_code == 200
+
+
+@pytest.mark.parametrize("role", [Role.PARCAUTO, Role.CHARGE_CLIENTELE, Role.CHAUFFEUR])
+def test_le_rapprochement_est_interdit_aux_autres_roles(client, role):
+    _connecte(client, role)
+
+    assert client.get(reverse("finance:rapprochement")).status_code == 403
+
+
+def test_le_rapprochement_exige_la_connexion(client):
+    assert client.get(reverse("finance:rapprochement")).status_code == 302
+
+
+def test_les_soldes_et_l_ecart_s_affichent(client):
+    _connecte(client, Role.FINANCES)
+    facture = emise(prix="1000000")
+    reglement = services.confirmer_versement(
+        facture, finances(), montant=Decimal("100000"), mode=ModePaiement.VIREMENT, date_reglement=JOUR
+    )[0]
+    services.saisir_ligne_releve(
+        finances(), date_operation=JOUR, libelle="Virement client", montant=Decimal("100000"), sens=SensMouvement.ENTREE
+    )
+
+    reponse = client.get(reverse("finance:rapprochement"))
+    texte = reponse.content.decode().replace("\xa0", " ").replace(" ", " ")
+
+    assert reponse.context["etat"]["solde_releve"] == Decimal("100000")
+    assert reponse.context["etat"]["solde_comptable"] == Decimal("100000")
+    assert "100 000" in texte
+    assert reglement.pk  # le règlement existe bien, utilisé comme mouvement de rapprochement
+
+
+def test_finances_saisit_une_ligne_de_releve(client):
+    _connecte(client, Role.FINANCES)
+
+    reponse = client.post(reverse("finance:ligne_releve_nouvelle"), _donnees_ligne(), follow=True)
+
+    ligne = LigneReleve.objects.get()
+    assert (ligne.sens, ligne.montant, ligne.libelle) == (SensMouvement.ENTREE, Decimal("100000"), "Virement client")
+    assert any("ajoutée" in m for m in _messages(reponse))
+
+
+@pytest.mark.parametrize(
+    "surcharges",
+    [{"montant": "0"}, {"libelle": ""}, {"date_operation": "2999-01-01"}, {"sens": "AUTRE"}],
+)
+def test_saisie_de_ligne_invalide_donne_un_message_sans_rien_enregistrer(client, surcharges):
+    _connecte(client, Role.FINANCES)
+
+    reponse = client.post(reverse("finance:ligne_releve_nouvelle"), _donnees_ligne(**surcharges), follow=True)
+
+    assert not LigneReleve.objects.exists() and _messages(reponse)
+
+
+def test_une_suggestion_apparait_pour_un_mouvement_banque_correspondant(client):
+    _connecte(client, Role.FINANCES)
+    facture = emise(prix="1000000")
+    reglement, _ = services.confirmer_versement(
+        facture, finances(), montant=Decimal("100000"), mode=ModePaiement.VIREMENT, date_reglement=JOUR
+    )
+    services.saisir_ligne_releve(
+        finances(), date_operation=JOUR, libelle="Virement client", montant=Decimal("100000"), sens=SensMouvement.ENTREE
+    )
+
+    reponse = client.get(reverse("finance:rapprochement"))
+
+    entrees = reponse.context["lignes_avec_suggestions"]
+    assert len(entrees) == 1
+    assert entrees[0]["suggestions"][0]["pk"] == reglement.pk
+
+
+def test_pointer_une_ligne_depuis_l_ecran(client):
+    _connecte(client, Role.FINANCES)
+    facture = emise(prix="1000000")
+    reglement, _ = services.confirmer_versement(
+        facture, finances(), montant=Decimal("100000"), mode=ModePaiement.VIREMENT, date_reglement=JOUR
+    )
+    ligne = services.saisir_ligne_releve(
+        finances(), date_operation=JOUR, libelle="Virement client", montant=Decimal("100000"), sens=SensMouvement.ENTREE
+    )
+
+    reponse = client.post(
+        reverse("finance:ligne_releve_pointer", args=[ligne.pk]),
+        {"origine": "REGLEMENT", "mouvement_id": reglement.pk},
+        follow=True,
+    )
+
+    ligne.refresh_from_db()
+    assert ligne.pointee is True and ligne.mouvement_id == reglement.pk
+    assert any("pointée" in m for m in _messages(reponse))
+
+
+def test_pointer_un_mouvement_deja_pointe_donne_un_message_d_erreur(client):
+    _connecte(client, Role.FINANCES)
+    facture = emise(prix="1000000")
+    reglement, _ = services.confirmer_versement(
+        facture, finances(), montant=Decimal("100000"), mode=ModePaiement.VIREMENT, date_reglement=JOUR
+    )
+    premiere = services.saisir_ligne_releve(
+        finances(), date_operation=JOUR, libelle="A", montant=Decimal("100000"), sens=SensMouvement.ENTREE
+    )
+    services.pointer_ligne_releve(premiere, finances(), origine="REGLEMENT", mouvement_id=reglement.pk)
+    seconde = services.saisir_ligne_releve(
+        finances(), date_operation=JOUR, libelle="B", montant=Decimal("100000"), sens=SensMouvement.ENTREE
+    )
+
+    reponse = client.post(
+        reverse("finance:ligne_releve_pointer", args=[seconde.pk]),
+        {"origine": "REGLEMENT", "mouvement_id": reglement.pk},
+        follow=True,
+    )
+
+    seconde.refresh_from_db()
+    assert seconde.pointee is False
+    assert any("déjà pointé" in m for m in _messages(reponse))
+
+
+def test_pointer_avec_un_formulaire_invalide_donne_un_message_sans_rien_pointer(client):
+    _connecte(client, Role.FINANCES)
+    ligne = services.saisir_ligne_releve(
+        finances(), date_operation=JOUR, libelle="A", montant=Decimal("100000"), sens=SensMouvement.ENTREE
+    )
+
+    reponse = client.post(
+        reverse("finance:ligne_releve_pointer", args=[ligne.pk]),
+        {"origine": "BIDON", "mouvement_id": ""},
+        follow=True,
+    )
+
+    ligne.refresh_from_db()
+    assert ligne.pointee is False and _messages(reponse)
+
+
+def test_pointer_une_ligne_inexistante_donne_404(client):
+    _connecte(client, Role.FINANCES)
+
+    reponse = client.post(
+        reverse("finance:ligne_releve_pointer", args=[999]), {"origine": "MANUEL", "mouvement_id": 1}
+    )
+
+    assert reponse.status_code == 404
+
+
+def test_depointer_une_ligne_depuis_l_ecran(client):
+    _connecte(client, Role.FINANCES)
+    facture = emise(prix="1000000")
+    reglement, _ = services.confirmer_versement(
+        facture, finances(), montant=Decimal("100000"), mode=ModePaiement.VIREMENT, date_reglement=JOUR
+    )
+    ligne = services.saisir_ligne_releve(
+        finances(), date_operation=JOUR, libelle="Virement client", montant=Decimal("100000"), sens=SensMouvement.ENTREE
+    )
+    services.pointer_ligne_releve(ligne, finances(), origine="REGLEMENT", mouvement_id=reglement.pk)
+
+    reponse = client.post(reverse("finance:ligne_releve_depointer", args=[ligne.pk]), follow=True)
+
+    ligne.refresh_from_db()
+    assert ligne.pointee is False
+    assert any("annulé" in m for m in _messages(reponse))
+
+
+def test_les_actions_de_rapprochement_exigent_post_et_csrf():
+    http = Client(enforce_csrf_checks=True)
+    http.force_login(UserFactory(role=Role.FINANCES))
+    ligne = services.saisir_ligne_releve(
+        UserFactory(role=Role.FINANCES), date_operation=JOUR, libelle="Apport",
+        montant=Decimal("1000"), sens=SensMouvement.ENTREE,
+    )
+
+    assert http.get(reverse("finance:ligne_releve_nouvelle")).status_code == 405
+    assert http.post(reverse("finance:ligne_releve_nouvelle"), _donnees_ligne()).status_code == 403
+    assert http.post(
+        reverse("finance:ligne_releve_pointer", args=[ligne.pk]), {"origine": "MANUEL", "mouvement_id": 1}
+    ).status_code == 403
+    assert http.post(reverse("finance:ligne_releve_depointer", args=[ligne.pk])).status_code == 403
+    assert LigneReleve.objects.count() == 1
+```
+
 #### `apps/finance/tests/test_versements.py`
 
 *249 lignes* — Versements attendus : la Finance confirme qu'une facture émise a été payée, et l'entrée apparaît en trésorerie.
@@ -6029,7 +6583,7 @@ python manage.py check
 ```
 
 ```bash
-python -m pytest apps/accounts/tests/test_web.py apps/billing/tests/test_proforma_views.py apps/billing/tests/test_views.py apps/core/tests/test_impression_listes.py apps/finance/tests/test_demandes_views.py apps/finance/tests/test_depenses_parc_auto.py apps/finance/tests/test_impression.py apps/finance/tests/test_versements.py apps/finance/tests/test_views.py apps/notifications/tests/test_facturation.py apps/notifications/tests/test_receivers_demandes.py apps/notifications/tests/test_receivers_proforma.py -q --no-cov
+python -m pytest apps/accounts/tests/test_web.py apps/billing/tests/test_proforma_views.py apps/billing/tests/test_views.py apps/core/tests/test_impression_listes.py apps/finance/tests/test_demandes_views.py apps/finance/tests/test_depenses_parc_auto.py apps/finance/tests/test_impression.py apps/finance/tests/test_rapprochement_views.py apps/finance/tests/test_versements.py apps/finance/tests/test_views.py apps/notifications/tests/test_facturation.py apps/notifications/tests/test_receivers_demandes.py apps/notifications/tests/test_receivers_proforma.py -q --no-cov
 ```
 
 **Résultat attendu :** `214 passed, 5 failed` (pour les 12 fichier(s) de tests présentés dans ce chapitre).

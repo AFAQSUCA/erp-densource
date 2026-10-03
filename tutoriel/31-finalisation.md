@@ -80,7 +80,7 @@ Identité visuelle : couleurs du logo DEN Source Group (bordeaux `#8B0319`, oran
 - [x] Interface web : carburant (pleins, alertes, confirmation des saisies suspectes, analyse)
 - [x] Interface web : clients (portefeuille, fiche, interactions)
 - [x] Interface web : personnel, recrutement et congés (workflow 3 niveaux)
-- [x] Étape 4 — Finance (facturation, règlements, dépenses, trésorerie) : sans écritures comptables ni rapprochement bancaire (voir apps/billing/README.md)
+- [x] Étape 4 — Finance (facturation, règlements, dépenses, trésorerie, écritures comptables, rapprochement bancaire) (voir apps/billing/README.md)
 - [x] Étape 5 — Pilotage (tableau de bord par rôle, notifications) : sans les indicateurs financiers (étape 4) ni Celery / SMS / push (voir apps/notifications/README.md)
 - [x] Étape 6 — API (api/v1 en lecture seule, API et espace mobile du chauffeur, codes QR) : sans mode hors ligne (voir apps/mobile_api/README.md)
 - [x] Étape 7 — Tests & déploiement, en 3 lots :
@@ -252,8 +252,7 @@ production demande encore (les « lots 2 et 3 » de l'étape 7 du cahier des cha
 - `config/settings/prod.py` existe déjà (chapitre 1) mais **n'a pas été exercé** : il attend ces briques.
 
 Sont aussi **hors périmètre**, sur décision du client : le **mode hors ligne** du chauffeur (saisie sans réseau,
-synchronisation différée), le **rapprochement bancaire**, l'envoi de SMS et de notifications push, les photos
-d'incident.
+synchronisation différée), l'envoi de SMS et de notifications push, les photos d'incident.
 
 ## Aller plus loin
 

@@ -397,6 +397,7 @@ erp-densource/
 │   │   │   ├── 0001_initial.py  ← (généré par `python manage.py makemigrations`)
 │   │   │   ├── 0002_demandedepense_enveloppedepense_ordredecaissement_and_more.py  ← (généré par `python manage.py makemigrations`)
 │   │   │   ├── 0003_mouvementmanuel_nature.py  ← (généré par `python manage.py makemigrations`)
+│   │   │   ├── 0004_lignereleve.py  ← (généré par `python manage.py makemigrations`)
 │   │   │   └── __init__.py  ← (généré par `python manage.py makemigrations`)
 │   │   ├── templates/
 │   │   │   └── finance/
@@ -404,6 +405,7 @@ erp-densource/
 │   │   │       ├── demande_form.html  ← ch. 26
 │   │   │       ├── demande_list.html  ← ch. 26
 │   │   │       ├── enveloppe_list.html  ← ch. 26
+│   │   │       ├── rapprochement.html  ← ch. 26
 │   │   │       ├── tresorerie.html  ← ch. 26
 │   │   │       ├── tresorerie_print.html  ← ch. 26
 │   │   │       └── versement_confirmer.html  ← ch. 26
@@ -414,6 +416,7 @@ erp-densource/
 │   │   │   ├── test_depenses_parc_auto.py  ← ch. 26
 │   │   │   ├── test_frais_mission_receivers.py  ← ch. 14
 │   │   │   ├── test_impression.py  ← ch. 26
+│   │   │   ├── test_rapprochement_views.py  ← ch. 26
 │   │   │   ├── test_services.py  ← ch. 14
 │   │   │   ├── test_versements.py  ← ch. 26
 │   │   │   └── test_views.py  ← ch. 26
