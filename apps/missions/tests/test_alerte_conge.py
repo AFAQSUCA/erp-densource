@@ -114,3 +114,42 @@ def test_la_section_missions_du_client_est_reservee_aux_roles_des_missions():
 
     assert sections.section_missions_client(fiche, UserFactory(role=Role.RH)) is None
     assert sections.section_missions_client(fiche, UserFactory(role=Role.DIRECTION)) is not None
+
+
+# --- chevauchement et copilote (audit M11-06) ---
+
+
+def test_une_mission_deja_en_cours_qui_deborde_sur_le_conge_declenche_l_alerte(client, cas):
+    conge, fiche, compte_sup = cas
+    MissionFactory(
+        chauffeur=fiche, statut=StatutMission.EN_COURS_COLIS_RECUPERE, vehicule=VehiculeFactory(),
+        date_depart_prevue=date(2026, 10, 1), date_depart=datetime(2026, 10, 1, 7, 0, tzinfo=dt_timezone.utc),
+    )
+
+    assert "1 mission prévue pendant cette période" in _page(client, compte_sup, conge)
+
+
+def test_une_mission_en_cours_partie_apres_la_fin_du_conge_ne_declenche_pas_d_alerte(client, cas):
+    conge, fiche, compte_sup = cas
+    MissionFactory(
+        chauffeur=fiche, statut=StatutMission.EN_COURS_DEPART, vehicule=VehiculeFactory(),
+        date_depart_prevue=date(2026, 10, 12), date_depart=datetime(2026, 10, 12, 7, 0, tzinfo=dt_timezone.utc),
+    )
+
+    assert "mission prévue" not in _page(client, compte_sup, conge)
+
+
+def test_le_copilote_en_conge_est_prevenu_comme_le_chauffeur(client):
+    from apps.drivers.models import Copilote
+
+    compte_sup = UserFactory(role=Role.PARCAUTO)
+    superieur = PersonnelFactory(utilisateur=compte_sup)
+    personnel = PersonnelFactory(poste="Copilote", superieur=superieur)
+    copilote = Copilote.objects.get(personnel=personnel)
+    conge = services.demander_conge(personnel, date_debut=DEBUT, date_fin=FIN, motif="Repos", maintenant=MAINTENANT)
+    MissionFactory(
+        chauffeur=ChauffeurFactory(), copilote=copilote, statut=StatutMission.PLANIFIEE,
+        date_depart_prevue=date(2026, 10, 7),
+    )
+
+    assert "1 mission prévue pendant cette période" in _page(client, compte_sup, conge)

@@ -10,13 +10,17 @@ from django.db import transaction
 from django.db.models import Count, QuerySet
 from django.utils import timezone
 
+from apps.audit import services as audit_services
+from apps.audit.models import ActionChoices
 from apps.core.constants import DELAI_ALERTE_JOURS
 from apps.core.search import filtrer_par_texte
 from apps.core.services import etat_echeance
 
 from apps.drivers.models import Chauffeur
 
+from . import permissions
 from .exceptions import (
+    ActionNonAutorisee,
     DocumentInvalide,
     DoublonVehicule,
     KilometrageInvalide,
@@ -88,12 +92,49 @@ def liberer_apres_mission(vehicule: Vehicule) -> Vehicule:
     return vehicule
 
 
+# Distance maximale crédible entre deux relevés du compteur d'un même camion (deux pleins, ou le départ et
+# l'arrivée d'une mission) : au-delà, c'est une faute de frappe (un chiffre en trop) plutôt qu'un trajet.
+# Le compteur ne pouvant jamais reculer, une valeur trop haute le fige définitivement (audit M5-10 / M6-09).
+ECART_KM_MAX = 5000
+
+
+def distance_plausible(depuis_km: int, jusqu_a_km: int) -> bool:
+    """Faux si la distance parcourue dépasse :data:`ECART_KM_MAX`."""
+    return jusqu_a_km - depuis_km <= ECART_KM_MAX
+
+
 def enregistrer_kilometrage(vehicule: Vehicule, kilometrage: int) -> Vehicule:
     """Met à jour le compteur ; il ne peut jamais reculer (cahier-des-charges.md:139)."""
     if kilometrage < vehicule.kilometrage:
         raise ValueError("Le kilométrage ne peut pas diminuer.")
     vehicule.kilometrage = kilometrage
     vehicule.save(update_fields=["kilometrage", "updated_at"])
+    return vehicule
+
+
+def corriger_kilometrage(vehicule: Vehicule, acteur, *, kilometrage: int, motif: str) -> Vehicule:
+    """Corrige le compteur d'un camion, y compris à la baisse (:func:`enregistrer_kilometrage` ne recule jamais).
+
+    Pour rattraper une faute de frappe qui l'a gonflé (un chiffre en trop sur un plein ou un retour de mission) : sans
+    cela, la valeur fausse sert ensuite de plancher à tous les relevés suivants. Réservé à l'ADMIN, motif obligatoire,
+    tracé dans le journal d'audit (ancienne et nouvelle valeur, motif, auteur)."""
+    if acteur.role_effectif not in permissions.CORRECTION_COMPTEUR:
+        raise ActionNonAutorisee("Seul l'administrateur peut corriger le compteur d'un camion.")
+    motif = motif.strip()
+    if not motif:
+        raise KilometrageInvalide("Le motif de la correction est obligatoire.")
+    if kilometrage < 0:
+        raise KilometrageInvalide("Le kilométrage ne peut pas être négatif.")
+    ancien = vehicule.kilometrage
+    if kilometrage == ancien:
+        raise KilometrageInvalide("Ce kilométrage est déjà celui du compteur.")
+    vehicule.kilometrage = kilometrage
+    vehicule.save(update_fields=["kilometrage", "updated_at"])
+    audit_services.log_action(
+        action=ActionChoices.UPDATE, module="PARC_AUTO", entite="Vehicule", entite_id=vehicule.pk, utilisateur=acteur,
+        ancienne_valeur={"correction_kilometrage": ancien},
+        nouvelle_valeur={"correction_kilometrage": kilometrage, "motif": motif},
+    )
     return vehicule
 
 

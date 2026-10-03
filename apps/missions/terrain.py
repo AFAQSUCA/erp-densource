@@ -183,9 +183,12 @@ def rejeter(frais: FraisMission, acteur, *, motif: str) -> FraisMission:
     return frais
 
 
-def creer_encaissement(mission: Mission, *, montant: Decimal, libelle: str, saisi_par=None) -> FraisMission:
+def creer_encaissement(
+    mission: Mission, *, montant: Decimal, libelle: str, saisi_par=None, reglement=None
+) -> FraisMission:
     """Reflet automatique d'un règlement reçu pour la facture de cette mission : aucune double
-    saisie, directement confirmé (appelé par ``finance.receivers``)."""
+    saisie, directement confirmé (appelé par ``finance.receivers``). ``reglement`` garde le lien avec
+    le règlement reflété, pour pouvoir retirer la ligne si ce règlement est annulé."""
     return FraisMission.objects.create(
         mission=mission,
         type_frais=TypeFraisMission.ENCAISSEMENT,
@@ -193,4 +196,16 @@ def creer_encaissement(mission: Mission, *, montant: Decimal, libelle: str, sais
         description=libelle,
         statut=StatutFraisMission.CONFIRME,
         saisi_par=saisi_par,
+        reglement=reglement,
     )
+
+
+def retirer_encaissements_du_reglement(reglement) -> int:
+    """Un règlement annulé ne doit plus figurer comme encaissé dans la prévision de trésorerie de la mission :
+    la ligne est retirée (suppression logique, tracée dans l'audit). Renvoie le nombre de lignes retirées."""
+    lignes = list(
+        FraisMission.objects.filter(reglement=reglement, type_frais=TypeFraisMission.ENCAISSEMENT)
+    )
+    for ligne in lignes:
+        ligne.delete()
+    return len(lignes)

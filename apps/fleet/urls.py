@@ -11,4 +11,5 @@ urlpatterns = [
     path("<int:pk>/", views.VehiculeDetailView.as_view(), name="detail"),
     path("<int:pk>/modifier/", views.VehiculeUpdateView.as_view(), name="modifier"),
     path("<int:pk>/document/", views.DocumentView.as_view(), name="document"),
+    path("<int:pk>/compteur/", views.CompteurCorrectionView.as_view(), name="compteur"),
 ]

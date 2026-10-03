@@ -1,4 +1,4 @@
-// Copie dans static/vendor/ les fichiers des bibliothèques (Alpine.js, Font Awesome) : ils sont
+// Copie dans static/vendor/ les fichiers des bibliothèques (Alpine.js, Font Awesome, jsQR) : ils sont
 // servis par l'application elle-même, sans CDN. À relancer après une mise à jour de version.
 const fs = require("fs");
 const path = require("path");
@@ -19,3 +19,6 @@ for (const police of ["fa-solid-900.woff2", "fa-regular-400.woff2"]) {
   copier(path.join(fa, "webfonts", police), path.join(racine, "fontawesome/webfonts", police));
 }
 copier(path.join(fa, "LICENSE.txt"), path.join(racine, "fontawesome/LICENSE.txt"));
+// jsQR : lecture d'un code QR dans une image, pour les navigateurs sans BarcodeDetector (Safari, Firefox).
+copier(path.join(modules, "jsqr/dist/jsQR.js"), path.join(racine, "jsqr/jsQR.js"));
+copier(path.join(modules, "jsqr/LICENSE"), path.join(racine, "jsqr/LICENSE"));

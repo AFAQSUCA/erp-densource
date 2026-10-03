@@ -25,6 +25,7 @@ from apps.core.formats import nombre, pourcentage_signe
 from apps.drivers import services as drivers_services
 from apps.fuel.exceptions import CarburantError, SaisieSuspecte
 from apps.fuel.models import NiveauAlerte
+from apps.billing.exceptions import BillingError
 from apps.garage.exceptions import GarageError
 from apps.hr.exceptions import CongeError
 from apps.missions.exceptions import MissionError
@@ -41,7 +42,7 @@ from .forms import (
     PleinChauffeurForm,
 )
 
-ERREURS = (MissionError, CarburantError, GarageError, MobileError, CongeError)
+ERREURS = (MissionError, CarburantError, GarageError, MobileError, CongeError, BillingError)
 
 
 class ChauffeurRequisMixin(RoleRequiredMixin):

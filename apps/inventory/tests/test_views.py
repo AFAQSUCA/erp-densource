@@ -249,3 +249,27 @@ def test_le_bloc_pieces_n_est_jamais_fourni_aux_roles_sans_acces(role):
     from apps.inventory import sections
 
     assert sections.section_pieces(_ordre(), SimpleNamespace(role_effectif=role)) is None
+
+
+def test_une_entree_bloquee_par_l_enveloppe_affiche_un_message_au_lieu_d_une_erreur_500(client):
+    """Audit M8-07 : la demande de dépassement en attente bloque l'achat suivant (BillingError)."""
+    from django.utils import timezone
+
+    from apps.billing.models import CategorieDepense
+    from apps.finance import demandes
+
+    direction = UserFactory(role=Role.DIRECTION)
+    aujourd_hui = timezone.localdate()
+    demandes.definir_enveloppe(
+        direction, categorie=CategorieDepense.PIECES, annee=aujourd_hui.year, mois=aujourd_hui.month,
+        montant_plafond=Decimal("1000"),
+    )
+    article = _article(quantite=10, prix="1000")  # 10 000 FCFA > 1 000 : ouvre la demande
+    _connecte(client, Role.PARCAUTO)
+
+    reponse = client.post(
+        reverse("inventory:entree", args=[article.pk]), {"quantite": "5", "prix_unitaire": "1000"}, follow=True
+    )
+
+    assert reponse.status_code == 200
+    assert any("dépassée" in m for m in _messages(reponse))

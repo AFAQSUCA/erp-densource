@@ -12,7 +12,7 @@
   {% include "components/_assets.html" %}
   <script src="{% static 'js/scanner.js' %}"></script>
 </head>
-<body class="min-h-full pb-28 text-slate-900 antialiased">
+<body class="min-h-full pb-28 text-slate-900 antialiased" data-jsqr="{% static 'vendor/jsqr/jsQR.js' %}">
   <header class="sticky top-0 z-20 bg-marque-800 text-white shadow">
     <div class="mx-auto flex max-w-lg items-center justify-between gap-3 px-4 py-3">
       <a href="{% url 'chauffeur:accueil' %}" class="flex items-center gap-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-400">

@@ -25,8 +25,10 @@ cache que la page « hors connexion », jamais les pages privées.
 disque local (`MEDIA_ROOT`/`media_data`, déjà prévu par le déploiement) — distinct de la photo d'un
 incident, toujours pas gérée (S3/MinIO, étape 7, voir ci-dessous).
 
-Lecture des QR : `static/js/scanner.js` (API `BarcodeDetector`, Chrome sur Android). Sur un navigateur
-qui ne la propose pas, le bouton n'apparaît pas et le chauffeur saisit le code (8 caractères).
+Lecture des QR : `static/js/scanner.js`. L'API `BarcodeDetector` (Chrome sur Android) quand elle existe ; sinon
+(Safari sur iPhone, Firefox) l'image de la caméra est copiée dans un canvas et lue par jsQR
+(`static/vendor/jsqr/`, Apache-2.0, chargé seulement à ce moment-là ; `npm run vendor` dans `frontend/`). Sans caméra
+accessible, le bouton n'apparaît pas et le chauffeur saisit le code (8 caractères).
 
 Pas encore fait :
 - **Mode hors ligne** (file d'attente des saisies, synchronisation différée, conflits) : écarté sur

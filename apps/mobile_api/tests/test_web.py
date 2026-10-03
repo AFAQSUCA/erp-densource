@@ -467,3 +467,47 @@ def test_les_formulaires_du_chauffeur_exigent_le_csrf():
     assert http.post(reverse("chauffeur:plein"), _plein()).status_code == 403
     assert http.post(reverse("chauffeur:incident"), _incident()).status_code == 403
     assert not Incident.objects.exists()
+
+
+def test_un_plein_bloque_par_l_enveloppe_affiche_un_message_au_lieu_d_une_erreur_500(client, chauffeur):
+    """Audit M6-08 : la demande de dépassement en attente bloque le plein suivant (BillingError)."""
+    from decimal import Decimal
+
+    from apps.accounts.models import Role
+    from apps.accounts.tests.factories import UserFactory
+    from apps.billing.models import CategorieDepense
+    from apps.finance import demandes
+    from apps.fuel import services as fuel_services
+
+    fiche, _ = chauffeur
+    mission = mission_de(fiche)
+    aujourd_hui = timezone.localdate()
+    demandes.definir_enveloppe(
+        UserFactory(role=Role.DIRECTION), categorie=CategorieDepense.CARBURANT, annee=aujourd_hui.year,
+        mois=aujourd_hui.month, montant_plafond=Decimal("1000"),
+    )
+    fuel_services.enregistrer_plein(
+        vehicule=mission.vehicule, chauffeur=fiche, date_plein=aujourd_hui, station="Total",
+        quantite_litres=Decimal("100"), prix_unitaire=Decimal("655"),
+        km_compteur=mission.vehicule.kilometrage + 100, numero_ticket="T-DEPASSE",
+    )  # dépasse le plafond : ouvre la demande
+
+    reponse = client.post(reverse("chauffeur:plein"), _plein(
+        numero_ticket="T-BLOQUE", km_compteur=str(mission.vehicule.kilometrage + 300),
+    ))
+
+    assert reponse.status_code == 200
+    assert "dépassée" in reponse.content.decode()
+
+
+def test_le_lecteur_de_qr_de_repli_est_servi_avec_l_espace_chauffeur(client, chauffeur):
+    """Audit M5-07 : sans BarcodeDetector (Safari, Firefox), scanner.js charge jsQR depuis ce chemin."""
+    from pathlib import Path
+
+    from django.conf import settings
+
+    page = client.get(reverse("chauffeur:accueil")).content.decode()
+
+    assert 'data-jsqr="/static/vendor/jsqr/jsQR.js"' in page
+    assert (Path(settings.BASE_DIR) / "static/vendor/jsqr/jsQR.js").is_file()
+    assert (Path(settings.BASE_DIR) / "static/vendor/jsqr/LICENSE").is_file()  # licence Apache-2.0 livrée avec

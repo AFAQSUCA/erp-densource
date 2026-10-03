@@ -10,3 +10,6 @@ from apps.accounts.models import Role
 
 CONSULTATION = frozenset({Role.ADMIN, Role.DIRECTION, Role.PARCAUTO})
 MODIFICATION = frozenset({Role.ADMIN, Role.DIRECTION, Role.PARCAUTO})
+# Corriger le compteur d'un camion (faute de frappe qui l'a gonflé : il ne recule jamais autrement) : l'ADMIN
+# seulement, motif obligatoire, tracé dans le journal d'audit.
+CORRECTION_COMPTEUR = frozenset({Role.ADMIN})
