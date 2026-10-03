@@ -1286,6 +1286,7 @@ python manage.py check
 python -m pytest apps/fleet/tests/test_views.py apps/notifications/tests/test_taches.py -q --no-cov
 ```
 
+**Résultat attendu :** `54 passed` (pour les 2 fichier(s) de tests présentés dans ce chapitre).
 
 **Dans le navigateur :**
 

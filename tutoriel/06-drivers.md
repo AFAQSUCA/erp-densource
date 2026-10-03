@@ -2199,6 +2199,7 @@ python manage.py check
 python -m pytest apps/drivers/tests/test_copilote.py apps/drivers/tests/test_fiche.py apps/drivers/tests/test_models.py apps/drivers/tests/test_services.py apps/hr/tests/test_comptes_demo.py apps/hr/tests/test_conges.py apps/hr/tests/test_droits_conges.py apps/hr/tests/test_recrutement.py -q --no-cov
 ```
 
+**Résultat attendu :** `125 passed` (pour les 8 fichier(s) de tests présentés dans ce chapitre).
 
 **Créez maintenant vos comptes d'essai** (un par rôle) et vérifiez que la fiche chauffeur s'est créée
 toute seule :

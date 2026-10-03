@@ -1220,6 +1220,7 @@ python manage.py check
 python -m pytest apps/accounts/tests/test_models.py apps/accounts/tests/test_permissions.py -q --no-cov
 ```
 
+**Résultat attendu :** `7 passed` (pour les 2 fichier(s) de tests présentés dans ce chapitre).
 
 Les tests de connexion, de MFA et de menu par rôle **ouvrent des pages** et seront présentés plus tard
 (chapitres 17 et suivants), quand les écrans existeront.

@@ -1652,6 +1652,7 @@ python manage.py check
 python -m pytest apps/inventory/tests/test_fiche.py apps/inventory/tests/test_models.py apps/inventory/tests/test_services.py -q --no-cov
 ```
 
+**Résultat attendu :** `69 passed` (pour les 3 fichier(s) de tests présentés dans ce chapitre).
 
 Essai dans le shell : vérifier le calcul du PUMP.
 

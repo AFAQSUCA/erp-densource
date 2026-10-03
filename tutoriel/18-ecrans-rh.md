@@ -2715,6 +2715,7 @@ python manage.py check
 python -m pytest apps/hr/tests/test_direction_remplace.py apps/hr/tests/test_report_conge.py apps/hr/tests/test_views_conges.py -q --no-cov
 ```
 
+**Résultat attendu :** `82 passed` (pour les 3 fichier(s) de tests présentés dans ce chapitre).
 
 **Parcours dans le navigateur** (`python manage.py runserver`) : un congé de bout en bout.
 

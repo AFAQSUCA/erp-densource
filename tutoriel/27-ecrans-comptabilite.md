@@ -2199,6 +2199,7 @@ python manage.py check
 python -m pytest apps/accounting/tests/test_views.py -q --no-cov
 ```
 
+**Résultat attendu :** `87 passed` (pour les 1 fichier(s) de tests présentés dans ce chapitre).
 
 **Le cycle d'une opération diverse, dans le navigateur** (le plan comptable est déjà seedé depuis le
 chapitre 15 : `571000` Caisse, `101000` Capital social… y figurent déjà) :

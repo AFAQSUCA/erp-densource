@@ -2993,6 +2993,7 @@ python manage.py check
 python -m pytest apps/accounts/tests/test_password_reset.py apps/audit/tests/test_services.py apps/audit/tests/test_signals.py apps/audit/tests/test_views.py apps/core/tests/test_rapports.py -q --no-cov
 ```
 
+**Résultat attendu :** `44 passed` (pour les 5 fichier(s) de tests présentés dans ce chapitre).
 
 **Maintenant, regardez le résultat dans un navigateur :**
 

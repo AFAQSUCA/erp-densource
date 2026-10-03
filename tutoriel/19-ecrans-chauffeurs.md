@@ -1165,6 +1165,7 @@ python manage.py check
 python -m pytest apps/hr/tests/test_import_personnel.py apps/hr/tests/test_views_personnel.py -q --no-cov
 ```
 
+**Résultat attendu :** `46 passed` (pour les 2 fichier(s) de tests présentés dans ce chapitre).
 
 Ce fichier de tests appartient à `hr` mais il ouvre aussi les pages des chauffeurs (la fiche d'un employé
 chauffeur renvoie vers sa fiche chauffeur) : c'est pourquoi il n'apparaît qu'ici.

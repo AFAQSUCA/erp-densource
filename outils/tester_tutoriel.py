@@ -37,6 +37,10 @@ MIGRATIONS = {
         "inventory", "fuel", "billing", "finance", "accounting", "notifications",
     )
 }
+# Mission.proforma référence billing.Proforma (CHAMPS_DIFFERES) : sa vraie migration
+# (apps/missions/migrations/0002_mission_proforma.py) dépend de billing.0004_proforma, donc n'existe
+# qu'une fois billing créée — d'où une seconde migration missions au chapitre de billing.
+MIGRATIONS[t.NUM["billing"]] = ["billing", "missions"]
 
 
 # --- lecture du contenu des fichiers -----------------------------------------------------------------
@@ -119,6 +123,9 @@ def main() -> int:
             for f in t.FICHIERS_PROGRESSIFS:
                 if k in t.chapitres_ou_config_change(f):
                     ecrire(destination, f, t.etat_config(f, k))
+            for f in t.CHAMPS_DIFFERES:
+                if k in t.chapitres_ou_champ_differe(f):
+                    ecrire(destination, f, t.sans_champs_differes(f, k))
             if k == t.CH_ACCUEIL_DEBUT:
                 ecrire(destination, t.ACCUEIL_PROVISOIRE, t.ACCUEIL_PROVISOIRE_CONTENU)
             if k == t.CH_ACCUEIL_FIN:

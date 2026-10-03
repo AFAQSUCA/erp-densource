@@ -2925,6 +2925,7 @@ python manage.py check
 python -m pytest apps/accounting/tests/test_models.py apps/accounting/tests/test_receivers.py apps/accounting/tests/test_services.py -q --no-cov
 ```
 
+**Résultat attendu :** `90 passed` (pour les 3 fichier(s) de tests présentés dans ce chapitre).
 
 (Les tests d'écrans de `accounting` sont présentés au chapitre 27.)
 

@@ -2147,6 +2147,7 @@ python manage.py check
 python -m pytest apps/finance/tests/test_demandes.py apps/finance/tests/test_frais_mission_receivers.py apps/finance/tests/test_services.py -q --no-cov
 ```
 
+**Résultat attendu :** `51 passed` (pour les 3 fichier(s) de tests présentés dans ce chapitre).
 
 Essai dans le shell (base sans règlement ni dépense) :
 

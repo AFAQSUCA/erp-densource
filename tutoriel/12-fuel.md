@@ -1422,6 +1422,7 @@ python manage.py check
 python -m pytest apps/fuel/tests/test_lecture.py apps/fuel/tests/test_models.py apps/fuel/tests/test_services.py -q --no-cov
 ```
 
+**Résultat attendu :** `71 passed` (pour les 3 fichier(s) de tests présentés dans ce chapitre).
 
 Essais dans le shell : les seuils.
 

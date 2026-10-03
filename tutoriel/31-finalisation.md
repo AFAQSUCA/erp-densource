@@ -173,7 +173,7 @@ python manage.py check
 python -m pytest -q --no-cov
 ```
 
-
+**Résultat attendu :** `2511 passed` (tous les tests du projet).
 **La couverture des tests** (quelle part du code est exécutée par les tests) :
 
 ```bash

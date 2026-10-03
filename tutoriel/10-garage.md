@@ -1809,6 +1809,7 @@ python manage.py check
 python -m pytest apps/garage/tests/test_models.py apps/garage/tests/test_services.py apps/garage/tests/test_statut_vehicule.py apps/garage/tests/test_terrain.py -q --no-cov
 ```
 
+**Résultat attendu :** `69 passed` (pour les 4 fichier(s) de tests présentés dans ce chapitre).
 
 Essai dans le shell : ouvrir un OR sur le camion du chapitre 8 et regarder son statut changer, puis le clôturer.
 

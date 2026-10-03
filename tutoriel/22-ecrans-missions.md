@@ -3915,6 +3915,7 @@ python manage.py check
 python -m pytest apps/customers/tests/test_views.py apps/drivers/tests/test_views.py apps/missions/tests/test_alerte_conge.py apps/missions/tests/test_documents.py apps/missions/tests/test_frais_mission_views.py apps/missions/tests/test_modification.py apps/missions/tests/test_qr.py apps/missions/tests/test_views.py apps/notifications/tests/test_receivers_frais_mission.py -q --no-cov
 ```
 
+**Résultat attendu :** `210 passed` (pour les 9 fichier(s) de tests présentés dans ce chapitre).
 
 Les cinq tests de `accounts/test_web.py` qui dépendent du **tableau de bord** échouent encore : ils passeront au
 chapitre 28 (c'est attendu).

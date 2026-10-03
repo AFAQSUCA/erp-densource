@@ -1991,6 +1991,7 @@ python manage.py check
 python -m pytest apps/inventory/tests/test_stock_views.py apps/inventory/tests/test_views.py apps/notifications/tests/test_services.py apps/notifications/tests/test_views.py -q --no-cov
 ```
 
+**Résultat attendu :** `113 passed` (pour les 4 fichier(s) de tests présentés dans ce chapitre).
 
 **Dans le navigateur :**
 

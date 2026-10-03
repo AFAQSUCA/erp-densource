@@ -687,6 +687,7 @@ python manage.py check
 python -m pytest apps/audit/tests/test_models.py -q --no-cov
 ```
 
+**Résultat attendu :** `3 passed` (pour les 1 fichier(s) de tests présentés dans ce chapitre).
 
 **Essai réel.** Le journal se remplit tout seul dès qu'un modèle est branché. Ouvrez le shell, créez un
 utilisateur et regardez si la connexion échouée est tracée :

@@ -6032,6 +6032,15 @@ python manage.py check
 python -m pytest apps/accounts/tests/test_web.py apps/billing/tests/test_proforma_views.py apps/billing/tests/test_views.py apps/core/tests/test_impression_listes.py apps/finance/tests/test_demandes_views.py apps/finance/tests/test_depenses_parc_auto.py apps/finance/tests/test_impression.py apps/finance/tests/test_versements.py apps/finance/tests/test_views.py apps/notifications/tests/test_facturation.py apps/notifications/tests/test_receivers_demandes.py apps/notifications/tests/test_receivers_proforma.py -q --no-cov
 ```
 
+**Résultat attendu :** `214 passed, 5 failed` (pour les 12 fichier(s) de tests présentés dans ce chapitre).
+
+Des tests échouent à ce stade, **c'est normal** : ils vérifient des écrans qui n'existent pas encore (par exemple la page d'accueil). Ils passeront au chapitre indiqué :
+
+- `test_web.py::test_deconnexion_par_post_ferme_la_session_et_est_tracee` → chapitre 28 (« La page d'accueil : le tableau de bord »)
+- `test_web.py::test_l_accueil_exige_une_connexion_et_conserve_la_destination` → chapitre 28 (« La page d'accueil : le tableau de bord »)
+- `test_web.py::test_l_accueil_salue_l_utilisateur` → chapitre 28 (« La page d'accueil : le tableau de bord »)
+- `test_web.py::test_le_menu_depend_du_role` → chapitre 28 (« La page d'accueil : le tableau de bord »)
+- `test_web.py::test_un_chauffeur_est_renvoye_vers_l_espace_mobile` → chapitre 28 (« La page d'accueil : le tableau de bord »)
 
 **Le circuit d'une facture, dans le navigateur :**
 

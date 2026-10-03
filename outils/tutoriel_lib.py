@@ -7,7 +7,11 @@ Le tutoriel (dossier ``tutoriel/``) est **généré depuis le code du dépôt** 
 - quels fichiers sont volontairement absents du tutoriel, et pourquoi (``EXCLUS``) ;
 - l'état d'avancement de ``config/settings/base.py`` et ``config/urls.py`` à chaque chapitre
   (``etat_config``) : ces deux fichiers évoluent tout au long du projet, le tutoriel montre donc leur
-  version du chapitre puis, ensuite, seulement ce qui s'ajoute.
+  version du chapitre puis, ensuite, seulement ce qui s'ajoute ;
+- les blocs dont l'apparition dans un fichier déjà présenté est volontairement retardée
+  (``CHAMPS_DIFFERES``) : un champ (ou une section de documentation) qui référence une app pas encore
+  créée à ce stade de la lecture est montré sans ce bloc à son chapitre, puis le bloc apparaît — comme la
+  vraie migration qui l'ajoute — une fois l'app référencée créée.
 
 Deux phases : d'abord le « cerveau » (modèles, règles métier, tests : chapitres 2 à 16), ensuite le
 « visage » (écrans, gabarits, API : chapitres 17 à 31). Une app est créée dans l'ordre de ses dépendances
@@ -453,6 +457,73 @@ def chapitres_ou_config_change(chemin: str) -> list[int]:
             changements.append(k)
         precedent = etat
     return changements
+
+
+# --- blocs dont l'apparition dans un fichier déjà présenté est retardée -----------------------------
+
+# ``apps/missions/models.py`` déclare ``Mission.proforma``, qui référence ``billing.Proforma`` — mais
+# l'app ``billing`` n'existe qu'au chapitre 13, bien après ``missions`` (chapitre 9). Ce n'est pas un
+# accident : ``billing`` dépend elle-même de ``missions`` (``billing.services`` importe ``Mission``),
+# donc les deux apps ne peuvent pas être réordonnées l'une avant l'autre dans ``ORDRE_APPS``. C'est
+# exactement ce que montre la vraie migration : ``apps/missions/migrations/0002_mission_proforma.py``
+# (qui ajoute ce champ) dépend de ``billing.0004_proforma``, alors que ``missions.0001_initial`` (qui crée
+# ``Mission``) n'en dépend pas. Le tutoriel reproduit cet ordre : le modèle (et la section du README qui
+# décrit ce champ) sont montrés sans lui au chapitre 9, puis il est ajouté — avec une seconde migration —
+# au chapitre 13.
+#
+# (motif de début, motif de fin, premier chapitre où le bloc apparaît, la ligne de fin fait-elle partie
+# du bloc retiré ?) Fin incluse (``True``) : la ligne de fin — ex. la parenthèse qui referme un champ —
+# est retirée avec le bloc. Fin exclue (``False``) : la ligne de fin — ex. le prochain titre ``###`` —
+# n'appartient pas au bloc et reste toujours affichée ; elle ne sert qu'à borner la recherche.
+CHAMPS_DIFFERES: dict[str, list[tuple[str, str, int, bool]]] = {
+    "apps/missions/models.py": [
+        (r'^\s*proforma = models\.OneToOneField\(\s*$', r'^\s*\)\s*$', NUM["billing"], True),
+    ],
+    "apps/missions/README.md": [
+        (r'^### Mission créée depuis un devis accepté \(R6\)$', r'^### ', NUM["billing"], False),
+    ],
+}
+
+
+def sans_champs_differes(chemin: str, chapitre: int) -> str:
+    """Contenu de ``chemin`` tel qu'il doit apparaître au ``chapitre`` : les blocs de ``CHAMPS_DIFFERES``
+    pas encore disponibles à ce chapitre sont retirés."""
+    blocs = CHAMPS_DIFFERES.get(chemin, [])
+    lignes = (RACINE / chemin).read_text(encoding="utf-8").split("\n")
+    gardees = []
+    en_bloc = False
+    disponible = True
+    fin_regex = ""
+    fin_incluse = True
+    for ligne in lignes:
+        if en_bloc:
+            fin_ici = re.search(fin_regex, ligne) is not None
+            if fin_ici and fin_incluse:
+                if disponible:
+                    gardees.append(ligne)
+                en_bloc = False
+                continue
+            if not fin_ici:
+                if disponible:
+                    gardees.append(ligne)
+                continue
+            en_bloc = False  # fin exclue : cette ligne n'appartient pas au bloc, traitée normalement plus bas
+        debut = next((b for b in blocs if re.search(b[0], ligne)), None)
+        if debut is not None:
+            _, fin_regex, chapitre_disponible, fin_incluse = debut
+            disponible = chapitre >= chapitre_disponible
+            en_bloc = True
+            if disponible:
+                gardees.append(ligne)
+            continue
+        gardees.append(ligne)
+    return "\n".join(gardees)
+
+
+def chapitres_ou_champ_differe(chemin: str) -> list[int]:
+    """Chapitres où il faut (ré)écrire ``chemin`` à cause de ses ``CHAMPS_DIFFERES`` : son chapitre
+    d'apparition, puis celui où chaque bloc retardé devient disponible."""
+    return sorted({chapitre_de(chemin), *(c for _, _, c, _ in CHAMPS_DIFFERES.get(chemin, []))})
 
 
 def fence(contenu: str) -> str:

@@ -2846,6 +2846,7 @@ python manage.py check
 python -m pytest apps/core/tests/test_forms_date.py apps/mobile_api/tests/test_services.py apps/mobile_api/tests/test_web.py -q --no-cov
 ```
 
+**Résultat attendu :** `60 passed` (pour les 3 fichier(s) de tests présentés dans ce chapitre).
 
 **Dans le navigateur.** Sur un ordinateur, ouvrez les outils de développement (`F12`) puis le **mode appareil
 mobile** (icône téléphone/tablette). Lancez `python manage.py runserver`.

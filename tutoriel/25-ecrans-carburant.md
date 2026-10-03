@@ -1801,6 +1801,7 @@ python manage.py check
 python -m pytest apps/core/tests/test_search.py apps/fuel/tests/test_views.py apps/notifications/tests/test_receivers.py -q --no-cov
 ```
 
+**Résultat attendu :** `171 passed` (pour les 3 fichier(s) de tests présentés dans ce chapitre).
 
 **Dans le navigateur (`demo_parcauto`) :**
 

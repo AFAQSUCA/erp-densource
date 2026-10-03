@@ -1689,6 +1689,7 @@ python manage.py check
 python -m pytest apps/garage/tests/test_views.py apps/garage/tests/test_views_terrain.py -q --no-cov
 ```
 
+**Résultat attendu :** `64 passed` (pour les 2 fichier(s) de tests présentés dans ce chapitre).
 
 **Dans le navigateur :**
 
