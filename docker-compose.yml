@@ -117,13 +117,18 @@ services:
         condition: service_healthy
 
   nginx:
-    image: nginx:1.27-alpine
+    # Image maison (nginx/Dockerfile) : Nginx + un script de démarrage qui fabrique un certificat provisoire
+    # tant que Let's Encrypt n'a rien délivré (sans lui, Nginx ne démarrerait pas sur un serveur neuf).
+    build: ./nginx
     restart: unless-stopped
+    environment:
+      # Domaine servi (.env) : nom du dossier ./certs/live/<domaine> de Let's Encrypt et server_name.
+      DOMAINE: ${DOMAINE:-densource.tech}
     ports:
       - "80:80"
       - "443:443"
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf.modele:ro
       - static_data:/app/staticfiles:ro
       - media_data:/app/media:ro
       - certbot_www:/var/www/certbot
@@ -131,6 +136,17 @@ services:
     depends_on:
       web:
         condition: service_healthy
+
+  # Outil ponctuel, jamais démarré par `docker compose up` (profil « outils ») : obtient et renouvelle le
+  # certificat HTTPS sans avoir à deviner le nom du volume partagé avec Nginx (GUIDE-DEPLOIEMENT.md § 8) :
+  #   docker compose run --rm certbot certonly --webroot -w /var/www/certbot -d <domaine> ...
+  certbot:
+    image: certbot/certbot
+    profiles: ["outils"]
+    entrypoint: ["certbot"]
+    volumes:
+      - ./certs:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
 
 volumes:
   db_data:
