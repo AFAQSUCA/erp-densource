@@ -5612,7 +5612,7 @@ def test_les_soldes_et_l_ecart_s_affichent(client):
         finances(), date_operation=JOUR, libelle="Virement client", montant=Decimal("100000"), sens=SensMouvement.ENTREE
     )
 
-    reponse = client.get(reverse("finance:rapprochement"))
+    reponse = client.get(f"{reverse('finance:rapprochement')}?debut=2026-09-01&fin=2026-09-30")
     texte = reponse.content.decode().replace("\xa0", " ").replace(" ", " ")
 
     assert reponse.context["etat"]["solde_releve"] == Decimal("100000")
@@ -5653,7 +5653,7 @@ def test_une_suggestion_apparait_pour_un_mouvement_banque_correspondant(client):
         finances(), date_operation=JOUR, libelle="Virement client", montant=Decimal("100000"), sens=SensMouvement.ENTREE
     )
 
-    reponse = client.get(reverse("finance:rapprochement"))
+    reponse = client.get(f"{reverse('finance:rapprochement')}?debut=2026-09-01&fin=2026-09-30")
 
     entrees = reponse.context["lignes_avec_suggestions"]
     assert len(entrees) == 1
