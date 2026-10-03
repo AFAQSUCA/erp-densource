@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block titre %}Utilisateurs{% endblock %}
+{% block entete %}Administration{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-6xl">
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <div>
+      <h1 class="text-2xl font-bold text-slate-900">Utilisateurs</h1>
+      <p class="mt-1 text-sm text-slate-600">{{ paginator.count|default:0 }} compte{{ paginator.count|pluralize }}. Un compte ne se supprime jamais : on le désactive, son historique reste attribué à son nom.</p>
+    </div>
+    <a href="{% url 'accounts:utilisateur_nouveau' %}" class="inline-flex items-center gap-2 rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">
+      <i class="fa-solid fa-user-plus" aria-hidden="true"></i> Nouveau compte
+    </a>
+  </div>
+
+  <form method="get" class="mt-5 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    {% include "components/_champ.html" with champ=filtre.q %}
+    {% include "components/_champ.html" with champ=filtre.role %}
+    {% include "components/_champ.html" with champ=filtre.actif %}
+    <button type="submit" class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">Filtrer</button>
+  </form>
+
+  <div class="mt-5 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+    <table class="min-w-full divide-y divide-slate-200 text-sm">
+      <caption class="sr-only">Comptes utilisateurs</caption>
+      <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+        <tr>
+          <th scope="col" class="px-4 py-3">Identifiant</th>
+          <th scope="col" class="px-4 py-3">Nom</th>
+          <th scope="col" class="px-4 py-3">Rôle</th>
+          <th scope="col" class="px-4 py-3">Double authentification</th>
+          <th scope="col" class="px-4 py-3">Statut</th>
+          <th scope="col" class="px-4 py-3"><span class="sr-only">Actions</span></th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for c in comptes %}
+          <tr class="hover:bg-slate-50">
+            <td class="whitespace-nowrap px-4 py-3 font-semibold text-slate-900">{{ c.username }}{% if c.pk == moi.pk %} <span class="text-xs font-normal text-slate-600">(vous)</span>{% endif %}</td>
+            <td class="px-4 py-3 text-slate-700">{{ c.get_full_name|default:"—" }}<span class="block text-xs text-slate-600">{{ c.email }}</span></td>
+            <td class="px-4 py-3 text-slate-700">{% if c.is_superuser %}Superutilisateur{% else %}{{ c.get_role_display|default:"—" }}{% endif %}</td>
+            <td class="px-4 py-3 text-slate-700">{% if c.mfa_enabled %}Activée{% else %}—{% endif %}</td>
+            <td class="px-4 py-3">{% if c.is_active %}<span class="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-900">Actif</span>{% else %}<span class="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-semibold text-slate-800">Désactivé</span>{% endif %}</td>
+            <td class="whitespace-nowrap px-4 py-3 text-right">
+              {% if c.is_superuser %}
+                <span class="text-xs text-slate-600">géré en ligne de commande</span>
+              {% else %}
+                <a href="{% url 'accounts:utilisateur_modifier' c.pk %}" class="font-medium text-marque-700 underline-offset-2 hover:underline">Modifier</a>
+                {% if c.pk != moi.pk %}
+                  <form method="post" action="{% url 'accounts:utilisateur_activation' c.pk %}" class="ml-3 inline" data-confirm="{% if c.is_active %}Désactiver ce compte ? La personne ne pourra plus se connecter.{% else %}Réactiver ce compte ?{% endif %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="actif" value="{% if c.is_active %}non{% else %}oui{% endif %}">
+                    <button type="submit" class="font-medium text-red-800 underline-offset-2 hover:underline">{% if c.is_active %}Désactiver{% else %}Réactiver{% endif %}</button>
+                  </form>
+                {% endif %}
+              {% endif %}
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" class="px-4 py-8 text-center text-slate-600">Aucun compte ne correspond.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% include "components/_pagination.html" %}
+  </div>
+</div>
+{% endblock %}

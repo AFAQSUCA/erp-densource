@@ -24,3 +24,6 @@ Pas encore de gestion des devis ni des contrats à renouveler (indicateurs du ta
 bord chargé clientèle, étape 5) ; les FINANCES ont accès à la facturation, pas à la fiche client.
 
 Rapport imprimable des clients (bouton « Imprimer » sur la liste, mêmes filtres) : voir `apps/core/README.md` (`ImpressionListeMixin`).
+
+Un client dont le chargé clientèle attitré a été désactivé le conserve à la modification (il reste proposé et sélectionné) ; seul un
+**nouveau** choix doit être un compte actif de ce rôle.

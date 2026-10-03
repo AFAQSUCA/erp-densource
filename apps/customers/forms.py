@@ -48,7 +48,13 @@ class ClientForm(StyleTailwindMixin, forms.Form):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["charge_clientele"].queryset = services.charges_clientele()
+        queryset = services.charges_clientele()
+        actuel = self.initial.get("charge_clientele")
+        if actuel is not None:
+            # Le chargé actuel reste proposé même s'il a été désactivé depuis : sinon l'enregistrement du
+            # formulaire le remplaçait en silence par « aucun » (audit M4-05).
+            queryset = queryset | queryset.model._default_manager.filter(pk=getattr(actuel, "pk", actuel))
+        self.fields["charge_clientele"].queryset = queryset
         self.fields["charge_clientele"].label_from_instance = _libelle_compte
 
     def clean(self):

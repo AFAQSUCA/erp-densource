@@ -57,3 +57,8 @@ class IsAdminOrDirection(HasRole):
     """Lecture élargie ADMIN + DIRECTION (ex. journal d'audit, cahier-des-charges.md:81)."""
 
     allowed_roles = (Role.ADMIN, Role.DIRECTION)
+
+
+# Gestion des comptes (écran « Utilisateurs », ``accounts.services``) : l'ADMIN seulement
+# (cahier-des-charges.md:48). Un superutilisateur agit en ADMIN (``role_effectif``).
+GESTION_UTILISATEURS = frozenset({Role.ADMIN})

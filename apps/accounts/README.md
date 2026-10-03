@@ -54,3 +54,10 @@ Limites connues :
   d'enrôler l'appareil d'un tiers. Activer la MFA de chaque ADMIN et DIRECTION dès la création du compte.
 - Un compte ADMIN (non superutilisateur) peut lister les utilisateurs et réinitialiser leur MFA dans
   l'administration, mais ne peut pas les modifier : ces droits restent réservés aux superutilisateurs.
+
+**Écran « Utilisateurs »** (`/utilisateurs/`, menu, ADMIN seulement — cahier-des-charges.md:48) : l'administrateur crée un compte
+(identifiant, coordonnées, rôle, mot de passe initial validé par les validateurs du projet), change ses coordonnées et son rôle, l'active ou
+le désactive (`services.py`). Jamais de suppression (un compte désactivé ne se connecte plus, son historique reste à son nom). Règles
+appliquées dans les services : un superutilisateur Django n'est jamais créé ni modifié par cette voie (ligne de commande) ; personne ne se
+désactive ni ne change son propre rôle ; tout est journalisé (module `UTILISATEURS`, mot de passe en empreinte). L'admin Django reste en
+lecture seule pour le rôle ADMIN.
