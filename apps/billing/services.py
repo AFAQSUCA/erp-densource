@@ -523,6 +523,14 @@ def total_depenses(debut: date, fin: date) -> Decimal:
     )["total"] or ZERO
 
 
+def total_tva_deductible(debut: date, fin: date) -> Decimal:
+    """TVA déductible incluse dans les dépenses de la période (``Depense.montant_tva``) : récupérable auprès
+    de l'État, donc pas une charge (compte 445200, actif — avenant-comptabilite-autonomie.md § Lot D)."""
+    return Depense.objects.filter(date_depense__range=(debut, fin)).aggregate(
+        total=Sum("montant_tva")
+    )["total"] or ZERO
+
+
 def depenses_par_categorie(debut: date, fin: date) -> list[dict]:
     """Total par catégorie sur la période (toutes les catégories, y compris à 0)."""
     totaux = dict(

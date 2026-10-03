@@ -101,6 +101,22 @@ def test_les_finances_voient_leurs_indicateurs_du_mois(client):
     assert "Centre d'alertes" in texte
 
 
+def test_la_carte_marge_precise_hors_taxes_et_la_tva_recuperable_des_charges(client):
+    from apps.billing import services as billing
+    from apps.billing.models import ModePaiement
+    from apps.billing.tests.helpers import finances as compte_finances
+
+    billing.enregistrer_depense(
+        compte_finances(), categorie="PEAGES", date_depense=timezone.localdate(), libelle="Péage",
+        montant=Decimal("118000"), mode=ModePaiement.ESPECES, montant_tva=Decimal("18000"),
+    )
+
+    texte = _page(client, Role.FINANCES).content.decode()
+
+    assert "CA HT − charges HT" in texte
+    assert "de TVA récupérable" in texte
+
+
 def test_les_autres_roles_ne_voient_pas_les_finances(client):
     for role in (Role.PARCAUTO, Role.CHARGE_CLIENTELE, Role.CHAUFFEUR):
         assert "Finances du mois" not in _page(client, role).content.decode()

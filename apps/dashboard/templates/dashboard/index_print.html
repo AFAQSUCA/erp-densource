@@ -91,8 +91,9 @@
     <div class="cartouche">
       <div><dt>CA facturé (HT)</dt><dd>{{ finances.chiffre_affaires|floatformat:0|intcomma }} FCFA</dd></div>
       <div><dt>Total encaissé</dt><dd>{{ finances.encaisse|floatformat:0|intcomma }} FCFA</dd></div>
-      <div><dt>Charges du mois</dt><dd>{{ finances.charges.total|floatformat:0|intcomma }} FCFA</dd></div>
-      <div><dt>Marge nette</dt><dd>{{ finances.marge_nette|floatformat:0|intcomma }} FCFA</dd></div>
+      <div><dt>Charges du mois{% if finances.charges.tva_deductible %} (TTC){% endif %}</dt><dd>{{ finances.charges.total|floatformat:0|intcomma }} FCFA</dd></div>
+      {% if finances.charges.tva_deductible %}<div><dt>dont TVA récupérable</dt><dd>{{ finances.charges.tva_deductible|floatformat:0|intcomma }} FCFA</dd></div>{% endif %}
+      <div><dt>Marge nette (CA HT − charges HT)</dt><dd>{{ finances.marge_nette|floatformat:0|intcomma }} FCFA</dd></div>
       <div><dt>Créances (dont échues)</dt><dd>{{ finances.creances.total|floatformat:0|intcomma }} ({{ finances.creances.echu|floatformat:0|intcomma }}) FCFA</dd></div>
       <div><dt>Trésorerie</dt><dd>{{ finances.tresorerie|floatformat:0|intcomma }} FCFA</dd></div>
     </div>
