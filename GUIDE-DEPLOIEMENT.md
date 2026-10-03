@@ -86,6 +86,7 @@ cp .env.example .env
 | `DJANGO_SETTINGS_MODULE` | `config.settings.prod` |
 | `SECRET_KEY` | une valeur longue et aléatoire — jamais celle de `.env.example` ; générer avec `python -c "import secrets; print(secrets.token_urlsafe(50))"` |
 | `ALLOWED_HOSTS` | le domaine, ex. `erp.densourcegroup.ci` |
+| `DOMAINE` | le même domaine, ex. `erp.densourcegroup.ci` — Nginx et le certificat HTTPS en dépendent (défaut : `densource.tech`) |
 | `CSRF_TRUSTED_ORIGINS` | `https://` + le même domaine |
 | `POSTGRES_PASSWORD` | un mot de passe long, différent de celui de `.env.example` |
 | `TRUSTED_PROXY_COUNT` | `1` (Nginx est l'unique proxy devant l'application) |
@@ -108,7 +109,7 @@ bonne santé (les migrations sont donc déjà passées) avant de démarrer.
 ```bash
 docker compose ps                 # les 7 services doivent être « healthy » ou « running »
 docker compose logs -f web        # suivre le démarrage
-curl -I http://localhost/connexion/   # doit répondre 301 (redirigé vers https, tant que le 4 n'est pas fait)
+curl -I http://localhost/connexion/   # doit répondre 301 (redirigé vers https)
 ```
 
 Créer le premier compte administrateur :
@@ -150,70 +151,39 @@ Avant que les vrais utilisateurs n'arrivent, il est légitime de saisir quelques
 
 ## 8. Activer HTTPS (Let's Encrypt, certbot)
 
-Tant que ce qui suit n'est pas fait, Nginx répond en HTTP (port 80) et `SECURE_SSL_REDIRECT`
-(config/settings/prod.py) redirige chaque page vers `https://…`, qui n'existe pas encore : c'est
-attendu, à corriger maintenant.
+Sur un serveur neuf, il n'y a pas encore de certificat. Nginx démarre quand même : le script
+`nginx/preparer-https.sh` fabrique alors un **certificat auto-signé provisoire** (30 jours) et le dit dans
+ses journaux (`docker compose logs nginx`). Le navigateur affiche un avertissement tant que le vrai
+certificat n'est pas en place ; le port 80, lui, sert déjà le défi HTTP-01 de Let's Encrypt. Rien à éditer
+dans `nginx/nginx.conf` ni dans `docker-compose.yml` : le domaine vient de `DOMAINE` (`.env`, étape 4).
 
-1. **Obtenir un certificat** (le domaine doit déjà pointer vers ce serveur — le défi HTTP-01 le
-   vérifie) :
+1. **Vérifier** que `DOMAINE` est bien renseigné dans `.env`, que le domaine pointe (DNS) vers ce serveur et
+   que les ports 80 et 443 sont ouverts, puis que Nginx tourne (étape 5).
+
+2. **Obtenir le certificat** (le défi HTTP-01 vérifie que le domaine pointe ici ; `certbot` est un service
+   ponctuel de `docker-compose.yml`, il ne démarre jamais tout seul) :
 
    ```bash
-   mkdir -p certs
-   docker run --rm \
-     -v "$(pwd)/certs:/etc/letsencrypt" \
-     -v erp-densource_certbot_www:/var/www/certbot \
-     certbot/certbot certonly --webroot -w /var/www/certbot \
+   docker compose run --rm certbot certonly --webroot -w /var/www/certbot \
      -d erp.densourcegroup.ci --email vous@densourcegroup.ci --agree-tos --no-eff-email
    ```
 
-   (Remplacer le nom du volume par celui qu'affiche `docker volume ls | grep certbot_www` si le
-   dossier du projet ne s'appelle pas `erp-densource`.)
+   Ajouter `-d www.erp.densourcegroup.ci` si ce nom existe aussi dans le DNS : Nginx répond aux deux noms,
+   le certificat doit donc couvrir les deux.
 
-2. **Ajouter le bloc HTTPS** dans `nginx/nginx.conf`, à la suite du bloc `server { listen 80; … }` :
-
-   ```nginx
-   server {
-       listen 443 ssl;
-       server_name erp.densourcegroup.ci;
-
-       ssl_certificate     /etc/nginx/certs/live/erp.densourcegroup.ci/fullchain.pem;
-       ssl_certificate_key /etc/nginx/certs/live/erp.densourcegroup.ci/privkey.pem;
-
-       location /static/ { alias /app/staticfiles/; expires 30d; access_log off; }
-       # Fichiers téléversés : jamais en libre accès. Django contrôle le rôle sur /medias/... puis
-       # répond X-Accel-Redirect vers cet emplacement interne.
-       location /medias-internes/ { internal; alias /app/media/; add_header X-Content-Type-Options nosniff always; }
-       location / {
-           proxy_pass http://django;
-           proxy_set_header Host $host;
-           proxy_set_header X-Real-IP $remote_addr;
-           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-           proxy_set_header X-Forwarded-Proto $scheme;
-       }
-   }
-   ```
-
-   Et changer, dans le bloc `listen 80`, la `location /` pour ne plus proxyer mais rediriger (le défi
-   `/.well-known/acme-challenge/` reste, lui, en HTTP) :
-
-   ```nginx
-   location / {
-       return 301 https://$host$request_uri;
-   }
-   ```
-
-3. **Décommenter**, dans `docker-compose.yml`, le port `443:443` et le volume `./certs:…` du service
-   `nginx`, puis :
+3. **Adopter le vrai certificat** : Nginx ne le relit qu'à son démarrage.
 
    ```bash
-   docker compose up -d
+   docker compose restart nginx
+   docker compose logs nginx | grep preparer-https   # doit dire « certificat Let's Encrypt trouvé »
    ```
 
 4. **Renouvellement** : les certificats Let's Encrypt expirent après 90 jours. Programmer, dans la
-   crontab du serveur (`crontab -e`), un renouvellement mensuel :
+   crontab du serveur (`crontab -e`), un renouvellement mensuel (sans effet tant que le certificat n'est
+   pas proche de son échéance) :
 
    ```cron
-   0 3 1 * * cd /chemin/vers/erp-densource && docker run --rm -v "$(pwd)/certs:/etc/letsencrypt" -v erp-densource_certbot_www:/var/www/certbot certbot/certbot renew --webroot -w /var/www/certbot && docker compose restart nginx
+   0 3 1 * * cd /chemin/vers/erp-densource && docker compose run --rm certbot renew --webroot -w /var/www/certbot && docker compose restart nginx
    ```
 
 ## 9. Sauvegardes chiffrées (`ops/sauvegarde.sh`)
@@ -289,6 +259,7 @@ docker compose exec web python manage.py comptabiliser_historique_parc_auto [--d
 | `celery_worker` ne traite rien | `docker compose logs celery_worker` : le plus souvent `REDIS_URL` injoignable |
 | Fiche mission sans voyant « En direct » (« Suivi en direct indisponible ») | `docker compose logs realtime` : conteneur arrêté ? Vérifier aussi que le bloc `location /ws/` est bien dans le serveur 443 de `nginx/nginx.conf`, et que `ALLOWED_HOSTS` contient le domaine (l'origine de la page est contrôlée) |
 | Le voyant « En direct » clignote (Reconnexion…) et `docker compose logs realtime` affiche `Timeout reading from redis` | Le délai de lecture Redis est inférieur à l'attente bloquante de `channels-redis` (5 s) : vérifier `socket_timeout` dans `CHANNEL_LAYERS` (config/settings/prod.py, 15 s) — `redis-py` >= 8 impose sinon 5 s par défaut |
+| Avertissement de certificat dans le navigateur | Le certificat provisoire est encore utilisé : `docker compose logs nginx \| grep preparer-https`. Obtenir le vrai certificat puis `docker compose restart nginx` (étape 8) ; vérifier que `DOMAINE` est bien celui du dossier `certs/live/` |
 | Page de connexion sans styles | `collectstatic` n'a pas tourné, ou le volume `static_data` n'est pas monté dans `nginx` |
 
 ---
@@ -308,6 +279,14 @@ Testé en local avec `docker compose up -d --build` (domaine `localhost`, sans c
 - une sauvegarde chiffrée (`ops/sauvegarde.sh`) puis sa restauration (`ops/restauration.sh`) dans
   une base à part ont réellement été jouées contre le PostgreSQL du `docker-compose.yml`.
 
-Non testés ici faute de domaine réel : l'obtention d'un certificat Let's Encrypt (étape 8.1) et son
-renouvellement automatique (étape 8.4) — les commandes sont standard (image officielle
+Démarrage de Nginx sans certificat (étape 8), joué avec l'image `nginx/Dockerfile` et un domaine fictif :
+- sans rien dans `./certs`, Nginx démarre avec le certificat provisoire (journal `preparer-https`), sert le
+  fichier de défi sur le port 80 (`/.well-known/acme-challenge/`), redirige le reste vers HTTPS et répond en
+  TLS ;
+- avec un certificat dans `certs/live/<domaine>/`, c'est lui qui est présenté (et non le provisoire) ;
+- le service `certbot` (profil `outils`) ne démarre pas avec `docker compose up` et se lance avec
+  `docker compose run --rm certbot`.
+
+Non testés ici faute de domaine réel : la délivrance effective du certificat par Let's Encrypt (étape 8.2) et
+son renouvellement automatique (étape 8.4) — les commandes sont standard (image officielle
 `certbot/certbot`, mode webroot) mais n'ont pas pu être rejouées sans nom de domaine public.
