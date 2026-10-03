@@ -39,6 +39,10 @@ Brouillon → À valider → Émise → Partiellement payée → Payée
   Mobile Money).
 - **Signaux** : `facture_a_valider`, `facture_validee`, `facture_refusee` : `notifications` prévient les bonnes
   personnes.
+- **Une migration en deux temps** : `Mission.proforma` référence `billing.Proforma`, mais `missions`
+  (chapitre 9) est créée avant `billing`. Le champ apparaît donc seulement **maintenant** (Étape 6),
+  avec sa propre migration `missions` qui dépend de `billing` — exactement ce que fait la vraie
+  migration du projet.
 
 ## Étape 1 — Créer l'application
 
@@ -2956,6 +2960,22 @@ def test_un_recepteur_en_erreur_ne_bloque_jamais_la_facturation(caplog):
  
 ```
 
+```bash
+python manage.py makemigrations billing
+python manage.py migrate
+```
+
+**Résultat attendu :** `Create model Facture`, `Create model LigneFacture`, `Create model Reglement`,
+`Create model Depense`, les contraintes, puis `Applying billing.0001_initial... OK`.
+
+## Étape 6 — Relier une mission à son devis d'origine
+
+Au chapitre 9, `Mission` ne pouvait pas référencer un devis : `billing` n'existait pas encore.
+Maintenant qu'elle existe, on referme cette boucle (R6 : une mission créée depuis un devis accepté
+reprend son trajet et son prix). C'est exactement ce que fait la vraie migration du projet,
+`apps/missions/migrations/0002_mission_proforma.py` : elle dépend de `billing.0004_proforma`, alors que
+`missions.0001_initial` (qui crée `Mission`) n'en dépendait pas.
+
 #### `apps/missions/models.py` — modifications
 
 *Les lignes précédées de `+` sont à ajouter ; les autres sont là pour vous repérer.*
@@ -2979,13 +2999,39 @@ def test_un_recepteur_en_erreur_ne_bloque_jamais_la_facturation(caplog):
      vehicule = models.ForeignKey(
 ```
 
+#### `apps/missions/README.md` — modifications
+
+*Les lignes précédées de `+` sont à ajouter ; les autres sont là pour vous repérer.*
+
+```diff
+--- apps/missions/README.md (avant)
++++ apps/missions/README.md (après)
+@@ -91,4 +91,16 @@
+ une autre casse ou sans accent ne compte qu'une fois. La saisie libre reste possible.
+ 
++### Mission créée depuis un devis accepté (R6)
++
++`Mission.proforma` (`OneToOneField` vers `billing.Proforma`, PROTECT) garantit **1 devis = 1
++mission** au niveau base. `billing.services.convertir_en_mission(proforma)` (pas `missions` :
++le graphe de dépendance des apps, architecture.md:95-163, interdit à `missions` de dépendre de
++`billing` — l'inverse est permis, `billing` appelle donc `missions.services.creer_mission`)
++recopie tel quel le trajet, la marchandise, le poids et le **prix HT** du devis (la facture
++recalculera la TVA plus tard, avec le taux du client en vigueur ce jour-là) ; le devis passe à
++`CONVERTIE`. Déclenché sur `POST /facturation/devis/<id>/creer-mission/`, réservé au rôle
++`missions.permissions.CREATION`. Refusé si le devis n'est pas `ACCEPTEE` (y compris s'il l'a
++déjà été converti).
++
+ ### Prévision de trésorerie des missions (`terrain.py`, R4 — avenant-separation-des-taches.md)
+ 
+```
+
 ```bash
-python manage.py makemigrations billing
+python manage.py makemigrations missions
 python manage.py migrate
 ```
 
-**Résultat attendu :** `Create model Facture`, `Create model LigneFacture`, `Create model Reglement`,
-`Create model Depense`, les contraintes, puis `Applying billing.0001_initial... OK`.
+**Résultat attendu :** `Add field proforma to mission`, puis une migration `missions` appliquée sans
+erreur.
 
 ## Vérifier le chapitre
 
@@ -2997,9 +3043,9 @@ python manage.py check
 python -m pytest apps/billing/tests/test_proforma.py apps/billing/tests/test_r6_creer_mission.py apps/billing/tests/test_services.py -q --no-cov
 ```
 
-**Résultat attendu :** `52 passed` (pour les 1 fichier(s) de tests présentés dans ce chapitre).
+**Résultat attendu :** `100 passed` (pour les 3 fichier(s) de tests présentés dans ce chapitre).
 
-(Les tests d'écrans de `billing` sont présentés au chapitre 25.)
+(Les tests d'écrans de `billing` sont présentés au chapitre 26.)
 
 Essai dans le shell : l'arrondi au franc.
 

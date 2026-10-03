@@ -518,7 +518,7 @@ Lisez en particulier :
 - **`changer_statut_manuel`** : on ne peut suspendre, désactiver ou réactiver qu'à la main ; « En mission » et
   « En congé » sont **posés par le système** et refusés ici (`StatutNonModifiable`).
 - **`chauffeur_de(utilisateur)`** : retrouve la fiche chauffeur d'un compte : c'est ce qui permet à l'espace
-  mobile de n'afficher que *ses* missions (chapitre 27).
+  mobile de n'afficher que *ses* missions (chapitre 29).
 - **`etat_echeances`** utilise `etat_echeance` du chapitre 2 pour dire « valide / à renouveler / expiré ».
 
 #### `apps/drivers/signals.py`
@@ -2199,7 +2199,7 @@ python manage.py check
 python -m pytest apps/drivers/tests/test_copilote.py apps/drivers/tests/test_fiche.py apps/drivers/tests/test_models.py apps/drivers/tests/test_services.py apps/hr/tests/test_comptes_demo.py apps/hr/tests/test_conges.py apps/hr/tests/test_droits_conges.py apps/hr/tests/test_recrutement.py -q --no-cov
 ```
 
-**Résultat attendu :** `114 passed` (pour les 7 fichier(s) de tests présentés dans ce chapitre).
+**Résultat attendu :** `125 passed` (pour les 8 fichier(s) de tests présentés dans ce chapitre).
 
 **Créez maintenant vos comptes d'essai** (un par rôle) et vérifiez que la fiche chauffeur s'est créée
 toute seule :

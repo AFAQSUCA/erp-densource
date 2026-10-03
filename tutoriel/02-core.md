@@ -1403,7 +1403,13 @@ python manage.py check
 python -m pytest apps/core/tests/test_echeance.py apps/core/tests/test_formats.py apps/core/tests/test_graphiques.py apps/core/tests/test_models.py apps/core/tests/test_numerotation.py apps/core/tests/test_sections.py -q --no-cov
 ```
 
-**Résultat attendu :** `42 passed` (pour les 5 fichier(s) de tests présentés dans ce chapitre).
+**Résultat attendu :** `57 passed, 3 failed` (pour les 6 fichier(s) de tests présentés dans ce chapitre).
+
+Des tests échouent à ce stade, **c'est normal** : ils vérifient des écrans qui n'existent pas encore (par exemple la page d'accueil). Ils passeront au chapitre indiqué :
+
+- `test_graphiques.py::test_le_rendu_des_colonnes_offre_legende_infobulle_et_tableau` → chapitre 17 (« Le socle de l'interface : gabarits, styles, connexion, notifications »)
+- `test_graphiques.py::test_le_rendu_echappe_les_libelles` → chapitre 17 (« Le socle de l'interface : gabarits, styles, connexion, notifications »)
+- `test_graphiques.py::test_un_graphique_vide_affiche_le_message_sans_barre` → chapitre 17 (« Le socle de l'interface : gabarits, styles, connexion, notifications »)
 
 Petits essais dans le shell (aucune base nécessaire) :
 

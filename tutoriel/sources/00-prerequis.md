@@ -28,14 +28,14 @@ ce qui le concerne.
 |---|---|---|---|
 | **Python** | 3.12 ou plus (le projet a été construit avec 3.14) | le langage | `python --version` |
 | **pip** | fourni avec Python | installe les bibliothèques | `pip --version` |
-| **Node.js** | 20 ou plus (testé avec 24) | compile les styles de l'interface (chapitre 16) | `node --version` |
+| **Node.js** | 20 ou plus (testé avec 24) | compile les styles de l'interface (chapitre 17) | `node --version` |
 | **Git** | récent | historique, un commit par chapitre | `git --version` |
 | **Un éditeur** | VS Code recommandé | créer les fichiers ; l'extension *Python* aide | — |
 | **Un navigateur** | Chrome, Edge ou Firefox | voir l'application | — |
 | **Un téléphone** | Android ou iPhone | la double authentification (application d'authentification) | — |
 
 Vous n'avez **pas besoin** de PostgreSQL, Redis ni Docker pour ce tutoriel : en développement, la base est
-un simple fichier SQLite. (La mise en production avec PostgreSQL, Redis et Docker est le sujet du chapitre 29
+un simple fichier SQLite. (La mise en production avec PostgreSQL, Redis et Docker est le sujet du chapitre 31
 « Aller plus loin ».)
 
 Espace disque : environ 400 Mo (dont 300 Mo pour `node_modules`). Durée : comptez **20 à 30 heures** en

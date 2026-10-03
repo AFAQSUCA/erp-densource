@@ -43,7 +43,7 @@ Ce que chaque bibliothèque apporte (vous les rencontrerez toutes) :
 | Bibliothèque | Rôle |
 |---|---|
 | **Django** | le framework : base de données, URL, vues, gabarits, administration, sécurité |
-| **djangorestframework** (DRF) | l'API REST (chapitre 28) |
+| **djangorestframework** (DRF) | l'API REST (chapitre 30) |
 | **django-environ** | lire le fichier `.env` |
 | **djangorestframework-simplejwt** | jetons JWT courts pour l'API mobile |
 | **django-filter** | filtres des listes de l'API |
@@ -107,6 +107,16 @@ réglages de développement.
 `wsgi.py` et `asgi.py` sont les portes d'entrée que les serveurs de production (Gunicorn, Uvicorn)
 utilisent. Vous n'y touchez jamais, mais Django en a besoin.
 
+{{FICHIER config/__init__.py}}
+
+{{FICHIER config/celery.py}}
+
+Les tâches asynchrones (envoi d'e-mail, tâches quotidiennes planifiées) passent par **Celery** :
+`redis` et `celery` sont déjà dans `requirements/base.txt`. En développement et en test,
+`CELERY_TASK_ALWAYS_EAGER` (réglage ci-dessous) exécute chaque tâche **immédiatement, dans le même
+processus** : pas besoin d'un courtier Redis ni d'un processus `celery worker` pour suivre ce
+tutoriel — `.delay()` se comporte comme un appel de fonction normal.
+
 ## Étape 5 — Les réglages
 
 `settings/base.py` est le fichier le plus long du chapitre. Comme il évolue tout au long du tutoriel
@@ -125,9 +135,10 @@ Les blocs à repérer dans `base.py` :
 | `TEMPLATES` | où chercher les gabarits HTML |
 | `PASSWORD_HASHERS`, `AUTH_PASSWORD_VALIDATORS` | Argon2 et règles de mot de passe (10 caractères minimum) |
 | `LANGUAGE_CODE = "fr"`, `TIME_ZONE = "Africa/Abidjan"` | langue et fuseau horaire |
-| `REST_FRAMEWORK`, `SIMPLE_JWT`, `SPECTACULAR_SETTINGS`, `CORS_…` | l'API (utilisés au chapitre 28) |
+| `REST_FRAMEWORK`, `SIMPLE_JWT`, `SPECTACULAR_SETTINGS`, `CORS_…` | l'API (utilisés au chapitre 30) |
 | `MFA_…`, `LOGIN_MAX_ECHECS_…` | double authentification et anti force brute (chapitre 3) |
-| `CSP`, `PERMISSIONS_POLICY` | politique de sécurité du contenu (chapitre 16) |
+| `CSP`, `PERMISSIONS_POLICY` | politique de sécurité du contenu (chapitre 17) |
+| `CELERY_…` | tâches asynchrones ; `CELERY_BEAT_SCHEDULE` planifie `taches_quotidiennes` (chapitre 16) |
 
 > **Pourquoi des lignes « à venir » dans des réglages qui ne servent pas encore ?** Les blocs API et
 > sécurité sont écrits une fois pour toutes ici, parce qu'ils ne dépendent d'aucune de nos applications.
@@ -149,7 +160,7 @@ authentification imposée (les tests qui la vérifient la réactivent), plafonds
 {{FICHIER config/settings/prod.py}}
 
 En production : HTTPS obligatoire, cookies sécurisés, base PostgreSQL et Redis fournis par l'environnement.
-Ce fichier n'est pas utilisé dans ce tutoriel (voir « Aller plus loin », chapitre 29).
+Ce fichier n'est pas utilisé dans ce tutoriel (voir « Aller plus loin », chapitre 31).
 
 ## Étape 6 — Les adresses et la configuration des tests
 
@@ -161,10 +172,6 @@ navigateur vers l'icône du site.
 
 `pytest.ini` dit à pytest d'utiliser les réglages `config.settings.test`, de chercher les fichiers
 `test_*.py` dans `apps/`, et déclare un *marqueur* utilisé par un test du chapitre 2.
-
-Il reste les autres fichiers du squelette : Docker, Celery, les guides de déploiement et les avenants du dépôt.
-
-{{RESTANTS}}
 
 ## Vérifier le chapitre
 

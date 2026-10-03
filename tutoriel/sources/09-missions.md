@@ -46,7 +46,7 @@ mkdir -p apps/missions/tests
 
 ## Étape 2 — Le modèle
 
-{{ETAT apps/missions/models.py}}
+{{FICHIER apps/missions/models.py}}
 
 Points clés :
 

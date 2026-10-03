@@ -34,14 +34,13 @@ if not Path(PYTHON).exists():
 MIGRATIONS = {
     t.NUM[a]: [a] for a in (
         "core", "accounts", "audit", "hr", "drivers", "customers", "fleet", "missions", "garage",
-        "inventory", "fuel", "billing", "finance", "notifications",
+        "inventory", "fuel", "billing", "finance", "accounting", "notifications",
     )
 }
-# la facturation ajoute le champ « devis d'origine » à la mission : sa migration est écrite au chapitre de la facturation
-MIGRATIONS[t.NUM["billing"]].append("missions")
-# le plan comptable (migration de données écrite à la main) : le chapitre de la trésorerie génère d'abord la
-# migration de l'app « accounting », puis la sienne ; l'app « finance » suit
-MIGRATIONS[t.NUM["finance"]] = ["accounting", "finance"]
+# Mission.proforma référence billing.Proforma (CHAMPS_DIFFERES) : sa vraie migration
+# (apps/missions/migrations/0002_mission_proforma.py) dépend de billing.0004_proforma, donc n'existe
+# qu'une fois billing créée — d'où une seconde migration missions au chapitre de billing.
+MIGRATIONS[t.NUM["billing"]] = ["billing", "missions"]
 
 
 # --- lecture du contenu des fichiers -----------------------------------------------------------------
@@ -120,12 +119,13 @@ def main() -> int:
             print(f"\n=== Chapitre {k} : {nom}")
             fichiers = t.fichiers_du_chapitre(k, suivis)
             for f in fichiers:
-                # ceux-là s'écrivent par étapes, plus bas (config) ou juste après leur makemigrations (migrations à la main)
-                if f not in t.FICHIERS_PROGRESSIFS and f not in t.MIGRATIONS_A_LA_MAIN:
-                    ecrire(destination, f, lire(f))
+                ecrire(destination, f, lire(f))
             for f in t.FICHIERS_PROGRESSIFS:
                 if k in t.chapitres_ou_config_change(f):
                     ecrire(destination, f, t.etat_config(f, k))
+            for f in t.CHAMPS_DIFFERES:
+                if k in t.chapitres_ou_champ_differe(f):
+                    ecrire(destination, f, t.sans_champs_differes(f, k))
             if k == t.CH_ACCUEIL_DEBUT:
                 ecrire(destination, t.ACCUEIL_PROVISOIRE, t.ACCUEIL_PROVISOIRE_CONTENU)
             if k == t.CH_ACCUEIL_FIN:
@@ -158,9 +158,6 @@ def main() -> int:
                 ok, sortie = lancer([PYTHON, "manage.py", "makemigrations", app], destination, f"makemigrations {app}")
                 if not ok:
                     print(sortie[-2500:]); echecs += 1; ok_chapitre = False; break
-                for f in fichiers:
-                    if f in t.MIGRATIONS_A_LA_MAIN and t._app_de(f) == app:
-                        ecrire(destination, f, lire(f))
             if not ok_chapitre:
                 break
             if k in MIGRATIONS and k >= t.NUM["accounts"]:

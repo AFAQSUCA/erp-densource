@@ -546,7 +546,7 @@ python manage.py migrate
 
 ## Vérifier le chapitre
 
-Les tests de `customers` (formulaires, écrans) sont présentés avec les écrans au chapitre 19 ; pour l'instant on
+Les tests de `customers` (formulaires, écrans) sont présentés avec les écrans au chapitre 20 ; pour l'instant on
 vérifie à la main, dans le shell :
 
 ```bash
