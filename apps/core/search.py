@@ -14,7 +14,7 @@ côtés restent identiques. Plusieurs mots : chacun doit se trouver dans au moin
 """
 
 from django.db.models import CharField, Func, Q, QuerySet, Value
-from django.db.models.functions import Lower
+from django.db.models.functions import Cast, Lower
 
 ACCENTS = "àâäáãåçéèêëíìîïñóòôöõúùûüýÿ"
 SANS_ACCENT = "aaaaaaceeeeiiiinooooouuuuyy"
@@ -42,7 +42,9 @@ class Normalise(Func):
         # majuscule (« É » → toujours « É » après TRANSLATE, puis « é » après LOWER : l'accent
         # reste). Même ordre que `normaliser()` ci-dessus (``.lower().translate(...)``).
         (expression,) = self.get_source_expressions()
-        minuscule = Lower(expression)
+        # Cast en texte : sur PostgreSQL, LOWER() n'accepte pas un champ « inet » (adresse IP du journal d'audit)
+        # et la recherche répondait par une erreur 500. Sans effet sur un champ déjà texte.
+        minuscule = Lower(Cast(expression, CharField()))
         traduit = Func(minuscule, Value(ACCENTS), Value(SANS_ACCENT), function="TRANSLATE")
         return traduit.as_sql(compiler, connection)
 

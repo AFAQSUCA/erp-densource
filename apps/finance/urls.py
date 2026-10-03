@@ -7,6 +7,7 @@ app_name = "finance"
 urlpatterns = [
     path("", views.TresorerieView.as_view(), name="tresorerie"),
     path("imprimer/", views.TresorerieImprimerView.as_view(), name="imprimer"),
+    path("excel/", views.TresorerieExporterXlsxView.as_view(), name="xlsx"),
     path(
         "versements/<int:pk>/confirmer/",
         views.VersementConfirmerView.as_view(),

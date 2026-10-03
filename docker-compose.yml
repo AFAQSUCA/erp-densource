@@ -22,7 +22,7 @@ services:
     environment:
       POSTGRES_DB: erp_densource
       POSTGRES_USER: erp_densource
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-erp_densource}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD doit être défini dans .env (mot de passe PostgreSQL, voir GUIDE-DEPLOIEMENT.md)}
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
@@ -52,7 +52,7 @@ services:
     env_file: .env
     environment:
       DJANGO_SETTINGS_MODULE: config.settings.prod
-      DATABASE_URL: postgres://erp_densource:${POSTGRES_PASSWORD:-erp_densource}@db:5432/erp_densource
+      DATABASE_URL: postgres://erp_densource:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD doit être défini dans .env}@db:5432/erp_densource
       REDIS_URL: redis://redis:6379/0
     volumes:
       - static_data:/app/staticfiles
@@ -81,7 +81,7 @@ services:
     env_file: .env
     environment:
       DJANGO_SETTINGS_MODULE: config.settings.prod
-      DATABASE_URL: postgres://erp_densource:${POSTGRES_PASSWORD:-erp_densource}@db:5432/erp_densource
+      DATABASE_URL: postgres://erp_densource:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD doit être défini dans .env}@db:5432/erp_densource
       REDIS_URL: redis://redis:6379/0
     command: ["daphne", "-b", "0.0.0.0", "-p", "8001", "config.asgi:application"]
     depends_on:
@@ -94,7 +94,7 @@ services:
     env_file: .env
     environment:
       DJANGO_SETTINGS_MODULE: config.settings.prod
-      DATABASE_URL: postgres://erp_densource:${POSTGRES_PASSWORD:-erp_densource}@db:5432/erp_densource
+      DATABASE_URL: postgres://erp_densource:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD doit être défini dans .env}@db:5432/erp_densource
       REDIS_URL: redis://redis:6379/0
     command: ["celery", "-A", "config", "worker", "-l", "info"]
     depends_on:
@@ -109,7 +109,7 @@ services:
     env_file: .env
     environment:
       DJANGO_SETTINGS_MODULE: config.settings.prod
-      DATABASE_URL: postgres://erp_densource:${POSTGRES_PASSWORD:-erp_densource}@db:5432/erp_densource
+      DATABASE_URL: postgres://erp_densource:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD doit être défini dans .env}@db:5432/erp_densource
       REDIS_URL: redis://redis:6379/0
     command: ["celery", "-A", "config", "beat", "-l", "info"]
     depends_on:

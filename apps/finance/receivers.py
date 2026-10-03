@@ -101,7 +101,14 @@ def refleter_l_encaissement_sur_la_mission(sender, reglement, **kwargs):
         montant=reglement.montant,
         libelle=f"Règlement {reglement.facture.numero} ({reglement.get_mode_display()})",
         saisi_par=reglement.saisi_par,
+        reglement=reglement,
     )
+
+
+@receiver(reglement_annule)
+def retirer_l_encaissement_d_un_reglement_annule(sender, reglement, **kwargs):
+    """Le reflet du règlement dans la prévision de trésorerie de la mission disparaît avec lui."""
+    missions_terrain.retirer_encaissements_du_reglement(reglement)
 
 
 @receiver(reglement_annule)

@@ -206,6 +206,18 @@ class FraisMission(BaseModel):
     justificatif = models.FileField(
         _("justificatif"), upload_to="frais_mission/justificatifs/%Y/%m/", blank=True
     )
+    reglement = models.ForeignKey(
+        "billing.Reglement",
+        verbose_name=_("règlement"),
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+        help_text=_(
+            "Renseigné pour un encaissement : le règlement qu'il reflète. Si ce règlement est annulé, "
+            "l'encaissement disparaît de la prévision de trésorerie de la mission."
+        ),
+    )
     statut = models.CharField(
         _("statut"), max_length=10, choices=StatutFraisMission.choices, default=StatutFraisMission.PREVU
     )

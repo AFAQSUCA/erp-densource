@@ -107,3 +107,8 @@ mécanisme. Les écritures comptables (partie double, SYSCOHADA) sont générée
 chaque événement de trésorerie — voir `apps/accounting/README.md` et `avenant-comptabilite-syscohada.md`.
 
 Rapport imprimable de la trésorerie (`/finances/imprimer/`, bouton « Imprimer ») : soldes par compte, synthèse et journal de la période filtrée, mêmes filtres que l'écran, plafonné à 500 lignes (voir `apps/core/README.md`).
+
+**Rapprochement bancaire** : `pointer_ligne_releve` vérifie que le mouvement existe sur le compte Banque, qu'il a le même
+sens et le même montant que la ligne, et que la ligne n'est pas déjà pointée. Un écart persistant (frais bancaires) se
+corrige par un **mouvement de trésorerie** sur la Banque (nature « Frais bancaires »), qui entre dans le solde comptable et
+dans le grand livre — pas par une opération diverse comptable seule. Export Excel du journal : `/finances/excel/`.

@@ -14,7 +14,7 @@ from apps.core.views import ImpressionListeMixin, PaginationTolerante
 
 from . import permissions, sections, services
 from .exceptions import FlotteError
-from .forms import DocumentForm, VehiculeForm
+from .forms import CorrectionCompteurForm, DocumentForm, VehiculeForm
 from .models import StatutVehicule, TypeDocument
 
 
@@ -82,6 +82,11 @@ class VehiculeDetailView(RoleRequiredMixin, DetailView):
             documents=services.etat_documents(self.object),
             sections=sections.DETAIL_VEHICULE.sections(self.object, self.request.user),
             peut_modifier=peut_modifier,
+            form_compteur=(
+                CorrectionCompteurForm(initial={"kilometrage": self.object.kilometrage})
+                if self.request.user.role_effectif in permissions.CORRECTION_COMPTEUR
+                else None
+            ),
             form_document=(
                 DocumentForm(
                     initial={
@@ -161,6 +166,29 @@ class VehiculeUpdateView(RoleRequiredMixin, FormView):
             return self.form_invalid(form)
         messages.success(self.request, f"Camion {self.vehicule.immatriculation} mis à jour.")
         return redirect("fleet:detail", pk=self.vehicule.pk)
+
+
+class CompteurCorrectionView(RoleRequiredMixin, View):
+    """Corrige le compteur d'un camion (POST) — ADMIN seulement, motif obligatoire, tracé."""
+
+    roles = permissions.CORRECTION_COMPTEUR
+    http_method_names = ["post"]
+
+    def post(self, request, pk):
+        vehicule = get_object_or_404(services.vehicules_queryset(), pk=pk)
+        form = CorrectionCompteurForm(request.POST)
+        if not form.is_valid():
+            for erreurs in form.errors.values():
+                for erreur in erreurs:
+                    messages.error(request, erreur)
+            return redirect("fleet:detail", pk=vehicule.pk)
+        try:
+            services.corriger_kilometrage(vehicule, request.user, **form.cleaned_data)
+        except FlotteError as erreur:
+            messages.error(request, str(erreur))
+        else:
+            messages.success(request, f"Compteur de {vehicule.immatriculation} corrigé : {vehicule.kilometrage} km.")
+        return redirect("fleet:detail", pk=vehicule.pk)
 
 
 class DocumentView(RoleRequiredMixin, View):

@@ -2,6 +2,8 @@ from django.conf import settings
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
+from apps.core.immuable import AppendOnlyQuerySet
+
 
 class ActionChoices(models.TextChoices):
     CREATE = "CREATE", _("Création")
@@ -50,6 +52,10 @@ class AuditLog(models.Model):
         choices=StatutChoices.choices,
         default=StatutChoices.SUCCESS,
     )
+
+    # Le manager refuse update()/delete() en masse (apps/core/immuable.py) ; un trigger PostgreSQL ferme aussi
+    # l'accès SQL direct (migration 0002).
+    objects = AppendOnlyQuerySet.as_manager()
 
     class Meta:
         db_table = "audit_log"

@@ -375,3 +375,37 @@ def test_le_delai_de_paiement_doit_etre_entre_1_et_365_jours(client):
         reponse = client.post(reverse("customers:creer"), _donnees(delai_paiement_jours=valeur))
         assert reponse.status_code == 200, valeur
     assert not Client.objects.exists()
+
+
+# --- chargé attitré désactivé (audit M4-05) ---
+
+
+def test_modifier_un_client_dont_le_charge_a_ete_desactive_le_conserve(client):
+    charge = UserFactory(role=Role.CHARGE_CLIENTELE)
+    fiche = ClientFactory(raison_sociale="Cimaf", ncc_nif="CI-1", charge_clientele=charge)
+    charge.is_active = False
+    charge.save()
+    _connecte(client, Role.DIRECTION)
+
+    page = client.get(reverse("customers:modifier", args=[fiche.pk])).content.decode()
+    assert f'value="{charge.pk}" selected' in page  # toujours proposé, et sélectionné
+
+    reponse = client.post(
+        reverse("customers:modifier", args=[fiche.pk]),
+        _donnees(raison_sociale="Cimaf CI", ncc_nif="CI-1", charge_clientele=charge.pk),
+        follow=True,
+    )
+
+    fiche.refresh_from_db()
+    assert fiche.raison_sociale == "Cimaf CI" and fiche.charge_clientele_id == charge.pk  # plus remplacé par « aucun »
+
+
+def test_un_nouveau_charge_desactive_reste_refuse(client):
+    inactif = UserFactory(role=Role.CHARGE_CLIENTELE, is_active=False)
+    fiche = ClientFactory(ncc_nif="CI-2")
+    _connecte(client, Role.DIRECTION)
+
+    client.post(reverse("customers:modifier", args=[fiche.pk]), _donnees(ncc_nif="CI-2", charge_clientele=inactif.pk))
+
+    fiche.refresh_from_db()
+    assert fiche.charge_clientele_id is None

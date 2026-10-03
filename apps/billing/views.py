@@ -14,6 +14,7 @@ from apps.accounts.mixins import RoleRequiredMixin
 from apps.core.formats import nombre
 from apps.core.rapports import contexte_rapport
 from apps.core.views import ImpressionListeMixin, PaginationTolerante
+from apps.core.xlsx import ExportXlsxMixin
 from apps.missions import permissions as missions_permissions
 from apps.missions.exceptions import MissionError
 
@@ -116,6 +117,19 @@ class FactureImprimerView(ImpressionListeMixin, FactureListView):
         if criteres.get("recherche"):
             morceaux.append(f"recherche : « {criteres['recherche']} »")
         return " · ".join(morceaux)
+
+
+class FactureExporterXlsxView(ExportXlsxMixin, FactureImprimerView):
+    """Export Excel des factures (mêmes filtres que la liste) : montants et dates en valeurs brutes."""
+
+    nom_fichier = "factures"
+    colonnes = (
+        ("N°", lambda f: f.numero or f"Sans numéro ({f.mission.numero})"), ("Client", "client.raison_sociale"),
+        ("Mission", "mission.numero"), ("Statut", "get_statut_display"),
+        ("Émise le", lambda f: f.date_emission), ("Échéance", lambda f: f.date_echeance),
+        ("HT (FCFA)", lambda f: f.montant_ht), ("TVA (FCFA)", lambda f: f.montant_tva),
+        ("TTC (FCFA)", lambda f: f.montant_ttc), ("Reste à recouvrer (FCFA)", lambda f: f.reste),
+    )
 
 
 class FactureCreateView(RoleRequiredMixin, FormView):
@@ -387,6 +401,18 @@ class DepenseImprimerView(ImpressionListeMixin, DepenseListView):
         if criteres.get("recherche"):
             morceaux.append(f"recherche : « {criteres['recherche']} »")
         return " · ".join(morceaux)
+
+
+class DepenseExporterXlsxView(ExportXlsxMixin, DepenseImprimerView):
+    """Export Excel des dépenses (mêmes filtres que la liste) : montants et dates en valeurs brutes."""
+
+    nom_fichier = "depenses"
+    colonnes = (
+        ("Date", lambda d: d.date_depense), ("Libellé", "libelle"),
+        ("Catégorie", "get_categorie_display"), ("Mode", "get_mode_display"),
+        ("Montant TTC (FCFA)", lambda d: d.montant), ("dont TVA déductible (FCFA)", lambda d: d.montant_tva),
+        ("N° de pièce", "reference"), ("Origine", lambda d: "Automatique" if d.est_automatique else "Saisie"),
+    )
 
 
 class DepenseCreateView(RoleRequiredMixin, FormView):

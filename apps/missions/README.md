@@ -135,3 +135,13 @@ Reste à faire :
 - Alerte N1 des congés « chauffeur avec mission sur la période » (via `date_depart_prevue`).
 
 Rapport imprimable des missions (bouton « Imprimer » sur la liste, mêmes filtres) : voir `apps/core/README.md` (`ImpressionListeMixin`).
+
+**Affectation** : un chauffeur au permis ou à la visite médicale **expiré** ne peut pas être affecté ni partir
+(`documents_expires_du_chauffeur` ; une date non renseignée ne bloque pas, l'alerte `MANQUANT` la signale). La
+réaffectation (`modifier_mission`) ne revérifie que ce qui change : changer seulement le camion ou seulement le
+chauffeur marche (la mission elle-même n'est pas « une autre mission active »), et une hausse du poids est
+recontrôlée contre la capacité du camion conservé. Au retour (`livrer_mission`), un kilométrage d'arrivée à plus
+de `fleet.services.ECART_KM_MAX` (5 000 km) du départ est refusé : une faute de frappe figerait le compteur du
+camion, qui ne recule jamais. L'alerte N1 des congés (`missions_du_personnel_sur_periode`) couvre aussi une
+mission déjà en cours qui déborde sur le congé et le copilote. Un règlement annulé retire son encaissement de la
+prévision de trésorerie (`FraisMission.reglement`, `rattacher_encaissements_missions [--dry-run]` pour l'existant).

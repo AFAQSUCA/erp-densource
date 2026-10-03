@@ -109,3 +109,9 @@ accessibles depuis le menu « Rapports comptables », chacun avec une version im
 **Plan comptable de départ** (`migrations/0002_plan_comptable_seed.py`) : liste de travail, à
 valider par un expert-comptable avant mise en production — aucun plan comptable existant côté
 cabinet externe n'a été fourni à ce stade.
+
+**Admin Django en lecture seule** pour les écritures et les exercices (aucune création, validation ou réouverture hors des
+services : équilibre, numéro, DIRECTION, exercice ouvert) ; numéro et nature d'un compte ne se modifient plus. `passer_ecriture`
+refuse un sens autre que débit/crédit. **Contre-passation d'une opération diverse validée** depuis son écran
+(`contre_passer_ecriture_manuelle`, DIRECTION en contrôle strict, motif obligatoire, une seule fois). **Export Excel** du grand
+livre, de la balance, du bilan, du compte de résultat et de la déclaration TVA (bouton « Excel » à côté de « Imprimer »).

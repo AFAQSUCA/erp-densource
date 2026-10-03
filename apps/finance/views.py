@@ -1,5 +1,7 @@
 """Trésorerie : journal des mouvements, soldes par compte, mouvements manuels."""
 
+from decimal import Decimal
+
 from django.contrib import messages
 from django.core.paginator import Paginator
 from django.shortcuts import get_object_or_404, redirect
@@ -15,6 +17,7 @@ from apps.billing.models import STATUTS_A_RECOUVRER, CompteTresorerie
 from apps.core.formats import nombre
 from apps.core.rapports import contexte_rapport
 from apps.core.views import PaginationTolerante
+from apps.core.xlsx import reponse_classeur
 
 from . import demandes as demandes_services
 from . import permissions, services
@@ -36,6 +39,7 @@ from .models import (
     LigneReleve,
     MouvementManuel,
     OrdreDecaissement,
+    SensMouvement,
     StatutDemandeDepense,
     StatutOrdreDecaissement,
 )
@@ -116,6 +120,36 @@ class TresorerieImprimerView(RoleRequiredMixin, TemplateView):
             tronque=tronque,
         )
         return contexte
+
+
+class TresorerieExporterXlsxView(RoleRequiredMixin, View):
+    """Export Excel du journal de trésorerie (règlements reçus, dépenses payées, mouvements manuels) : mêmes
+    filtres que l'écran, montants signés (entrées positives, sorties négatives) pour pouvoir les additionner."""
+
+    roles = permissions.CONSULTATION
+    limite = 10000
+
+    def get(self, request):
+        criteres = FiltreTresorerieForm(request.GET).criteres()
+        journal = services.mouvements(**criteres)
+        lignes = [
+            [
+                m["date"], m["libelle"], m["origine"].capitalize(), m["mode_libelle"], m["reference"],
+                m["montant"] if m["sens"] == SensMouvement.ENTREE else -m["montant"],
+            ]
+            for m in journal[: self.limite]
+        ]
+        aujourd_hui = timezone.localdate()
+        debut = criteres["date_debut"] or aujourd_hui.replace(day=1)
+        fin = criteres["date_fin"] or aujourd_hui
+        feuille = {
+            "titre": "Trésorerie",
+            "sous_titre": f"du {debut:%d/%m/%Y} au {fin:%d/%m/%Y}",
+            "entetes": ["Date", "Libellé", "Origine", "Mode", "Référence", "Montant (FCFA, entrée +, sortie -)"],
+            "lignes": lignes,
+            "pied": ["", "", "", "", "Total", sum((l[5] for l in lignes), Decimal("0"))],
+        }
+        return reponse_classeur("tresorerie", [feuille])
 
 
 class MouvementCreateView(RoleRequiredMixin, View):

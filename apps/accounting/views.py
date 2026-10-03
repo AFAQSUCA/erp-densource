@@ -9,6 +9,7 @@ Aucune règle métier ici : les vues contrôlent le rôle, lisent le formulaire 
 import calendar
 
 from django.contrib import messages
+from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect
 from django.utils import timezone
 from django.views import View
@@ -17,6 +18,7 @@ from django.views.generic import DetailView, FormView, ListView, TemplateView
 from apps.accounts.mixins import RoleRequiredMixin
 from apps.core.rapports import contexte_rapport
 from apps.core.views import PaginationTolerante
+from apps.core.xlsx import reponse_classeur
 
 from . import permissions, services
 from .exceptions import AccountingError, CompteDejaExistant
@@ -90,6 +92,13 @@ class EcritureManuelleDetailView(RoleRequiredMixin, DetailView):
                 and total_debit == total_credit
             ),
             form_ligne=LigneManuelleForm() if peut_saisir else None,
+            contre_passation=services.contre_passation_de(ecriture) if ecriture.statut == StatutEcriture.VALIDEE else None,
+            peut_contre_passer=(
+                self.request.user.role in permissions.VALIDATION_OD
+                and ecriture.statut == StatutEcriture.VALIDEE
+                and not ecriture.origine
+                and services.contre_passation_de(ecriture) is None
+            ),
         )
         return contexte
 
@@ -145,6 +154,23 @@ class EcritureManuelleValiderView(RoleRequiredMixin, View):
             messages.error(request, str(erreur))
         else:
             messages.success(request, f"Écriture {ecriture.numero} validée.")
+        return redirect("accounting:ecriture_manuelle", pk=pk)
+
+
+class EcritureManuelleContrePasserView(RoleRequiredMixin, View):
+    roles = permissions.VALIDATION_OD
+    http_method_names = ["post"]
+
+    def post(self, request, pk):
+        ecriture = get_object_or_404(_ecritures_manuelles_queryset(), pk=pk)
+        try:
+            inverse = services.contre_passer_ecriture_manuelle(
+                ecriture, request.user, motif=request.POST.get("motif", "")
+            )
+        except AccountingError as erreur:
+            messages.error(request, str(erreur))
+        else:
+            messages.success(request, f"Écriture {ecriture.numero} contre-passée par {inverse.numero}.")
         return redirect("accounting:ecriture_manuelle", pk=pk)
 
 
@@ -376,6 +402,140 @@ class DeclarationTvaImprimerView(RoleRequiredMixin, TemplateView):
         rapport = contexte_rapport(self.request, titre="Déclaration TVA", sous_titre=sous_titre)
         contexte.update(rapport, rapport_tva=services.declaration_tva(debut=debut, fin=fin))
         return contexte
+
+
+class GrandLivreXlsxView(RoleRequiredMixin, View):
+    roles = permissions.CONSULTATION
+
+    def get(self, request):
+        form = GrandLivreForm(request.GET or None)
+        if not (form.is_valid() and form.cleaned_data.get("compte")):
+            raise Http404("Choisissez un compte.")
+        compte = form.cleaned_data["compte"]
+        lignes = services.grand_livre_avec_solde(
+            compte, debut=form.cleaned_data.get("debut"), fin=form.cleaned_data.get("fin")
+        )
+        feuille = {
+            "titre": f"Grand livre {compte.numero}",
+            "sous_titre": f"{compte.numero} — {compte.libelle}",
+            "entetes": ["Date", "Écriture", "Pièce", "Libellé", "Débit", "Crédit", "Solde cumulé (débit +, crédit -)"],
+            "lignes": [
+                [
+                    l["ligne"].ecriture.date_ecriture, l["ligne"].ecriture.numero, l["ligne"].ecriture.piece_reference,
+                    l["ligne"].libelle or l["ligne"].ecriture.libelle,
+                    l["ligne"].montant if l["ligne"].sens == SensEcriture.DEBIT else None,
+                    l["ligne"].montant if l["ligne"].sens == SensEcriture.CREDIT else None,
+                    l["solde_cumule"],
+                ]
+                for l in lignes
+            ],
+        }
+        return reponse_classeur(f"grand_livre_{compte.numero}", [feuille])
+
+
+class BalanceXlsxView(RoleRequiredMixin, View):
+    roles = permissions.CONSULTATION
+
+    def get(self, request):
+        form = PeriodeForm(request.GET or None)
+        debut = fin = None
+        if form.is_valid():
+            debut, fin = form.cleaned_data.get("debut"), form.cleaned_data.get("fin")
+        lignes = services.balance(debut=debut, fin=fin)
+        periode = (
+            f"du {debut:%d/%m/%Y}" if debut else "depuis l'origine"
+        ) + (f" au {fin:%d/%m/%Y}" if fin else "")
+        feuille = {
+            "titre": "Balance générale",
+            "sous_titre": periode,
+            "entetes": ["Compte", "Libellé", "Total débit", "Total crédit", "Solde débiteur", "Solde créditeur"],
+            "lignes": [
+                [
+                    l["compte__numero"], l["compte__libelle"], l["total_debit"], l["total_credit"],
+                    l["solde_debiteur"], l["solde_crediteur"],
+                ]
+                for l in lignes
+            ],
+            "pied": [
+                "", "Total",
+                sum((l["total_debit"] for l in lignes), 0), sum((l["total_credit"] for l in lignes), 0),
+                sum((l["solde_debiteur"] for l in lignes), 0), sum((l["solde_crediteur"] for l in lignes), 0),
+            ],
+        }
+        return reponse_classeur("balance", [feuille])
+
+
+class _RapportExerciceXlsxView(RoleRequiredMixin, View):
+    roles = permissions.CONSULTATION
+
+    def exercice(self, request):
+        exercices = ExerciceComptable.objects.order_by("-annee")
+        annee = request.GET.get("exercice")
+        exercice = (exercices.filter(annee=annee).first() if annee else None) or exercices.first()
+        if exercice is None:
+            raise Http404("Aucun exercice.")
+        return exercice
+
+
+class BilanXlsxView(_RapportExerciceXlsxView):
+    def get(self, request):
+        exercice = self.exercice(request)
+        rapport = services.bilan(exercice)
+        passif = [[l["compte__numero"], l["compte__libelle"], l["montant"]] for l in rapport["passif"]]
+        if rapport["resultat_net"]:
+            passif.append(["", "Résultat en cours, pas encore viré au 120000 (calculé)", rapport["resultat_net"]])
+        actif = [[l["compte__numero"], l["compte__libelle"], l["montant"]] for l in rapport["actif"]]
+        sous_titre = f"Exercice {exercice.annee}, au {exercice.date_fin:%d/%m/%Y}"
+        entetes = ["Compte", "Libellé", "Montant"]
+        return reponse_classeur(
+            f"bilan_{exercice.annee}",
+            [
+                {"titre": "Actif", "sous_titre": sous_titre, "entetes": entetes, "lignes": actif,
+                 "pied": ["", "Total actif", rapport["total_actif"]]},
+                {"titre": "Passif", "sous_titre": sous_titre, "entetes": entetes, "lignes": passif,
+                 "pied": ["", "Total passif", rapport["total_passif_avec_resultat"]]},
+            ],
+        )
+
+
+class CompteDeResultatXlsxView(_RapportExerciceXlsxView):
+    def get(self, request):
+        exercice = self.exercice(request)
+        rapport = services.compte_de_resultat(exercice)
+        sous_titre = f"Exercice {exercice.annee}"
+        entetes = ["Compte", "Libellé", "Montant"]
+        return reponse_classeur(
+            f"compte_de_resultat_{exercice.annee}",
+            [
+                {"titre": "Produits", "sous_titre": sous_titre, "entetes": entetes,
+                 "lignes": [[l["compte__numero"], l["compte__libelle"], l["montant"]] for l in rapport["produits"]],
+                 "pied": ["", "Total produits", rapport["total_produits"]]},
+                {"titre": "Charges", "sous_titre": sous_titre, "entetes": entetes,
+                 "lignes": [[l["compte__numero"], l["compte__libelle"], l["montant"]] for l in rapport["charges"]],
+                 "pied": ["", "Total charges", rapport["total_charges"]]},
+                {"titre": "Résultat", "sous_titre": sous_titre, "entetes": ["Libellé", "Montant"],
+                 "lignes": [["Résultat net (bénéfice si positif)", rapport["resultat_net"]]]},
+            ],
+        )
+
+
+class DeclarationTvaXlsxView(RoleRequiredMixin, View):
+    roles = permissions.CONSULTATION
+
+    def get(self, request):
+        debut, fin = _periode_declaration_tva(PeriodeForm(request.GET or None))
+        rapport = services.declaration_tva(debut=debut, fin=fin)
+        feuille = {
+            "titre": "Déclaration TVA",
+            "sous_titre": f"du {debut:%d/%m/%Y} au {fin:%d/%m/%Y}",
+            "entetes": ["Libellé", "Montant (FCFA)"],
+            "lignes": [
+                ["TVA collectée (443300)", rapport["tva_collectee"]],
+                ["TVA déductible (445200)", rapport["tva_deductible"]],
+                ["TVA nette à payer (négatif : crédit de TVA)", rapport["tva_nette"]],
+            ],
+        }
+        return reponse_classeur("declaration_tva", [feuille])
 
 
 class _RapportExerciceView(RoleRequiredMixin, TemplateView):

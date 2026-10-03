@@ -11,9 +11,10 @@ class DriversConfig(AppConfig):
         from apps.audit.registry import audit_model
 
         from . import permissions, signals  # noqa: F401
-        from .models import Chauffeur
+        from .models import Chauffeur, Copilote
 
         audit_model(Chauffeur, module="CHAUFFEUR")
+        audit_model(Copilote, module="CHAUFFEUR")
         enregistrer(
             EntreeMenu(
                 "Chauffeurs", "drivers:liste", "fa-id-card", permissions.CONSULTATION, ordre=30

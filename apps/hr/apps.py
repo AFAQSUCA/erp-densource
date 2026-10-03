@@ -14,7 +14,7 @@ class HrConfig(AppConfig):
         from .models import AttributionConge, Conge, Personnel
 
         audit_model(Personnel, module="RH")
-        audit_model(Conge, module="RH")
+        audit_model(Conge, module="RH", validation=("statut", ("VALIDATION_N1", "APPROUVE")))
         audit_model(AttributionConge, module="RH")
         enregistrer(
             EntreeMenu(

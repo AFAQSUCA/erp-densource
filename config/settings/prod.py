@@ -8,10 +8,22 @@ changer ce fichier.
 Sécurité : conventions.md §3 + cahier-des-charges.md §4 "Sécurité".
 """
 
+from django.core.exceptions import ImproperlyConfigured
+
 from .base import *  # noqa: F401,F403
-from .base import env
+from .base import SECRET_KEY, env
 
 DEBUG = False
+
+# Refuser de démarrer avec la clé par défaut du dépôt (``base.py``) ou celle de ``.env.example`` : elle est
+# publique, et c'est elle qui signe les sessions, les jetons de réinitialisation de mot de passe et les
+# jetons de l'API mobile. Mieux vaut un conteneur qui s'arrête avec un message clair qu'un serveur qui
+# tourne avec une clé que n'importe qui connaît (GUIDE-DEPLOIEMENT.md § 4).
+if SECRET_KEY.startswith("django-insecure-") or SECRET_KEY == "change-me" or len(SECRET_KEY) < 32:
+    raise ImproperlyConfigured(
+        "SECRET_KEY absente, par défaut ou trop courte (32 caractères minimum) : en production, générez-en une "
+        "avec « python -c \"import secrets; print(secrets.token_urlsafe(50))\" » et placez-la dans .env."
+    )
 
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS")
 

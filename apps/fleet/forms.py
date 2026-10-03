@@ -9,6 +9,13 @@ from apps.drivers import services as drivers_services
 from .models import TypeDocument
 
 
+class CorrectionCompteurForm(StyleTailwindMixin, forms.Form):
+    """Correction du compteur d'un camion (ADMIN) : nouvelle valeur et motif obligatoire."""
+
+    kilometrage = forms.IntegerField(label="Kilométrage du compteur", min_value=0)
+    motif = forms.CharField(label="Motif de la correction", max_length=200)
+
+
 class VehiculeForm(StyleTailwindMixin, forms.Form):
     """Fiche véhicule (cahier-des-charges.md:88-90)."""
 

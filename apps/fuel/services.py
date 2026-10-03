@@ -15,6 +15,7 @@ from decimal import ROUND_HALF_UP, Decimal
 
 from django.db import transaction
 from django.db.models import Q, QuerySet
+from django.utils import timezone
 
 from apps.core.search import filtrer_par_texte
 from apps.drivers.models import Chauffeur
@@ -117,6 +118,9 @@ def enregistrer_plein(
         raise SaisieInvalide("La quantité doit être strictement positive.")
     if prix_unitaire <= 0:
         raise SaisieInvalide("Le prix unitaire doit être strictement positif.")
+    if date_plein > timezone.localdate():
+        # Un plein daté dans le futur bloquerait toutes les saisies suivantes du camion (HorsChronologie).
+        raise SaisieInvalide("La date du plein ne peut pas être dans le futur.")
     numero_ticket = numero_ticket.strip()
     if not numero_ticket:
         raise SaisieInvalide("Le n° de ticket est obligatoire.")
@@ -125,11 +129,18 @@ def enregistrer_plein(
 
     type(vehicule)._base_manager.select_for_update().filter(pk=vehicule.pk).first()
     vehicule.refresh_from_db()
+    if quantite_litres > vehicule.reservoir_l:
+        raise SaisieInvalide(
+            f"{quantite_litres} L dépasse le réservoir du camion ({vehicule.reservoir_l} L) : vérifiez la quantité."
+        )
 
     precedent = (
         Plein.objects.filter(vehicule=vehicule).order_by("-date_plein", "-pk").first()
     )
     champs_calcules: dict = {}
+    if precedent is None and vehicule.kilometrage > 0:
+        # Premier plein enregistré : on se repère sur le compteur du camion (0 = jamais renseigné, rien à vérifier).
+        _exiger_distance_plausible(vehicule.kilometrage, km_compteur)
     if precedent is not None:
         if date_plein < precedent.date_plein:
             raise HorsChronologie(
@@ -142,6 +153,7 @@ def enregistrer_plein(
                 f"précédent ({precedent.km_compteur})."
             )
         distance = km_compteur - precedent.km_compteur
+        _exiger_distance_plausible(precedent.km_compteur, km_compteur)
         consommation = calculer_consommation(quantite_litres, distance)
         champs_calcules.update(
             km_precedent=precedent.km_compteur,
@@ -182,6 +194,16 @@ def enregistrer_plein(
     ):
         _emettre(alerte_consommation, plein=plein)
     return plein
+
+
+def _exiger_distance_plausible(depuis_km: int, jusqu_a_km: int) -> None:
+    """Refuse un km compteur très au-dessus du relevé précédent : une faute de frappe gonflerait le compteur du
+    camion de façon irréversible (``fleet.services.enregistrer_kilometrage``)."""
+    if not fleet_services.distance_plausible(depuis_km, jusqu_a_km):
+        raise KilometrageInvalide(
+            f"Le km compteur ({jusqu_a_km}) est {jusqu_a_km - depuis_km} km au-dessus du relevé précédent "
+            f"({depuis_km}) : plus de {fleet_services.ECART_KM_MAX} km entre deux relevés, vérifiez la saisie."
+        )
 
 
 def _emettre(signal, **arguments) -> None:

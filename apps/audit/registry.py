@@ -14,7 +14,7 @@ from decimal import Decimal
 
 from django.core.serializers.json import DjangoJSONEncoder
 from django.db.models import DecimalField, FileField, Model
-from django.db.models.signals import post_save, pre_save
+from django.db.models.signals import post_delete, post_save, pre_save
 
 from apps.core.middleware import get_current_request, get_current_user
 
@@ -59,7 +59,12 @@ def _snapshot(
 
 
 def audit_model(
-    model: type[Model], module: str, exclure: tuple[str, ...] = (), masquer: tuple[str, ...] = ()
+    model: type[Model],
+    module: str,
+    exclure: tuple[str, ...] = (),
+    masquer: tuple[str, ...] = (),
+    validation: tuple[str, tuple[str, ...]] | None = None,
+    auto_validation: tuple[str, tuple[str, ...]] | None = None,
 ) -> None:
     """Active l'audit automatique de ``model`` sous le nom de module ``module``.
 
@@ -67,6 +72,11 @@ def audit_model(
     codes de mission, etc.). Un changement sur ces seuls champs ne produit
     aucune entrée. ``masquer`` liste les champs dont seule une empreinte est journalisée : le
     changement reste visible (mot de passe modifié) sans que la valeur soit écrite.
+    ``validation`` = ``(champ, valeurs)`` : un changement qui amène ``champ`` à l'une de ces valeurs est
+    une **validation** (action ``VALIDATE``, filtre « Validation » du journal) et non une simple modification.
+    ``auto_validation`` = ``(champ_auteur, champs_validateurs)`` : noms des clés étrangères vers l'utilisateur qui
+    désignent celui qui a saisi l'opération et ceux qui la valident ; quand c'est la même personne, l'entrée
+    porte ``auto_validation: true`` — permis (petite structure), mais jamais passé sous silence.
     """
     label = model._meta.label
     exclus = frozenset(exclure)
@@ -99,6 +109,15 @@ def audit_model(
             action = ActionChoices.DELETE if supprime else ActionChoices.UPDATE
             ancienne = {k: avant.get(k) for k in changes}
             nouvelle = {k: apres[k] for k in changes}
+            if validation and not supprime and validation[0] in changes and apres[validation[0]] in validation[1]:
+                action = ActionChoices.VALIDATE
+                if auto_validation:
+                    champ_auteur, champs_validateurs = auto_validation
+                    auteur_id = getattr(instance, f"{champ_auteur}_id", None)
+                    if auteur_id is not None and auteur_id in {
+                        getattr(instance, f"{champ}_id", None) for champ in champs_validateurs
+                    }:
+                        nouvelle["auto_validation"] = True
 
         services.log_action(
             action=action,
@@ -111,8 +130,25 @@ def audit_model(
             request=get_current_request(),
         )
 
+    def journaliser_suppression(sender, instance, **kwargs):
+        """Suppression physique (``hard_delete``, ligne d'un brouillon retirée...) : la suppression logique
+        passe déjà par ``post_save`` (``is_deleted``), celle-ci ne laissait aucune trace."""
+        services.log_action(
+            action=ActionChoices.DELETE,
+            module=module,
+            entite=entite,
+            entite_id=instance.pk,
+            utilisateur=get_current_user(),
+            ancienne_valeur=_snapshot(instance, exclus, masques),
+            nouvelle_valeur=None,
+            request=get_current_request(),
+        )
+
     pre_save.connect(
         capturer_avant, sender=model, weak=False, dispatch_uid=f"audit-pre-{label}"
+    )
+    post_delete.connect(
+        journaliser_suppression, sender=model, weak=False, dispatch_uid=f"audit-del-{label}"
     )
     post_save.connect(
         journaliser, sender=model, weak=False, dispatch_uid=f"audit-post-{label}"

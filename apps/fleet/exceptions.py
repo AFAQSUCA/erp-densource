@@ -14,5 +14,9 @@ class KilometrageInvalide(FlotteError):
     """Le compteur d'un camion ne peut pas reculer."""
 
 
+class ActionNonAutorisee(FlotteError):
+    """L'utilisateur n'a pas le droit de faire cette action sur la flotte."""
+
+
 class DocumentInvalide(FlotteError):
     """Dates d'un document réglementaire incohérentes."""

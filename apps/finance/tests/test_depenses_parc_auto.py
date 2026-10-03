@@ -4,7 +4,10 @@ page Dépenses, trésorerie et charges donnent le même total."""
 from datetime import date
 from decimal import Decimal
 
+import contextlib
+
 import pytest
+from django.db import connection, models
 from django.urls import reverse
 from django.utils import timezone
 
@@ -293,6 +296,22 @@ def test_la_reprise_de_l_existant_cree_les_depenses_manquantes_une_seule_fois():
     assert set(Depense.objects.values_list("mode", flat=True)) == {ModePaiement.ESPECES}
 
 
+@contextlib.contextmanager
+def _journal_de_stock_modifiable():
+    """Le journal des mouvements de stock est append-only, y compris en base PostgreSQL (trigger) : ce test
+    antidate des mouvements, il suspend donc les triggers le temps de l'opération (sans effet sous SQLite)."""
+    if connection.vendor != "postgresql":
+        yield
+        return
+    with connection.cursor() as curseur:
+        curseur.execute("SET session_replication_role = replica")  # suspend les triggers (superuser de test)
+    try:
+        yield
+    finally:
+        with connection.cursor() as curseur:
+            curseur.execute("SET session_replication_role = DEFAULT")
+
+
 def test_depuis_ignore_ce_qui_precede_un_solde_d_ouverture():
     """Un solde d'ouverture saisi au 01/09/2026 comprend déjà les mouvements antérieurs : ne pas les reprendre."""
     from apps.garage.models import OrdreReparation
@@ -300,7 +319,8 @@ def test_depuis_ignore_ce_qui_precede_un_solde_d_ouverture():
 
     _etat_avant_comptabilisation()
     ancien = timezone.now().replace(year=2026, month=8, day=15)
-    MouvementStock.objects.update(date_mouvement=ancien)
+    with _journal_de_stock_modifiable():
+        models.QuerySet(MouvementStock).update(date_mouvement=ancien)  # le manager refuse update()
     OrdreReparation.objects.update(date_cloture=ancien)
 
     compteurs = services.reprendre_depenses_parc_auto(depuis=date(2026, 9, 1))

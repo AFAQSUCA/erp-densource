@@ -39,7 +39,7 @@
     </div>
   </dl>
   {% if etat.ecart != 0 %}
-    <p class="mt-2 text-xs text-slate-600">Un écart qui persiste après avoir pointé toutes les lignes concordantes signale une opération jamais saisie (frais bancaires, par exemple) : à corriger par une opération diverse.</p>
+    <p class="mt-2 text-xs text-slate-600">Un écart qui persiste après avoir pointé toutes les lignes concordantes signale une opération jamais saisie (frais bancaires, par exemple) : enregistrez-la comme <a href="{% url 'finance:tresorerie' %}" class="font-medium text-marque-700 underline">mouvement de trésorerie</a> sur le compte Banque (nature « Frais bancaires » pour des frais). Une simple opération diverse comptable ne ferait pas bouger cet écart.</p>
   {% endif %}
 
   {% if peut_saisir %}

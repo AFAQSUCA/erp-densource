@@ -84,11 +84,11 @@ cp .env.example .env
 | Variable | Valeur |
 |---|---|
 | `DJANGO_SETTINGS_MODULE` | `config.settings.prod` |
-| `SECRET_KEY` | une valeur longue et aléatoire — jamais celle de `.env.example` ; générer avec `python -c "import secrets; print(secrets.token_urlsafe(50))"` |
+| `SECRET_KEY` | une valeur longue et aléatoire (32 caractères au moins) — **obligatoire** : en production, `web` refuse de démarrer avec la valeur par défaut ou une clé trop courte ; générer avec `python -c "import secrets; print(secrets.token_urlsafe(50))"` |
 | `ALLOWED_HOSTS` | le domaine, ex. `erp.densourcegroup.ci` |
 | `DOMAINE` | le même domaine, ex. `erp.densourcegroup.ci` — Nginx et le certificat HTTPS en dépendent (défaut : `densource.tech`) |
 | `CSRF_TRUSTED_ORIGINS` | `https://` + le même domaine |
-| `POSTGRES_PASSWORD` | un mot de passe long, différent de celui de `.env.example` |
+| `POSTGRES_PASSWORD` | un mot de passe long, différent de celui de `.env.example` — **obligatoire** : `docker compose` refuse de démarrer sans lui (aucun mot de passe par défaut) |
 | `TRUSTED_PROXY_COUNT` | `1` (Nginx est l'unique proxy devant l'application) |
 | `SAUVEGARDE_PASSPHRASE` | une phrase de passe longue, **à conserver ailleurs que sur ce serveur** (étape 9) |
 
@@ -195,6 +195,16 @@ stockage **hors de ce serveur** (cahier-des-charges.md « sauvegardes chiffrées
 ```cron
 0 2 * * * cd /chemin/vers/erp-densource && set -a && . ./.env && set +a && DATABASE_URL="postgres://erp_densource:${POSTGRES_PASSWORD}@localhost:5432/erp_densource" ops/sauvegarde.sh /chemin/vers/sauvegardes
 ```
+
+Le script ne passe jamais la phrase de passe en argument de commande (visible de tous dans la liste des
+processus) : il la lit dans un fichier — `SAUVEGARDE_PASSPHRASE_FILE=/chemin/fichier` (à préférer, droits 600) ou
+un fichier temporaire fabriqué à partir de `SAUVEGARDE_PASSPHRASE`, supprimé en sortie. Deux options, toutes deux
+facultatives :
+
+| Variable | Effet |
+|---|---|
+| `SAUVEGARDE_CONSERVER_JOURS` | rotation : supprime les sauvegardes du dossier plus vieilles que N jours, après une sauvegarde réussie (défaut 30 ; `0` = ne rien supprimer) |
+| `SAUVEGARDE_COPIE_RSYNC` | copie hors serveur : destination `rsync` (`utilisateur@hôte:/chemin/`) où chaque fichier chiffré est envoyé juste après sa création |
 
 (`pg_dump`/`gpg` doivent être installés sur l'hôte — `apt install postgresql-client gnupg` — ou lancés
 dans un conteneur éphémère `postgres:16` avec les mêmes volumes réseau.)

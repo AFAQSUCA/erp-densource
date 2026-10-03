@@ -35,6 +35,18 @@
         <div><dt class="text-slate-600">Chauffeur habituel</dt>
           <dd class="mt-0.5 font-medium text-slate-900">{% if vehicule.chauffeur_habituel %}{{ vehicule.chauffeur_habituel.personnel.prenom }} {{ vehicule.chauffeur_habituel.personnel.nom }}{% else %}Aucun{% endif %}</dd></div>
       </dl>
+      {% if form_compteur %}
+        <details class="mt-4 border-t border-slate-200 pt-3 text-sm">
+          <summary class="cursor-pointer font-semibold text-slate-800">Corriger le compteur</summary>
+          <form method="post" action="{% url 'fleet:compteur' vehicule.pk %}" class="mt-3 space-y-3" data-confirm="Corriger le compteur ? La correction est tracée au journal d'audit.">
+            {% csrf_token %}
+            <p class="text-xs text-slate-600">Le compteur ne recule jamais autrement : à n'utiliser que pour une faute de saisie. Tracé avec son motif.</p>
+            {% include "components/_champ.html" with champ=form_compteur.kilometrage %}
+            {% include "components/_champ.html" with champ=form_compteur.motif %}
+            <button type="submit" class="rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-800 hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-700">Corriger</button>
+          </form>
+        </details>
+      {% endif %}
     </section>
 
     <div class="space-y-6 xl:col-span-2">

@@ -17,11 +17,11 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from django.db import transaction
-from django.db.models import Count, QuerySet, Sum
+from django.db.models import Count, Q, QuerySet, Sum
 from django.utils import timezone
 
 from apps.core.search import filtrer_par_texte, normaliser
-from apps.core.services import prochain_numero, total_par_mois
+from apps.core.services import etat_echeance, prochain_numero, total_par_mois
 from apps.customers.models import Client
 from apps.drivers import services as drivers_services
 from apps.drivers.models import Chauffeur, Copilote, StatutChauffeur
@@ -134,20 +134,25 @@ STATUTS_A_SURVEILLER = (
 
 
 def missions_du_personnel_sur_periode(personnel_id: int, debut, fin) -> QuerySet[Mission]:
-    """Missions planifiées, affectées ou en cours d'un chauffeur (identifié par sa fiche du
-    personnel) dont le départ prévu tombe dans la période.
+    """Missions planifiées, affectées ou en cours d'un employé (identifié par sa fiche du personnel), en
+    tant que chauffeur ou copilote, qui touchent la période.
 
-    Alimente l'alerte N1 des congés (cahier-des-charges.md:219-221). Une mission sans date
-    de départ prévue ne peut pas être détectée.
+    Alimente l'alerte N1 des congés (cahier-des-charges.md:219-221). Deux cas : le départ prévu tombe dans la
+    période, ou la mission est déjà en cours (partie avant ou pendant la période, pas encore livrée : elle
+    déborde sur le congé). Une mission non commencée et sans date de départ prévue ne peut pas être détectée.
     """
+    en_cours = Q(
+        statut__in=(StatutMission.EN_COURS_DEPART, StatutMission.EN_COURS_COLIS_RECUPERE),
+        date_depart__date__lte=fin,
+    )
     return (
         Mission.objects.filter(
-            chauffeur__personnel_id=personnel_id,
+            Q(chauffeur__personnel_id=personnel_id) | Q(copilote__personnel_id=personnel_id),
             statut__in=STATUTS_A_SURVEILLER,
-            date_depart_prevue__range=(debut, fin),
         )
+        .filter(Q(date_depart_prevue__range=(debut, fin)) | en_cours)
         .select_related("client")
-        .order_by("date_depart_prevue")
+        .order_by("date_depart_prevue", "pk")
     )
 
 
@@ -210,22 +215,29 @@ def meilleurs_clients(
     ]
 
 
-def vehicule_a_mission_active(vehicule: Vehicule) -> bool:
+def _missions_actives(sauf: Mission | None = None):
+    """Missions affectées ou en cours, hors ``sauf`` : la mission qu'on est en train de modifier ne compte pas
+    comme « une autre mission » qui réserverait déjà son propre camion ou son propre chauffeur."""
+    missions = Mission.objects.filter(statut__in=STATUTS_ACTIFS)
+    return missions.exclude(pk=sauf.pk) if sauf is not None else missions
+
+
+def vehicule_a_mission_active(vehicule: Vehicule, *, sauf: Mission | None = None) -> bool:
     """Vrai si le camion est réservé par une mission affectée ou en cours.
 
     Fournit ``mission_active`` à ``fleet.services.calculer_statut`` (règle 2,
     cahier-des-charges.md:96-100). Une mission « planifiée » n'a pas encore de
     camion : seule l'affectation réserve un camion.
     """
-    return Mission.objects.filter(vehicule=vehicule, statut__in=STATUTS_ACTIFS).exists()
+    return _missions_actives(sauf).filter(vehicule=vehicule).exists()
 
 
-def chauffeur_a_mission_active(chauffeur: Chauffeur) -> bool:
-    return Mission.objects.filter(chauffeur=chauffeur, statut__in=STATUTS_ACTIFS).exists()
+def chauffeur_a_mission_active(chauffeur: Chauffeur, *, sauf: Mission | None = None) -> bool:
+    return _missions_actives(sauf).filter(chauffeur=chauffeur).exists()
 
 
-def copilote_a_mission_active(copilote: Copilote) -> bool:
-    return Mission.objects.filter(copilote=copilote, statut__in=STATUTS_ACTIFS).exists()
+def copilote_a_mission_active(copilote: Copilote, *, sauf: Mission | None = None) -> bool:
+    return _missions_actives(sauf).filter(copilote=copilote).exists()
 
 
 # --- cycle de vie ---
@@ -326,10 +338,18 @@ def modifier_mission(
             )
         _recharger(vehicule)
         _recharger(chauffeur)
-        _verifier_disponibilite(vehicule, chauffeur, poids_t)
+        # Seul ce qui change est revérifié : le camion ou le chauffeur conservé est déjà réservé par cette
+        # mission (elle ne compte pas comme « une autre mission ») et son statut n'a pas à être « Disponible ».
+        if vehicule.pk != mission.vehicule_id:
+            _verifier_vehicule(vehicule, poids_t, sauf=mission)
+        if chauffeur.pk != mission.chauffeur_id:
+            _verifier_chauffeur(chauffeur, sauf=mission)
         mission.vehicule = vehicule
         mission.chauffeur = chauffeur
         champs += ["vehicule", "chauffeur"]
+    if mission.vehicule_id and (vehicule is None or vehicule.pk == mission.vehicule_id):
+        # Camion inchangé : une hausse du poids doit quand même rester dans sa capacité.
+        _verifier_capacite(mission.vehicule, poids_t)
 
     mission.save(update_fields=champs)
     return mission
@@ -345,45 +365,92 @@ def planifier_mission(mission: Mission) -> Mission:
     return mission
 
 
-def _verifier_disponibilite(
-    vehicule: Vehicule, chauffeur: Chauffeur, poids_t: Decimal, copilote: Copilote | None = None
-) -> None:
-    """Camion et chauffeur disponibles, non réservés par une autre mission active, et le camion
-    capable d'emporter la charge (cahier-des-charges.md:130-131). Partagé par l'affectation et la
-    réaffectation (modification d'une mission déjà affectée, cahier-des-charges.md « modification
-    mission »). ``copilote`` facultatif : certains voyages exigent un assistant au chauffeur."""
+def _verifier_vehicule(vehicule: Vehicule, poids_t: Decimal, sauf: Mission | None = None) -> None:
+    """Camion disponible, non réservé par une autre mission, et capable d'emporter la charge."""
     if vehicule.statut != StatutVehicule.DISPONIBLE:
         raise AffectationImpossible(
             f"Le camion {vehicule.immatriculation} n'est pas disponible "
             f"({vehicule.get_statut_display()})."
         )
-    if chauffeur.statut != StatutChauffeur.DISPONIBLE:
-        raise AffectationImpossible(
-            f"Le chauffeur {chauffeur} n'est pas disponible "
-            f"({chauffeur.get_statut_display()})."
-        )
-    if vehicule_a_mission_active(vehicule):
+    if vehicule_a_mission_active(vehicule, sauf=sauf):
         raise AffectationImpossible(
             f"Le camion {vehicule.immatriculation} est déjà réservé par une autre mission."
         )
-    if chauffeur_a_mission_active(chauffeur):
-        raise AffectationImpossible(
-            f"Le chauffeur {chauffeur} est déjà réservé par une autre mission."
-        )
+    _verifier_capacite(vehicule, poids_t)
+
+
+def _verifier_capacite(vehicule: Vehicule, poids_t: Decimal) -> None:
     if poids_t > vehicule.capacite_charge_t:
         raise AffectationImpossible(
             f"Charge de {poids_t} t supérieure à la capacité du camion "
             f"({vehicule.capacite_charge_t} t)."
         )
+
+
+def documents_expires_du_chauffeur(chauffeur: Chauffeur, *, aujourd_hui: date | None = None) -> list[str]:
+    """Libellés (« permis », « visite médicale ») des documents du chauffeur dont la date est dépassée. Une date
+    non renseignée n'est pas une expiration : l'alerte ``MANQUANT`` la signale, mais elle ne bloque pas."""
+    expires = []
+    for libelle, echeance in (
+        ("permis de conduire", chauffeur.date_expiration_permis),
+        ("visite médicale", chauffeur.date_expiration_visite_medicale),
+    ):
+        etat, _ = etat_echeance(echeance, aujourd_hui=aujourd_hui)
+        if etat == "EXPIRE":
+            expires.append(f"{libelle} (expiré le {echeance:%d/%m/%Y})")
+    return expires
+
+
+def _exiger_documents_valides(chauffeur: Chauffeur, erreur: type[MissionError]) -> None:
+    """Un chauffeur au permis ou à la visite médicale expiré ne peut pas conduire, donc pas être affecté
+    (règle annoncée par l'alerte de ``notifications.taches.alerter_echeances_chauffeurs``)."""
+    expires = documents_expires_du_chauffeur(chauffeur)
+    if expires:
+        raise erreur(f"Le chauffeur {chauffeur} ne peut pas conduire : {' et '.join(expires)}.")
+
+
+def _verifier_chauffeur(chauffeur: Chauffeur, sauf: Mission | None = None) -> None:
+    """Chauffeur disponible, non réservé par une autre mission, aux documents en règle."""
+    if chauffeur.statut != StatutChauffeur.DISPONIBLE:
+        raise AffectationImpossible(
+            f"Le chauffeur {chauffeur} n'est pas disponible "
+            f"({chauffeur.get_statut_display()})."
+        )
+    if chauffeur_a_mission_active(chauffeur, sauf=sauf):
+        raise AffectationImpossible(
+            f"Le chauffeur {chauffeur} est déjà réservé par une autre mission."
+        )
+    _exiger_documents_valides(chauffeur, AffectationImpossible)
+
+
+def _verifier_copilote(copilote: Copilote, sauf: Mission | None = None) -> None:
+    if copilote.statut != StatutChauffeur.DISPONIBLE:
+        raise AffectationImpossible(
+            f"Le copilote {copilote} n'est pas disponible ({copilote.get_statut_display()})."
+        )
+    if copilote_a_mission_active(copilote, sauf=sauf):
+        raise AffectationImpossible(
+            f"Le copilote {copilote} est déjà réservé par une autre mission."
+        )
+
+
+def _verifier_disponibilite(
+    vehicule: Vehicule,
+    chauffeur: Chauffeur,
+    poids_t: Decimal,
+    copilote: Copilote | None = None,
+    *,
+    sauf: Mission | None = None,
+) -> None:
+    """Camion et chauffeur disponibles, non réservés par une autre mission active, chauffeur aux documents en
+    règle, et camion capable d'emporter la charge (cahier-des-charges.md:130-131). Utilisé par l'affectation ;
+    la réaffectation (modification d'une mission déjà affectée) revérifie, elle, seulement ce qui change.
+    ``copilote`` facultatif : certains voyages exigent un assistant au chauffeur. ``sauf`` : la mission en
+    cours de modification, qui ne compte pas comme « une autre mission »."""
+    _verifier_vehicule(vehicule, poids_t, sauf)
+    _verifier_chauffeur(chauffeur, sauf)
     if copilote is not None:
-        if copilote.statut != StatutChauffeur.DISPONIBLE:
-            raise AffectationImpossible(
-                f"Le copilote {copilote} n'est pas disponible ({copilote.get_statut_display()})."
-            )
-        if copilote_a_mission_active(copilote):
-            raise AffectationImpossible(
-                f"Le copilote {copilote} est déjà réservé par une autre mission."
-            )
+        _verifier_copilote(copilote, sauf)
 
 
 @transaction.atomic
@@ -433,6 +500,7 @@ def demarrer_mission(mission: Mission) -> Mission:
             f"Le chauffeur {chauffeur} n'est plus disponible "
             f"({chauffeur.get_statut_display()})."
         )
+    _exiger_documents_valides(chauffeur, DemarrageImpossible)  # un document a pu expirer depuis l'affectation
     copilote = _recharger(mission.copilote) if mission.copilote_id else None
     if copilote is not None and copilote.statut != StatutChauffeur.DISPONIBLE:
         raise DemarrageImpossible(
@@ -486,6 +554,12 @@ def livrer_mission(mission: Mission, *, code: str, km_arrivee: int) -> Mission:
         raise KilometrageInvalide(
             f"Le kilométrage d'arrivée ({km_arrivee}) est inférieur au départ "
             f"({mission.km_depart})."
+        )
+    if not fleet_services.distance_plausible(mission.km_depart, km_arrivee):
+        raise KilometrageInvalide(
+            f"Le kilométrage d'arrivée ({km_arrivee}) est {km_arrivee - mission.km_depart} km au-dessus du "
+            f"départ ({mission.km_depart}) : plus de {fleet_services.ECART_KM_MAX} km sur une mission, "
+            "vérifiez la saisie (le compteur du camion ne peut plus reculer ensuite)."
         )
     vehicule = _recharger(mission.vehicule)
     try:

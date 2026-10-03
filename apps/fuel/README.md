@@ -44,3 +44,7 @@ dans un message avec `f"{valeur}"` (point décimal).
 Recherche : `filtrer_par_texte` (core) — insensible aux accents et à la casse.
 
 Rapport imprimable des pleins (bouton « Imprimer » sur la liste, mêmes filtres) : voir `apps/core/README.md` (`ImpressionListeMixin`).
+
+**Cohérence de la saisie** (`enregistrer_plein`, donc formulaires, mobile et API) : date non future, volume ≤ réservoir
+du camion, km compteur à moins de `fleet.services.ECART_KM_MAX` (5 000 km) du relevé précédent (ou du compteur du
+camion pour le premier plein, quand il est renseigné) : un chiffre en trop gonflerait le compteur de façon irréversible.

@@ -411,13 +411,13 @@ def test_copilote_passe_en_conge_au_demarrage_puis_redevient_disponible():
 # --- audit ---
 
 
-def test_les_transitions_de_statut_sont_auditees():
+def test_les_transitions_de_statut_sont_auditees():  # une validation sort en VALIDATE (audit M1-06)
     conge, superieur = _demande()
     services.valider_n1(conge, superieur)
 
     entrees = AuditLog.objects.filter(entite="Conge", entite_id=conge.pk)
     assert entrees.get(action=ActionChoices.CREATE).module == "RH"
-    modif = entrees.filter(action=ActionChoices.UPDATE).latest("date_heure")
+    modif = entrees.filter(action=ActionChoices.VALIDATE).latest("date_heure")
     assert modif.ancienne_valeur["statut"] == "DEMANDE"
     assert modif.nouvelle_valeur["statut"] == "VALIDATION_N1"
 

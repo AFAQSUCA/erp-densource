@@ -23,7 +23,12 @@ class MissionsConfig(AppConfig):
         audit_model(
             Mission, module="MISSION", exclure=("code_expediteur", "code_destinataire")
         )
-        audit_model(FraisMission, module="FINANCES")
+        audit_model(
+            FraisMission,
+            module="FINANCES",
+            validation=("statut", ("CONFIRME",)),
+            auto_validation=("saisi_par", ("valide_parcauto_par",)),
+        )
         enregistrer_media("frais_mission", permissions.FRAIS_CONSULTATION)
         # Suivi en direct : tout changement d'une mission est diffusé aux écrans ouverts.
         post_save.connect(

@@ -92,7 +92,10 @@ def _controler(champs: dict, *, client: Client | None = None) -> dict:
     if taux > 0:
         resultat["motif_exoneration"] = ""  # sans exonération, aucun motif n'a de sens
     charge = champs.get("charge_clientele")
-    if charge is not None and (charge.role != Role.CHARGE_CLIENTELE or not charge.is_active):
+    inchange = client is not None and charge is not None and client.charge_clientele_id == charge.pk
+    if charge is not None and not inchange and (charge.role != Role.CHARGE_CLIENTELE or not charge.is_active):
+        # Garder le chargé actuel reste permis même s'il a été désactivé depuis : seul un NOUVEAU choix doit
+        # être un compte actif de ce rôle (sinon modifier une autre information du client échouait).
         raise ClientError("Le chargé clientèle attitré doit être un compte actif de ce rôle.")
     doublon = Client.all_objects.filter(ncc_nif=champs["ncc_nif"])
     if client is not None:

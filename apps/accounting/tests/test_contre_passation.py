@@ -247,8 +247,9 @@ def test_annuler_un_reglement_defait_le_pointage_de_sa_ligne_de_releve():
     reglement = _reglement("100000")
     ligne = _releve(montant="100000")
     finance_services.pointer_ligne_releve(ligne, finances(), origine="REGLEMENT", mouvement_id=reglement.pk)
-    autre = _releve(montant="1")  # une ligne sans rapport reste intacte
-    finance_services.pointer_ligne_releve(autre, finances(), origine="MANUEL", mouvement_id=424242)
+    autre_mouvement = _mouvement(montant="1")  # un mouvement sans rapport, sur une autre ligne : reste intact
+    autre = _releve(montant="1")
+    finance_services.pointer_ligne_releve(autre, finances(), origine="MANUEL", mouvement_id=autre_mouvement.pk)
 
     billing_services.annuler_reglement(reglement, finances(), motif="Erreur")
 

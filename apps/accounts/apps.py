@@ -16,3 +16,10 @@ class AccountsConfig(AppConfig):
         # plus sensible de l'ERP. ``last_login`` change à chaque connexion (bruit) ; le mot de passe
         # n'est jamais écrit, seule son empreinte, pour qu'un changement reste visible.
         audit_model(User, module="UTILISATEURS", exclure=("last_login",), masquer=("password",))
+
+        from . import permissions
+        from .navigation import EntreeMenu, enregistrer
+
+        enregistrer(
+            EntreeMenu("Utilisateurs", "accounts:utilisateurs", "fa-users-gear", permissions.GESTION_UTILISATEURS, ordre=89)
+        )

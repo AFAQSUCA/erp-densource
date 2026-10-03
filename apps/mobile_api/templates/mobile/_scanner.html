@@ -1,4 +1,4 @@
-{# Bouton et aperçu de la caméra du composant scannerCode (static/js/scanner.js). Absent si le téléphone ne sait pas lire les QR. #}
+{# Bouton et aperçu de la caméra du composant scannerCode (static/js/scanner.js). Absent si la caméra n'est pas accessible ; jsQR lit le QR quand le navigateur n'a pas BarcodeDetector. #}
 <div x-show="disponible" x-cloak>
   <button type="button" @click="ouvrir()" x-show="!actif"
           class="flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-marque-600 bg-white px-4 py-3 text-base font-bold text-marque-700 active:bg-marque-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">

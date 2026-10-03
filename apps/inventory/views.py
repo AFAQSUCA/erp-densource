@@ -10,6 +10,7 @@ from django.views import View
 from django.views.generic import DetailView, FormView, ListView
 
 from apps.accounts.mixins import RoleRequiredMixin
+from apps.billing.exceptions import BillingError
 from apps.core.formats import nombre
 from apps.core.views import ImpressionListeMixin, PaginationTolerante
 from apps.garage import services as garage_services
@@ -185,7 +186,7 @@ class EntreeView(RoleRequiredMixin, View):
             return redirect("inventory:article_detail", pk=article.pk)
         try:
             services.enregistrer_entree(article, acteur=request.user, **form.cleaned_data)
-        except StockError as erreur:
+        except (StockError, BillingError) as erreur:  # BillingError : enveloppe « Pièces » bloquante
             messages.error(request, str(erreur))
         else:
             messages.success(
