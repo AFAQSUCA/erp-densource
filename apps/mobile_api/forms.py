@@ -125,3 +125,18 @@ class ChecklistForm(forms.Form):
             }
             for code, _libelle in POINTS_CHECKLIST
         ]
+
+
+class CongeChauffeurForm(StyleTactileMixin, forms.Form):
+    """Demande de congé du chauffeur : dates et motif (mêmes champs que l'écran RH)."""
+
+    date_debut = forms.DateField(label="Premier jour de congé", widget=forms.DateInput(attrs={"type": "date"}))
+    date_fin = forms.DateField(label="Dernier jour de congé", widget=forms.DateInput(attrs={"type": "date"}))
+    motif = forms.CharField(label="Motif", widget=forms.Textarea(attrs={"rows": 3}))
+
+    def clean(self):
+        donnees = super().clean()
+        debut, fin = donnees.get("date_debut"), donnees.get("date_fin")
+        if debut and fin and fin < debut:
+            self.add_error("date_fin", "La date de fin précède la date de début.")
+        return donnees

@@ -608,6 +608,28 @@ def calculer_jours(date_debut: date, date_fin: date) -> int:
     return total
 
 
+def _exiger_pas_de_chevauchement(employe: Personnel, date_debut: date, date_fin: date) -> None:
+    """Refuse une demande qui recouvre un autre congé de l'employé (en attente, approuvé, en cours ou
+    terminé) : sans cela, les mêmes jours seraient décomptés deux fois du solde. Un congé refusé ou annulé
+    ne compte pas."""
+    autre = (
+        Conge.objects.filter(employe=employe, date_debut__lte=date_fin, date_fin__gte=date_debut)
+        .exclude(statut=StatutConge.REFUSE)
+        .order_by("date_debut")
+        .first()
+    )
+    if autre is not None:
+        etat = (
+            "en attente de validation"
+            if autre.statut in (StatutConge.DEMANDE, StatutConge.VALIDATION_N1)
+            else autre.get_statut_display().lower()
+        )
+        raise CongeError(
+            f"Cette période chevauche un congé déjà demandé du {autre.date_debut:%d/%m/%Y} au "
+            f"{autre.date_fin:%d/%m/%Y} ({etat})."
+        )
+
+
 @transaction.atomic
 def demander_conge(
     employe: Personnel,
@@ -630,7 +652,9 @@ def demander_conge(
     jours = calculer_jours(date_debut, date_fin)
     if jours == 0:
         raise CongeError("Aucun jour ouvré dans la période demandée.")
-    _exiger_solde(_verrouiller_employe(employe), date_debut.year, jours)
+    employe = _verrouiller_employe(employe)
+    _exiger_pas_de_chevauchement(employe, date_debut, date_fin)
+    _exiger_solde(employe, date_debut.year, jours)
 
     maintenant = maintenant or timezone.now()
     conge = Conge.objects.create(

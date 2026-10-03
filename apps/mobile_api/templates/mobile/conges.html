@@ -1,0 +1,41 @@
+{% extends "mobile/base.html" %}
+{% load ui %}
+{% block titre %}Mes congés{% endblock %}
+
+{% block contenu %}
+<h1 class="text-xl font-bold text-slate-900">Mes congés</h1>
+<p class="text-sm text-slate-600">Votre supérieur valide votre demande sous 48 h, puis la RH sous 24 h.</p>
+
+<dl class="mt-4 grid grid-cols-3 gap-2 text-center">
+  <div class="rounded-2xl border border-slate-200 bg-white px-2 py-3"><dt class="text-xs text-slate-600">Droit {{ droits.annee }}</dt><dd class="mt-1 text-lg font-bold text-slate-900">{{ droits.droit_annuel|add:droits.exceptionnels }} j</dd></div>
+  <div class="rounded-2xl border border-slate-200 bg-white px-2 py-3"><dt class="text-xs text-slate-600">Pris ou validés</dt><dd class="mt-1 text-lg font-bold text-slate-900">{{ droits.consommes }} j</dd></div>
+  <div class="rounded-2xl border border-emerald-300 bg-emerald-50 px-2 py-3"><dt class="text-xs text-emerald-900">Disponible</dt><dd class="mt-1 text-lg font-bold text-emerald-900">{{ droits.disponible }} j</dd></div>
+</dl>
+
+<form method="post" class="mt-5 space-y-4" novalidate>
+  {% csrf_token %}
+  {% if form.non_field_errors %}
+    <div role="alert" class="rounded-2xl border border-red-300 bg-red-50 px-4 py-3 text-sm font-medium text-red-900">{% for e in form.non_field_errors %}<p>{{ e }}</p>{% endfor %}</div>
+  {% endif %}
+  {% include "components/_champ.html" with champ=form.date_debut %}
+  {% include "components/_champ.html" with champ=form.date_fin %}
+  {% include "components/_champ.html" with champ=form.motif %}
+  <button type="submit" class="w-full rounded-2xl bg-slate-900 px-4 py-4 text-lg font-bold text-white shadow active:bg-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900"><i class="fa-solid fa-paper-plane mr-2" aria-hidden="true"></i>Envoyer la demande</button>
+</form>
+
+<section class="mt-6" aria-labelledby="titre-conges">
+  <h2 id="titre-conges" class="text-sm font-semibold uppercase tracking-wide text-slate-600">Mes demandes</h2>
+  {% if conges %}
+    <ul class="mt-2 divide-y divide-slate-200 rounded-2xl border border-slate-200 bg-white text-sm">
+      {% for c in conges %}
+        <li class="px-4 py-3">
+          <div class="flex items-center justify-between gap-2"><span class="font-medium">Du {{ c.date_debut|date:"d/m/Y" }} au {{ c.date_fin|date:"d/m/Y" }}</span>{% badge c.statut c.get_statut_display %}</div>
+          <p class="mt-1 text-slate-700">{{ c.jours }} jour{{ c.jours|pluralize }} ouvré{{ c.jours|pluralize }}{% if c.motif %} · {{ c.motif|truncatechars:60 }}{% endif %}</p>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="mt-2 rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-6 text-center text-sm text-slate-600">Aucune demande pour l'instant.</p>
+  {% endif %}
+</section>
+{% endblock %}

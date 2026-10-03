@@ -8,6 +8,7 @@ from rest_framework import serializers
 
 from apps.fuel.models import Plein
 from apps.garage.models import GraviteIncident, Incident, TypeIncident
+from apps.hr.models import Conge
 from apps.missions.models import FraisMission, Mission
 
 from . import services
@@ -131,4 +132,24 @@ class FraisMissionSerializer(serializers.ModelSerializer):
             "id", "mission", "type_frais", "type_libelle", "montant", "description",
             "statut", "statut_libelle", "created_at",
         )
+        read_only_fields = fields
+
+
+class CongeEntreeSerializer(serializers.Serializer):
+    date_debut = serializers.DateField()
+    date_fin = serializers.DateField()
+    motif = serializers.CharField()
+
+    def validate(self, donnees):
+        if donnees["date_fin"] < donnees["date_debut"]:
+            raise serializers.ValidationError({"date_fin": "La date de fin précède la date de début."})
+        return donnees
+
+
+class CongeSerializer(serializers.ModelSerializer):
+    statut_libelle = serializers.CharField(source="get_statut_display")
+
+    class Meta:
+        model = Conge
+        fields = ("id", "date_debut", "date_fin", "jours", "motif", "statut", "statut_libelle", "created_at")
         read_only_fields = fields

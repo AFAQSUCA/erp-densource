@@ -12,7 +12,7 @@ Trois couches sur les mêmes règles :
 Ce que fait le chauffeur : voir ses missions (à faire, en cours, livrées cette semaine), faire la
 **check-list** du camion, **démarrer**, confirmer la **récupération** puis la **livraison** en scannant
 ou saisissant le code (QR), saisir un **plein** (avec la confirmation d'une saisie suspecte),
-signaler un **incident**, déclarer un **imprévu** (panne, avec preuve — R4, prévision de trésorerie des
+signaler un **incident**, **demander un congé** (voir ci-dessous), déclarer un **imprévu** (panne, avec preuve — R4, prévision de trésorerie des
 missions, voir `apps/missions/README.md`). L'accueil est son tableau de bord : course du jour, km du mois,
 consommation, état du camion.
 
@@ -34,3 +34,10 @@ Pas encore fait :
   page « hors connexion » s'affiche.
 - Photos des incidents (stockage S3 ou MinIO, étape 7) ; notifications push (Firebase).
 - Avoir une position GPS ; envoi du code par SMS à l'expéditeur.
+
+**Congés** (`/chauffeur/conges/`, API `/api/v1/mobile/conges/` et `conges/solde/`) : le chauffeur demande lui-même
+ses congés (il n'a pas d'écran RH) et suit leur état ; `services.demander_conge` délègue à
+`hr.services.demander_conge`, donc mêmes règles que tout employé : solde suffisant, **pas de chevauchement** avec
+un autre congé non refusé, supérieur hiérarchique renseigné (sinon refus avec message). Son supérieur est
+prévenu et valide en N1 (48 h) sur l'écran RH, puis la RH en N2 (24 h). Le solde (`droits_conges_du_chauffeur`) et
+la liste (`conges_du_chauffeur`) ne portent que sur ses propres congés. Barre de navigation à 6 onglets.

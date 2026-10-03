@@ -17,6 +17,7 @@ urlpatterns = [
     path("plein/", v.PleinView.as_view(), name="plein"),
     path("incident/", v.IncidentView.as_view(), name="incident"),
     path("imprevu/", v.FraisImprevuView.as_view(), name="imprevu"),
+    path("conges/", v.CongesView.as_view(), name="conges"),
     path("manifest.webmanifest", v.ManifesteView.as_view(), name="manifeste"),
     path("sw.js", v.ServiceWorkerView.as_view(), name="sw"),
     path("hors-ligne/", v.HorsLigneView.as_view(), name="hors_ligne"),

@@ -45,7 +45,7 @@ Points en attente d'autres apps :
 
 Interface (`views.py`, `templates/hr/`, montée sous `/rh/`) :
 - **Congés** (`/rh/conges/`) : ouverts à tout compte de bureau rattaché à une fiche
-  (`Personnel.utilisateur`) ; le chauffeur passera par l'espace mobile (étape 6). Trois
+  (`Personnel.utilisateur`) ; le chauffeur demande son congé depuis l'espace mobile (`/chauffeur/conges/`, voir `apps/mobile_api/README.md`). Une demande qui chevauche un autre congé non refusé de l'employé est refusée (`_exiger_pas_de_chevauchement`). Trois
   vues : « Mes demandes », « À valider » (N1 pour le supérieur hiérarchique, N2 pour la
   RH) et « Tous les congés » (ADMIN, DIRECTION, RH). Le droit de décider vient de la
   hiérarchie, pas du rôle : `services.actions_disponibles` le tranche et l'écran n'affiche

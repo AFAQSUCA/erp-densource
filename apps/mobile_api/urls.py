@@ -16,4 +16,6 @@ urlpatterns = [
     path("pleins/", views.PleinsView.as_view(), name="pleins"),
     path("incidents/", views.IncidentsView.as_view(), name="incidents"),
     path("imprevus/", views.FraisImprevusView.as_view(), name="imprevus"),
+    path("conges/", views.CongesView.as_view(), name="conges"),
+    path("conges/solde/", views.SoldeCongesView.as_view(), name="conges_solde"),
 ]
