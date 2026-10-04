@@ -213,6 +213,12 @@ def _date_importee(brut) -> date | None:
     return None
 
 
+# Lecture tolérante des cellules d'un classeur, partagée avec l'import général (``apps.importation``).
+poste_importe = _poste_importe
+departement_importe = _departement_importe
+date_importee = _date_importee
+
+
 @transaction.atomic
 def importer_personnel(fichier) -> list[Personnel]:
     """Recrutement en masse depuis un classeur Excel (colonnes : voir ``COLONNES_IMPORT``).

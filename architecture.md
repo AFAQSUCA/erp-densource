@@ -130,6 +130,10 @@ graph TD
         ACCT[accounting<br/>Plan comptable, journaux, grand livre]
     end
 
+    subgraph Reprise
+        IMPORT[importation<br/>Import Excel des données, ADMIN]
+    end
+
     subgraph API
         APIV1[api/v1]
         MOBAPI[mobile_api]
@@ -149,6 +153,10 @@ graph TD
     GARAGE --> FLEET
     BILL --> FIN
     BILL --> ACCT
+    HR --> IMPORT
+    DRV --> IMPORT
+    CUST --> IMPORT
+    FLEET --> IMPORT
     FIN --> ACCT
     FIN --> DASH
     FUEL --> DASH

@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block titre %}Import de données{% endblock %}
+{% block entete %}Administration{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-4xl">
+  <h1 class="text-2xl font-bold text-slate-900">Import de données</h1>
+  <p class="mt-1 text-sm text-slate-600">
+    Charge en une fois le personnel, les chauffeurs, les copilotes, les clients et les camions de l'entreprise depuis un
+    classeur Excel. Chaque ligne passe par les mêmes contrôles qu'une saisie à l'écran et reste tracée au journal d'audit.
+  </p>
+
+  {% if rapport %}
+    <section class="mt-6 rounded-xl border {% if rapport.erreurs %}border-red-300 bg-red-50{% elif rapport.enregistre %}border-emerald-300 bg-emerald-50{% else %}border-amber-300 bg-amber-50{% endif %} p-5" aria-labelledby="titre-rapport">
+      <h2 id="titre-rapport" class="text-base font-semibold {% if rapport.erreurs %}text-red-900{% elif rapport.enregistre %}text-emerald-900{% else %}text-amber-900{% endif %}">
+        {% if rapport.erreurs %}
+          Rien n'a été importé : corrigez les lignes ci-dessous, puis déposez le fichier à nouveau.
+        {% elif rapport.enregistre %}
+          Import terminé : {{ rapport.total_crees }} fiche{{ rapport.total_crees|pluralize }} créée{{ rapport.total_crees|pluralize }}{% if rapport.total_mis_a_jour %}, {{ rapport.total_mis_a_jour }} mise{{ rapport.total_mis_a_jour|pluralize }} à jour{% endif %}.
+        {% else %}
+          Simulation réussie : le fichier est correct, rien n'a été enregistré. Décochez « Simulation » pour l'importer.
+        {% endif %}
+      </h2>
+
+      <div class="mt-4 overflow-x-auto rounded-lg border border-slate-200 bg-white">
+        <table class="min-w-full divide-y divide-slate-200 text-sm">
+          <caption class="sr-only">Résultat de l'import par feuille</caption>
+          <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+            <tr>
+              <th scope="col" class="px-4 py-2">Feuille</th>
+              <th scope="col" class="px-4 py-2 text-right">{% if rapport.enregistre %}Créés{% else %}À créer{% endif %}</th>
+              <th scope="col" class="px-4 py-2 text-right">Mis à jour</th>
+              <th scope="col" class="px-4 py-2 text-right">Déjà présents</th>
+              <th scope="col" class="px-4 py-2 text-right">Exemples ignorés</th>
+              <th scope="col" class="px-4 py-2 text-right">Erreurs</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            {% for f in rapport.feuilles %}
+              <tr>
+                <th scope="row" class="px-4 py-2 text-left font-medium text-slate-900">{{ f.titre }}{% if not f.presente %} <span class="font-normal text-slate-600">(absente du fichier)</span>{% endif %}</th>
+                <td class="px-4 py-2 text-right">{{ f.crees }}</td>
+                <td class="px-4 py-2 text-right">{{ f.mis_a_jour }}</td>
+                <td class="px-4 py-2 text-right">{{ f.deja_presents }}</td>
+                <td class="px-4 py-2 text-right">{{ f.exemples_ignores }}</td>
+                <td class="px-4 py-2 text-right {% if f.erreurs %}font-semibold text-red-800{% endif %}">{{ f.erreurs|length }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      {% if rapport.erreurs %}
+        <ul class="mt-4 list-disc space-y-1 pl-5 text-sm text-red-900">
+          {% for erreur in rapport.erreurs %}<li>{{ erreur }}</li>{% endfor %}
+        </ul>
+      {% endif %}
+    </section>
+  {% endif %}
+
+  <div class="mt-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+    <h2 class="text-sm font-semibold text-slate-900">1. Préparer le fichier</h2>
+    <p class="mt-2 text-sm text-slate-600">
+      Téléchargez le modèle (instructions et une feuille par type de donnée, listes déroulantes, ligne d'exemple), remplissez-le
+      sans toucher à la ligne d'en-tête, puis déposez-le ci-dessous. Une personne, un client ou un camion déjà dans l'application
+      n'est jamais écrasé ; à la moindre ligne en erreur, rien n'est enregistré.
+    </p>
+    <a href="{% url 'importation:modele' %}" download
+       class="mt-3 inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+      <i class="fa-solid fa-download" aria-hidden="true"></i> Télécharger le modèle Excel
+    </a>
+  </div>
+
+  <form method="post" enctype="multipart/form-data" novalidate class="mt-6 space-y-5 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+    {% csrf_token %}
+    <h2 class="text-sm font-semibold text-slate-900">2. Déposer le fichier rempli</h2>
+    {% if form.non_field_errors %}
+      <div role="alert" class="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">{% for erreur in form.non_field_errors %}<p>{{ erreur }}</p>{% endfor %}</div>
+    {% endif %}
+    {% include "components/_champ.html" with champ=form.fichier %}
+    <div class="flex items-center gap-2">
+      {{ form.simulation }}
+      <label for="{{ form.simulation.id_for_label }}" class="text-sm text-slate-700">{{ form.simulation.label }}</label>
+    </div>
+    <div class="flex items-center justify-end gap-3 border-t border-slate-100 pt-5">
+      <button type="submit" class="rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">Importer</button>
+    </div>
+  </form>
+</div>
+{% endblock %}
