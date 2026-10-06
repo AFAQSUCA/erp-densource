@@ -1,6 +1,6 @@
 # Chapitre 29 — L'espace mobile du chauffeur
 
-> 31 fichier(s) dans ce chapitre, 2523 lignes de code.
+> 32 fichier(s) dans ce chapitre, 2792 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -14,6 +14,7 @@ L'**espace mobile du chauffeur**, sous `/chauffeur/` : des pages **tactiles** (g
 | **Une mission** | `/chauffeur/missions/<id>/` | **check-list**, **démarrer**, **confirmer la récupération** puis **la livraison** (code ou **scan du QR**) |
 | **Plein** | `/chauffeur/plein/` | saisir un plein (avec la confirmation d'une saisie suspecte) |
 | **Panne** | `/chauffeur/incident/` | signaler un incident |
+| **Congés** | `/chauffeur/conges/` | voir son solde, demander un congé (son supérieur valide en N1, la RH en N2), suivre ses demandes |
 | Fichiers de l'application | `manifest.webmanifest`, `sw.js`, `hors-ligne/` | installation, page « hors connexion » |
 
 **Règles de sécurité** propres à cet espace :
@@ -40,7 +41,7 @@ L'**espace mobile du chauffeur**, sous `/chauffeur/` : des pages **tactiles** (g
   couleurs, page de départ) et un **service worker** (un script que le navigateur exécute en tâche de fond).
 - **Servir un fichier depuis une vue** : `sw.js` et `manifest.webmanifest` sont fabriqués par des vues
   (`ServiceWorkerView`, `ManifesteView`) pour connaître le bon préfixe d'adresse et rester à jour.
-- **`BarcodeDetector`** : une API du navigateur (Chrome sur Android) qui lit un code QR avec la caméra.
+- **`BarcodeDetector`** : une API du navigateur (Chrome sur Android) qui lit un code QR avec la caméra. Sans elle (Safari sur iPhone, Firefox), `scanner.js` copie l'image de la caméra dans un `<canvas>` et la fait lire par la bibliothèque **jsQR** (`static/vendor/jsqr/`, chargée seulement à ce moment-là).
   `scanner.js` l'utilise ; quand elle n'existe pas, le bouton n'apparaît pas et le chauffeur **saisit le code à la
   main**.
 - **Pas de JavaScript en ligne** : même le *service worker* est enregistré par `sw-register.js`, à qui la
@@ -86,7 +87,7 @@ class AucunCamion(MobileError):
 
 #### `apps/mobile_api/services.py`
 
-*255 lignes* — Services de l'espace chauffeur : ce qu'un chauffeur voit et fait, sur SES données seulement.
+*279 lignes* — Services de l'espace chauffeur : ce qu'un chauffeur voit et fait, sur SES données seulement.
 
 ```python
 """Services de l'espace chauffeur : ce qu'un chauffeur voit et fait, sur SES données seulement.
@@ -112,6 +113,7 @@ from apps.fuel import services as fuel_services
 from apps.fuel.models import Plein
 from apps.garage import terrain as garage_terrain
 from apps.garage.models import ChecklistVehicule, Incident
+from apps.hr import services as hr_services
 from apps.missions import services as missions_services
 from apps.missions import terrain as missions_terrain
 from apps.missions.models import FraisMission, Mission, StatutMission
@@ -344,6 +346,29 @@ def tableau(chauffeur: Chauffeur, *, aujourd_hui: date | None = None) -> dict:
         "km_mois": km_mois,
         "consommation": fuel_services.consommation_moyenne(chauffeur=chauffeur),
     }
+
+
+# --- congés (le chauffeur demande lui-même ; son supérieur valide en N1, la RH en N2) ---
+
+
+def conges_du_chauffeur(chauffeur: Chauffeur, *, limite: int | None = None) -> QuerySet:
+    """Les congés du chauffeur, du plus récent au plus ancien : jamais ceux d'un autre."""
+    conges = hr_services.conges_de(chauffeur.personnel)
+    return conges[:limite] if limite else conges
+
+
+def droits_conges_du_chauffeur(chauffeur: Chauffeur, *, aujourd_hui: date | None = None) -> dict:
+    """Solde de congés de l'année en cours (jours ouvrés) : droit annuel, exceptionnels, pris, disponible."""
+    annee = (aujourd_hui or timezone.localdate()).year
+    return {"annee": annee, **hr_services.droits_conges(chauffeur.personnel, annee)}
+
+
+def demander_conge(chauffeur: Chauffeur, *, date_debut: date, date_fin: date, motif: str):
+    """Demande de congé du chauffeur : mêmes règles que pour tout employé (solde suffisant, pas de
+    chevauchement, supérieur hiérarchique renseigné), appliquées par ``hr.services.demander_conge``."""
+    return hr_services.demander_conge(
+        chauffeur.personnel, date_debut=date_debut, date_fin=date_fin, motif=motif
+    )
 ```
 
 À lire :
@@ -385,7 +410,7 @@ class EstChauffeur(BasePermission):
 
 #### `apps/mobile_api/serializers.py`
 
-*134 lignes* — Représentation JSON de l'espace chauffeur.
+*155 lignes* — Représentation JSON de l'espace chauffeur.
 
 ```python
 """Représentation JSON de l'espace chauffeur.
@@ -398,6 +423,7 @@ from rest_framework import serializers
 
 from apps.fuel.models import Plein
 from apps.garage.models import GraviteIncident, Incident, TypeIncident
+from apps.hr.models import Conge
 from apps.missions.models import FraisMission, Mission
 
 from . import services
@@ -522,6 +548,26 @@ class FraisMissionSerializer(serializers.ModelSerializer):
             "statut", "statut_libelle", "created_at",
         )
         read_only_fields = fields
+
+
+class CongeEntreeSerializer(serializers.Serializer):
+    date_debut = serializers.DateField()
+    date_fin = serializers.DateField()
+    motif = serializers.CharField()
+
+    def validate(self, donnees):
+        if donnees["date_fin"] < donnees["date_debut"]:
+            raise serializers.ValidationError({"date_fin": "La date de fin précède la date de début."})
+        return donnees
+
+
+class CongeSerializer(serializers.ModelSerializer):
+    statut_libelle = serializers.CharField(source="get_statut_display")
+
+    class Meta:
+        model = Conge
+        fields = ("id", "date_debut", "date_fin", "jours", "motif", "statut", "statut_libelle", "created_at")
+        read_only_fields = fields
 ```
 
 `permissions.py` et `serializers.py` servent surtout à l'**API mobile** du chapitre 30 ; ils sont écrits ici parce
@@ -545,7 +591,7 @@ class MobileApiConfig(AppConfig):
 
 #### `apps/mobile_api/forms.py`
 
-*127 lignes* — Formulaires de l'espace mobile du chauffeur (grands champs tactiles).
+*142 lignes* — Formulaires de l'espace mobile du chauffeur (grands champs tactiles).
 
 ```python
 """Formulaires de l'espace mobile du chauffeur (grands champs tactiles)."""
@@ -675,11 +721,26 @@ class ChecklistForm(forms.Form):
             }
             for code, _libelle in POINTS_CHECKLIST
         ]
+
+
+class CongeChauffeurForm(StyleTactileMixin, forms.Form):
+    """Demande de congé du chauffeur : dates et motif (mêmes champs que l'écran RH)."""
+
+    date_debut = forms.DateField(label="Premier jour de congé", widget=forms.DateInput(attrs={"type": "date"}))
+    date_fin = forms.DateField(label="Dernier jour de congé", widget=forms.DateInput(attrs={"type": "date"}))
+    motif = forms.CharField(label="Motif", widget=forms.Textarea(attrs={"rows": 3}))
+
+    def clean(self):
+        donnees = super().clean()
+        debut, fin = donnees.get("date_debut"), donnees.get("date_fin")
+        if debut and fin and fin < debut:
+            self.add_error("date_fin", "La date de fin précède la date de début.")
+        return donnees
 ```
 
 #### `apps/mobile_api/views_web.py`
 
-*393 lignes* — Espace mobile du chauffeur (PWA) : pages tactiles servies sous ``/chauffeur/``.
+*430 lignes* — Espace mobile du chauffeur (PWA) : pages tactiles servies sous ``/chauffeur/``.
 
 ```python
 """Espace mobile du chauffeur (PWA) : pages tactiles servies sous ``/chauffeur/``.
@@ -709,7 +770,9 @@ from apps.core.formats import nombre, pourcentage_signe
 from apps.drivers import services as drivers_services
 from apps.fuel.exceptions import CarburantError, SaisieSuspecte
 from apps.fuel.models import NiveauAlerte
+from apps.billing.exceptions import BillingError
 from apps.garage.exceptions import GarageError
+from apps.hr.exceptions import CongeError
 from apps.missions.exceptions import MissionError
 
 from . import services
@@ -717,13 +780,14 @@ from .exceptions import MissionIntrouvable, MobileError
 from .forms import (
     ChecklistForm,
     CodeForm,
+    CongeChauffeurForm,
     FraisImprevuChauffeurForm,
     IncidentChauffeurForm,
     LivraisonForm,
     PleinChauffeurForm,
 )
 
-ERREURS = (MissionError, CarburantError, GarageError, MobileError)
+ERREURS = (MissionError, CarburantError, GarageError, MobileError, CongeError, BillingError)
 
 
 class ChauffeurRequisMixin(RoleRequiredMixin):
@@ -739,6 +803,7 @@ class ChauffeurRequisMixin(RoleRequiredMixin):
             ("plein", reverse("chauffeur:plein"), "fa-gas-pump", "Plein"),
             ("incident", reverse("chauffeur:incident"), "fa-triangle-exclamation", "Panne"),
             ("imprevu", reverse("chauffeur:imprevu"), "fa-money-bill-transfer", "Imprévu"),
+            ("conges", reverse("chauffeur:conges"), "fa-umbrella-beach", "Congés"),
         ]
         return contexte
 
@@ -1029,6 +1094,39 @@ class FraisImprevuView(ChauffeurRequisMixin, TemplateView):
         return redirect("chauffeur:accueil")
 
 
+class CongesView(ChauffeurRequisMixin, TemplateView):
+    """Mes congés : solde, demande et suivi des décisions (supérieur en N1, puis RH en N2)."""
+
+    template_name = "mobile/conges.html"
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        contexte.update(
+            form=kwargs.get("form") or CongeChauffeurForm(),
+            droits=services.droits_conges_du_chauffeur(self.chauffeur),
+            conges=services.conges_du_chauffeur(self.chauffeur, limite=10),
+            nav="conges",
+        )
+        return contexte
+
+    def post(self, request):
+        form = CongeChauffeurForm(request.POST)
+        if not form.is_valid():
+            return self.render_to_response(self.get_context_data(form=form))
+        try:
+            conge = services.demander_conge(self.chauffeur, **form.cleaned_data)
+        except ERREURS as erreur:
+            form.add_error(None, str(erreur))
+            return self.render_to_response(self.get_context_data(form=form))
+        pluriel = "s" if conge.jours > 1 else ""
+        messages.success(
+            request,
+            f"Demande envoyée : {conge.jours} jour{pluriel} ouvré{pluriel}. "
+            "Votre supérieur doit la valider sous 48 h, puis la RH.",
+        )
+        return redirect("chauffeur:conges")
+
+
 # --- application installable (PWA) ---
 
 
@@ -1082,7 +1180,7 @@ sinon 403. Toutes les vues s'appuient dessus.
 
 #### `apps/mobile_api/urls_web.py`
 
-*23 lignes* — Écrans mobiles du chauffeur, montés sous ``/chauffeur/`` par ``config/urls.py``.
+*24 lignes* — Écrans mobiles du chauffeur, montés sous ``/chauffeur/`` par ``config/urls.py``.
 
 ```python
 """Écrans mobiles du chauffeur, montés sous ``/chauffeur/`` par ``config/urls.py``."""
@@ -1104,6 +1202,7 @@ urlpatterns = [
     path("plein/", v.PleinView.as_view(), name="plein"),
     path("incident/", v.IncidentView.as_view(), name="incident"),
     path("imprevu/", v.FraisImprevuView.as_view(), name="imprevu"),
+    path("conges/", v.CongesView.as_view(), name="conges"),
     path("manifest.webmanifest", v.ManifesteView.as_view(), name="manifeste"),
     path("sw.js", v.ServiceWorkerView.as_view(), name="sw"),
     path("hors-ligne/", v.HorsLigneView.as_view(), name="hors_ligne"),
@@ -1112,7 +1211,7 @@ urlpatterns = [
 
 #### `apps/mobile_api/views.py`
 
-*180 lignes* — API mobile du chauffeur : ``/api/v1/mobile/``.
+*207 lignes* — API mobile du chauffeur : ``/api/v1/mobile/``.
 
 ```python
 """API mobile du chauffeur : ``/api/v1/mobile/``.
@@ -1137,6 +1236,8 @@ from .serializers import (
     ChecklistEntreeSerializer,
     ChecklistSerializer,
     CodeSerializer,
+    CongeEntreeSerializer,
+    CongeSerializer,
     FraisImprevuEntreeSerializer,
     FraisMissionSerializer,
     IncidentEntreeSerializer,
@@ -1295,11 +1396,36 @@ class FraisImprevusView(ChauffeurAPIView):
             description=valeurs.get("description", ""),
         )
         return Response(FraisMissionSerializer(frais).data, status=status.HTTP_201_CREATED)
+
+
+class CongesView(ChauffeurAPIView):
+    @extend_schema(tags=TAG, summary="Mes demandes de congé", responses=CongeSerializer(many=True))
+    def get(self, request):
+        return Response(CongeSerializer(services.conges_du_chauffeur(self.chauffeur), many=True).data)
+
+    @extend_schema(
+        tags=TAG, summary="Demander un congé",
+        description="Le supérieur hiérarchique valide en N1 (48 h), puis la RH en N2 (24 h). Refusé si le "
+                    "solde est insuffisant, si la période chevauche un autre congé ou si aucun supérieur "
+                    "n'est renseigné.",
+        request=CongeEntreeSerializer, responses={201: CongeSerializer},
+    )
+    def post(self, request):
+        donnees = CongeEntreeSerializer(data=request.data)
+        donnees.is_valid(raise_exception=True)
+        conge = services.demander_conge(self.chauffeur, **donnees.validated_data)
+        return Response(CongeSerializer(conge).data, status=status.HTTP_201_CREATED)
+
+
+class SoldeCongesView(ChauffeurAPIView):
+    @extend_schema(tags=TAG, summary="Mon solde de congés de l'année (jours ouvrés)")
+    def get(self, request):
+        return Response(services.droits_conges_du_chauffeur(self.chauffeur))
 ```
 
 #### `apps/mobile_api/urls.py`
 
-*19 lignes* — Routes de l'API mobile : montées sous ``/api/v1/mobile/`` par ``apps.api.urls``.
+*21 lignes* — Routes de l'API mobile : montées sous ``/api/v1/mobile/`` par ``apps.api.urls``.
 
 ```python
 """Routes de l'API mobile : montées sous ``/api/v1/mobile/`` par ``apps.api.urls``."""
@@ -1320,6 +1446,8 @@ urlpatterns = [
     path("pleins/", views.PleinsView.as_view(), name="pleins"),
     path("incidents/", views.IncidentsView.as_view(), name="incidents"),
     path("imprevus/", views.FraisImprevusView.as_view(), name="imprevus"),
+    path("conges/", views.CongesView.as_view(), name="conges"),
+    path("conges/solde/", views.SoldeCongesView.as_view(), name="conges_solde"),
 ]
 ```
 
@@ -1346,7 +1474,7 @@ urlpatterns = [
   {% include "components/_assets.html" %}
   <script src="{% static 'js/scanner.js' %}"></script>
 </head>
-<body class="min-h-full pb-28 text-slate-900 antialiased">
+<body class="min-h-full pb-28 text-slate-900 antialiased" data-jsqr="{% static 'vendor/jsqr/jsQR.js' %}">
   <header class="sticky top-0 z-20 bg-marque-800 text-white shadow">
     <div class="mx-auto flex max-w-lg items-center justify-between gap-3 px-4 py-3">
       <a href="{% url 'chauffeur:accueil' %}" class="flex items-center gap-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-400">
@@ -1365,11 +1493,11 @@ urlpatterns = [
   </main>
 
   <nav aria-label="Navigation de l'espace chauffeur" class="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white pb-[env(safe-area-inset-bottom)] shadow-[0_-2px_8px_rgba(0,0,0,0.06)]">
-    <ul class="mx-auto grid max-w-lg grid-cols-4">
+    <ul class="mx-auto grid max-w-lg grid-cols-6">
       {% for cle, url, icone, libelle in navigation %}
         <li>
           <a href="{{ url }}" {% if nav == cle %}aria-current="page"{% endif %}
-             class="flex flex-col items-center gap-1 px-2 py-3 text-xs font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 {% if nav == cle %}text-marque-700{% else %}text-slate-600{% endif %}">
+             class="flex flex-col items-center gap-1 px-1 py-3 text-xs font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 {% if nav == cle %}text-marque-700{% else %}text-slate-600{% endif %}">
             <i class="fa-solid {{ icone }} text-xl" aria-hidden="true"></i>{{ libelle }}
           </a>
         </li>
@@ -1697,10 +1825,10 @@ le service worker (enregistré par `sw-register.js`, **sans code en ligne**).
 
 #### `apps/mobile_api/templates/mobile/_scanner.html`
 
-*12 lignes* — Bouton et aperçu de la caméra du composant scannerCode (static/js/scanner.js). Absent si le téléphone ne sait pas lire les QR.
+*12 lignes* — Bouton et aperçu de la caméra du composant scannerCode (static/js/scanner.js). Absent si la caméra n'est pas accessible ; jsQR lit le QR quand le navigateur n'a pas BarcodeDetector.
 
 ```django
-{# Bouton et aperçu de la caméra du composant scannerCode (static/js/scanner.js). Absent si le téléphone ne sait pas lire les QR. #}
+{# Bouton et aperçu de la caméra du composant scannerCode (static/js/scanner.js). Absent si la caméra n'est pas accessible ; jsQR lit le QR quand le navigateur n'a pas BarcodeDetector. #}
 <div x-show="disponible" x-cloak>
   <button type="button" @click="ouvrir()" x-show="!actif"
           class="flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-marque-600 bg-white px-4 py-3 text-base font-bold text-marque-700 active:bg-marque-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
@@ -1716,59 +1844,106 @@ le service worker (enregistré par `sw-register.js`, **sans code en ligne**).
 
 #### `static/js/scanner.js`
 
-*50 lignes*
+*97 lignes*
 
 ```javascript
 /*
  * Lecture d'un code QR avec la caméra du téléphone (espace chauffeur).
  *
- * S'appuie sur l'API navigateur BarcodeDetector (Chrome sur Android). Quand elle n'existe pas,
- * le bouton de scan n'est pas proposé : le chauffeur saisit le code à la main.
+ * Deux méthodes, selon le navigateur :
+ *  - l'API BarcodeDetector (Chrome sur Android) : rapide, intégrée ;
+ *  - sinon (Safari sur iPhone, Firefox) : on copie l'image de la caméra dans un canvas et la bibliothèque
+ *    jsQR (static/vendor/jsqr/jsQR.js, chargée seulement à ce moment-là) y cherche le QR.
+ * Sans caméra accessible, le bouton de scan n'est pas proposé : le chauffeur saisit le code à la main.
  * Le QR ne contient que le code de la mission (8 caractères).
  */
-window.scannerCode = function (idChamp) {
-  return {
-    disponible: "BarcodeDetector" in window && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia),
-    actif: false,
-    erreur: "",
-    flux: null,
-    minuteur: null,
+(function () {
+  const LARGEUR_ANALYSE = 480; // on réduit l'image : suffisant pour un QR et bien plus léger à analyser
 
-    async ouvrir() {
-      this.erreur = "";
-      try {
-        this.flux = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-      } catch (e) {
-        this.erreur = "Caméra inaccessible : saisissez le code à la main.";
-        return;
-      }
-      this.actif = true;
-      await this.$nextTick();
-      const video = this.$refs.video;
-      video.srcObject = this.flux;
-      await video.play();
-      const detecteur = new BarcodeDetector({ formats: ["qr_code"] });
-      this.minuteur = setInterval(async () => {
+  function chargerJsQR() {
+    if (window.jsQR) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const balise = document.createElement("script");
+      balise.src = document.body.dataset.jsqr;
+      balise.onload = resolve;
+      balise.onerror = () => reject(new Error("jsQR indisponible"));
+      document.head.appendChild(balise);
+    });
+  }
+
+  // Cherche un QR dans l'image courante de la vidéo avec jsQR ; renvoie son texte ou null.
+  function lireAvecJsQR(video, canvas) {
+    if (!video.videoWidth) return null;
+    const echelle = Math.min(1, LARGEUR_ANALYSE / video.videoWidth);
+    canvas.width = Math.round(video.videoWidth * echelle);
+    canvas.height = Math.round(video.videoHeight * echelle);
+    const contexte = canvas.getContext("2d", { willReadFrequently: true });
+    contexte.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const image = contexte.getImageData(0, 0, canvas.width, canvas.height);
+    const trouve = window.jsQR(image.data, image.width, image.height, { inversionAttempts: "dontInvert" });
+    return trouve ? trouve.data : null;
+  }
+
+  window.lireQrDansImage = lireAvecJsQR; // exposé pour les vérifications
+
+  window.scannerCode = function (idChamp) {
+    return {
+      disponible: !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia),
+      actif: false,
+      erreur: "",
+      flux: null,
+      minuteur: null,
+
+      async ouvrir() {
+        this.erreur = "";
+        const natif = "BarcodeDetector" in window;
         try {
-          const trouves = await detecteur.detect(video);
-          if (trouves.length) {
-            const champ = document.getElementById(idChamp);
-            champ.value = trouves[0].rawValue.trim().toUpperCase();
-            champ.dispatchEvent(new Event("input", { bubbles: true }));
-            this.fermer();
-          }
-        } catch (e) { /* image pas encore prête : on réessaie */ }
-      }, 400);
-    },
+          if (!natif) await chargerJsQR();
+        } catch (e) {
+          this.erreur = "Lecteur de QR indisponible : saisissez le code à la main.";
+          return;
+        }
+        try {
+          this.flux = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        } catch (e) {
+          this.erreur = "Caméra inaccessible : saisissez le code à la main.";
+          return;
+        }
+        this.actif = true;
+        await this.$nextTick();
+        const video = this.$refs.video;
+        video.srcObject = this.flux;
+        await video.play();
+        const detecteur = natif ? new BarcodeDetector({ formats: ["qr_code"] }) : null;
+        const canvas = document.createElement("canvas");
+        this.minuteur = setInterval(async () => {
+          try {
+            let texte = null;
+            if (detecteur) {
+              const trouves = await detecteur.detect(video);
+              if (trouves.length) texte = trouves[0].rawValue;
+            } else {
+              texte = lireAvecJsQR(video, canvas);
+            }
+            if (texte) {
+              const champ = document.getElementById(idChamp);
+              champ.value = texte.trim().toUpperCase();
+              champ.dispatchEvent(new Event("input", { bubbles: true }));
+              this.fermer();
+            }
+          } catch (e) { /* image pas encore prête : on réessaie */ }
+        }, natif ? 400 : 250);
+      },
 
-    fermer() {
-      clearInterval(this.minuteur);
-      if (this.flux) this.flux.getTracks().forEach((t) => t.stop());
-      this.flux = null;
-      this.actif = false;
-    },
+      fermer() {
+        clearInterval(this.minuteur);
+        if (this.flux) this.flux.getTracks().forEach((t) => t.stop());
+        this.flux = null;
+        this.actif = false;
+      },
+    };
   };
-};
+})();
 ```
 
 #### `static/js/sw-register.js`
@@ -1867,7 +2042,7 @@ s'affiche même sans réseau.
 
 #### `apps/mobile_api/README.md`
 
-*36 lignes* — mobile_api
+*45 lignes* — mobile_api
 
 ```markdown
 # mobile_api
@@ -1884,7 +2059,7 @@ Trois couches sur les mêmes règles :
 Ce que fait le chauffeur : voir ses missions (à faire, en cours, livrées cette semaine), faire la
 **check-list** du camion, **démarrer**, confirmer la **récupération** puis la **livraison** en scannant
 ou saisissant le code (QR), saisir un **plein** (avec la confirmation d'une saisie suspecte),
-signaler un **incident**, déclarer un **imprévu** (panne, avec preuve — R4, prévision de trésorerie des
+signaler un **incident**, **demander un congé** (voir ci-dessous), déclarer un **imprévu** (panne, avec preuve — R4, prévision de trésorerie des
 missions, voir `apps/missions/README.md`). L'accueil est son tableau de bord : course du jour, km du mois,
 consommation, état du camion.
 
@@ -1897,8 +2072,10 @@ cache que la page « hors connexion », jamais les pages privées.
 disque local (`MEDIA_ROOT`/`media_data`, déjà prévu par le déploiement) — distinct de la photo d'un
 incident, toujours pas gérée (S3/MinIO, étape 7, voir ci-dessous).
 
-Lecture des QR : `static/js/scanner.js` (API `BarcodeDetector`, Chrome sur Android). Sur un navigateur
-qui ne la propose pas, le bouton n'apparaît pas et le chauffeur saisit le code (8 caractères).
+Lecture des QR : `static/js/scanner.js`. L'API `BarcodeDetector` (Chrome sur Android) quand elle existe ; sinon
+(Safari sur iPhone, Firefox) l'image de la caméra est copiée dans un canvas et lue par jsQR
+(`static/vendor/jsqr/`, Apache-2.0, chargé seulement à ce moment-là ; `npm run vendor` dans `frontend/`). Sans caméra
+accessible, le bouton n'apparaît pas et le chauffeur saisit le code (8 caractères).
 
 Pas encore fait :
 - **Mode hors ligne** (file d'attente des saisies, synchronisation différée, conflits) : écarté sur
@@ -1906,6 +2083,61 @@ Pas encore fait :
   page « hors connexion » s'affiche.
 - Photos des incidents (stockage S3 ou MinIO, étape 7) ; notifications push (Firebase).
 - Avoir une position GPS ; envoi du code par SMS à l'expéditeur.
+
+**Congés** (`/chauffeur/conges/`, API `/api/v1/mobile/conges/` et `conges/solde/`) : le chauffeur demande lui-même
+ses congés (il n'a pas d'écran RH) et suit leur état ; `services.demander_conge` délègue à
+`hr.services.demander_conge`, donc mêmes règles que tout employé : solde suffisant, **pas de chevauchement** avec
+un autre congé non refusé, supérieur hiérarchique renseigné (sinon refus avec message). Son supérieur est
+prévenu et valide en N1 (48 h) sur l'écran RH, puis la RH en N2 (24 h). Le solde (`droits_conges_du_chauffeur`) et
+la liste (`conges_du_chauffeur`) ne portent que sur ses propres congés. Barre de navigation à 6 onglets.
+```
+
+#### `apps/mobile_api/templates/mobile/conges.html`
+
+*41 lignes*
+
+```django
+{% extends "mobile/base.html" %}
+{% load ui %}
+{% block titre %}Mes congés{% endblock %}
+
+{% block contenu %}
+<h1 class="text-xl font-bold text-slate-900">Mes congés</h1>
+<p class="text-sm text-slate-600">Votre supérieur valide votre demande sous 48 h, puis la RH sous 24 h.</p>
+
+<dl class="mt-4 grid grid-cols-3 gap-2 text-center">
+  <div class="rounded-2xl border border-slate-200 bg-white px-2 py-3"><dt class="text-xs text-slate-600">Droit {{ droits.annee }}</dt><dd class="mt-1 text-lg font-bold text-slate-900">{{ droits.droit_annuel|add:droits.exceptionnels }} j</dd></div>
+  <div class="rounded-2xl border border-slate-200 bg-white px-2 py-3"><dt class="text-xs text-slate-600">Pris ou validés</dt><dd class="mt-1 text-lg font-bold text-slate-900">{{ droits.consommes }} j</dd></div>
+  <div class="rounded-2xl border border-emerald-300 bg-emerald-50 px-2 py-3"><dt class="text-xs text-emerald-900">Disponible</dt><dd class="mt-1 text-lg font-bold text-emerald-900">{{ droits.disponible }} j</dd></div>
+</dl>
+
+<form method="post" class="mt-5 space-y-4" novalidate>
+  {% csrf_token %}
+  {% if form.non_field_errors %}
+    <div role="alert" class="rounded-2xl border border-red-300 bg-red-50 px-4 py-3 text-sm font-medium text-red-900">{% for e in form.non_field_errors %}<p>{{ e }}</p>{% endfor %}</div>
+  {% endif %}
+  {% include "components/_champ.html" with champ=form.date_debut %}
+  {% include "components/_champ.html" with champ=form.date_fin %}
+  {% include "components/_champ.html" with champ=form.motif %}
+  <button type="submit" class="w-full rounded-2xl bg-slate-900 px-4 py-4 text-lg font-bold text-white shadow active:bg-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900"><i class="fa-solid fa-paper-plane mr-2" aria-hidden="true"></i>Envoyer la demande</button>
+</form>
+
+<section class="mt-6" aria-labelledby="titre-conges">
+  <h2 id="titre-conges" class="text-sm font-semibold uppercase tracking-wide text-slate-600">Mes demandes</h2>
+  {% if conges %}
+    <ul class="mt-2 divide-y divide-slate-200 rounded-2xl border border-slate-200 bg-white text-sm">
+      {% for c in conges %}
+        <li class="px-4 py-3">
+          <div class="flex items-center justify-between gap-2"><span class="font-medium">Du {{ c.date_debut|date:"d/m/Y" }} au {{ c.date_fin|date:"d/m/Y" }}</span>{% badge c.statut c.get_statut_display %}</div>
+          <p class="mt-1 text-slate-700">{{ c.jours }} jour{{ c.jours|pluralize }} ouvré{{ c.jours|pluralize }}{% if c.motif %} · {{ c.motif|truncatechars:60 }}{% endif %}</p>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="mt-2 rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-6 text-center text-sm text-slate-600">Aucune demande pour l'instant.</p>
+  {% endif %}
+</section>
+{% endblock %}
 ```
 
 #### `apps/mobile_api/templates/mobile/imprevu.html`
@@ -2324,7 +2556,7 @@ def test_en_cours_la_mission_du_jour_est_la_mission_demarree():
 
 #### `apps/mobile_api/tests/test_web.py`
 
-*469 lignes* — Espace mobile du chauffeur (PWA) : accès, parcours d'une mission, check-list, plein, incident.
+*513 lignes* — Espace mobile du chauffeur (PWA) : accès, parcours d'une mission, check-list, plein, incident.
 
 ```python
 """Espace mobile du chauffeur (PWA) : accès, parcours d'une mission, check-list, plein, incident."""
@@ -2796,6 +3028,50 @@ def test_les_formulaires_du_chauffeur_exigent_le_csrf():
     assert http.post(reverse("chauffeur:plein"), _plein()).status_code == 403
     assert http.post(reverse("chauffeur:incident"), _incident()).status_code == 403
     assert not Incident.objects.exists()
+
+
+def test_un_plein_bloque_par_l_enveloppe_affiche_un_message_au_lieu_d_une_erreur_500(client, chauffeur):
+    """Audit M6-08 : la demande de dépassement en attente bloque le plein suivant (BillingError)."""
+    from decimal import Decimal
+
+    from apps.accounts.models import Role
+    from apps.accounts.tests.factories import UserFactory
+    from apps.billing.models import CategorieDepense
+    from apps.finance import demandes
+    from apps.fuel import services as fuel_services
+
+    fiche, _ = chauffeur
+    mission = mission_de(fiche)
+    aujourd_hui = timezone.localdate()
+    demandes.definir_enveloppe(
+        UserFactory(role=Role.DIRECTION), categorie=CategorieDepense.CARBURANT, annee=aujourd_hui.year,
+        mois=aujourd_hui.month, montant_plafond=Decimal("1000"),
+    )
+    fuel_services.enregistrer_plein(
+        vehicule=mission.vehicule, chauffeur=fiche, date_plein=aujourd_hui, station="Total",
+        quantite_litres=Decimal("100"), prix_unitaire=Decimal("655"),
+        km_compteur=mission.vehicule.kilometrage + 100, numero_ticket="T-DEPASSE",
+    )  # dépasse le plafond : ouvre la demande
+
+    reponse = client.post(reverse("chauffeur:plein"), _plein(
+        numero_ticket="T-BLOQUE", km_compteur=str(mission.vehicule.kilometrage + 300),
+    ))
+
+    assert reponse.status_code == 200
+    assert "dépassée" in reponse.content.decode()
+
+
+def test_le_lecteur_de_qr_de_repli_est_servi_avec_l_espace_chauffeur(client, chauffeur):
+    """Audit M5-07 : sans BarcodeDetector (Safari, Firefox), scanner.js charge jsQR depuis ce chemin."""
+    from pathlib import Path
+
+    from django.conf import settings
+
+    page = client.get(reverse("chauffeur:accueil")).content.decode()
+
+    assert 'data-jsqr="/static/vendor/jsqr/jsQR.js"' in page
+    assert (Path(settings.BASE_DIR) / "static/vendor/jsqr/jsQR.js").is_file()
+    assert (Path(settings.BASE_DIR) / "static/vendor/jsqr/LICENSE").is_file()  # licence Apache-2.0 livrée avec
 ```
 
 ## Étape 6 — Brancher dans les réglages et les adresses
@@ -2822,7 +3098,7 @@ def test_les_formulaires_du_chauffeur_exigent_le_csrf():
 ```diff
 --- config/urls.py (avant)
 +++ config/urls.py (après)
-@@ -31,4 +31,5 @@
+@@ -33,4 +33,5 @@
      path("audit/", include("apps.audit.urls")),
      path("notifications/", include("apps.notifications.urls")),
 +    path("chauffeur/", include("apps.mobile_api.urls_web")),
@@ -2846,7 +3122,7 @@ python manage.py check
 python -m pytest apps/core/tests/test_forms_date.py apps/mobile_api/tests/test_services.py apps/mobile_api/tests/test_web.py -q --no-cov
 ```
 
-**Résultat attendu :** `60 passed` (pour les 3 fichier(s) de tests présentés dans ce chapitre).
+**Résultat attendu :** `62 passed` (pour les 3 fichier(s) de tests présentés dans ce chapitre).
 
 **Dans le navigateur.** Sur un ordinateur, ouvrez les outils de développement (`F12`) puis le **mode appareil
 mobile** (icône téléphone/tablette). Lancez `python manage.py runserver`.

@@ -1,6 +1,6 @@
 # Chapitre 20 — Écrans : clients
 
-> 8 fichier(s) dans ce chapitre, 823 lignes de code.
+> 8 fichier(s) dans ce chapitre, 829 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -33,7 +33,7 @@ registre `DETAIL_CLIENT` du chapitre 7). Tant que ce chapitre n'existe pas, la f
 
 #### `apps/customers/forms.py`
 
-*92 lignes*
+*98 lignes*
 
 ```python
 from django import forms
@@ -86,7 +86,13 @@ class ClientForm(StyleTailwindMixin, forms.Form):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["charge_clientele"].queryset = services.charges_clientele()
+        queryset = services.charges_clientele()
+        actuel = self.initial.get("charge_clientele")
+        if actuel is not None:
+            # Le chargé actuel reste proposé même s'il a été désactivé depuis : sinon l'enregistrement du
+            # formulaire le remplaçait en silence par « aucun » (audit M4-05).
+            queryset = queryset | queryset.model._default_manager.filter(pk=getattr(actuel, "pk", actuel))
+        self.fields["charge_clientele"].queryset = queryset
         self.fields["charge_clientele"].label_from_instance = _libelle_compte
 
     def clean(self):
@@ -334,8 +340,8 @@ urlpatterns = [
 ```diff
 --- config/urls.py (avant)
 +++ config/urls.py (après)
-@@ -16,4 +16,5 @@
-     path("favicon.ico", RedirectView.as_view(url=settings.STATIC_URL + "img/favicon.png", permanent=True)),
+@@ -18,4 +18,5 @@
+     path("medias/<path:chemin>", MediaProtegeView.as_view(), name="media"),
      path("", include("apps.accounts.urls")),
 +    path("clients/", include("apps.customers.urls")),
      path("rh/", include("apps.hr.urls")),

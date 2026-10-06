@@ -37,6 +37,17 @@ place.
 > tutoriel à ne pas être générée par `makemigrations` : les autres, purement schéma, sont reproductibles
 > depuis les modèles et ne sont donc jamais recopiées (voir la couverture en fin de tutoriel).
 
+**Clôture d'un exercice et bilan.** `cloturer_exercice` pose une **écriture de clôture** (`ecriture_de_cloture`, journal OD, datée du
+31/12) : chaque compte de charge ou de produit est soldé et le résultat est **viré au compte 120000** (crédit si bénéfice, débit si
+perte). Sans elle, le résultat de l'année N disparaissait du bilan de l'année N+1 (cumulé depuis l'origine), qui ne s'équilibrait
+plus. Le compte de résultat et la balance **ignorent** cette écriture (un exercice clôturé garde son activité visible) ; le bilan
+l'inclut. La commande `ecrire_clotures_historiques` reprend les exercices clôturés avant ce lot.
+
+**Corriger sans effacer.** Une écriture validée ne se modifie jamais : `contre_passer` pose l'écriture inverse (même journal, même
+pièce, datée du jour). Annuler un règlement ou un mouvement manuel contre-passe automatiquement son écriture ; la commande
+`contre_passer_historique_annulations` reprend l'existant. Le grand livre est en **lecture seule** dans l'administration Django, et
+un sens autre que débit/crédit est refusé par `passer_ecriture`.
+
 ## Prérequis
 
 - Chapitres 1 à 14 terminés.

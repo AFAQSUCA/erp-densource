@@ -1,6 +1,6 @@
 # Chapitre 7 — Les clients : l'app customers
 
-> 11 fichier(s) dans ce chapitre, 402 lignes de code.
+> 11 fichier(s) dans ce chapitre, 408 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -199,7 +199,7 @@ class ClientError(Exception):
 
 #### `apps/customers/services.py`
 
-*157 lignes* — Logique métier des clients : fiche, TVA, portefeuille et historique commercial.
+*160 lignes* — Logique métier des clients : fiche, TVA, portefeuille et historique commercial.
 
 ```python
 """Logique métier des clients : fiche, TVA, portefeuille et historique commercial.
@@ -296,7 +296,10 @@ def _controler(champs: dict, *, client: Client | None = None) -> dict:
     if taux > 0:
         resultat["motif_exoneration"] = ""  # sans exonération, aucun motif n'a de sens
     charge = champs.get("charge_clientele")
-    if charge is not None and (charge.role != Role.CHARGE_CLIENTELE or not charge.is_active):
+    inchange = client is not None and charge is not None and client.charge_clientele_id == charge.pk
+    if charge is not None and not inchange and (charge.role != Role.CHARGE_CLIENTELE or not charge.is_active):
+        # Garder le chargé actuel reste permis même s'il a été désactivé depuis : seul un NOUVEAU choix doit
+        # être un compte actif de ce rôle (sinon modifier une autre information du client échouait).
         raise ClientError("Le chargé clientèle attitré doit être un compte actif de ce rôle.")
     doublon = Client.all_objects.filter(ncc_nif=champs["ncc_nif"])
     if client is not None:
@@ -467,7 +470,7 @@ class CustomersConfig(AppConfig):
 
 #### `apps/customers/README.md`
 
-*26 lignes* — customers
+*29 lignes* — customers
 
 ```markdown
 # customers
@@ -496,6 +499,9 @@ Pas encore de gestion des devis ni des contrats à renouveler (indicateurs du ta
 bord chargé clientèle, étape 5) ; les FINANCES ont accès à la facturation, pas à la fiche client.
 
 Rapport imprimable des clients (bouton « Imprimer » sur la liste, mêmes filtres) : voir `apps/core/README.md` (`ImpressionListeMixin`).
+
+Un client dont le chargé clientèle attitré a été désactivé le conserve à la modification (il reste proposé et sélectionné) ; seul un
+**nouveau** choix doit être un compte actif de ce rôle.
 ```
 
 #### `apps/customers/tests/factories.py`

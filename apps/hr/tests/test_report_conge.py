@@ -121,7 +121,11 @@ def test_refuse_une_date_de_reprise_hors_de_la_periode(nouvelle_date_fin):
     employe = hierarchie[0]
 
     with pytest.raises(CongeError, match="comprise entre"):
-        services.demander_report(conge, employe.utilisateur, nouvelle_date_fin=nouvelle_date_fin, motif="x")
+        # « aujourd'hui » fixé avant le début du congé : sinon, dès que la date réelle dépasse le 04/10/2026, le premier
+        # cas serait refusé comme « dans le passé » avant d'être jugé hors de la période.
+        services.demander_report(
+            conge, employe.utilisateur, nouvelle_date_fin=nouvelle_date_fin, motif="x", aujourd_hui=date(2026, 10, 1)
+        )
 
 
 def test_refuse_une_date_de_reprise_dans_le_passe():

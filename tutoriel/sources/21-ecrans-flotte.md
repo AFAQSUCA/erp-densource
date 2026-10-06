@@ -11,6 +11,9 @@ Les **écrans de la flotte**, accessibles à l'ADMIN, à la DIRECTION et au PARC
 
 Le **statut** est affiché mais **jamais modifiable** dans un formulaire : il se calcule (chapitre 8).
 
+Sur la fiche d'un camion, l'**ADMIN** (et lui seul) voit un bloc **« Corriger le compteur »** : nouvelle valeur et motif obligatoire,
+tracés au journal d'audit (`fleet.services.corriger_kilometrage`).
+
 ## Prérequis
 
 - Chapitres 1 à 20 terminés.

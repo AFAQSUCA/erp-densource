@@ -58,9 +58,12 @@ def test_les_en_tetes_du_personnel_sont_ceux_de_l_import_rh_existant():
     assert modele.COLONNES[modele.PERSONNEL] == list(COLONNES_IMPORT)
 
 
+CHEMIN_COPIE = Path(settings.BASE_DIR) / "modele-donnees-entreprise-DEN-Source.xlsx"
+
+
+@pytest.mark.skipif(not CHEMIN_COPIE.exists(), reason="copie versionnée absente (générée par `manage.py generer_modele_import`)")
 def test_la_copie_versionnee_du_modele_a_les_memes_feuilles_et_en_tetes():
-    chemin = Path(settings.BASE_DIR) / "modele-donnees-entreprise-DEN-Source.xlsx"
-    wb = load_workbook(chemin)
+    wb = load_workbook(CHEMIN_COPIE)
 
     assert wb.sheetnames == modele_vide_lu().sheetnames
     for cle in modele.ORDRE:

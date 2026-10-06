@@ -1,6 +1,6 @@
 # Chapitre 28 — La page d'accueil : le tableau de bord
 
-> 13 fichier(s) dans ce chapitre, 2168 lignes de code.
+> 13 fichier(s) dans ce chapitre, 2185 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -809,8 +809,8 @@ mobile** (chapitre 29).
       <dl class="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">CA facturé (HT)</dt><dd class="mt-1 text-2xl font-bold text-slate-900">{{ finances.chiffre_affaires|floatformat:0|intcomma }} <span class="text-sm font-medium text-slate-600">FCFA</span></dd></div>
         <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Total encaissé</dt><dd class="mt-1 text-2xl font-bold text-slate-900">{{ finances.encaisse|floatformat:0|intcomma }} <span class="text-sm font-medium text-slate-600">FCFA</span></dd></div>
-        <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Charges du mois</dt><dd class="mt-1 text-2xl font-bold text-slate-900">{{ finances.charges.total|floatformat:0|intcomma }} <span class="text-sm font-medium text-slate-600">FCFA</span></dd><dd class="mt-1 text-xs text-slate-600">carburant {{ finances.charges.carburant|floatformat:0|intcomma }} · pièces {{ finances.charges.pieces|floatformat:0|intcomma }} · main-d'œuvre {{ finances.charges.main_oeuvre|floatformat:0|intcomma }} · autres {{ finances.charges.depenses|floatformat:0|intcomma }}</dd></div>
-        <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Marge nette</dt><dd class="mt-1 text-2xl font-bold {% if finances.marge_nette < 0 %}text-red-800{% else %}text-emerald-800{% endif %}">{{ finances.marge_nette|floatformat:0|intcomma }} <span class="text-sm font-medium text-slate-600">FCFA</span></dd><dd class="mt-1 text-xs text-slate-600">CA HT − charges</dd></div>
+        <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Charges du mois</dt><dd class="mt-1 text-2xl font-bold text-slate-900">{{ finances.charges.total|floatformat:0|intcomma }} <span class="text-sm font-medium text-slate-600">FCFA</span></dd><dd class="mt-1 text-xs text-slate-600">carburant {{ finances.charges.carburant|floatformat:0|intcomma }} · pièces {{ finances.charges.pieces|floatformat:0|intcomma }} · main-d'œuvre {{ finances.charges.main_oeuvre|floatformat:0|intcomma }} · autres {{ finances.charges.depenses|floatformat:0|intcomma }}</dd>{% if finances.charges.tva_deductible %}<dd class="mt-1 text-xs text-slate-600">TTC, dont {{ finances.charges.tva_deductible|floatformat:0|intcomma }} de TVA récupérable</dd>{% endif %}</div>
+        <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Marge nette</dt><dd class="mt-1 text-2xl font-bold {% if finances.marge_nette < 0 %}text-red-800{% else %}text-emerald-800{% endif %}">{{ finances.marge_nette|floatformat:0|intcomma }} <span class="text-sm font-medium text-slate-600">FCFA</span></dd><dd class="mt-1 text-xs text-slate-600">CA HT − charges HT</dd></div>
       </dl>
       <dl class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Créances clients</dt><dd class="mt-1 text-2xl font-bold text-slate-900">{{ finances.creances.total|floatformat:0|intcomma }} <span class="text-sm font-medium text-slate-600">FCFA</span></dd><dd class="mt-1 text-xs text-slate-600">{{ finances.creances.nombre }} facture{{ finances.creances.nombre|pluralize }} à recouvrer</dd></div>
@@ -930,7 +930,7 @@ Rapport imprimable (`/imprimer/`, bouton « Imprimer » sur l'écran) : mêmes b
 
 #### `apps/dashboard/templates/dashboard/index_print.html`
 
-*119 lignes*
+*120 lignes*
 
 ```django
 {% load static humanize %}<!DOCTYPE html>
@@ -1026,8 +1026,9 @@ Rapport imprimable (`/imprimer/`, bouton « Imprimer » sur l'écran) : mêmes b
     <div class="cartouche">
       <div><dt>CA facturé (HT)</dt><dd>{{ finances.chiffre_affaires|floatformat:0|intcomma }} FCFA</dd></div>
       <div><dt>Total encaissé</dt><dd>{{ finances.encaisse|floatformat:0|intcomma }} FCFA</dd></div>
-      <div><dt>Charges du mois</dt><dd>{{ finances.charges.total|floatformat:0|intcomma }} FCFA</dd></div>
-      <div><dt>Marge nette</dt><dd>{{ finances.marge_nette|floatformat:0|intcomma }} FCFA</dd></div>
+      <div><dt>Charges du mois{% if finances.charges.tva_deductible %} (TTC){% endif %}</dt><dd>{{ finances.charges.total|floatformat:0|intcomma }} FCFA</dd></div>
+      {% if finances.charges.tva_deductible %}<div><dt>dont TVA récupérable</dt><dd>{{ finances.charges.tva_deductible|floatformat:0|intcomma }} FCFA</dd></div>{% endif %}
+      <div><dt>Marge nette (CA HT − charges HT)</dt><dd>{{ finances.marge_nette|floatformat:0|intcomma }} FCFA</dd></div>
       <div><dt>Créances (dont échues)</dt><dd>{{ finances.creances.total|floatformat:0|intcomma }} ({{ finances.creances.echu|floatformat:0|intcomma }}) FCFA</dd></div>
       <div><dt>Trésorerie</dt><dd>{{ finances.tresorerie|floatformat:0|intcomma }} FCFA</dd></div>
     </div>
@@ -1056,7 +1057,7 @@ Rapport imprimable (`/imprimer/`, bouton « Imprimer » sur l'écran) : mêmes b
 
 #### `apps/dashboard/tests/test_dashboard.py`
 
-*588 lignes* — Tableau de bord : visibilité par rôle, centre d'alertes, indicateurs, cache, performance.
+*604 lignes* — Tableau de bord : visibilité par rôle, centre d'alertes, indicateurs, cache, performance.
 
 ```python
 """Tableau de bord : visibilité par rôle, centre d'alertes, indicateurs, cache, performance."""
@@ -1160,6 +1161,22 @@ def test_les_finances_voient_leurs_indicateurs_du_mois(client):
                     "Marge nette", "Créances clients", "Trésorerie"):
         assert libelle in texte
     assert "Centre d'alertes" in texte
+
+
+def test_la_carte_marge_precise_hors_taxes_et_la_tva_recuperable_des_charges(client):
+    from apps.billing import services as billing
+    from apps.billing.models import ModePaiement
+    from apps.billing.tests.helpers import finances as compte_finances
+
+    billing.enregistrer_depense(
+        compte_finances(), categorie="PEAGES", date_depense=timezone.localdate(), libelle="Péage",
+        montant=Decimal("118000"), mode=ModePaiement.ESPECES, montant_tva=Decimal("18000"),
+    )
+
+    texte = _page(client, Role.FINANCES).content.decode()
+
+    assert "CA HT − charges HT" in texte
+    assert "de TVA récupérable" in texte
 
 
 def test_les_autres_roles_ne_voient_pas_les_finances(client):
@@ -2334,12 +2351,13 @@ Et remplacez, dans `config/urls.py`, la page provisoire par le vrai tableau de b
 ```diff
 --- config/urls.py (avant)
 +++ config/urls.py (après)
-@@ -8,9 +8,11 @@
+@@ -8,10 +8,12 @@
  from django.contrib import admin
  from django.urls import include, path
 -from django.views.generic import RedirectView, TemplateView
 +from django.views.generic import RedirectView
  
+ from apps.core.medias import MediaProtegeView
 +from apps.dashboard.views import DashboardImprimerView, DashboardView
  
  urlpatterns = [
@@ -2366,7 +2384,7 @@ python manage.py check
 python -m pytest apps/dashboard/tests/test_dashboard.py apps/dashboard/tests/test_impression.py apps/dashboard/tests/test_lectures_metier.py apps/dashboard/tests/test_series_mensuelles.py apps/notifications/tests/test_terrain.py -q --no-cov
 ```
 
-**Résultat attendu :** `97 passed, 1 failed` (pour les 5 fichier(s) de tests présentés dans ce chapitre).
+**Résultat attendu :** `99 passed` (pour les 5 fichier(s) de tests présentés dans ce chapitre).
 
 Les cinq tests qui échouaient au chapitre 22 (`test_web.py` : accueil, menu par rôle, déconnexion, chauffeur
 renvoyé vers son espace) **passent enfin**.

@@ -1,6 +1,6 @@
 # Chapitre 1 — Le squelette du projet
 
-> 18 fichier(s) dans ce chapitre, 753 lignes de code.
+> 19 fichier(s) dans ce chapitre, 779 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -183,9 +183,19 @@ certs/
 Ce fichier dit à Git **ce qu'il ne doit jamais versionner** : l'environnement virtuel (`.venv/`), la base de
 développement (`db.sqlite3`), les secrets (`.env`), les fichiers générés (`__pycache__/`, `staticfiles/`).
 
+#### `.gitattributes`
+
+*1 ligne*
+
+```text
+*.sh text eol=lf
+```
+
+Ce fichier force les **scripts shell** (`*.sh`) en fins de ligne Unix (LF), même sur Windows : un script avec des fins de ligne Windows (CRLF) ne s'exécute pas dans un conteneur Linux.
+
 #### `.env.example`
 
-*49 lignes*
+*51 lignes*
 
 ```bash
 # Copier en .env (jamais commité) — conventions.md §3 "Secrets via .env"
@@ -216,8 +226,10 @@ ALLOWED_HOSTS=localhost,127.0.0.1
 # Déploiement docker-compose (étape 7 lot 3 — voir GUIDE-DEPLOIEMENT.md)
 # DJANGO_SETTINGS_MODULE=config.settings.prod
 # ALLOWED_HOSTS=erp.densourcegroup.ci
+# DOMAINE=erp.densourcegroup.ci                          # le même domaine : Nginx, certificat HTTPS (défaut : densource.tech)
 # CSRF_TRUSTED_ORIGINS=https://erp.densourcegroup.ci
-# POSTGRES_PASSWORD=change-moi-en-un-mot-de-passe-long   # lu par db, web, celery_worker, celery_beat
+# POSTGRES_PASSWORD=change-moi-en-un-mot-de-passe-long   # OBLIGATOIRE avec docker-compose (aucun défaut) : lu par db, web, celery_worker, celery_beat
+# Pour tester en local contre le PostgreSQL de docker-compose, mettre la même valeur dans DATABASE_URL (voir plus haut).
 # TRUSTED_PROXY_COUNT=1                                  # Nginx est le seul proxy devant l'application
 
 # Supervision (facultatif : inactif tant que SENTRY_DSN n'est pas défini)
@@ -534,8 +546,10 @@ STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_DIRS = [BASE_DIR / "static"] if (BASE_DIR / "static").exists() else []
 
-MEDIA_URL = "media/"
+# Les fichiers téléversés ne sont jamais servis en libre accès : ``apps.core.medias`` contrôle le rôle.
+MEDIA_URL = "medias/"
 MEDIA_ROOT = BASE_DIR / "media"
+MEDIA_ACCEL_REDIRECT = False
 
 # Tables BDD `app_modele` : conventions.md §1. BigAutoField requis pour
 # cohérence avec audit_log.id (BIGINT) — cahier-des-charges.md:60.
@@ -826,7 +840,7 @@ authentification imposée (les tests qui la vérifient la réactivent), plafonds
 
 #### `config/settings/prod.py`
 
-*107 lignes* — Environnement production — PostgreSQL, Redis (architecture.md:405).
+*122 lignes* — Environnement production — PostgreSQL, Redis (architecture.md:405).
 
 ```python
 """Environnement production — PostgreSQL, Redis (architecture.md:405).
@@ -839,10 +853,22 @@ changer ce fichier.
 Sécurité : conventions.md §3 + cahier-des-charges.md §4 "Sécurité".
 """
 
+from django.core.exceptions import ImproperlyConfigured
+
 from .base import *  # noqa: F401,F403
-from .base import env
+from .base import SECRET_KEY, env
 
 DEBUG = False
+
+# Refuser de démarrer avec la clé par défaut du dépôt (``base.py``) ou celle de ``.env.example`` : elle est
+# publique, et c'est elle qui signe les sessions, les jetons de réinitialisation de mot de passe et les
+# jetons de l'API mobile. Mieux vaut un conteneur qui s'arrête avec un message clair qu'un serveur qui
+# tourne avec une clé que n'importe qui connaît (GUIDE-DEPLOIEMENT.md § 4).
+if SECRET_KEY.startswith("django-insecure-") or SECRET_KEY == "change-me" or len(SECRET_KEY) < 32:
+    raise ImproperlyConfigured(
+        "SECRET_KEY absente, par défaut ou trop courte (32 caractères minimum) : en production, générez-en une "
+        "avec « python -c \"import secrets; print(secrets.token_urlsafe(50))\" » et placez-la dans .env."
+    )
 
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS")
 
@@ -882,6 +908,9 @@ CHANNEL_LAYERS = {
 # la planification) doit tourner à côté de l'application — voir README « Lancer en production ».
 CELERY_TASK_ALWAYS_EAGER = False
 CELERY_BROKER_URL = env("REDIS_URL")
+
+# Nginx envoie les fichiers téléversés sur ordre de Django (X-Accel-Redirect), après contrôle du rôle.
+MEDIA_ACCEL_REDIRECT = True
 
 # HTTPS/TLS obligatoire + en-têtes de sécurité — cahier-des-charges.md:270-281.
 SECURE_SSL_REDIRECT = True
@@ -939,7 +968,7 @@ if SENTRY_DSN:
 ```
 
 En production : HTTPS obligatoire, cookies sécurisés, base PostgreSQL et Redis fournis par l'environnement.
-Ce fichier n'est pas utilisé dans ce tutoriel (voir « Aller plus loin », chapitre 31).
+Ce fichier n'est pas utilisé dans ce tutoriel (voir « Aller plus loin », chapitre 32).
 
 ## Étape 6 — Les adresses et la configuration des tests
 

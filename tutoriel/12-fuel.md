@@ -1,6 +1,6 @@
 # Chapitre 12 — Le carburant : l'app fuel
 
-> 14 fichier(s) dans ce chapitre, 1240 lignes de code.
+> 15 fichier(s) dans ce chapitre, 1350 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -20,6 +20,10 @@ consommation est calculée, pour repérer très vite les anomalies : fuite, vol,
 
 Tous les seuils sont **stricts** (« supérieur à », pas « supérieur ou égal »). Les alertes jaune/rouge et la
 saisie suspecte sont indépendantes : +65 % est *à la fois* rouge et suspect.
+
+**Cohérence de la saisie.** Un plein est refusé avant d'être enregistré si sa **date est dans le futur** (elle bloquerait toutes
+les saisies suivantes du camion), si son **volume dépasse le réservoir** du camion, ou si son **kilométrage** est à plus de
+5 000 km du relevé précédent (`fleet.ECART_KM_MAX`) : le compteur d'un camion ne reculant jamais, un chiffre en trop le figerait.
 
 ## Prérequis
 
@@ -226,7 +230,7 @@ class SaisieSuspecte(CarburantError):
 
 #### `apps/fuel/services.py`
 
-*349 lignes* — Logique métier du carburant — cahier-des-charges.md:147-157.
+*371 lignes* — Logique métier du carburant — cahier-des-charges.md:147-157.
 
 ```python
 """Logique métier du carburant — cahier-des-charges.md:147-157.
@@ -246,6 +250,7 @@ from decimal import ROUND_HALF_UP, Decimal
 
 from django.db import transaction
 from django.db.models import Q, QuerySet
+from django.utils import timezone
 
 from apps.core.search import filtrer_par_texte
 from apps.drivers.models import Chauffeur
@@ -348,6 +353,9 @@ def enregistrer_plein(
         raise SaisieInvalide("La quantité doit être strictement positive.")
     if prix_unitaire <= 0:
         raise SaisieInvalide("Le prix unitaire doit être strictement positif.")
+    if date_plein > timezone.localdate():
+        # Un plein daté dans le futur bloquerait toutes les saisies suivantes du camion (HorsChronologie).
+        raise SaisieInvalide("La date du plein ne peut pas être dans le futur.")
     numero_ticket = numero_ticket.strip()
     if not numero_ticket:
         raise SaisieInvalide("Le n° de ticket est obligatoire.")
@@ -356,11 +364,18 @@ def enregistrer_plein(
 
     type(vehicule)._base_manager.select_for_update().filter(pk=vehicule.pk).first()
     vehicule.refresh_from_db()
+    if quantite_litres > vehicule.reservoir_l:
+        raise SaisieInvalide(
+            f"{quantite_litres} L dépasse le réservoir du camion ({vehicule.reservoir_l} L) : vérifiez la quantité."
+        )
 
     precedent = (
         Plein.objects.filter(vehicule=vehicule).order_by("-date_plein", "-pk").first()
     )
     champs_calcules: dict = {}
+    if precedent is None and vehicule.kilometrage > 0:
+        # Premier plein enregistré : on se repère sur le compteur du camion (0 = jamais renseigné, rien à vérifier).
+        _exiger_distance_plausible(vehicule.kilometrage, km_compteur)
     if precedent is not None:
         if date_plein < precedent.date_plein:
             raise HorsChronologie(
@@ -373,6 +388,7 @@ def enregistrer_plein(
                 f"précédent ({precedent.km_compteur})."
             )
         distance = km_compteur - precedent.km_compteur
+        _exiger_distance_plausible(precedent.km_compteur, km_compteur)
         consommation = calculer_consommation(quantite_litres, distance)
         champs_calcules.update(
             km_precedent=precedent.km_compteur,
@@ -413,6 +429,16 @@ def enregistrer_plein(
     ):
         _emettre(alerte_consommation, plein=plein)
     return plein
+
+
+def _exiger_distance_plausible(depuis_km: int, jusqu_a_km: int) -> None:
+    """Refuse un km compteur très au-dessus du relevé précédent : une faute de frappe gonflerait le compteur du
+    camion de façon irréversible (``fleet.services.enregistrer_kilometrage``)."""
+    if not fleet_services.distance_plausible(depuis_km, jusqu_a_km):
+        raise KilometrageInvalide(
+            f"Le km compteur ({jusqu_a_km}) est {jusqu_a_km - depuis_km} km au-dessus du relevé précédent "
+            f"({depuis_km}) : plus de {fleet_services.ECART_KM_MAX} km entre deux relevés, vérifiez la saisie."
+        )
 
 
 def _emettre(signal, **arguments) -> None:
@@ -733,7 +759,7 @@ class PleinFactory(factory.django.DjangoModelFactory):
 
 #### `apps/fuel/README.md`
 
-*46 lignes* — fuel
+*50 lignes* — fuel
 
 ```markdown
 # fuel
@@ -782,6 +808,100 @@ dans un message avec `f"{valeur}"` (point décimal).
 Recherche : `filtrer_par_texte` (core) — insensible aux accents et à la casse.
 
 Rapport imprimable des pleins (bouton « Imprimer » sur la liste, mêmes filtres) : voir `apps/core/README.md` (`ImpressionListeMixin`).
+
+**Cohérence de la saisie** (`enregistrer_plein`, donc formulaires, mobile et API) : date non future, volume ≤ réservoir
+du camion, km compteur à moins de `fleet.services.ECART_KM_MAX` (5 000 km) du relevé précédent (ou du compteur du
+camion pour le premier plein, quand il est renseigné) : un chiffre en trop gonflerait le compteur de façon irréversible.
+```
+
+#### `apps/fuel/tests/test_coherence_saisie.py`
+
+*83 lignes* — Audit M6-09 / M5-10 : un plein est cohérent (date, volume, kilométrage) avant d'être enregistré.
+
+```python
+"""Audit M6-09 / M5-10 : un plein est cohérent (date, volume, kilométrage) avant d'être enregistré."""
+
+import itertools
+from datetime import timedelta
+from decimal import Decimal
+
+import pytest
+from django.utils import timezone
+
+from apps.drivers.tests.factories import ChauffeurFactory
+from apps.fleet import services as fleet_services
+from apps.fleet.tests.factories import VehiculeFactory
+from apps.fuel import services
+from apps.fuel.exceptions import KilometrageInvalide, SaisieInvalide
+
+pytestmark = pytest.mark.django_db
+
+_tickets = itertools.count(1)
+
+
+def _plein(vehicule, **surcharges):
+    donnees = dict(
+        vehicule=vehicule, chauffeur=ChauffeurFactory(), date_plein=timezone.localdate(), station="Total",
+        quantite_litres=Decimal("100"), prix_unitaire=Decimal("655"), km_compteur=vehicule.kilometrage + 400,
+        numero_ticket=f"C-{next(_tickets)}", confirmer_alerte_saisie=True,
+    )
+    donnees.update(surcharges)
+    return services.enregistrer_plein(**donnees)
+
+
+def test_un_plein_date_dans_le_futur_est_refuse():
+    camion = VehiculeFactory()
+
+    with pytest.raises(SaisieInvalide, match="dans le futur"):
+        _plein(camion, date_plein=timezone.localdate() + timedelta(days=1))
+
+
+def test_un_plein_du_jour_est_accepte():
+    assert _plein(VehiculeFactory()).date_plein == timezone.localdate()
+
+
+def test_un_volume_superieur_au_reservoir_est_refuse():
+    camion = VehiculeFactory(reservoir_l=300)
+
+    with pytest.raises(SaisieInvalide, match=r"réservoir du camion \(300 L\)"):
+        _plein(camion, quantite_litres=Decimal("301"))
+
+
+def test_un_volume_egal_au_reservoir_est_accepte():
+    camion = VehiculeFactory(reservoir_l=300)
+
+    assert _plein(camion, quantite_litres=Decimal("300")).quantite_litres == Decimal("300")
+
+
+def test_un_km_trop_haut_par_rapport_au_plein_precedent_est_refuse_et_ne_fige_pas_le_compteur():
+    camion = VehiculeFactory()
+    premier = _plein(camion)
+
+    with pytest.raises(KilometrageInvalide, match="vérifiez la saisie"):
+        _plein(camion, km_compteur=premier.km_compteur + 50000)  # un zéro de trop
+
+    camion.refresh_from_db()
+    assert camion.kilometrage == premier.km_compteur  # le compteur n'a pas été gonflé
+
+
+def test_un_km_trop_haut_pour_le_premier_plein_est_compare_au_compteur_du_camion():
+    camion = VehiculeFactory(kilometrage=120000)
+
+    with pytest.raises(KilometrageInvalide):
+        _plein(camion, km_compteur=1200000)
+
+
+def test_un_camion_au_compteur_jamais_renseigne_accepte_son_premier_plein():
+    camion = VehiculeFactory(kilometrage=0)
+
+    assert _plein(camion, km_compteur=85000).km_compteur == 85000
+
+
+def test_la_distance_limite_est_acceptee():
+    camion = VehiculeFactory()
+    premier = _plein(camion)
+
+    assert _plein(camion, km_compteur=premier.km_compteur + fleet_services.ECART_KM_MAX).distance_km == 5000
 ```
 
 #### `apps/fuel/tests/test_lecture.py`
@@ -1419,10 +1539,10 @@ python manage.py check
 ```
 
 ```bash
-python -m pytest apps/fuel/tests/test_lecture.py apps/fuel/tests/test_models.py apps/fuel/tests/test_services.py -q --no-cov
+python -m pytest apps/fuel/tests/test_coherence_saisie.py apps/fuel/tests/test_lecture.py apps/fuel/tests/test_models.py apps/fuel/tests/test_services.py -q --no-cov
 ```
 
-**Résultat attendu :** `71 passed` (pour les 3 fichier(s) de tests présentés dans ce chapitre).
+**Résultat attendu :** `79 passed` (pour les 4 fichier(s) de tests présentés dans ce chapitre).
 
 Essais dans le shell : les seuils.
 

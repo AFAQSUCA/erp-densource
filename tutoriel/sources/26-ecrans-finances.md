@@ -12,6 +12,9 @@ DIRECTION valide**.
 | Dépenses (liste, saisie) | `/facturation/depenses/` | consultation : ADMIN, DIRECTION, FINANCES ; saisie : ADMIN, FINANCES |
 | **Trésorerie** : soldes par compte, journal, mouvements manuels | `/finances/` | idem |
 
+Les listes des **factures** et des **dépenses**, et le journal de **trésorerie**, ont un bouton **Excel** à côté d'« Imprimer » :
+mêmes filtres, mêmes droits, montants en vrais nombres (`apps/core/xlsx.py`, `ExportXlsxMixin`).
+
 ## Prérequis
 
 - Chapitres 1 à 25 terminés.

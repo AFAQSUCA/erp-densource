@@ -1,6 +1,6 @@
 # Chapitre 26 — Écrans : facturation, dépenses et trésorerie
 
-> 38 fichier(s) dans ce chapitre, 6277 lignes de code.
+> 40 fichier(s) dans ce chapitre, 6758 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -15,6 +15,9 @@ DIRECTION valide**.
 | **Version imprimable** (à enregistrer en PDF) | `/facturation/<id>/imprimer/` | ADMIN, DIRECTION, FINANCES |
 | Dépenses (liste, saisie) | `/facturation/depenses/` | consultation : ADMIN, DIRECTION, FINANCES ; saisie : ADMIN, FINANCES |
 | **Trésorerie** : soldes par compte, journal, mouvements manuels | `/finances/` | idem |
+
+Les listes des **factures** et des **dépenses**, et le journal de **trésorerie**, ont un bouton **Excel** à côté d'« Imprimer » :
+mêmes filtres, mêmes droits, montants en vrais nombres (`apps/core/xlsx.py`, `ExportXlsxMixin`).
 
 ## Prérequis
 
@@ -517,7 +520,7 @@ class EnveloppeForm(StyleTailwindMixin, forms.Form):
 
 #### `apps/billing/views.py`
 
-*723 lignes* — Écrans de facturation : factures, règlements, dépenses.
+*749 lignes* — Écrans de facturation : factures, règlements, dépenses.
 
 ```python
 """Écrans de facturation : factures, règlements, dépenses.
@@ -536,6 +539,7 @@ from apps.accounts.mixins import RoleRequiredMixin
 from apps.core.formats import nombre
 from apps.core.rapports import contexte_rapport
 from apps.core.views import ImpressionListeMixin, PaginationTolerante
+from apps.core.xlsx import ExportXlsxMixin
 from apps.missions import permissions as missions_permissions
 from apps.missions.exceptions import MissionError
 
@@ -638,6 +642,19 @@ class FactureImprimerView(ImpressionListeMixin, FactureListView):
         if criteres.get("recherche"):
             morceaux.append(f"recherche : « {criteres['recherche']} »")
         return " · ".join(morceaux)
+
+
+class FactureExporterXlsxView(ExportXlsxMixin, FactureImprimerView):
+    """Export Excel des factures (mêmes filtres que la liste) : montants et dates en valeurs brutes."""
+
+    nom_fichier = "factures"
+    colonnes = (
+        ("N°", lambda f: f.numero or f"Sans numéro ({f.mission.numero})"), ("Client", "client.raison_sociale"),
+        ("Mission", "mission.numero"), ("Statut", "get_statut_display"),
+        ("Émise le", lambda f: f.date_emission), ("Échéance", lambda f: f.date_echeance),
+        ("HT (FCFA)", lambda f: f.montant_ht), ("TVA (FCFA)", lambda f: f.montant_tva),
+        ("TTC (FCFA)", lambda f: f.montant_ttc), ("Reste à recouvrer (FCFA)", lambda f: f.reste),
+    )
 
 
 class FactureCreateView(RoleRequiredMixin, FormView):
@@ -909,6 +926,18 @@ class DepenseImprimerView(ImpressionListeMixin, DepenseListView):
         if criteres.get("recherche"):
             morceaux.append(f"recherche : « {criteres['recherche']} »")
         return " · ".join(morceaux)
+
+
+class DepenseExporterXlsxView(ExportXlsxMixin, DepenseImprimerView):
+    """Export Excel des dépenses (mêmes filtres que la liste) : montants et dates en valeurs brutes."""
+
+    nom_fichier = "depenses"
+    colonnes = (
+        ("Date", lambda d: d.date_depense), ("Libellé", "libelle"),
+        ("Catégorie", "get_categorie_display"), ("Mode", "get_mode_display"),
+        ("Montant TTC (FCFA)", lambda d: d.montant), ("dont TVA déductible (FCFA)", lambda d: d.montant_tva),
+        ("N° de pièce", "reference"), ("Origine", lambda d: "Automatique" if d.est_automatique else "Saisie"),
+    )
 
 
 class DepenseCreateView(RoleRequiredMixin, FormView):
@@ -1250,10 +1279,12 @@ de faire** (`saisie`, `validation`) — jamais le gabarit.
 
 #### `apps/finance/views.py`
 
-*465 lignes* — Trésorerie : journal des mouvements, soldes par compte, mouvements manuels.
+*499 lignes* — Trésorerie : journal des mouvements, soldes par compte, mouvements manuels.
 
 ```python
 """Trésorerie : journal des mouvements, soldes par compte, mouvements manuels."""
+
+from decimal import Decimal
 
 from django.contrib import messages
 from django.core.paginator import Paginator
@@ -1270,6 +1301,7 @@ from apps.billing.models import STATUTS_A_RECOUVRER, CompteTresorerie
 from apps.core.formats import nombre
 from apps.core.rapports import contexte_rapport
 from apps.core.views import PaginationTolerante
+from apps.core.xlsx import reponse_classeur
 
 from . import demandes as demandes_services
 from . import permissions, services
@@ -1291,6 +1323,7 @@ from .models import (
     LigneReleve,
     MouvementManuel,
     OrdreDecaissement,
+    SensMouvement,
     StatutDemandeDepense,
     StatutOrdreDecaissement,
 )
@@ -1371,6 +1404,36 @@ class TresorerieImprimerView(RoleRequiredMixin, TemplateView):
             tronque=tronque,
         )
         return contexte
+
+
+class TresorerieExporterXlsxView(RoleRequiredMixin, View):
+    """Export Excel du journal de trésorerie (règlements reçus, dépenses payées, mouvements manuels) : mêmes
+    filtres que l'écran, montants signés (entrées positives, sorties négatives) pour pouvoir les additionner."""
+
+    roles = permissions.CONSULTATION
+    limite = 10000
+
+    def get(self, request):
+        criteres = FiltreTresorerieForm(request.GET).criteres()
+        journal = services.mouvements(**criteres)
+        lignes = [
+            [
+                m["date"], m["libelle"], m["origine"].capitalize(), m["mode_libelle"], m["reference"],
+                m["montant"] if m["sens"] == SensMouvement.ENTREE else -m["montant"],
+            ]
+            for m in journal[: self.limite]
+        ]
+        aujourd_hui = timezone.localdate()
+        debut = criteres["date_debut"] or aujourd_hui.replace(day=1)
+        fin = criteres["date_fin"] or aujourd_hui
+        feuille = {
+            "titre": "Trésorerie",
+            "sous_titre": f"du {debut:%d/%m/%Y} au {fin:%d/%m/%Y}",
+            "entetes": ["Date", "Libellé", "Origine", "Mode", "Référence", "Montant (FCFA, entrée +, sortie -)"],
+            "lignes": lignes,
+            "pied": ["", "", "", "", "Total", sum((l[5] for l in lignes), Decimal("0"))],
+        }
+        return reponse_classeur("tresorerie", [feuille])
 
 
 class MouvementCreateView(RoleRequiredMixin, View):
@@ -1722,7 +1785,7 @@ class LigneReleveDepointerView(RoleRequiredMixin, View):
 
 #### `apps/billing/urls.py`
 
-*68 lignes*
+*70 lignes*
 
 ```python
 from django.urls import path
@@ -1734,6 +1797,7 @@ app_name = "billing"
 urlpatterns = [
     path("", views.FactureListView.as_view(), name="factures"),
     path("imprimer/", views.FactureImprimerView.as_view(), name="factures_imprimer"),
+    path("excel/", views.FactureExporterXlsxView.as_view(), name="factures_xlsx"),
     path("nouvelle/", views.FactureCreateView.as_view(), name="nouvelle"),
     path("<int:pk>/", views.FactureDetailView.as_view(), name="facture"),
     path("<int:pk>/imprimer/", views.FacturePrintView.as_view(), name="imprimer"),
@@ -1752,6 +1816,7 @@ urlpatterns = [
     ),
     path("depenses/", views.DepenseListView.as_view(), name="depenses"),
     path("depenses/imprimer/", views.DepenseImprimerView.as_view(), name="depenses_imprimer"),
+    path("depenses/excel/", views.DepenseExporterXlsxView.as_view(), name="depenses_xlsx"),
     path("depenses/nouvelle/", views.DepenseCreateView.as_view(), name="depense_nouvelle"),
     path("depenses/<int:pk>/mode/", views.DepenseModeView.as_view(), name="depense_mode"),
     path("devis/", views.ProformaListView.as_view(), name="proformas"),
@@ -1797,7 +1862,7 @@ urlpatterns = [
 
 #### `apps/finance/urls.py`
 
-*37 lignes*
+*38 lignes*
 
 ```python
 from django.urls import path
@@ -1809,6 +1874,7 @@ app_name = "finance"
 urlpatterns = [
     path("", views.TresorerieView.as_view(), name="tresorerie"),
     path("imprimer/", views.TresorerieImprimerView.as_view(), name="imprimer"),
+    path("excel/", views.TresorerieExporterXlsxView.as_view(), name="xlsx"),
     path(
         "versements/<int:pk>/confirmer/",
         views.VersementConfirmerView.as_view(),
@@ -1846,7 +1912,7 @@ urlpatterns = [
 ```diff
 --- config/urls.py (avant)
 +++ config/urls.py (après)
-@@ -24,4 +24,6 @@
+@@ -26,4 +26,6 @@
      path("carburant/", include("apps.fuel.urls")),
      path("stock/", include("apps.inventory.urls")),
 +    path("facturation/", include("apps.billing.urls")),
@@ -1863,7 +1929,7 @@ mkdir -p apps/billing/templates/billing apps/finance/templates/finance
 
 #### `apps/billing/templates/billing/facture_list.html`
 
-*85 lignes*
+*86 lignes*
 
 ```django
 {% extends "base.html" %}
@@ -1883,6 +1949,7 @@ mkdir -p apps/billing/templates/billing apps/finance/templates/finance
          class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
         <i class="fa-solid fa-print" aria-hidden="true"></i> Imprimer
       </a>
+      {% url 'billing:factures_xlsx' as url_xlsx %}{% include "components/_bouton_xlsx.html" with url=url_xlsx %}
       {% if peut_saisir %}
         <a href="{% url 'billing:nouvelle' %}"
            class="inline-flex items-center gap-2 rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">
@@ -2272,7 +2339,7 @@ mkdir -p apps/billing/templates/billing apps/finance/templates/finance
 
 #### `apps/billing/templates/billing/depense_list.html`
 
-*87 lignes*
+*88 lignes*
 
 ```django
 {% extends "base.html" %}
@@ -2292,6 +2359,7 @@ mkdir -p apps/billing/templates/billing apps/finance/templates/finance
          class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
         <i class="fa-solid fa-print" aria-hidden="true"></i> Imprimer
       </a>
+      {% url 'billing:depenses_xlsx' as url_xlsx %}{% include "components/_bouton_xlsx.html" with url=url_xlsx %}
       {% if peut_saisir %}
         <a href="{% url 'billing:depense_nouvelle' %}" class="inline-flex items-center gap-2 rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2"><i class="fa-solid fa-plus" aria-hidden="true"></i> Nouvelle dépense</a>
       {% endif %}
@@ -2408,7 +2476,7 @@ mkdir -p apps/billing/templates/billing apps/finance/templates/finance
 
 #### `apps/finance/templates/finance/tresorerie.html`
 
-*147 lignes*
+*148 lignes*
 
 ```django
 {% extends "base.html" %}
@@ -2428,6 +2496,7 @@ mkdir -p apps/billing/templates/billing apps/finance/templates/finance
          class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
         <i class="fa-solid fa-print" aria-hidden="true"></i> Imprimer
       </a>
+      {% url 'finance:xlsx' as url_xlsx %}{% include "components/_bouton_xlsx.html" with url=url_xlsx %}
       {% if peut_saisir %}
         <button type="button" @click="saisie = !saisie" :aria-expanded="saisie.toString()"
                 class="inline-flex items-center gap-2 rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">
@@ -3338,7 +3407,7 @@ mkdir -p apps/billing/templates/billing apps/finance/templates/finance
     </div>
   </dl>
   {% if etat.ecart != 0 %}
-    <p class="mt-2 text-xs text-slate-600">Un écart qui persiste après avoir pointé toutes les lignes concordantes signale une opération jamais saisie (frais bancaires, par exemple) : à corriger par une opération diverse.</p>
+    <p class="mt-2 text-xs text-slate-600">Un écart qui persiste après avoir pointé toutes les lignes concordantes signale une opération jamais saisie (frais bancaires, par exemple) : enregistrez-la comme <a href="{% url 'finance:tresorerie' %}" class="font-medium text-marque-700 underline">mouvement de trésorerie</a> sur le compte Banque (nature « Frais bancaires » pour des frais). Une simple opération diverse comptable ne ferait pas bouger cet écart.</p>
   {% endif %}
 
   {% if peut_saisir %}
@@ -4904,6 +4973,131 @@ def test_le_lien_imprimer_reprend_les_filtres_de_la_liste(client, role, url_list
         assert f"{cle}%3D{valeur}" in page or f"{cle}={valeur}" in page
 ```
 
+#### `apps/core/tests/test_medias.py`
+
+*118 lignes* — Fichiers téléversés : jamais en accès libre, servis selon le rôle (audit : pièces jointes financières).
+
+```python
+"""Fichiers téléversés : jamais en accès libre, servis selon le rôle (audit : pièces jointes financières)."""
+
+import pytest
+from django.urls import reverse
+
+from apps.accounts.models import Role
+from apps.accounts.tests.factories import UserFactory
+from apps.core.medias import MediaProtegeView
+
+pytestmark = pytest.mark.django_db
+
+
+@pytest.fixture
+def media(settings, tmp_path):
+    settings.MEDIA_ROOT = tmp_path
+    (tmp_path / "demandes_depense" / "2026" / "09").mkdir(parents=True)
+    (tmp_path / "demandes_depense" / "2026" / "09" / "devis.pdf").write_bytes(b"%PDF-devis")
+    (tmp_path / "demandes_depense" / "2026" / "09" / "page.html").write_text("<script>alert(1)</script>")
+    (tmp_path / "frais_mission" / "justificatifs").mkdir(parents=True)
+    (tmp_path / "frais_mission" / "justificatifs" / "preuve.png").write_bytes(b"\x89PNG")
+    (tmp_path / "secret.txt").write_text("hors préfixe")
+    return tmp_path
+
+
+def _url(chemin):
+    return reverse("media", args=[chemin])
+
+
+def test_un_visiteur_anonyme_est_renvoye_vers_la_connexion(client, media):
+    reponse = client.get(_url("demandes_depense/2026/09/devis.pdf"))
+
+    assert reponse.status_code == 302 and "/connexion/" in reponse["Location"]
+
+
+@pytest.mark.parametrize("role", [Role.ADMIN, Role.DIRECTION, Role.FINANCES, Role.PARCAUTO, Role.RH])
+def test_un_role_autorise_lit_la_piece_jointe_d_une_demande(client, media, role):
+    client.force_login(UserFactory(role=role))
+
+    reponse = client.get(_url("demandes_depense/2026/09/devis.pdf"))
+
+    assert reponse.status_code == 200
+    assert b"".join(reponse.streaming_content) == b"%PDF-devis"
+    assert reponse["Content-Type"] == "application/pdf"
+    assert reponse["Content-Disposition"].startswith("inline")
+    assert reponse["X-Content-Type-Options"] == "nosniff"
+    assert "no-store" in reponse["Cache-Control"]
+
+
+@pytest.mark.parametrize("role", [Role.CHAUFFEUR, Role.CHARGE_CLIENTELE])
+def test_un_role_non_autorise_ne_voit_pas_la_piece_jointe(client, media, role):
+    client.force_login(UserFactory(role=role))
+
+    assert client.get(_url("demandes_depense/2026/09/devis.pdf")).status_code == 404
+
+
+def test_les_justificatifs_de_frais_suivent_les_droits_des_frais(client, media):
+    client.force_login(UserFactory(role=Role.FINANCES))
+    assert client.get(_url("frais_mission/justificatifs/preuve.png")).status_code == 200
+
+    client.force_login(UserFactory(role=Role.CHAUFFEUR))
+    assert client.get(_url("frais_mission/justificatifs/preuve.png")).status_code == 404
+
+
+def test_un_fichier_html_est_telecharge_jamais_affiche(client, media):
+    client.force_login(UserFactory(role=Role.ADMIN))
+
+    reponse = client.get(_url("demandes_depense/2026/09/page.html"))
+
+    assert reponse.status_code == 200
+    assert reponse["Content-Disposition"].startswith("attachment")
+
+
+def test_un_prefixe_non_declare_n_est_servi_a_personne(client, media):
+    client.force_login(UserFactory(role=Role.ADMIN))
+
+    assert client.get(_url("secret.txt")).status_code == 404
+
+
+def test_la_sortie_du_dossier_media_est_refusee(client, media):
+    client.force_login(UserFactory(role=Role.ADMIN))
+
+    assert client.get(_url("demandes_depense/../secret.txt")).status_code == 404
+    assert client.get(_url("demandes_depense/../../secret.txt")).status_code == 404
+
+
+def test_un_fichier_absent_donne_404(client, media):
+    client.force_login(UserFactory(role=Role.ADMIN))
+
+    assert client.get(_url("demandes_depense/2026/09/absent.pdf")).status_code == 404
+
+
+def test_en_production_django_delegue_l_envoi_a_nginx(client, media, settings):
+    settings.MEDIA_ACCEL_REDIRECT = True
+    client.force_login(UserFactory(role=Role.ADMIN))
+
+    reponse = client.get(_url("demandes_depense/2026/09/devis.pdf"))
+
+    assert reponse.status_code == 200
+    assert reponse["X-Accel-Redirect"] == "/medias-internes/demandes_depense/2026/09/devis.pdf"
+    assert reponse.content == b""
+
+
+def test_en_production_un_role_non_autorise_n_obtient_pas_de_redirection(client, media, settings):
+    settings.MEDIA_ACCEL_REDIRECT = True
+    client.force_login(UserFactory(role=Role.CHAUFFEUR))
+
+    reponse = client.get(_url("demandes_depense/2026/09/devis.pdf"))
+
+    assert reponse.status_code == 404 and "X-Accel-Redirect" not in reponse
+
+
+def test_les_liens_des_champs_fichier_passent_par_la_vue_protegee(settings):
+    from apps.finance.models import DemandeDepense
+
+    champ = DemandeDepense._meta.get_field("piece_jointe")
+
+    assert champ.storage.url("demandes_depense/2026/09/devis.pdf") == "/medias/demandes_depense/2026/09/devis.pdf"
+    assert MediaProtegeView.http_method_names == ["get"]
+```
+
 #### `apps/finance/tests/test_demandes_views.py`
 
 *155 lignes* — Écrans des dépenses du parc auto pré-approuvées (R2) : accès, soumission, décision, exécution.
@@ -5068,7 +5262,7 @@ def test_le_parc_auto_ne_voit_pas_l_ecran_des_enveloppes(client):
 
 #### `apps/finance/tests/test_depenses_parc_auto.py`
 
-*340 lignes* — Les dépenses du parc auto (plein, achat de pièces, main-d'œuvre d'OR) sont comptabilisées toutes seules :
+*360 lignes* — Les dépenses du parc auto (plein, achat de pièces, main-d'œuvre d'OR) sont comptabilisées toutes seules :
 
 ```python
 """Les dépenses du parc auto (plein, achat de pièces, main-d'œuvre d'OR) sont comptabilisées toutes seules :
@@ -5077,7 +5271,10 @@ page Dépenses, trésorerie et charges donnent le même total."""
 from datetime import date
 from decimal import Decimal
 
+import contextlib
+
 import pytest
+from django.db import connection, models
 from django.urls import reverse
 from django.utils import timezone
 
@@ -5366,6 +5563,22 @@ def test_la_reprise_de_l_existant_cree_les_depenses_manquantes_une_seule_fois():
     assert set(Depense.objects.values_list("mode", flat=True)) == {ModePaiement.ESPECES}
 
 
+@contextlib.contextmanager
+def _journal_de_stock_modifiable():
+    """Le journal des mouvements de stock est append-only, y compris en base PostgreSQL (trigger) : ce test
+    antidate des mouvements, il suspend donc les triggers le temps de l'opération (sans effet sous SQLite)."""
+    if connection.vendor != "postgresql":
+        yield
+        return
+    with connection.cursor() as curseur:
+        curseur.execute("SET session_replication_role = replica")  # suspend les triggers (superuser de test)
+    try:
+        yield
+    finally:
+        with connection.cursor() as curseur:
+            curseur.execute("SET session_replication_role = DEFAULT")
+
+
 def test_depuis_ignore_ce_qui_precede_un_solde_d_ouverture():
     """Un solde d'ouverture saisi au 01/09/2026 comprend déjà les mouvements antérieurs : ne pas les reprendre."""
     from apps.garage.models import OrdreReparation
@@ -5373,7 +5586,8 @@ def test_depuis_ignore_ce_qui_precede_un_solde_d_ouverture():
 
     _etat_avant_comptabilisation()
     ancien = timezone.now().replace(year=2026, month=8, day=15)
-    MouvementStock.objects.update(date_mouvement=ancien)
+    with _journal_de_stock_modifiable():
+        models.QuerySet(MouvementStock).update(date_mouvement=ancien)  # le manager refuse update()
     OrdreReparation.objects.update(date_cloture=ancien)
 
     compteurs = services.reprendre_depenses_parc_auto(depuis=date(2026, 9, 1))
@@ -6261,6 +6475,288 @@ def test_le_compte_mobile_money_s_affiche_avec_son_vrai_nom(client):
     assert "Mobilemoney" not in texte and "Mobile Money" in texte
 ```
 
+#### `apps/inventory/tests/test_views.py`
+
+*275 lignes* — Bloc « Pièces utilisées » de la fiche d'un OR et sortie de pièces par l'écran.
+
+```python
+"""Bloc « Pièces utilisées » de la fiche d'un OR et sortie de pièces par l'écran."""
+
+from decimal import Decimal
+
+import pytest
+from django.test import Client
+from django.urls import reverse
+
+from apps.accounts.models import Role
+from apps.accounts.tests.factories import UserFactory
+from apps.garage import services as garage_services
+from apps.garage.models import LieuReparation, TypeOr
+from apps.inventory import services
+from apps.inventory.models import MouvementStock, TypeMouvement
+
+from .factories import ArticleFactory
+
+pytestmark = pytest.mark.django_db
+
+
+def _connecte(client, role):
+    utilisateur = UserFactory(role=role)
+    client.force_login(utilisateur)
+    return utilisateur
+
+
+def _messages(reponse):
+    return [str(m) for m in reponse.context["messages"]]
+
+
+def _ordre():
+    from apps.fleet.tests.factories import VehiculeFactory
+
+    return garage_services.ouvrir_or(
+        VehiculeFactory(), type_or=TypeOr.CURATIF, lieu=LieuReparation.INTERNE, motif="Freins"
+    )
+
+
+def _article(quantite=10, prix="1000", **surcharges):
+    article = ArticleFactory(**surcharges)
+    services.enregistrer_entree(article, quantite=quantite, prix_unitaire=Decimal(prix))
+    return article
+
+
+def _detail(client, ordre):
+    return client.get(reverse("garage:detail", args=[ordre.pk]))
+
+
+# --- lecture ---
+
+
+def test_articles_en_stock_exclut_les_articles_epuises_et_est_trie():
+    b, a = _article(reference="B-1"), _article(reference="A-1")
+    ArticleFactory(reference="Z-0")  # jamais approvisionné
+
+    assert list(services.articles_en_stock()) == [a, b]
+
+
+def test_sorties_de_l_or_ne_liste_que_les_sorties_de_cet_or():
+    article = _article()
+    ordre, autre = _ordre(), _ordre()
+    services.sortir_pour_or(article, quantite=2, ordre=ordre)
+    services.sortir_pour_or(article, quantite=1, ordre=autre)
+    services.ajuster_stock(article, variation=-1, motif="Casse")
+
+    sorties = list(services.sorties_de_l_or(ordre))
+
+    assert len(sorties) == 1 and sorties[0].variation == -2
+
+
+# --- bloc dans la fiche de l'OR ---
+
+
+def test_la_fiche_de_l_or_affiche_les_pieces_et_le_cout_total(client):
+    _connecte(client, Role.PARCAUTO)
+    article = _article(10, "1000", reference="PLQ-01", designation="Plaquettes de frein")
+    ordre = _ordre()
+    services.sortir_pour_or(article, quantite=3, ordre=ordre)
+    garage_services.cloturer_or(ordre, cout_main_oeuvre=Decimal("45000"))
+
+    reponse = _detail(client, ordre)
+    # Les espaces insécables des séparateurs de milliers sont normalisées.
+    contenu = reponse.content.decode().replace(" ", " ").replace(" ", " ")
+
+    assert "Pièces utilisées" in contenu
+    assert "PLQ-01" in contenu and "Plaquettes de frein" in contenu
+    assert "3 000" in contenu  # 3 x 1000 : montant de la ligne et total des pièces
+    assert "45 000" in contenu  # main-d'œuvre
+    assert "48 000" in contenu  # coût total
+    bloc = reponse.context["sections"][0]["contexte"]
+    assert bloc["cout_pieces"] == Decimal("3000.00")
+    assert bloc["cout_total"] == Decimal("48000.00")
+    assert bloc["lignes"][0]["quantite"] == 3
+    assert bloc["lignes"][0]["montant"] == Decimal("3000.00")
+
+
+def test_la_fiche_sans_sortie_le_dit(client):
+    _connecte(client, Role.PARCAUTO)
+    ordre = _ordre()
+
+    assert "Aucune pièce sortie du stock" in _detail(client, ordre).content.decode()
+
+
+def test_le_formulaire_de_sortie_est_propose_au_parc_auto_et_a_la_direction_sur_un_or_ouvert(client):
+    """Retour réunion : la DIRECTION a désormais la même largeur que l'ADMIN (MODIFICATION)."""
+    ordre = _ordre()
+    _article()
+    _connecte(client, Role.PARCAUTO)
+    url = reverse("inventory:sortie_or", args=[ordre.pk])
+    assert url in _detail(client, ordre).content.decode()
+
+    direction = Client()
+    _connecte(direction, Role.DIRECTION)
+    assert url in _detail(direction, ordre).content.decode()
+
+    garage_services.cloturer_or(ordre)
+    assert url not in _detail(client, ordre).content.decode()
+
+
+def test_le_choix_des_pieces_ne_propose_que_les_articles_en_stock(client):
+    _connecte(client, Role.PARCAUTO)
+    _article(reference="EN-STOCK")
+    ArticleFactory(reference="EPUISE")
+    ordre = _ordre()
+
+    contenu = _detail(client, ordre).content.decode()
+
+    assert "EN-STOCK" in contenu and "EPUISE" not in contenu
+
+
+# --- sortie de pièces ---
+
+
+def test_sortir_des_pieces_par_l_ecran(client):
+    utilisateur = _connecte(client, Role.PARCAUTO)
+    article = _article(10, "1000")
+    ordre = _ordre()
+
+    reponse = client.post(
+        reverse("inventory:sortie_or", args=[ordre.pk]),
+        {"article": article.pk, "quantite": "4"},
+        follow=True,
+    )
+
+    article.refresh_from_db()
+    mouvement = MouvementStock.objects.get(type_mouvement=TypeMouvement.SORTIE)
+    assert article.quantite == 6
+    assert (mouvement.variation, mouvement.ordre_reparation, mouvement.acteur) == (-4, ordre, utilisateur)
+    assert reponse.redirect_chain[-1][0] == reverse("garage:detail", args=[ordre.pk])
+    assert any(article.reference in m for m in _messages(reponse))
+
+
+def test_sortir_plus_que_le_stock_est_refuse_avec_un_message(client):
+    _connecte(client, Role.PARCAUTO)
+    article = _article(3)
+    ordre = _ordre()
+
+    reponse = client.post(
+        reverse("inventory:sortie_or", args=[ordre.pk]),
+        {"article": article.pk, "quantite": "4"},
+        follow=True,
+    )
+
+    article.refresh_from_db()
+    assert article.quantite == 3
+    assert any("Stock insuffisant" in m for m in _messages(reponse))
+
+
+def test_sortir_sur_un_or_cloture_est_refuse(client):
+    _connecte(client, Role.PARCAUTO)
+    article = _article()
+    ordre = _ordre()
+    garage_services.cloturer_or(ordre)
+
+    reponse = client.post(
+        reverse("inventory:sortie_or", args=[ordre.pk]),
+        {"article": article.pk, "quantite": "1"},
+        follow=True,
+    )
+
+    article.refresh_from_db()
+    assert article.quantite == 10
+    assert any("clôturé" in m for m in _messages(reponse))
+
+
+@pytest.mark.parametrize("donnees", [{"quantite": "0"}, {"quantite": "-2"}, {"quantite": "x"}, {"article": ""}])
+def test_une_sortie_invalide_est_refusee_par_le_formulaire(client, donnees):
+    _connecte(client, Role.PARCAUTO)
+    article = _article()
+    ordre = _ordre()
+    envoi = {"article": article.pk, "quantite": "1"}
+    envoi.update(donnees)
+
+    client.post(reverse("inventory:sortie_or", args=[ordre.pk]), envoi)
+
+    article.refresh_from_db()
+    assert article.quantite == 10
+
+
+def test_un_article_epuise_ne_peut_pas_etre_sorti(client):
+    _connecte(client, Role.PARCAUTO)
+    epuise = ArticleFactory()
+    ordre = _ordre()
+
+    client.post(reverse("inventory:sortie_or", args=[ordre.pk]), {"article": epuise.pk, "quantite": "1"})
+
+    assert MouvementStock.objects.count() == 0
+
+
+@pytest.mark.parametrize("role", [Role.RH, Role.FINANCES, Role.CHARGE_CLIENTELE, Role.CHAUFFEUR])
+def test_la_sortie_est_interdite_hors_parc_auto_et_direction(client, role):
+    _connecte(client, role)
+    article = _article()
+    ordre = _ordre()
+
+    reponse = client.post(reverse("inventory:sortie_or", args=[ordre.pk]), {"article": article.pk, "quantite": "1"})
+
+    article.refresh_from_db()
+    assert reponse.status_code == 403 and article.quantite == 10
+
+
+def test_la_sortie_refuse_le_get_et_un_or_inconnu(client):
+    _connecte(client, Role.PARCAUTO)
+    ordre = _ordre()
+
+    assert client.get(reverse("inventory:sortie_or", args=[ordre.pk])).status_code == 405
+    assert client.post(reverse("inventory:sortie_or", args=[999999]), {}).status_code == 404
+
+
+def test_la_sortie_est_protegee_par_csrf():
+    client = Client(enforce_csrf_checks=True)
+    client.force_login(UserFactory(role=Role.PARCAUTO))
+    article = _article()
+    ordre = _ordre()
+
+    reponse = client.post(reverse("inventory:sortie_or", args=[ordre.pk]), {"article": article.pk, "quantite": "1"})
+
+    article.refresh_from_db()
+    assert reponse.status_code == 403 and article.quantite == 10
+
+
+# --- gardes des blocs (défense en profondeur) ---
+
+
+@pytest.mark.parametrize("role", [Role.RH, Role.FINANCES, Role.CHARGE_CLIENTELE, Role.CHAUFFEUR])
+def test_le_bloc_pieces_n_est_jamais_fourni_aux_roles_sans_acces(role):
+    from types import SimpleNamespace
+
+    from apps.inventory import sections
+
+    assert sections.section_pieces(_ordre(), SimpleNamespace(role_effectif=role)) is None
+
+
+def test_une_entree_bloquee_par_l_enveloppe_affiche_un_message_au_lieu_d_une_erreur_500(client):
+    """Audit M8-07 : la demande de dépassement en attente bloque l'achat suivant (BillingError)."""
+    from django.utils import timezone
+
+    from apps.billing.models import CategorieDepense
+    from apps.finance import demandes
+
+    direction = UserFactory(role=Role.DIRECTION)
+    aujourd_hui = timezone.localdate()
+    demandes.definir_enveloppe(
+        direction, categorie=CategorieDepense.PIECES, annee=aujourd_hui.year, mois=aujourd_hui.month,
+        montant_plafond=Decimal("1000"),
+    )
+    article = _article(quantite=10, prix="1000")  # 10 000 FCFA > 1 000 : ouvre la demande
+    _connecte(client, Role.PARCAUTO)
+
+    reponse = client.post(
+        reverse("inventory:entree", args=[article.pk]), {"quantite": "5", "prix_unitaire": "1000"}, follow=True
+    )
+
+    assert reponse.status_code == 200
+    assert any("dépassée" in m for m in _messages(reponse))
+```
+
 #### `apps/notifications/tests/test_facturation.py`
 
 *147 lignes* — Notifications de facturation : soumission, validation, refus, factures échues.
@@ -6583,10 +7079,10 @@ python manage.py check
 ```
 
 ```bash
-python -m pytest apps/accounts/tests/test_web.py apps/billing/tests/test_proforma_views.py apps/billing/tests/test_views.py apps/core/tests/test_impression_listes.py apps/finance/tests/test_demandes_views.py apps/finance/tests/test_depenses_parc_auto.py apps/finance/tests/test_impression.py apps/finance/tests/test_rapprochement_views.py apps/finance/tests/test_versements.py apps/finance/tests/test_views.py apps/notifications/tests/test_facturation.py apps/notifications/tests/test_receivers_demandes.py apps/notifications/tests/test_receivers_proforma.py -q --no-cov
+python -m pytest apps/accounts/tests/test_web.py apps/billing/tests/test_proforma_views.py apps/billing/tests/test_views.py apps/core/tests/test_impression_listes.py apps/core/tests/test_medias.py apps/finance/tests/test_demandes_views.py apps/finance/tests/test_depenses_parc_auto.py apps/finance/tests/test_impression.py apps/finance/tests/test_rapprochement_views.py apps/finance/tests/test_versements.py apps/finance/tests/test_views.py apps/inventory/tests/test_views.py apps/notifications/tests/test_facturation.py apps/notifications/tests/test_receivers_demandes.py apps/notifications/tests/test_receivers_proforma.py -q --no-cov
 ```
 
-**Résultat attendu :** `235 passed, 5 failed` (pour les 13 fichier(s) de tests présentés dans ce chapitre).
+**Résultat attendu :** `276 passed, 5 failed` (pour les 15 fichier(s) de tests présentés dans ce chapitre).
 
 Des tests échouent à ce stade, **c'est normal** : ils vérifient des écrans qui n'existent pas encore (par exemple la page d'accueil). Ils passeront au chapitre indiqué :
 

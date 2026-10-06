@@ -1,6 +1,6 @@
 # Chapitre 15 — La comptabilité en partie double : l'app accounting
 
-> 21 fichier(s) dans ce chapitre, 2610 lignes de code.
+> 26 fichier(s) dans ce chapitre, 4020 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -40,6 +40,17 @@ place.
 > données** que vous écrivez à la main dans ce chapitre (Étape 7) — la seule migration de tout ce
 > tutoriel à ne pas être générée par `makemigrations` : les autres, purement schéma, sont reproductibles
 > depuis les modèles et ne sont donc jamais recopiées (voir la couverture en fin de tutoriel).
+
+**Clôture d'un exercice et bilan.** `cloturer_exercice` pose une **écriture de clôture** (`ecriture_de_cloture`, journal OD, datée du
+31/12) : chaque compte de charge ou de produit est soldé et le résultat est **viré au compte 120000** (crédit si bénéfice, débit si
+perte). Sans elle, le résultat de l'année N disparaissait du bilan de l'année N+1 (cumulé depuis l'origine), qui ne s'équilibrait
+plus. Le compte de résultat et la balance **ignorent** cette écriture (un exercice clôturé garde son activité visible) ; le bilan
+l'inclut. La commande `ecrire_clotures_historiques` reprend les exercices clôturés avant ce lot.
+
+**Corriger sans effacer.** Une écriture validée ne se modifie jamais : `contre_passer` pose l'écriture inverse (même journal, même
+pièce, datée du jour). Annuler un règlement ou un mouvement manuel contre-passe automatiquement son écriture ; la commande
+`contre_passer_historique_annulations` reprend l'existant. Le grand livre est en **lecture seule** dans l'administration Django, et
+un sens autre que débit/crédit est refusé par `passer_ecriture`.
 
 ## Prérequis
 
@@ -333,10 +344,13 @@ Repérez les `save()`/`delete()` redéfinis : c'est là que vit le verrouillage.
 
 #### `apps/accounting/exceptions.py`
 
-*31 lignes*
+*39 lignes*
 
 ```python
-class AccountingError(Exception):
+from apps.core.exceptions import ErreurMetier
+
+
+class AccountingError(ErreurMetier):
     """Erreur métier de la comptabilité."""
 
 
@@ -365,13 +379,18 @@ class ExerciceCloture(AccountingError):
     datée, ni y être clôturé une seconde fois."""
 
 
+class ContrePassationImpossible(AccountingError):
+    """Cette écriture ne peut pas être contre-passée (brouillon, ou déjà une contre-passation)."""
+
+
 class ClotureImpossible(AccountingError):
-    """Des brouillons non résolus (saisie manuelle) empêchent de clôturer l'exercice."""
+    """L'exercice ne peut pas être clôturé : brouillons non résolus (saisie manuelle) ou année pas
+    encore terminée."""
 ```
 
 #### `apps/accounting/constants.py`
 
-*58 lignes* — Numéros de comptes utilisés par le code (ancrages internes, pas de saisie utilisateur).
+*59 lignes* — Numéros de comptes utilisés par le code (ancrages internes, pas de saisie utilisateur).
 
 ```python
 """Numéros de comptes utilisés par le code (ancrages internes, pas de saisie utilisateur).
@@ -390,6 +409,7 @@ COMPTE_CLIENTS = "411000"
 COMPTE_VENTES_TRANSPORT = "706100"
 COMPTE_TVA_COLLECTEE = "443300"
 COMPTE_TVA_DEDUCTIBLE = "445200"
+COMPTE_RESULTAT = "120000"  # résultat de l'exercice : reçoit le solde des comptes 6/7 à la clôture
 
 # billing.models.CategorieDepense -> Compte.numero — les 4 catégories automatiques
 # (billing.models.CATEGORIES_AUTOMATIQUES) et les 4 catégories de saisie manuelle sont toutes
@@ -481,7 +501,7 @@ dans `billing`.
 
 #### `apps/accounting/services.py`
 
-*635 lignes* — Moteur d'écritures comptables — conventions.md §2.
+*818 lignes* — Moteur d'écritures comptables — conventions.md §2.
 
 ```python
 """Moteur d'écritures comptables — conventions.md §2.
@@ -509,6 +529,7 @@ from apps.core.services import prochain_numero
 from .constants import (
     CATEGORIE_DEPENSE_VERS_COMPTE,
     COMPTE_CLIENTS,
+    COMPTE_RESULTAT,
     COMPTE_TRESORERIE_VERS_COMPTE,
     COMPTE_TRESORERIE_VERS_JOURNAL,
     COMPTE_TVA_COLLECTEE,
@@ -521,6 +542,7 @@ from .exceptions import (
     ActionComptableNonAutorisee,
     ClotureImpossible,
     CompteDejaExistant,
+    ContrePassationImpossible,
     CompteInconnu,
     EcritureNonEquilibree,
     EcritureVerrouillee,
@@ -622,12 +644,21 @@ def _exiger_exercice_ouvert(date_ecriture: date) -> None:
 def cloturer_exercice(exercice: ExerciceComptable, acteur) -> ExerciceComptable:
     """Clôture un exercice : verrouille toute nouvelle écriture datée dans sa période. Refusé s'il
     reste des brouillons (saisie manuelle non validée) dans la période — à valider ou abandonner
-    avant de clôturer, pour ne jamais clôturer une année à l'insu d'une saisie en attente.
+    avant de clôturer, pour ne jamais clôturer une année à l'insu d'une saisie en attente. Refusé aussi
+    tant que l'année n'est pas terminée : toute opération datée d'ici là (règlement, dépense, plein...)
+    serait alors refusée.
+    Pose l'**écriture de clôture** (:func:`ecriture_de_cloture`) : le résultat de l'exercice est
+    viré au compte 120000 pour que le bilan de l'exercice suivant l'y retrouve.
     Contrôle **strict** (``acteur.role``) : réservé à la DIRECTION, comme ``Facture.valider`` —
     jamais l'ADMIN ni un superutilisateur à sa place. Jamais rouvert ensuite."""
     _exiger_role(acteur, permissions.CLOTURE_EXERCICE, "clôturer un exercice", strict=True)
     if exercice.statut == StatutExercice.CLOTURE:
         raise ExerciceCloture(f"L'exercice {exercice.annee} est déjà clôturé.")
+    if timezone.localdate() <= exercice.date_fin:
+        raise ClotureImpossible(
+            f"L'exercice {exercice.annee} ne peut être clôturé qu'après le {exercice.date_fin:%d/%m/%Y} : "
+            "clôturé avant, il bloquerait toutes les opérations datées d'ici là (règlements, dépenses, pleins...)."
+        )
     brouillons = EcritureComptable.objects.filter(
         statut=StatutEcriture.BROUILLON,
         date_ecriture__gte=exercice.date_debut,
@@ -638,11 +669,71 @@ def cloturer_exercice(exercice: ExerciceComptable, acteur) -> ExerciceComptable:
             f"{brouillons} écriture(s) en brouillon reste(nt) dans cette période : "
             "validez-les ou abandonnez-les avant de clôturer."
         )
+    ecriture_de_cloture(exercice)
     exercice.statut = StatutExercice.CLOTURE
     exercice.cloture_par = acteur
     exercice.date_cloture = timezone.now()
     exercice.save(update_fields=["statut", "cloture_par", "date_cloture", "updated_at"])
     return exercice
+
+
+ORIGINE_CLOTURE = "CLOTURE"
+
+
+def _lignes_de_resultat(exercice: ExerciceComptable) -> QuerySet[LigneEcriture]:
+    """Lignes validées des comptes de charge/produit de la période, écriture de clôture exclue."""
+    return LigneEcriture.objects.filter(
+        ecriture__statut=StatutEcriture.VALIDEE,
+        ecriture__date_ecriture__gte=exercice.date_debut,
+        ecriture__date_ecriture__lte=exercice.date_fin,
+        compte__nature__in=[NatureCompte.CHARGE, NatureCompte.PRODUIT],
+    ).exclude(ecriture__origine=ORIGINE_CLOTURE)
+
+
+@transaction.atomic
+def ecriture_de_cloture(exercice: ExerciceComptable) -> EcritureComptable | None:
+    """Vire le résultat de l'exercice au compte 120000 : chaque compte de charge ou de produit est
+    soldé (sens inverse de son solde), la différence est portée au crédit (bénéfice) ou au débit
+    (perte) du 120000. Sans cela le résultat de l'année N disparaîtrait du bilan de l'année N+1
+    (cumulé depuis l'origine, il ne verrait que ses propres charges et produits).
+
+    Datée du dernier jour de l'exercice, journal des opérations diverses, validée d'office.
+    Idempotente (``origine`` = ``CLOTURE``, ``origine_id`` = exercice) ; ``None`` si l'exercice n'a
+    mouvementé aucun compte de charge ou de produit. Le compte de résultat et la balance l'ignorent
+    pour continuer d'afficher l'activité de l'année."""
+    lignes = []
+    total_debit = total_credit = ZERO
+    for compte in _agreger_par_compte(_lignes_de_resultat(exercice)):
+        solde = compte["total_debit"] - compte["total_credit"]
+        if solde == 0:
+            continue
+        sens = SensEcriture.CREDIT if solde > 0 else SensEcriture.DEBIT
+        lignes.append(LigneSaisie(compte=compte["compte__numero"], sens=sens, montant=abs(solde)))
+        if sens == SensEcriture.DEBIT:
+            total_debit += abs(solde)
+        else:
+            total_credit += abs(solde)
+    if not lignes:
+        return None
+    ecart = total_debit - total_credit  # > 0 : produits > charges, bénéfice
+    if ecart != 0:
+        lignes.append(
+            LigneSaisie(
+                compte=COMPTE_RESULTAT,
+                sens=SensEcriture.CREDIT if ecart > 0 else SensEcriture.DEBIT,
+                montant=abs(ecart),
+            )
+        )
+    return passer_ecriture(
+        journal=Journal.OPERATIONS_DIVERSES,
+        date_ecriture=exercice.date_fin,
+        libelle=f"Clôture de l'exercice {exercice.annee} — virement du résultat",
+        lignes=lignes,
+        origine=ORIGINE_CLOTURE,
+        origine_id=exercice.pk,
+        piece_reference=f"CLOTURE-{exercice.annee}",
+        ignorer_cloture=True,
+    )
 
 
 def _comptes_actifs(numeros: set[str]) -> dict[str, Compte]:
@@ -665,6 +756,7 @@ def passer_ecriture(
     origine: str = "",
     origine_id: int | None = None,
     piece_reference: str = "",
+    ignorer_cloture: bool = False,
 ) -> EcritureComptable:
     """Crée une écriture équilibrée (débit == crédit) et ses lignes.
 
@@ -678,13 +770,17 @@ def passer_ecriture(
         if existante is not None:
             return existante
 
-    _exiger_exercice_ouvert(date_ecriture)
+    if not ignorer_cloture:  # seule l'écriture de clôture elle-même s'écrit dans un exercice clôturé
+        _exiger_exercice_ouvert(date_ecriture)
 
     if len(lignes) < 2:
         raise EcritureNonEquilibree("Une écriture comptable a au moins 2 lignes.")
     for ligne in lignes:
         if ligne.montant <= 0:
             raise EcritureNonEquilibree("Chaque montant doit être strictement positif.")
+        if ligne.sens not in SensEcriture.values:
+            # Un sens inconnu serait stocké sans compter dans aucun des deux totaux : l'écriture paraîtrait équilibrée.
+            raise EcritureNonEquilibree(f"Sens inconnu « {ligne.sens} » : débit ou crédit attendu.")
 
     comptes = _comptes_actifs({ligne.compte for ligne in lignes})
 
@@ -886,6 +982,98 @@ def comptabiliser_un_mouvement_manuel(mouvement) -> EcritureComptable:
     )
 
 
+# --- contre-passation ---
+
+ORIGINE_CONTRE_PASSATION = "CONTRE_PASSATION"
+
+
+@transaction.atomic
+def contre_passer(
+    ecriture: EcritureComptable, *, date_ecriture: date | None = None, motif: str = ""
+) -> EcritureComptable:
+    """Annule une écriture **validée** par une écriture inverse (mêmes comptes, sens opposés, même
+    journal et même pièce), datée du jour par défaut : l'écriture d'origine reste intacte
+    (append-only) et le grand livre garde la trace des deux. Une écriture dans un exercice
+    déjà clôturé se corrige ainsi dans l'exercice ouvert.
+
+    Idempotente : une écriture n'est contre-passée qu'une fois (``origine`` = ``CONTRE_PASSATION``,
+    ``origine_id`` = identifiant de l'écriture d'origine). Refusée pour un brouillon (il
+    s'abandonne) et pour une contre-passation (pas de chaîne). Si un compte de l'écriture a été
+    désactivé depuis, ``passer_ecriture`` refuse : le réactiver d'abord."""
+    if ecriture.statut != StatutEcriture.VALIDEE:
+        raise ContrePassationImpossible(
+            "Seule une écriture validée se contre-passe : un brouillon s'abandonne."
+        )
+    if ecriture.origine == ORIGINE_CONTRE_PASSATION:
+        raise ContrePassationImpossible("Une contre-passation ne se contre-passe pas.")
+    if ecriture.origine == ORIGINE_CLOTURE:
+        raise ContrePassationImpossible(
+            "L'écriture de clôture ne se contre-passe pas : un exercice clôturé ne se rouvre jamais."
+        )
+    inverse = {SensEcriture.DEBIT: SensEcriture.CREDIT, SensEcriture.CREDIT: SensEcriture.DEBIT}
+    lignes = [
+        LigneSaisie(
+            compte=ligne.compte.numero,
+            sens=inverse[ligne.sens],
+            montant=ligne.montant,
+            libelle=ligne.libelle,
+            tiers_type=ligne.tiers_type,
+            tiers_id=ligne.tiers_id,
+        )
+        for ligne in ecriture.lignes.select_related("compte")
+    ]
+    libelle = f"Contre-passation {ecriture.numero} — {ecriture.libelle}"
+    if motif.strip():
+        libelle = f"{libelle} ({motif.strip()})"
+    return passer_ecriture(
+        journal=ecriture.journal,
+        date_ecriture=date_ecriture or timezone.localdate(),
+        libelle=libelle[:255],
+        lignes=lignes,
+        origine=ORIGINE_CONTRE_PASSATION,
+        origine_id=ecriture.pk,
+        piece_reference=ecriture.piece_reference,
+    )
+
+
+def contre_passation_de(ecriture: EcritureComptable) -> EcritureComptable | None:
+    """L'écriture qui contre-passe celle-ci, s'il y en a une."""
+    return EcritureComptable.objects.filter(
+        origine=ORIGINE_CONTRE_PASSATION, origine_id=ecriture.pk
+    ).first()
+
+
+@transaction.atomic
+def contre_passer_ecriture_manuelle(ecriture: EcritureComptable, acteur, *, motif: str) -> EcritureComptable:
+    """Corrige une opération diverse **validée** saisie à la main : écriture inverse datée du jour, motif
+    obligatoire. Réservé à la DIRECTION (contrôle strict, comme la validation d'une écriture manuelle : défaire
+    une écriture engage autant que la poser). Les écritures automatiques (facture, règlement, dépense...) se
+    corrigent à la source — annulation du règlement, du mouvement — et la clôture ne se défait pas."""
+    _exiger_role(acteur, permissions.VALIDATION_OD, "contre-passer une écriture", strict=True)
+    if ecriture.origine:
+        raise ContrePassationImpossible(
+            "Seule une opération diverse saisie à la main se contre-passe ici : une écriture automatique se "
+            "corrige à la source (annulation du règlement, du mouvement…)."
+        )
+    if not motif.strip():
+        raise ContrePassationImpossible("Le motif de la contre-passation est obligatoire.")
+    if contre_passation_de(ecriture) is not None:
+        raise ContrePassationImpossible(f"L'écriture {ecriture.numero} est déjà contre-passée.")
+    return contre_passer(ecriture, motif=motif)
+
+
+def contre_passer_origine(
+    origine: str, origine_id: int, *, date_ecriture: date | None = None, motif: str = ""
+) -> EcritureComptable | None:
+    """Contre-passe l'écriture générée par un événement source (règlement, mouvement manuel...) quand
+    celui-ci est annulé. Ne fait rien (``None``) si cet événement n'a jamais été comptabilisé (saisi
+    avant la mise en service de la comptabilité) : il n'y a rien à annuler."""
+    ecriture = EcritureComptable.objects.filter(origine=origine, origine_id=origine_id).first()
+    if ecriture is None:
+        return None
+    return contre_passer(ecriture, date_ecriture=date_ecriture, motif=motif)
+
+
 # --- saisie manuelle (opérations diverses) ---
 
 
@@ -1007,12 +1195,18 @@ def _agreger_par_compte(lignes: QuerySet[LigneEcriture]) -> list[dict]:
     )
 
 
-def balance(*, debut: date | None = None, fin: date | None = None) -> list[dict]:
+def balance(
+    *, debut: date | None = None, fin: date | None = None, avec_cloture: bool = False
+) -> list[dict]:
     """Balance générale : total débit/crédit et solde de chaque compte mouvementé sur la période
     (tous comptes confondus, toutes dates si ``debut``/``fin`` omis). Seules les écritures
     VALIDEE comptent — un brouillon d'opération diverse ne doit jamais fausser la balance
-    officielle avant l'approbation de la DIRECTION."""
+    officielle avant l'approbation de la DIRECTION. Les écritures de clôture sont écartées par
+    défaut (balance avant clôture : les charges et produits d'un exercice clôturé restent
+    lisibles) ; elles sont équilibrées, le total débit = total crédit tient dans les deux cas."""
     lignes = LigneEcriture.objects.filter(ecriture__statut=StatutEcriture.VALIDEE)
+    if not avec_cloture:
+        lignes = lignes.exclude(ecriture__origine=ORIGINE_CLOTURE)
     if debut is not None:
         lignes = lignes.filter(ecriture__date_ecriture__gte=debut)
     if fin is not None:
@@ -1056,17 +1250,12 @@ def declaration_tva(*, debut: date, fin: date) -> dict:
 
 
 def compte_de_resultat(exercice: ExerciceComptable) -> dict:
-    """Produits moins charges de l'exercice = résultat net (bénéfice ou perte). Calculé à la
-    demande à partir des lignes de la période (rapport de situation) : aucune écriture de
-    clôture n'existe encore pour transférer ce résultat dans le bilan de l'exercice suivant —
-    voir « Limite connue », avenant-comptabilite-syscohada.md § P6. Seules les écritures VALIDEE
-    comptent, jamais un brouillon d'opération diverse non encore approuvé par la DIRECTION."""
-    lignes = LigneEcriture.objects.filter(
-        ecriture__statut=StatutEcriture.VALIDEE,
-        ecriture__date_ecriture__gte=exercice.date_debut,
-        ecriture__date_ecriture__lte=exercice.date_fin,
-        compte__nature__in=[NatureCompte.CHARGE, NatureCompte.PRODUIT],
-    )
+    """Produits moins charges de l'exercice = résultat net (bénéfice ou perte), calculé à la demande
+    sur les lignes de la période. L'écriture de clôture (:func:`ecriture_de_cloture`) est ignorée :
+    elle solde ces comptes pour le bilan, mais le compte de résultat d'un exercice clôturé doit
+    continuer d'afficher son activité. Seules les écritures VALIDEE comptent, jamais un brouillon
+    d'opération diverse non encore approuvé par la DIRECTION."""
+    lignes = _lignes_de_resultat(exercice)
     charges, produits = [], []
     total_charges = total_produits = ZERO
     for ligne in _agreger_par_compte(lignes):
@@ -1089,11 +1278,13 @@ def compte_de_resultat(exercice: ExerciceComptable) -> dict:
 
 def bilan(exercice: ExerciceComptable) -> dict:
     """Actif et passif cumulés depuis l'origine jusqu'à la fin de l'exercice (un bilan est une
-    photo à une date, pas une période — contrairement au compte de résultat). Le résultat net de
-    l'exercice (voir :func:`compte_de_resultat`) est ajouté au passif pour équilibrer le bilan,
-    puisqu'il n'existe pas encore d'écriture de clôture qui l'impute au compte 120000. Seules les
-    écritures VALIDEE comptent, jamais un brouillon d'opération diverse non encore approuvé par
-    la DIRECTION."""
+    photo à une date, pas une période — contrairement au compte de résultat). Le résultat des
+    exercices clôturés est déjà au compte 120000 (:func:`ecriture_de_cloture`). Reste à ajouter au
+    passif le résultat **non encore viré** : celui de l'exercice en cours, et celui d'un exercice
+    antérieur qui ne serait pas encore clôturé. C'est la somme, depuis l'origine, des charges et
+    produits écriture de clôture comprise (elle annule le résultat qu'elle a viré) : le bilan
+    s'équilibre donc à tout moment, quel que soit le nombre d'exercices. Seules les écritures
+    VALIDEE comptent, jamais un brouillon d'opération diverse non encore approuvé par la DIRECTION."""
     lignes = LigneEcriture.objects.filter(
         ecriture__statut=StatutEcriture.VALIDEE,
         ecriture__date_ecriture__lte=exercice.date_fin,
@@ -1110,7 +1301,19 @@ def bilan(exercice: ExerciceComptable) -> dict:
             montant = ligne["total_credit"] - ligne["total_debit"]
             passif.append({**ligne, "montant": montant})
             total_passif += montant
-    resultat_net = compte_de_resultat(exercice)["resultat_net"]
+    resultat_net = sum(
+        (
+            ligne["total_credit"] - ligne["total_debit"]
+            for ligne in _agreger_par_compte(
+                LigneEcriture.objects.filter(
+                    ecriture__statut=StatutEcriture.VALIDEE,
+                    ecriture__date_ecriture__lte=exercice.date_fin,
+                    compte__nature__in=[NatureCompte.CHARGE, NatureCompte.PRODUIT],
+                )
+            )
+        ),
+        ZERO,
+    )
     return {
         "actif": actif,
         "passif": passif,
@@ -1149,7 +1352,7 @@ def bilan(exercice: ExerciceComptable) -> dict:
 
 #### `apps/accounting/receivers.py`
 
-*47 lignes* — Génération automatique des écritures comptables depuis les événements de facturation et de
+*58 lignes* — Génération automatique des écritures comptables depuis les événements de facturation et de
 
 ```python
 """Génération automatique des écritures comptables depuis les événements de facturation et de
@@ -1170,8 +1373,9 @@ from apps.billing.signals import (
     depense_mode_a_reclasser,
     facture_a_comptabiliser,
     reglement_a_comptabiliser,
+    reglement_annule,
 )
-from apps.finance.signals import mouvement_a_comptabiliser
+from apps.finance.signals import mouvement_a_comptabiliser, mouvement_annule
 
 from . import services
 
@@ -1199,6 +1403,16 @@ def reclasser_le_mode_d_une_depense(sender, depense, ancien_mode, **kwargs) -> N
 @receiver(mouvement_a_comptabiliser)
 def comptabiliser_un_mouvement(sender, mouvement, **kwargs) -> None:
     services.comptabiliser_un_mouvement_manuel(mouvement)
+
+
+@receiver(reglement_annule)
+def contre_passer_un_reglement_annule(sender, reglement, **kwargs) -> None:
+    services.contre_passer_origine("REGLEMENT", reglement.pk, motif=reglement.motif_annulation)
+
+
+@receiver(mouvement_annule)
+def contre_passer_un_mouvement_annule(sender, mouvement, **kwargs) -> None:
+    services.contre_passer_origine("MOUVEMENT", mouvement.pk, motif=mouvement.motif_annulation)
 ```
 
 `accounting` ne connaît de `billing` et `finance` que leurs **signaux** — jamais l'inverse. Comparez
@@ -1462,12 +1676,28 @@ qui a déjà été comptabilisé.
 
 #### `apps/accounting/admin.py`
 
-*45 lignes*
+*65 lignes*
 
 ```python
 from django.contrib import admin
 
 from .models import Compte, EcritureComptable, ExerciceComptable, LigneEcriture
+
+# Le grand livre est en lecture seule dans l'admin : une écriture ne se crée, ne se valide et ne se corrige que
+# par ``accounting.services`` (équilibre, numéro, rôle DIRECTION, exercice ouvert, contre-passation). Passer par
+# l'admin contournerait ces contrôles (audit ACC-01 : un brouillon pouvait être validé sans équilibre, ni
+# numéro, ni DIRECTION ; une ligne ajoutée à une écriture validée).
+
+
+class LectureSeuleAdmin(admin.ModelAdmin):
+    def has_add_permission(self, request, obj=None):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(Compte)
@@ -1476,11 +1706,19 @@ class CompteAdmin(admin.ModelAdmin):
     list_filter = ("nature", "actif")
     search_fields = ("numero", "libelle")
 
+    def get_readonly_fields(self, request, obj=None):
+        # Comme ``services.modifier_compte`` : le numéro et la nature ne changent plus une fois le compte créé,
+        # pour ne jamais reclasser silencieusement des écritures déjà posées.
+        return ("numero", "nature") if obj is not None else ()
+
 
 class LigneEcritureInline(admin.TabularInline):
     model = LigneEcriture
     extra = 0
     fields = ("compte", "sens", "montant", "libelle", "tiers_type", "tiers_id")
+
+    def has_add_permission(self, request, obj=None):
+        return False
 
     def has_change_permission(self, request, obj=None):
         return False
@@ -1490,7 +1728,7 @@ class LigneEcritureInline(admin.TabularInline):
 
 
 @admin.register(EcritureComptable)
-class EcritureComptableAdmin(admin.ModelAdmin):
+class EcritureComptableAdmin(LectureSeuleAdmin):
     list_display = ("numero", "journal", "date_ecriture", "libelle", "statut", "piece_reference")
     list_filter = ("journal", "statut")
     search_fields = ("numero", "libelle", "piece_reference")
@@ -1499,22 +1737,18 @@ class EcritureComptableAdmin(admin.ModelAdmin):
     def get_queryset(self, request):
         return EcritureComptable.objects.select_related("cree_par", "valide_par")
 
-    def has_delete_permission(self, request, obj=None):
-        return False
-
 
 @admin.register(ExerciceComptable)
-class ExerciceComptableAdmin(admin.ModelAdmin):
+class ExerciceComptableAdmin(LectureSeuleAdmin):
+    # La clôture passe par ``services.cloturer_exercice`` (DIRECTION, après la fin de l'année, sans brouillon,
+    # avec l'écriture de clôture) ; un exercice clôturé ne se rouvre jamais.
     list_display = ("annee", "date_debut", "date_fin", "statut", "cloture_par")
     list_filter = ("statut",)
-
-    def has_delete_permission(self, request, obj=None):
-        return False
 ```
 
 #### `apps/accounting/apps.py`
 
-*44 lignes*
+*49 lignes*
 
 ```python
 from django.apps import AppConfig
@@ -1534,7 +1768,12 @@ class AccountingConfig(AppConfig):
         from .models import Compte, EcritureComptable, ExerciceComptable, LigneEcriture
 
         audit_model(Compte, module="COMPTABILITE")
-        audit_model(EcritureComptable, module="COMPTABILITE")
+        audit_model(
+            EcritureComptable,
+            module="COMPTABILITE",
+            validation=("statut", ("VALIDEE",)),
+            auto_validation=("cree_par", ("valide_par",)),
+        )
         audit_model(LigneEcriture, module="COMPTABILITE")
         audit_model(ExerciceComptable, module="COMPTABILITE")
         enregistrer(
@@ -1635,7 +1874,7 @@ saisie manuelle (déjà couvertes par `services.py`) s'en serviront.
 
 #### `apps/accounting/README.md`
 
-*96 lignes* — accounting
+*117 lignes* — accounting
 
 ```markdown
 # accounting
@@ -1664,7 +1903,12 @@ par la DIRECTION, cycle calqué sur `Facture`).
 **Phase 5** : exercice comptable et clôture — un exercice (année civile) s'ouvre tout
 seul à la première écriture qui le concerne ; la DIRECTION peut le clôturer (contrôle strict),
 ce qui verrouille définitivement toute nouvelle écriture datée dans sa période. Refusé s'il reste
-des brouillons non résolus dans la période.
+des brouillons non résolus dans la période, et tant que l'année n'est pas terminée (clôturée avant, elle
+refuserait toutes les opérations datées d'ici là : règlements, dépenses, pleins...). La clôture pose
+l'**écriture de clôture** (`services.ecriture_de_cloture`, journal OD, datée du 31/12) : chaque compte de
+charge ou de produit est soldé et le résultat est viré au compte 120000 (crédit si bénéfice, débit si perte),
+pour que le bilan de l'exercice suivant le retrouve. Reprise des exercices clôturés avant ce lot :
+`manage.py ecrire_clotures_historiques [--dry-run]`.
 
 **Phase 6 (ce lot, dernière de la feuille de route)** : rapports en lecture seule — grand livre
 d'un compte avec solde cumulé, balance générale de tous les comptes mouvementés, bilan (cumulé
@@ -1675,8 +1919,15 @@ Entités : `Compte` (plan comptable, table de référence), `EcritureComptable` 
 par journal via `core.services.prochain_numero` — vide tant qu'elle est en `BROUILLON`),
 `LigneEcriture` (ligne débit/crédit, append-only une fois l'écriture validée, modifiable tant
 qu'elle est en brouillon), `ExerciceComptable` (année, période, statut `OUVERT`/`CLOTURE`).
-Une écriture validée ne se modifie ni ne se supprime : seule une contre-passation (non livrée) la
-corrige. Un exercice clôturé ne se rouvre jamais.
+Une écriture validée ne se modifie ni ne se supprime : seule une contre-passation la corrige
+(`services.contre_passer` : écriture inverse, même journal et même pièce, datée du jour — donc dans
+l'exercice ouvert même si l'original est dans un exercice clos ; idempotente ; refusée pour un brouillon
+et pour une contre-passation). Annuler un règlement (`billing.annuler_reglement`) ou un mouvement manuel
+(`finance.annuler_mouvement`) contre-passe automatiquement son écriture (signaux `reglement_annule` et
+`mouvement_annule`, `send()` brut : si la contre-passation est impossible — exercice du jour clos, compte
+désactivé — l'annulation est refusée avec son message) et défait le pointage bancaire éventuel. Reprise des
+annulations antérieures : `python manage.py contre_passer_historique_annulations [--dry-run]`. Un exercice
+clôturé ne se rouvre jamais.
 
 Service central : `services.passer_ecriture(...)` — garantit lui-même l'équilibre (débit ==
 crédit), l'idempotence par `(origine, origine_id)` et que l'exercice de la date n'est pas
@@ -1699,16 +1950,19 @@ verrouille la période (DIRECTION, strict), refusé s'il reste des brouillons da
 Rapports (Phase 6, lecture seule) : `services.grand_livre_avec_solde(compte, debut=, fin=)`
 (lignes d'un compte + solde cumulé), `services.balance(debut=, fin=)` (tous les comptes
 mouvementés, total débit/crédit et solde par compte), `services.compte_de_resultat(exercice)`
-(produits/charges strictement dans l'exercice), `services.bilan(exercice)` (actif/passif cumulés
-depuis l'origine jusqu'à la fin de l'exercice, résultat net ajouté au passif pour l'affichage —
-**aucune écriture de clôture ne l'impute réellement au compte 120000**, voir « Limite connue »
-dans `avenant-comptabilite-syscohada.md` § P6).
+(produits/charges strictement dans l'exercice, écriture de clôture ignorée), `services.bilan(exercice)`
+(actif/passif cumulés depuis l'origine jusqu'à la fin de l'exercice ; le résultat des exercices clôturés est
+au compte 120000, le résultat pas encore viré est ajouté au passif — le bilan s'équilibre à tout moment).
+`balance()` écarte les écritures de clôture par défaut (`avec_cloture=True` pour les inclure).
 
 Déclenchement (automatique) : signaux `billing.signals.facture_a_comptabiliser`,
 `reglement_a_comptabiliser`, `depense_a_comptabiliser`, `depense_mode_a_reclasser`, et
 `finance.signals.mouvement_a_comptabiliser` — tous émis en `send()` **brut** (pas
 `emettre()`/`send_robust`) : une écriture qui échoue à s'équilibrer (ou tombe dans un exercice
-clôturé) annule l'opération d'origine plutôt que de laisser un grand livre incomplet.
+clôturé) annule l'opération d'origine plutôt que de laisser un grand livre incomplet. Les erreurs
+comptables héritent de `core.ErreurMetier` : un écran qui ne les attrape pas affiche leur message (retour à
+la page d'origine, `core.middleware.ErreurMetierMiddleware`) et l'API répond 400 (403 pour un droit refusé),
+jamais une erreur 500.
 
 Reprise de l'historique (événements déjà enregistrés avant la mise en service de chaque lot) :
 `python manage.py comptabiliser_historique_factures`, `comptabiliser_historique_reglements`,
@@ -1734,6 +1988,142 @@ accessibles depuis le menu « Rapports comptables », chacun avec une version im
 **Plan comptable de départ** (`migrations/0002_plan_comptable_seed.py`) : liste de travail, à
 valider par un expert-comptable avant mise en production — aucun plan comptable existant côté
 cabinet externe n'a été fourni à ce stade.
+
+**Admin Django en lecture seule** pour les écritures et les exercices (aucune création, validation ou réouverture hors des
+services : équilibre, numéro, DIRECTION, exercice ouvert) ; numéro et nature d'un compte ne se modifient plus. `passer_ecriture`
+refuse un sens autre que débit/crédit. **Contre-passation d'une opération diverse validée** depuis son écran
+(`contre_passer_ecriture_manuelle`, DIRECTION en contrôle strict, motif obligatoire, une seule fois). **Export Excel** du grand
+livre, de la balance, du bilan, du compte de résultat et de la déclaration TVA (bouton « Excel » à côté de « Imprimer »).
+```
+
+#### `apps/accounting/management/commands/contre_passer_historique_annulations.py`
+
+*64 lignes* — Reprise, à la demande, des règlements et mouvements manuels **annulés avant** la mise en service de la
+
+```python
+"""Reprise, à la demande, des règlements et mouvements manuels **annulés avant** la mise en service de la
+contre-passation automatique (``accounting.receivers``) : leur écriture est restée au grand livre alors
+que la trésorerie ne les compte plus. Chaque annulation reçoit son écriture inverse, datée du jour de
+l'annulation (jamais d'un exercice clôturé : ceux-là sont signalés, à traiter à la main).
+
+Rejouable sans double contre-passation (une par écriture d'origine, comme le mécanisme normal).
+"""
+
+from django.core.management.base import BaseCommand
+from django.db import transaction
+from django.utils import timezone
+
+from apps.accounting import services
+from apps.accounting.exceptions import AccountingError
+from apps.accounting.models import EcritureComptable
+from apps.billing.models import Reglement
+from apps.finance.models import MouvementManuel
+
+
+class Command(BaseCommand):
+    help = (
+        "Contre-passe les règlements et mouvements manuels déjà annulés avant ce lot "
+        "(voir --dry-run pour prévisualiser)."
+    )
+
+    def add_arguments(self, parser):
+        parser.add_argument(
+            "--dry-run", action="store_true", help="Affiche ce qui serait contre-passé sans rien écrire."
+        )
+
+    def handle(self, *args, dry_run=False, **options):
+        faites = deja = sans_ecriture = impossibles = 0
+        sources = (("REGLEMENT", Reglement), ("MOUVEMENT", MouvementManuel))
+        with transaction.atomic():
+            for origine, modele in sources:
+                for annule in modele.all_objects.filter(is_deleted=True):
+                    if not EcritureComptable.objects.filter(origine=origine, origine_id=annule.pk).exists():
+                        sans_ecriture += 1
+                        continue
+                    if EcritureComptable.objects.filter(
+                        origine=services.ORIGINE_CONTRE_PASSATION,
+                        origine_id=EcritureComptable.objects.get(origine=origine, origine_id=annule.pk).pk,
+                    ).exists():
+                        deja += 1
+                        continue
+                    jour = timezone.localdate(annule.deleted_at) if annule.deleted_at else None
+                    try:
+                        with transaction.atomic():
+                            services.contre_passer_origine(
+                                origine, annule.pk, date_ecriture=jour, motif=annule.motif_annulation
+                            )
+                    except AccountingError as erreur:
+                        impossibles += 1
+                        self.stderr.write(f"{origine} #{annule.pk} non contre-passé : {erreur}")
+                    else:
+                        faites += 1
+            if dry_run:
+                transaction.set_rollback(True)
+
+        prefixe = "[Simulation, rien n'a été écrit] " if dry_run else ""
+        self.stdout.write(
+            f"{prefixe}{faites} annulation(s) contre-passée(s) ({deja} déjà faites, {sans_ecriture} jamais "
+            f"comptabilisées, {impossibles} impossible(s))."
+        )
+```
+
+#### `apps/accounting/management/commands/ecrire_clotures_historiques.py`
+
+*52 lignes* — Reprise, à la demande, des exercices **déjà clôturés avant** l'écriture de clôture : leur résultat n'a jamais
+
+```python
+"""Reprise, à la demande, des exercices **déjà clôturés avant** l'écriture de clôture : leur résultat n'a jamais
+été viré au compte 120000, et le bilan de l'exercice suivant ne le retrouve pas. Chaque exercice clôturé sans
+écriture de clôture reçoit la sienne, datée de son dernier jour (le seul cas où l'on écrit dans un exercice
+clôturé, pour la clôture elle-même).
+
+Rejouable sans doublon (une écriture de clôture par exercice).
+"""
+
+from django.core.management.base import BaseCommand
+from django.db import transaction
+
+from apps.accounting import services
+from apps.accounting.exceptions import AccountingError
+from apps.accounting.models import EcritureComptable, ExerciceComptable, StatutExercice
+
+
+class Command(BaseCommand):
+    help = "Pose l'écriture de clôture des exercices déjà clôturés (voir --dry-run pour prévisualiser)."
+
+    def add_arguments(self, parser):
+        parser.add_argument(
+            "--dry-run", action="store_true", help="Affiche ce qui serait écrit sans rien écrire."
+        )
+
+    def handle(self, *args, dry_run=False, **options):
+        faites = deja = sans_resultat = impossibles = 0
+        with transaction.atomic():
+            for exercice in ExerciceComptable.objects.filter(statut=StatutExercice.CLOTURE).order_by("annee"):
+                if EcritureComptable.objects.filter(
+                    origine=services.ORIGINE_CLOTURE, origine_id=exercice.pk
+                ).exists():
+                    deja += 1
+                    continue
+                try:
+                    with transaction.atomic():
+                        ecriture = services.ecriture_de_cloture(exercice)
+                except AccountingError as erreur:
+                    impossibles += 1
+                    self.stderr.write(f"Exercice {exercice.annee} sans écriture de clôture : {erreur}")
+                    continue
+                if ecriture is None:
+                    sans_resultat += 1
+                else:
+                    faites += 1
+            if dry_run:
+                transaction.set_rollback(True)
+
+        prefixe = "[Simulation, rien n'a été écrit] " if dry_run else ""
+        self.stdout.write(
+            f"{prefixe}{faites} écriture(s) de clôture posée(s) ({deja} déjà faites, {sans_resultat} exercice(s) "
+            f"sans charge ni produit, {impossibles} impossible(s))."
+        )
 ```
 
 #### `apps/accounting/tests/factories.py`
@@ -1755,6 +2145,562 @@ class CompteFactory(factory.django.DjangoModelFactory):
     numero = factory.Sequence(lambda n: f"9{n:05d}")
     libelle = factory.Sequence(lambda n: f"Compte de test {n}")
     nature = NatureCompte.CHARGE
+```
+
+#### `apps/accounting/tests/test_cloture_resultat.py`
+
+*224 lignes* — Écriture de clôture : le résultat d'un exercice est viré au compte 120000, le bilan du 2e exercice reste
+
+```python
+"""Écriture de clôture : le résultat d'un exercice est viré au compte 120000, le bilan du 2e exercice reste
+équilibré (audit : bilan déséquilibré dès le 2e exercice)."""
+
+from datetime import date
+from decimal import Decimal
+
+import pytest
+
+from apps.accounting import services
+from apps.accounting.exceptions import CompteInconnu, ContrePassationImpossible
+from apps.accounting.models import Compte, EcritureComptable, Journal, SensEcriture, StatutExercice
+from apps.accounting.services import LigneSaisie
+from apps.billing.tests.helpers import direction
+
+pytestmark = pytest.mark.django_db
+
+JOUR_2025 = date(2025, 6, 1)
+JOUR_2026 = date(2026, 6, 1)
+
+
+def _vente(jour, montant):
+    services.passer_ecriture(
+        journal=Journal.VENTES, date_ecriture=jour, libelle="Vente",
+        lignes=[
+            LigneSaisie(compte="411000", sens=SensEcriture.DEBIT, montant=Decimal(montant)),
+            LigneSaisie(compte="706100", sens=SensEcriture.CREDIT, montant=Decimal(montant)),
+        ],
+    )
+
+
+def _charge(jour, montant):
+    services.passer_ecriture(
+        journal=Journal.CAISSE, date_ecriture=jour, libelle="Carburant",
+        lignes=[
+            LigneSaisie(compte="605100", sens=SensEcriture.DEBIT, montant=Decimal(montant)),
+            LigneSaisie(compte="571000", sens=SensEcriture.CREDIT, montant=Decimal(montant)),
+        ],
+    )
+
+
+def _cloturer(jour):
+    exercice = services.exercice_pour(jour)
+    services.cloturer_exercice(exercice, direction())
+    exercice.refresh_from_db()
+    return exercice
+
+
+def _ecriture_de_cloture(exercice):
+    return EcritureComptable.objects.get(origine=services.ORIGINE_CLOTURE, origine_id=exercice.pk)
+
+
+def _lignes(ecriture):
+    return {(l.compte.numero, l.sens): l.montant for l in ecriture.lignes.select_related("compte")}
+
+
+def test_la_cloture_vire_un_benefice_au_credit_du_120000():
+    _vente(JOUR_2025, "1000")
+    _charge(JOUR_2025, "300")
+
+    exercice = _cloturer(JOUR_2025)
+
+    ecriture = _ecriture_de_cloture(exercice)
+    assert exercice.statut == StatutExercice.CLOTURE
+    assert ecriture.date_ecriture == date(2025, 12, 31)
+    assert ecriture.journal == Journal.OPERATIONS_DIVERSES
+    assert _lignes(ecriture) == {
+        ("706100", SensEcriture.DEBIT): Decimal("1000"),
+        ("605100", SensEcriture.CREDIT): Decimal("300"),
+        ("120000", SensEcriture.CREDIT): Decimal("700"),
+    }
+
+
+def test_la_cloture_vire_une_perte_au_debit_du_120000():
+    _vente(JOUR_2025, "200")
+    _charge(JOUR_2025, "500")
+
+    ecriture = _ecriture_de_cloture(_cloturer(JOUR_2025))
+
+    assert _lignes(ecriture)[("120000", SensEcriture.DEBIT)] == Decimal("300")
+
+
+def test_un_exercice_sans_charge_ni_produit_ne_pose_aucune_ecriture_de_cloture():
+    services.passer_ecriture(
+        journal=Journal.OPERATIONS_DIVERSES, date_ecriture=JOUR_2025, libelle="Apport",
+        lignes=[
+            LigneSaisie(compte="571000", sens=SensEcriture.DEBIT, montant=Decimal("900")),
+            LigneSaisie(compte="101000", sens=SensEcriture.CREDIT, montant=Decimal("900")),
+        ],
+    )
+
+    _cloturer(JOUR_2025)
+
+    assert not EcritureComptable.objects.filter(origine=services.ORIGINE_CLOTURE).exists()
+
+
+def test_le_bilan_du_2e_exercice_reste_equilibre():
+    """Le défaut d'origine : le résultat 2025 disparaissait du passif du bilan 2026."""
+    _vente(JOUR_2025, "1000")
+    _charge(JOUR_2025, "300")
+    _cloturer(JOUR_2025)
+    _vente(JOUR_2026, "400")
+    _charge(JOUR_2026, "100")
+
+    rapport = services.bilan(services.exercice_pour(JOUR_2026))
+
+    passif = {l["compte__numero"]: l["montant"] for l in rapport["passif"]}
+    assert passif["120000"] == Decimal("700")  # résultat 2025 reporté
+    assert rapport["resultat_net"] == Decimal("300")  # résultat 2026, pas encore viré
+    assert rapport["total_actif"] == rapport["total_passif_avec_resultat"] == Decimal("1000")
+
+
+def test_le_bilan_de_l_exercice_cloture_ne_compte_pas_deux_fois_son_resultat():
+    _vente(JOUR_2025, "1000")
+    _charge(JOUR_2025, "300")
+    exercice = _cloturer(JOUR_2025)
+
+    rapport = services.bilan(exercice)
+
+    assert rapport["resultat_net"] == Decimal("0")
+    assert rapport["total_actif"] == rapport["total_passif_avec_resultat"] == Decimal("700")
+
+
+def test_le_bilan_s_equilibre_aussi_sans_cloture_des_exercices_precedents():
+    _vente(JOUR_2025, "1000")
+    _vente(JOUR_2026, "400")  # 2025 jamais clôturé
+
+    rapport = services.bilan(services.exercice_pour(JOUR_2026))
+
+    assert rapport["total_actif"] == rapport["total_passif_avec_resultat"] == Decimal("1400")
+
+
+def test_le_compte_de_resultat_d_un_exercice_cloture_garde_son_activite():
+    _vente(JOUR_2025, "1000")
+    _charge(JOUR_2025, "300")
+    exercice = _cloturer(JOUR_2025)
+
+    rapport = services.compte_de_resultat(exercice)
+
+    assert rapport["total_produits"] == Decimal("1000")
+    assert rapport["total_charges"] == Decimal("300")
+    assert rapport["resultat_net"] == Decimal("700")
+
+
+def test_la_balance_ignore_la_cloture_par_defaut_et_reste_equilibree():
+    _vente(JOUR_2025, "1000")
+    _cloturer(JOUR_2025)
+
+    sans = {l["compte__numero"]: l for l in services.balance()}
+    avec = {l["compte__numero"]: l for l in services.balance(avec_cloture=True)}
+
+    assert sans["706100"]["total_credit"] == Decimal("1000") and sans["706100"]["total_debit"] == 0
+    assert "120000" not in sans
+    assert avec["706100"]["solde_debiteur"] == avec["706100"]["solde_crediteur"] == 0
+    assert avec["120000"]["solde_crediteur"] == Decimal("1000")
+    for balance in (sans.values(), avec.values()):
+        assert sum(l["total_debit"] for l in balance) == sum(l["total_credit"] for l in balance)
+
+
+def test_l_ecriture_de_cloture_ne_se_contre_passe_pas():
+    _vente(JOUR_2025, "1000")
+    ecriture = _ecriture_de_cloture(_cloturer(JOUR_2025))
+
+    with pytest.raises(ContrePassationImpossible, match="ne se rouvre jamais"):
+        services.contre_passer(ecriture)
+
+
+def test_ecriture_de_cloture_est_idempotente():
+    _vente(JOUR_2025, "1000")
+    exercice = _cloturer(JOUR_2025)
+
+    de_nouveau = services.ecriture_de_cloture(exercice)
+
+    assert de_nouveau == _ecriture_de_cloture(exercice)
+    assert EcritureComptable.objects.filter(origine=services.ORIGINE_CLOTURE).count() == 1
+
+
+def test_une_cloture_impossible_faute_de_compte_120000_ne_clot_rien():
+    _vente(JOUR_2025, "1000")
+    Compte.objects.filter(numero="120000").update(actif=False)
+    exercice = services.exercice_pour(JOUR_2025)
+
+    with pytest.raises(CompteInconnu, match="120000"):
+        services.cloturer_exercice(exercice, direction())
+
+    exercice.refresh_from_db()
+    assert exercice.statut == StatutExercice.OUVERT
+    assert not EcritureComptable.objects.filter(origine=services.ORIGINE_CLOTURE).exists()
+
+
+# --- reprise des exercices clôturés avant ce lot ---
+
+
+def _cloture_sans_ecriture(jour):
+    """Un exercice clôturé à l'ancienne : statut posé sans écriture de clôture."""
+    exercice = services.exercice_pour(jour)
+    exercice.statut = StatutExercice.CLOTURE
+    exercice.save(update_fields=["statut", "updated_at"])
+    return exercice
+
+
+def test_la_commande_de_reprise_pose_la_cloture_manquante_et_equilibre_le_bilan():
+    from django.core.management import call_command
+
+    _vente(JOUR_2025, "1000")
+    _cloture_sans_ecriture(JOUR_2025)
+
+    call_command("ecrire_clotures_historiques")
+    call_command("ecrire_clotures_historiques")  # rejouable
+
+    assert EcritureComptable.objects.filter(origine=services.ORIGINE_CLOTURE).count() == 1
+    _vente(JOUR_2026, "400")
+    rapport = services.bilan(services.exercice_pour(JOUR_2026))
+    assert rapport["total_actif"] == rapport["total_passif_avec_resultat"] == Decimal("1400")
+
+
+def test_la_commande_de_reprise_en_simulation_n_ecrit_rien():
+    from django.core.management import call_command
+
+    _vente(JOUR_2025, "1000")
+    _cloture_sans_ecriture(JOUR_2025)
+
+    call_command("ecrire_clotures_historiques", "--dry-run")
+
+    assert not EcritureComptable.objects.filter(origine=services.ORIGINE_CLOTURE).exists()
+```
+
+#### `apps/accounting/tests/test_contre_passation.py`
+
+*318 lignes* — Contre-passation : une écriture validée ne se corrige que par une écriture inverse (audit : ACC-07).
+
+```python
+"""Contre-passation : une écriture validée ne se corrige que par une écriture inverse (audit : ACC-07).
+
+Annuler un règlement ou un mouvement manuel doit aussi retirer son effet du grand livre, sinon la
+trésorerie et les comptes 521/571/411 divergent sans trace."""
+
+from datetime import date
+from decimal import Decimal
+
+import pytest
+from django.utils import timezone
+
+from apps.accounting import services
+from apps.accounting.constants import COMPTE_CLIENTS
+from apps.accounting.exceptions import ContrePassationImpossible, CompteInconnu, ExerciceCloture
+from apps.accounting.models import (
+    Compte,
+    EcritureComptable,
+    ExerciceComptable,
+    Journal,
+    SensEcriture,
+    StatutExercice,
+)
+from apps.accounting.services import LigneSaisie
+from apps.billing import services as billing_services
+from apps.billing.models import ModePaiement, Reglement
+from apps.billing.tests.helpers import emise, finances
+from apps.finance import services as finance_services
+from apps.finance.models import LigneReleve, MouvementManuel, NatureMouvement, SensMouvement
+
+from .factories import CompteFactory
+
+pytestmark = pytest.mark.django_db
+
+JOUR = date(2026, 9, 5)
+
+
+def _solde(numero):
+    ligne = {l["compte__numero"]: l for l in services.balance()}.get(numero)
+    return Decimal("0") if ligne is None else ligne["total_debit"] - ligne["total_credit"]
+
+
+def _ecriture(*, date_ecriture=JOUR, montant="1000"):
+    charge, tresorerie = CompteFactory(), CompteFactory()
+    return services.passer_ecriture(
+        journal=Journal.OPERATIONS_DIVERSES, date_ecriture=date_ecriture, libelle="Achat",
+        piece_reference="PIECE-1",
+        lignes=[
+            LigneSaisie(compte=charge.numero, sens=SensEcriture.DEBIT, montant=Decimal(montant)),
+            LigneSaisie(
+                compte=tresorerie.numero, sens=SensEcriture.CREDIT, montant=Decimal(montant),
+                tiers_type="CLIENT", tiers_id=7,
+            ),
+        ],
+        origine="TEST", origine_id=1,
+    )
+
+
+# --- le service ---
+
+
+def test_contre_passer_inverse_chaque_ligne_et_garde_l_original_intact():
+    ecriture = _ecriture()
+
+    inverse = services.contre_passer(ecriture, motif="Erreur de saisie")
+
+    assert inverse.pk != ecriture.pk
+    assert inverse.origine == "CONTRE_PASSATION" and inverse.origine_id == ecriture.pk
+    assert inverse.journal == ecriture.journal and inverse.piece_reference == "PIECE-1"
+    assert inverse.date_ecriture == timezone.localdate()
+    assert inverse.numero and inverse.numero != ecriture.numero
+    assert ecriture.numero in inverse.libelle and "Erreur de saisie" in inverse.libelle
+    avant = {(l.compte_id, l.sens, l.montant) for l in ecriture.lignes.all()}
+    apres = {(l.compte_id, l.sens, l.montant) for l in inverse.lignes.all()}
+    inverse_sens = {SensEcriture.DEBIT: SensEcriture.CREDIT, SensEcriture.CREDIT: SensEcriture.DEBIT}
+    assert apres == {(c, inverse_sens[s], m) for c, s, m in avant}
+    ligne_tiers = inverse.lignes.exclude(tiers_type="").get()
+    assert (ligne_tiers.tiers_type, ligne_tiers.tiers_id) == ("CLIENT", 7)
+    assert ecriture.lignes.count() == 2  # l'écriture d'origine n'a pas bougé
+
+
+def test_les_comptes_reviennent_a_zero_une_fois_contre_passee():
+    ecriture = _ecriture(montant="2500")
+    comptes = [l.compte.numero for l in ecriture.lignes.select_related("compte")]
+
+    services.contre_passer(ecriture)
+
+    assert [_solde(numero) for numero in comptes] == [Decimal("0"), Decimal("0")]
+
+
+def test_contre_passer_est_idempotente():
+    ecriture = _ecriture()
+
+    premiere = services.contre_passer(ecriture)
+    seconde = services.contre_passer(ecriture)
+
+    assert premiere.pk == seconde.pk
+    assert EcritureComptable.objects.filter(origine="CONTRE_PASSATION").count() == 1
+
+
+def test_contre_passer_accepte_une_date_explicite():
+    ecriture = _ecriture()
+
+    assert services.contre_passer(ecriture, date_ecriture=date(2026, 9, 20)).date_ecriture == date(2026, 9, 20)
+
+
+def test_un_brouillon_ne_se_contre_passe_pas():
+    brouillon = services.creer_ecriture_manuelle(finances(), date_ecriture=JOUR, libelle="Brouillon")
+
+    with pytest.raises(ContrePassationImpossible, match="brouillon"):
+        services.contre_passer(brouillon)
+
+
+def test_une_contre_passation_ne_se_contre_passe_pas():
+    inverse = services.contre_passer(_ecriture())
+
+    with pytest.raises(ContrePassationImpossible, match="ne se contre-passe pas"):
+        services.contre_passer(inverse)
+
+
+def test_une_ecriture_d_un_exercice_clos_se_contre_passe_dans_l_exercice_ouvert():
+    ecriture = _ecriture(date_ecriture=date(2024, 6, 1))
+    ExerciceComptable.objects.filter(annee=2024).update(statut=StatutExercice.CLOTURE)
+
+    inverse = services.contre_passer(ecriture)
+
+    assert inverse.date_ecriture == timezone.localdate()
+    assert inverse.date_ecriture.year != 2024
+
+
+def test_contre_passer_est_refusee_si_l_exercice_du_jour_est_clos():
+    ecriture = _ecriture()
+    services.exercice_pour(timezone.localdate())
+    ExerciceComptable.objects.filter(annee=timezone.localdate().year).update(statut=StatutExercice.CLOTURE)
+
+    with pytest.raises(ExerciceCloture):
+        services.contre_passer(ecriture)
+
+    assert not EcritureComptable.objects.filter(origine="CONTRE_PASSATION").exists()
+
+
+def test_contre_passer_origine_ne_fait_rien_sans_ecriture_d_origine():
+    assert services.contre_passer_origine("REGLEMENT", 999999) is None
+
+
+def test_contre_passer_origine_retrouve_l_ecriture_par_son_evenement_source():
+    ecriture = _ecriture()
+
+    inverse = services.contre_passer_origine("TEST", 1, motif="Doublon")
+
+    assert inverse.origine_id == ecriture.pk and "Doublon" in inverse.libelle
+
+
+# --- l'annulation d'un règlement ---
+
+
+def _reglement(montant="100000", mode=ModePaiement.VIREMENT, jour=JOUR):
+    facture = emise(prix="1000000")
+    return billing_services.enregistrer_reglement(
+        facture, finances(), montant=Decimal(montant), mode=mode, date_reglement=jour
+    )
+
+
+def test_annuler_un_reglement_contre_passe_son_ecriture():
+    reglement = _reglement("100000")
+    assert _solde("521000") == Decimal("100000")
+
+    billing_services.annuler_reglement(reglement, finances(), motif="Chèque sans provision")
+
+    inverse = EcritureComptable.objects.get(origine="CONTRE_PASSATION")
+    assert "Chèque sans provision" in inverse.libelle
+    assert _solde("521000") == Decimal("0")
+    # la créance du client est rétablie : 411 = TTC de la facture, comme avant le règlement
+    assert _solde(COMPTE_CLIENTS) == reglement.facture.montant_ttc
+
+
+def test_annuler_un_reglement_ancien_se_contre_passe_aujourd_hui():
+    reglement = _reglement(jour=date(2026, 9, 1))
+
+    billing_services.annuler_reglement(reglement, finances(), motif="Erreur")
+
+    inverse = EcritureComptable.objects.get(origine="CONTRE_PASSATION")
+    assert inverse.date_ecriture == timezone.localdate()
+
+
+def test_annuler_un_reglement_est_tout_ou_rien_si_la_contre_passation_est_impossible():
+    reglement = _reglement()
+    Compte.objects.filter(numero="521000").update(actif=False)
+
+    with pytest.raises(CompteInconnu):
+        billing_services.annuler_reglement(reglement, finances(), motif="Erreur")
+
+    assert Reglement.objects.filter(pk=reglement.pk).exists()  # l'annulation est annulée avec elle
+    assert not EcritureComptable.objects.filter(origine="CONTRE_PASSATION").exists()
+
+
+def test_annuler_un_reglement_jamais_comptabilise_n_echoue_pas():
+    reglement = _reglement()
+    EcritureComptable.objects.filter(origine="REGLEMENT", origine_id=reglement.pk).update(origine="ANCIEN")
+
+    billing_services.annuler_reglement(reglement, finances(), motif="Erreur")
+
+    assert not EcritureComptable.objects.filter(origine="CONTRE_PASSATION").exists()
+
+
+# --- l'annulation d'un mouvement manuel ---
+
+
+def _mouvement(sens=SensMouvement.ENTREE, montant="50000"):
+    return finance_services.enregistrer_mouvement(
+        finances(), sens=sens, date_mouvement=JOUR, libelle="Apport", montant=Decimal(montant),
+        mode=ModePaiement.VIREMENT, nature=NatureMouvement.APPORT,
+    )
+
+
+@pytest.mark.parametrize("sens", [SensMouvement.ENTREE, SensMouvement.SORTIE])
+def test_annuler_un_mouvement_manuel_contre_passe_son_ecriture(sens):
+    mouvement = _mouvement(sens)
+    assert _solde("521000") != Decimal("0")
+
+    finance_services.annuler_mouvement(mouvement, finances(), motif="Doublon")
+
+    assert EcritureComptable.objects.filter(origine="CONTRE_PASSATION").count() == 1
+    assert _solde("521000") == Decimal("0")
+
+
+# --- le pointage bancaire ---
+
+
+def _releve(sens=SensMouvement.ENTREE, montant="50000"):
+    return finance_services.saisir_ligne_releve(
+        finances(), date_operation=JOUR, libelle="Relevé", montant=Decimal(montant), sens=sens
+    )
+
+
+def test_annuler_un_mouvement_defait_le_pointage_de_sa_ligne_de_releve():
+    mouvement = _mouvement()
+    ligne = _releve()
+    finance_services.pointer_ligne_releve(ligne, finances(), origine="MANUEL", mouvement_id=mouvement.pk)
+
+    finance_services.annuler_mouvement(mouvement, finances(), motif="Doublon")
+
+    ligne.refresh_from_db()
+    assert ligne.pointee is False and ligne.mouvement_origine == "" and ligne.mouvement_id is None
+
+
+def test_annuler_un_reglement_defait_le_pointage_de_sa_ligne_de_releve():
+    reglement = _reglement("100000")
+    ligne = _releve(montant="100000")
+    finance_services.pointer_ligne_releve(ligne, finances(), origine="REGLEMENT", mouvement_id=reglement.pk)
+    autre_mouvement = _mouvement(montant="1")  # un mouvement sans rapport, sur une autre ligne : reste intact
+    autre = _releve(montant="1")
+    finance_services.pointer_ligne_releve(autre, finances(), origine="MANUEL", mouvement_id=autre_mouvement.pk)
+
+    billing_services.annuler_reglement(reglement, finances(), motif="Erreur")
+
+    ligne.refresh_from_db()
+    autre.refresh_from_db()
+    assert ligne.pointee is False and autre.pointee is True
+    assert LigneReleve.objects.count() == 2
+
+
+def test_depointer_mouvement_renvoie_le_nombre_de_lignes_defaites():
+    mouvement = _mouvement()
+    finance_services.pointer_ligne_releve(_releve(), finances(), origine="MANUEL", mouvement_id=mouvement.pk)
+
+    assert finance_services.depointer_mouvement("MANUEL", mouvement.pk) == 1
+    assert finance_services.depointer_mouvement("MANUEL", mouvement.pk) == 0
+    assert MouvementManuel.objects.filter(pk=mouvement.pk).exists()
+
+
+# --- reprise de l'historique ---
+
+
+def _annulation_ancienne(*objets):
+    """Simule des annulations faites avant ce lot : les objets disparaissent sans contre-passation."""
+    EcritureComptable.objects.filter(origine="CONTRE_PASSATION").delete()
+    for objet in objets:
+        type(objet).objects.filter(pk=objet.pk).update(is_deleted=True, deleted_at=timezone.now())
+
+
+def test_la_reprise_contre_passe_les_annulations_anterieures_et_se_rejoue_sans_doublon():
+    from io import StringIO
+
+    from django.core.management import call_command
+
+    reglement, mouvement = _reglement("100000"), _mouvement()
+    _annulation_ancienne(reglement, mouvement)
+    sortie = StringIO()
+
+    call_command("contre_passer_historique_annulations", "--dry-run", stdout=sortie)
+    assert "Simulation" in sortie.getvalue() and "2 annulation(s)" in sortie.getvalue()
+    assert not EcritureComptable.objects.filter(origine="CONTRE_PASSATION").exists()
+
+    call_command("contre_passer_historique_annulations", stdout=sortie)
+    assert EcritureComptable.objects.filter(origine="CONTRE_PASSATION").count() == 2
+    assert _solde("521000") == Decimal("0")
+
+    sortie = StringIO()
+    call_command("contre_passer_historique_annulations", stdout=sortie)
+    assert "0 annulation(s) contre-passée(s) (2 déjà faites" in sortie.getvalue()
+    assert EcritureComptable.objects.filter(origine="CONTRE_PASSATION").count() == 2
+
+
+def test_la_reprise_ignore_ce_qui_n_a_jamais_ete_comptabilise_et_signale_l_impossible():
+    from io import StringIO
+
+    from django.core.management import call_command
+
+    jamais, bloque = _reglement("1000"), _reglement("2000")
+    EcritureComptable.objects.filter(origine="REGLEMENT", origine_id=jamais.pk).update(origine="ANCIEN")
+    _annulation_ancienne(jamais, bloque)
+    Compte.objects.filter(numero="521000").update(actif=False)
+    sortie, erreurs = StringIO(), StringIO()
+
+    call_command("contre_passer_historique_annulations", stdout=sortie, stderr=erreurs)
+
+    assert "1 jamais comptabilisées, 1 impossible(s)" in sortie.getvalue()
+    assert f"REGLEMENT #{bloque.pk} non contre-passé" in erreurs.getvalue()
 ```
 
 #### `apps/accounting/tests/test_models.py`
@@ -2114,7 +3060,7 @@ def test_une_sortie_de_mouvement_manuel_credite_la_tresorerie():
 
 #### `apps/accounting/tests/test_services.py`
 
-*759 lignes* — Moteur d'écritures : équilibre, idempotence, comptes inconnus/inactifs ; saisie manuelle
+*761 lignes* — Moteur d'écritures : équilibre, idempotence, comptes inconnus/inactifs ; saisie manuelle
 
 ```python
 """Moteur d'écritures : équilibre, idempotence, comptes inconnus/inactifs ; saisie manuelle
@@ -2154,6 +3100,8 @@ from .factories import CompteFactory
 pytestmark = pytest.mark.django_db
 
 JOUR = date(2026, 9, 1)
+# Un exercice ne se clôture qu'une fois l'année terminée : les tests de clôture visent une année passée.
+JOUR_PASSE = date(2024, 6, 1)
 
 
 def _lignes_equilibrees(charge, tresorerie, montant="1000"):
@@ -2551,16 +3499,16 @@ def test_passer_une_ecriture_cree_son_exercice_au_passage():
 
 def test_cloturer_un_exercice_verrouille_les_nouvelles_ecritures():
     charge, tresorerie = CompteFactory(), CompteFactory()
-    exercice = services.exercice_pour(JOUR)
+    exercice = services.exercice_pour(JOUR_PASSE)
 
     services.cloturer_exercice(exercice, direction())
 
     exercice.refresh_from_db()
     assert exercice.statut == StatutExercice.CLOTURE
     assert exercice.cloture_par is not None
-    with pytest.raises(ExerciceCloture, match="2026"):
+    with pytest.raises(ExerciceCloture, match="2024"):
         services.passer_ecriture(
-            journal=Journal.OPERATIONS_DIVERSES, date_ecriture=JOUR, libelle="Trop tard",
+            journal=Journal.OPERATIONS_DIVERSES, date_ecriture=JOUR_PASSE, libelle="Trop tard",
             lignes=_lignes_equilibrees(charge, tresorerie),
         )
 
@@ -2575,7 +3523,7 @@ def test_cloturer_est_reserve_a_la_direction_strict():
 
 
 def test_cloturer_un_exercice_deja_cloture_est_refuse():
-    exercice = services.exercice_pour(JOUR)
+    exercice = services.exercice_pour(JOUR_PASSE)
     services.cloturer_exercice(exercice, direction())
 
     with pytest.raises(ExerciceCloture):
@@ -2583,10 +3531,10 @@ def test_cloturer_un_exercice_deja_cloture_est_refuse():
 
 
 def test_cloturer_refuse_s_il_reste_des_brouillons_dans_la_periode():
-    exercice = services.exercice_pour(JOUR)
-    services.creer_ecriture_manuelle(finances(), date_ecriture=JOUR, libelle="Encore en brouillon")
+    exercice = services.exercice_pour(JOUR_PASSE)
+    services.creer_ecriture_manuelle(finances(), date_ecriture=JOUR_PASSE, libelle="Encore en brouillon")
 
-    with pytest.raises(ClotureImpossible, match="1"):
+    with pytest.raises(ClotureImpossible, match="brouillon"):
         services.cloturer_exercice(exercice, direction())
 
     exercice.refresh_from_db()
@@ -2594,11 +3542,11 @@ def test_cloturer_refuse_s_il_reste_des_brouillons_dans_la_periode():
 
 
 def test_creer_une_ecriture_manuelle_dans_un_exercice_cloture_est_refuse():
-    exercice = services.exercice_pour(JOUR)
+    exercice = services.exercice_pour(JOUR_PASSE)
     services.cloturer_exercice(exercice, direction())
 
     with pytest.raises(ExerciceCloture):
-        services.creer_ecriture_manuelle(finances(), date_ecriture=JOUR, libelle="Trop tard")
+        services.creer_ecriture_manuelle(finances(), date_ecriture=JOUR_PASSE, libelle="Trop tard")
 
 
 def test_valider_une_ecriture_manuelle_est_refuse_si_l_exercice_est_devenu_cloture():
@@ -2878,6 +3826,509 @@ def test_bilan_classe_aussi_les_comptes_de_passif():
     assert rapport["total_actif"] == Decimal("2000")
 ```
 
+#### `apps/finance/tests/test_services.py`
+
+*496 lignes* — Trésorerie (règlements, dépenses, mouvements manuels) et indicateurs financiers.
+
+```python
+"""Trésorerie (règlements, dépenses, mouvements manuels) et indicateurs financiers."""
+
+from datetime import date, timedelta
+from decimal import Decimal
+
+import pytest
+from django.utils import timezone
+
+from apps.accounts.models import Role
+from apps.accounts.tests.factories import UserFactory
+from apps.billing import services as billing
+from apps.billing.exceptions import ActionFactureNonAutorisee, MontantInvalide
+from apps.billing.models import ModePaiement
+from apps.billing.tests.helpers import JOUR, direction, emise, finances
+from apps.drivers.tests.factories import ChauffeurFactory
+from apps.finance import services
+from apps.finance.models import MouvementManuel, SensMouvement
+from apps.fleet.tests.factories import VehiculeFactory
+from apps.fuel import services as fuel
+from apps.garage import services as garage
+from apps.garage.models import LieuReparation, TypeOr
+from apps.inventory import services as stock
+from apps.inventory.tests.factories import ArticleFactory
+
+pytestmark = pytest.mark.django_db
+
+SEPT = (date(2026, 9, 1), date(2026, 9, 30))
+
+
+def _manuel(sens=SensMouvement.ENTREE, montant="100000", *, mode=ModePaiement.VIREMENT, jour=JOUR,
+            libelle="Apport", acteur=None):
+    return services.enregistrer_mouvement(
+        acteur or finances(), sens=sens, date_mouvement=jour, libelle=libelle,
+        montant=Decimal(montant), mode=mode,
+    )
+
+
+def _reglement(facture, montant, mode=ModePaiement.VIREMENT, jour=JOUR):
+    return billing.enregistrer_reglement(
+        facture, finances(), montant=Decimal(montant), mode=mode, date_reglement=jour
+    )
+
+
+def _depense(montant, mode=ModePaiement.ESPECES, jour=JOUR, categorie="PEAGES"):
+    return billing.enregistrer_depense(
+        finances(), categorie=categorie, date_depense=jour, libelle="Péage", montant=Decimal(montant), mode=mode
+    )
+
+
+# --- mouvements manuels ---
+
+
+def test_un_mouvement_manuel_s_enregistre_et_s_annule_avec_un_motif():
+    mouvement = _manuel()
+
+    services.annuler_mouvement(mouvement, finances(), motif="Doublon")
+
+    assert not MouvementManuel.objects.filter(pk=mouvement.pk).exists()
+    assert MouvementManuel.all_objects.get(pk=mouvement.pk).motif_annulation == "Doublon"
+
+
+@pytest.mark.parametrize(
+    ("libelle", "montant", "jour", "message"),
+    [
+        ("  ", "10", JOUR, "libellé"),
+        ("x", "0", JOUR, "strictement positif"),
+        ("x", "10", date(2999, 1, 1), "futur"),
+    ],
+)
+def test_mouvements_invalides(libelle, montant, jour, message):
+    with pytest.raises(MontantInvalide, match=message):
+        _manuel(libelle=libelle, montant=montant, jour=jour)
+
+
+def test_les_mouvements_sont_reserves_a_la_saisie_facturation():
+    # Retour réunion : la DIRECTION (même largeur que l'ADMIN) est désormais dans la SAISIE ;
+    # le Parc Auto, lui, n'y a jamais eu accès.
+    with pytest.raises(ActionFactureNonAutorisee):
+        _manuel(acteur=UserFactory(role=Role.PARCAUTO))
+    mouvement = _manuel()
+    with pytest.raises(ActionFactureNonAutorisee):
+        services.annuler_mouvement(mouvement, UserFactory(role=Role.PARCAUTO), motif="x")
+    with pytest.raises(MontantInvalide, match="motif"):
+        services.annuler_mouvement(mouvement, finances(), motif=" ")
+
+
+def test_la_direction_peut_desormais_saisir_un_mouvement():
+    """Retour réunion : la DIRECTION a la même largeur que l'ADMIN pour la saisie."""
+    assert _manuel(acteur=direction()).pk
+
+
+# --- journal et soldes ---
+
+
+def test_le_solde_reunit_reglements_depenses_et_mouvements_par_compte():
+    facture = emise(prix="1000000")  # TTC 1 180 000
+    _reglement(facture, "500000", ModePaiement.VIREMENT)
+    _reglement(facture, "100000", ModePaiement.WAVE)
+    _depense("20000", ModePaiement.ESPECES)
+    _manuel(SensMouvement.ENTREE, "50000", mode=ModePaiement.ESPECES, libelle="Solde de caisse")
+    _manuel(SensMouvement.SORTIE, "5000", mode=ModePaiement.VIREMENT, libelle="Frais bancaires")
+
+    soldes = services.soldes_par_compte()
+
+    assert soldes["BANQUE"] == Decimal("495000")  # 500 000 - 5 000
+    assert soldes["CAISSE"] == Decimal("30000")  # 50 000 - 20 000
+    assert soldes["MOBILE_MONEY"] == Decimal("100000")
+    assert soldes["total"] == Decimal("625000")
+
+
+def test_un_reglement_annule_ne_compte_plus():
+    facture = emise(prix="1000000")
+    reglement = _reglement(facture, "300000")
+    billing.annuler_reglement(reglement, finances(), motif="Erreur")
+
+    assert services.soldes_par_compte()["total"] == 0
+    assert services.mouvements() == []
+
+
+def test_le_journal_est_trie_et_decrit_chaque_origine():
+    facture = emise(prix="1000000")
+    _reglement(facture, "100000", jour=date(2026, 9, 3))
+    _depense("5000", jour=date(2026, 9, 5))
+    _manuel(jour=date(2026, 9, 4), libelle="Apport")
+
+    journal = services.mouvements()
+
+    assert [(m["origine"], m["sens"]) for m in journal] == [
+        ("DEPENSE", "SORTIE"), ("MANUEL", "ENTREE"), ("REGLEMENT", "ENTREE"),
+    ]
+    assert journal[2]["libelle"].startswith(f"Règlement {facture.numero} · ")
+    assert journal[2]["compte"] == "BANQUE" and journal[0]["compte"] == "CAISSE"
+
+
+def test_le_journal_se_filtre_par_periode_sens_et_compte():
+    facture = emise(prix="1000000")
+    _reglement(facture, "100000", ModePaiement.WAVE, date(2026, 9, 3))
+    _depense("5000", ModePaiement.ESPECES, date(2026, 9, 10))
+    _manuel(SensMouvement.SORTIE, "1000", mode=ModePaiement.VIREMENT, jour=date(2026, 9, 15), libelle="Frais")
+
+    assert len(services.mouvements(date_debut=date(2026, 9, 5))) == 2
+    assert len(services.mouvements(date_fin=date(2026, 9, 5))) == 1
+    assert [m["origine"] for m in services.mouvements(sens="ENTREE")] == ["REGLEMENT"]
+    assert sorted(m["origine"] for m in services.mouvements(sens="SORTIE")) == ["DEPENSE", "MANUEL"]
+    assert [m["origine"] for m in services.mouvements(compte="MOBILE_MONEY")] == ["REGLEMENT"]
+    assert services.mouvements(compte="CAISSE")[0]["origine"] == "DEPENSE"
+
+
+def test_synthese_de_periode_entrees_sorties_variation():
+    facture = emise(prix="1000000")
+    _reglement(facture, "400000", jour=date(2026, 9, 3))
+    _manuel(SensMouvement.ENTREE, "100000", jour=date(2026, 9, 4))
+    _depense("30000", jour=date(2026, 9, 6))
+    _manuel(SensMouvement.SORTIE, "20000", jour=date(2026, 9, 7), libelle="Frais")
+    _depense("999", jour=date(2026, 8, 6))  # hors période
+
+    assert services.synthese_periode(*SEPT) == {
+        "entrees": Decimal("500000"), "sorties": Decimal("50000"), "variation": Decimal("450000"),
+    }
+
+
+def test_sans_mouvement_tout_est_a_zero():
+    assert services.soldes_par_compte()["total"] == 0
+    assert services.synthese_periode(*SEPT)["variation"] == 0
+
+
+# --- charges et indicateurs ---
+
+
+def _or_cloture(jour_cloture, main_oeuvre="30000", pieces=2):
+    ordre = garage.ouvrir_or(
+        VehiculeFactory(), type_or=TypeOr.CURATIF, lieu=LieuReparation.INTERNE, motif="Freins"
+    )
+    article = ArticleFactory(reference=f"P-{ordre.pk}", quantite=0)
+    stock.enregistrer_entree(article, quantite=10, prix_unitaire=Decimal("5000"))
+    stock.sortir_pour_or(article, quantite=pieces, ordre=ordre)
+    garage.cloturer_or(ordre, cout_main_oeuvre=Decimal(main_oeuvre))
+    type(ordre).objects.filter(pk=ordre.pk).update(
+        date_cloture=timezone.now().replace(year=jour_cloture.year, month=jour_cloture.month, day=jour_cloture.day)
+    )
+    return ordre
+
+
+def _plein(litres, prix, jour, camion=None, km=1000, ticket="T"):
+    return fuel.enregistrer_plein(
+        vehicule=camion or VehiculeFactory(), chauffeur=ChauffeurFactory(), date_plein=jour, station="T",
+        quantite_litres=Decimal(litres), prix_unitaire=Decimal(prix), km_compteur=km, numero_ticket=ticket,
+    )
+
+
+def test_le_cout_du_carburant_est_litres_fois_prix_sur_la_periode():
+    _plein("100", "655", date(2026, 9, 3), ticket="A")
+    _plein("50", "660", date(2026, 9, 8), ticket="B")
+    _plein("500", "700", date(2026, 8, 30), ticket="C")  # hors période (500 L : dans le réservoir de 600 L)
+
+    assert fuel.cout_carburant(*SEPT) == Decimal("98500")  # 65 500 + 33 000
+
+
+def test_le_cout_des_or_clotures_compte_main_d_oeuvre_et_pieces_de_la_periode():
+    _or_cloture(date(2026, 9, 10), main_oeuvre="30000", pieces=2)  # 30 000 + 2 x 5 000
+    _or_cloture(date(2026, 8, 10), main_oeuvre="99999", pieces=1)  # hors période
+
+    assert stock.cout_des_or_clotures(*SEPT) == Decimal("40000")
+
+
+def test_charges_regroupe_depenses_carburant_pieces_et_main_d_oeuvre():
+    """Le carburant, les pièces achetées et la main-d'œuvre des OR sont des dépenses comme les autres."""
+    from apps.billing.models import Depense, OrigineDepense
+
+    _depense("20000", jour=date(2026, 9, 2))
+    _plein("100", "655", date(2026, 9, 3))
+    _or_cloture(date(2026, 9, 10), main_oeuvre="30000", pieces=2)  # achat de 10 pièces à 5 000 + main-d'œuvre
+    Depense.objects.filter(origine__in=[OrigineDepense.ACHAT_STOCK, OrigineDepense.MAIN_OEUVRE_OR]).update(
+        date_depense=date(2026, 9, 10)
+    )
+
+    charges = services.charges(*SEPT)
+
+    assert charges == {
+        "depenses": Decimal("20000"),
+        "carburant": Decimal("65500"),
+        "pieces": Decimal("50000"),  # comptées à l'achat, pas à la sortie vers l'OR
+        "main_oeuvre": Decimal("30000"),
+        "maintenance": Decimal("80000"),
+        "frais_mission": Decimal("0"),
+        "total": Decimal("165500"),
+        "tva_deductible": Decimal("0"),
+        "total_ht": Decimal("165500"),
+    }
+
+
+def test_indicateurs_du_mois():
+    facture = emise(prix="1000000", aujourd_hui=date(2026, 9, 10))
+    emise(prix="500000", aujourd_hui=date(2026, 9, 12))  # créance non échue au 20/09
+    _reglement(facture, "600000", jour=date(2026, 9, 15))
+    _depense("100000", jour=date(2026, 9, 5))
+
+    kpi = services.indicateurs(*SEPT, aujourd_hui=date(2026, 9, 20))
+
+    assert kpi["chiffre_affaires"] == Decimal("1500000")  # HT
+    assert kpi["encaisse"] == Decimal("600000")
+    assert kpi["charges"]["total"] == Decimal("100000")
+    assert kpi["marge_nette"] == Decimal("1400000")
+    assert kpi["creances"]["total"] == Decimal("1180000") - Decimal("600000") + Decimal("590000")
+    assert kpi["creances"]["nombre_echues"] == 0
+    assert kpi["tresorerie"] == Decimal("500000")  # 600 000 encaissés - 100 000 dépensés
+
+
+def _depense_avec_tva(montant, tva, jour=JOUR):
+    return billing.enregistrer_depense(
+        finances(), categorie="PEAGES", date_depense=jour, libelle="Péage", montant=Decimal(montant),
+        mode=ModePaiement.ESPECES, montant_tva=Decimal(tva),
+    )
+
+
+def test_la_marge_nette_se_calcule_hors_taxes_des_deux_cotes():
+    """Audit : la marge retranchait des charges TTC d'un CA HT, donc sous-estimée de la TVA récupérable."""
+    emise(prix="1000000", aujourd_hui=date(2026, 9, 10))  # CA HT 1 000 000
+    _depense_avec_tva("118000", "18000", jour=date(2026, 9, 5))  # 100 000 HT + 18 000 de TVA récupérable
+
+    kpi = services.indicateurs(*SEPT, aujourd_hui=date(2026, 9, 20))
+
+    assert kpi["chiffre_affaires"] == Decimal("1000000")
+    assert kpi["charges"]["total"] == Decimal("118000")  # ce qui a été payé : égal à la page Dépenses
+    assert kpi["charges"]["tva_deductible"] == Decimal("18000")
+    assert kpi["charges"]["total_ht"] == Decimal("100000")
+    assert kpi["marge_nette"] == Decimal("900000")  # et non 882 000
+
+
+def test_la_marge_nette_est_celle_du_compte_de_resultat_comptable():
+    """Même résultat que la comptabilité : la TVA déductible est un actif (445200), pas une charge."""
+    from apps.accounting import services as compta
+
+    emise(prix="1000000", aujourd_hui=date(2026, 9, 10))
+    _depense_avec_tva("118000", "18000", jour=date(2026, 9, 5))
+
+    resultat = compta.compte_de_resultat(compta.exercice_pour(date(2026, 9, 20)))
+
+    assert services.indicateurs(*SEPT, aujourd_hui=date(2026, 9, 20))["marge_nette"] == resultat["resultat_net"]
+
+
+def test_sans_tva_la_marge_est_inchangee():
+    emise(prix="1000000", aujourd_hui=date(2026, 9, 10))
+    _depense("100000", jour=date(2026, 9, 5))
+
+    kpi = services.indicateurs(*SEPT)
+
+    assert kpi["charges"]["tva_deductible"] == Decimal("0")
+    assert kpi["marge_nette"] == Decimal("900000")
+
+
+def test_la_marge_peut_etre_negative():
+    _depense("300000", jour=date(2026, 9, 5))
+
+    assert services.indicateurs(*SEPT)["marge_nette"] == Decimal("-300000")
+
+
+def test_un_utilisateur_de_role_rh_saisit_desormais_comme_la_finance():
+    """Retour réunion : la RH fait tout ce que fait la FINANCES, y compris la trésorerie."""
+    assert _manuel(acteur=UserFactory(role=Role.RH)).pk
+
+
+# --- rapprochement bancaire (Lot G) ---
+
+
+def _ligne_releve(sens=SensMouvement.ENTREE, montant="100000", jour=JOUR, libelle="Virement client",
+                   acteur=None, reference=""):
+    return services.saisir_ligne_releve(
+        acteur or finances(), date_operation=jour, libelle=libelle, montant=Decimal(montant), sens=sens,
+        reference=reference,
+    )
+
+
+def test_une_ligne_de_releve_se_saisit_a_la_main():
+    ligne = _ligne_releve(reference="REF1")
+
+    assert ligne.pk
+    assert ligne.pointee is False
+    assert ligne.reference == "REF1"
+
+
+@pytest.mark.parametrize(
+    ("libelle", "montant", "sens", "jour", "message"),
+    [
+        ("  ", "10", SensMouvement.ENTREE, JOUR, "libellé"),
+        ("x", "0", SensMouvement.ENTREE, JOUR, "strictement positif"),
+        ("x", "10", "AUTRE", JOUR, "Sens inconnu"),
+        ("x", "10", SensMouvement.ENTREE, date(2999, 1, 1), "futur"),
+    ],
+)
+def test_saisie_de_ligne_de_releve_invalide(libelle, montant, sens, jour, message):
+    with pytest.raises(MontantInvalide, match=message):
+        services.saisir_ligne_releve(
+            finances(), date_operation=jour, libelle=libelle, montant=Decimal(montant), sens=sens,
+        )
+
+
+def test_la_saisie_d_une_ligne_de_releve_est_reservee_a_la_saisie_facturation():
+    with pytest.raises(ActionFactureNonAutorisee):
+        _ligne_releve(acteur=UserFactory(role=Role.PARCAUTO))
+
+
+def test_les_suggestions_proposent_le_mouvement_banque_de_meme_sens_et_montant_le_plus_proche():
+    facture = emise(prix="1000000")
+    proche = _reglement(facture, "100000", ModePaiement.VIREMENT, jour=date(2026, 9, 4))
+    _reglement(facture, "200000", ModePaiement.VIREMENT, jour=date(2026, 9, 3))  # autre montant
+    _depense("100000", ModePaiement.ESPECES, jour=date(2026, 9, 4))  # autre compte (Caisse)
+    ligne = _ligne_releve(montant="100000", jour=date(2026, 9, 5))
+
+    suggestions = services.suggestions_pointage(ligne)
+
+    assert len(suggestions) == 1
+    assert suggestions[0]["origine"] == "REGLEMENT" and suggestions[0]["pk"] == proche.pk
+
+
+def test_pointer_associe_la_ligne_au_mouvement_choisi():
+    facture = emise(prix="1000000")
+    reglement = _reglement(facture, "100000", ModePaiement.VIREMENT)
+    ligne = _ligne_releve(montant="100000")
+
+    pointee = services.pointer_ligne_releve(ligne, finances(), origine="REGLEMENT", mouvement_id=reglement.pk)
+
+    assert pointee.pointee is True
+    assert pointee.mouvement_origine == "REGLEMENT" and pointee.mouvement_id == reglement.pk
+
+
+def test_pointer_refuse_un_mouvement_deja_pointe_sur_une_autre_ligne():
+    facture = emise(prix="1000000")
+    reglement = _reglement(facture, "100000", ModePaiement.VIREMENT)
+    premiere = _ligne_releve(montant="100000")
+    services.pointer_ligne_releve(premiere, finances(), origine="REGLEMENT", mouvement_id=reglement.pk)
+    seconde = _ligne_releve(montant="100000", libelle="Doublon")
+
+    with pytest.raises(MontantInvalide, match="déjà pointé"):
+        services.pointer_ligne_releve(seconde, finances(), origine="REGLEMENT", mouvement_id=reglement.pk)
+
+
+def test_pointer_refuse_une_origine_inconnue():
+    ligne = _ligne_releve()
+    with pytest.raises(MontantInvalide, match="Origine"):
+        services.pointer_ligne_releve(ligne, finances(), origine="AUTRE", mouvement_id=1)
+
+
+def test_pointer_est_reserve_a_la_saisie_facturation():
+    ligne = _ligne_releve()
+    with pytest.raises(ActionFactureNonAutorisee):
+        services.pointer_ligne_releve(ligne, UserFactory(role=Role.PARCAUTO), origine="MANUEL", mouvement_id=1)
+
+
+def test_depointer_annule_le_pointage():
+    facture = emise(prix="1000000")
+    reglement = _reglement(facture, "100000", ModePaiement.VIREMENT)
+    ligne = _ligne_releve(montant="100000")
+    services.pointer_ligne_releve(ligne, finances(), origine="REGLEMENT", mouvement_id=reglement.pk)
+
+    depointee = services.depointer_ligne_releve(ligne, finances())
+
+    assert depointee.pointee is False
+    assert depointee.mouvement_origine == "" and depointee.mouvement_id is None
+
+
+def test_depointer_est_reserve_a_la_saisie_facturation():
+    ligne = _ligne_releve()
+    with pytest.raises(ActionFactureNonAutorisee):
+        services.depointer_ligne_releve(ligne, UserFactory(role=Role.PARCAUTO))
+
+
+def test_le_rapprochement_calcule_les_deux_soldes_et_l_ecart_quand_ils_concordent():
+    facture = emise(prix="1000000")
+    reglement = _reglement(facture, "100000", ModePaiement.VIREMENT, jour=date(2026, 9, 4))
+    ligne = _ligne_releve(montant="100000", jour=date(2026, 9, 4))
+    services.pointer_ligne_releve(ligne, finances(), origine="REGLEMENT", mouvement_id=reglement.pk)
+
+    etat = services.rapprochement_bancaire(debut=date(2026, 9, 1), fin=date(2026, 9, 30))
+
+    assert etat["solde_releve"] == Decimal("100000")
+    assert etat["solde_comptable"] == Decimal("100000")
+    assert etat["ecart"] == 0
+    assert etat["lignes_non_pointees"] == []
+    assert etat["mouvements_non_pointes"] == []
+
+
+def test_le_rapprochement_signale_un_ecart_quand_une_operation_n_a_pas_ete_saisie():
+    facture = emise(prix="1000000")
+    _reglement(facture, "100000", ModePaiement.VIREMENT, jour=date(2026, 9, 4))  # jamais pointé
+    _ligne_releve(montant="50000", jour=date(2026, 9, 5))  # frais bancaires jamais comptabilisés
+
+    etat = services.rapprochement_bancaire(debut=date(2026, 9, 1), fin=date(2026, 9, 30))
+
+    assert etat["solde_releve"] == Decimal("50000")
+    assert etat["solde_comptable"] == Decimal("100000")
+    assert etat["ecart"] == Decimal("-50000")
+    assert len(etat["lignes_non_pointees"]) == 1
+    assert len(etat["mouvements_non_pointes"]) == 1
+
+
+def test_le_rapprochement_ignore_la_caisse_et_le_mobile_money():
+    _depense("20000", ModePaiement.ESPECES, jour=date(2026, 9, 4))
+    facture = emise(prix="1000000")
+    _reglement(facture, "30000", ModePaiement.WAVE, jour=date(2026, 9, 4))
+
+    etat = services.rapprochement_bancaire(debut=date(2026, 9, 1), fin=date(2026, 9, 30))
+
+    assert etat["solde_comptable"] == 0
+    assert etat["mouvements_banque"] == []
+
+
+# --- pointage : le mouvement doit correspondre à la ligne (audit M10-03) ---
+
+
+def test_pointer_refuse_un_mouvement_qui_n_existe_pas():
+    ligne = _ligne_releve()
+
+    with pytest.raises(MontantInvalide, match="n'existe pas sur le compte Banque"):
+        services.pointer_ligne_releve(ligne, finances(), origine="REGLEMENT", mouvement_id=999999)
+
+    ligne.refresh_from_db()
+    assert ligne.pointee is False
+
+
+def test_pointer_refuse_un_mouvement_d_un_autre_compte_que_la_banque():
+    depense = _depense("100000", ModePaiement.ESPECES)  # Caisse
+    ligne = _ligne_releve(montant="100000", sens=SensMouvement.SORTIE)
+
+    with pytest.raises(MontantInvalide, match="Banque"):
+        services.pointer_ligne_releve(ligne, finances(), origine="DEPENSE", mouvement_id=depense.pk)
+
+
+def test_pointer_refuse_un_montant_different():
+    reglement = _reglement(emise(prix="1000000"), "100000", ModePaiement.VIREMENT)
+    ligne = _ligne_releve(montant="90000")
+
+    with pytest.raises(MontantInvalide, match="même sens et même montant"):
+        services.pointer_ligne_releve(ligne, finances(), origine="REGLEMENT", mouvement_id=reglement.pk)
+
+
+def test_pointer_refuse_un_sens_different():
+    reglement = _reglement(emise(prix="1000000"), "100000", ModePaiement.VIREMENT)  # entrée
+    ligne = _ligne_releve(montant="100000", sens=SensMouvement.SORTIE)
+
+    with pytest.raises(MontantInvalide, match="même sens et même montant"):
+        services.pointer_ligne_releve(ligne, finances(), origine="REGLEMENT", mouvement_id=reglement.pk)
+
+
+def test_pointer_refuse_une_ligne_deja_pointee():
+    facture = emise(prix="1000000")
+    premier = _reglement(facture, "100000", ModePaiement.VIREMENT)
+    second = _reglement(facture, "100000", ModePaiement.VIREMENT)
+    ligne = _ligne_releve(montant="100000")
+    services.pointer_ligne_releve(ligne, finances(), origine="REGLEMENT", mouvement_id=premier.pk)
+
+    with pytest.raises(MontantInvalide, match="déjà pointée"):
+        services.pointer_ligne_releve(ligne, finances(), origine="REGLEMENT", mouvement_id=second.pk)
+
+    ligne.refresh_from_db()
+    assert ligne.mouvement_id == premier.pk  # le premier pointage n'a pas été écrasé en silence
+```
+
 ## Étape 7 — Déclarer l'application et migrer
 
 #### `config/settings/base.py` — modifications
@@ -2922,10 +4373,10 @@ python manage.py check
 ```
 
 ```bash
-python -m pytest apps/accounting/tests/test_models.py apps/accounting/tests/test_receivers.py apps/accounting/tests/test_services.py -q --no-cov
+python -m pytest apps/accounting/tests/test_cloture_resultat.py apps/accounting/tests/test_contre_passation.py apps/accounting/tests/test_models.py apps/accounting/tests/test_receivers.py apps/accounting/tests/test_services.py apps/finance/tests/test_services.py -q --no-cov
 ```
 
-**Résultat attendu :** `90 passed` (pour les 3 fichier(s) de tests présentés dans ce chapitre).
+**Résultat attendu :** `166 passed` (pour les 6 fichier(s) de tests présentés dans ce chapitre).
 
 (Les tests d'écrans de `accounting` sont présentés au chapitre 27.)
 

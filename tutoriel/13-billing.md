@@ -1,6 +1,6 @@
 # Chapitre 13 — La facturation : l'app billing
 
-> 13 fichier(s) dans ce chapitre, 2783 lignes de code.
+> 14 fichier(s) dans ce chapitre, 2884 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -528,10 +528,13 @@ logique), `Depense`, et les énumérations `ModePaiement`, `CompteTresorerie`, `
 
 #### `apps/billing/exceptions.py`
 
-*22 lignes*
+*25 lignes*
 
 ```python
-class BillingError(Exception):
+from apps.core.exceptions import ErreurMetier
+
+
+class BillingError(ErreurMetier):
     """Erreur métier de la facturation."""
 
 
@@ -594,7 +597,7 @@ saisir) et `VALIDATION` (**DIRECTION seule**).
 
 #### `apps/billing/services.py`
 
-*946 lignes* — Logique métier de la facturation : factures, TVA, règlements, dépenses.
+*955 lignes* — Logique métier de la facturation : factures, TVA, règlements, dépenses.
 
 ```python
 """Logique métier de la facturation : factures, TVA, règlements, dépenses.
@@ -1088,6 +1091,7 @@ def annuler_reglement(reglement: Reglement, acteur, *, motif: str) -> Facture:
     reglement.delete(deleted_by=acteur)
     facture.statut = _statut_selon_reste(facture)
     facture.save(update_fields=["statut", "updated_at"])
+    signals.reglement_annule.send(sender=Reglement, reglement=reglement)
     return facture
 
 
@@ -1118,6 +1122,14 @@ def rechercher_depenses(
 def total_depenses(debut: date, fin: date) -> Decimal:
     return Depense.objects.filter(date_depense__range=(debut, fin)).aggregate(
         total=Sum("montant")
+    )["total"] or ZERO
+
+
+def total_tva_deductible(debut: date, fin: date) -> Decimal:
+    """TVA déductible incluse dans les dépenses de la période (``Depense.montant_tva``) : récupérable auprès
+    de l'État, donc pas une charge (compte 445200, actif — avenant-comptabilite-autonomie.md § Lot D)."""
+    return Depense.objects.filter(date_depense__range=(debut, fin)).aggregate(
+        total=Sum("montant_tva")
     )["total"] or ZERO
 
 
@@ -1562,7 +1574,7 @@ def expirer_proformas(aujourd_hui: date | None = None) -> int:
 
 #### `apps/billing/signals.py`
 
-*65 lignes* — Événements du cycle de facturation (souscrits par ``notifications``).
+*72 lignes* — Événements du cycle de facturation (souscrits par ``notifications``).
 
 ```python
 """Événements du cycle de facturation (souscrits par ``notifications``).
@@ -1611,6 +1623,13 @@ facture_a_comptabiliser = Signal()
 # ``send()`` brut). Argument : ``reglement``.
 reglement_a_comptabiliser = Signal()
 
+# Un règlement vient d'être annulé (``annuler_reglement``) : son écriture comptable doit être contre-passée
+# et un éventuel pointage bancaire défait. ``send()`` brut, comme les signaux « à comptabiliser » :
+# une contre-passation impossible (exercice clos, compte désactivé) annule l'annulation, plutôt que
+# de laisser la trésorerie et le grand livre diverger. Argument : ``reglement`` (déjà supprimé
+# logiquement, ``motif_annulation`` renseigné).
+reglement_annule = Signal()
+
 # Une dépense automatique (plein, achat de pièces, main-d'œuvre d'OR, frais de mission, ordre de
 # décaissement) vient d'être créée : à comptabiliser (même principe, ``send()`` brut). N'est émis
 # que lors de la création réelle (pas quand ``comptabiliser_depense_automatique`` retombe sur une
@@ -1636,7 +1655,7 @@ def emettre(signal: Signal, *, sender: type | None = None, **arguments) -> None:
 
 #### `apps/billing/apps.py`
 
-*36 lignes*
+*46 lignes*
 
 ```python
 from django.apps import AppConfig
@@ -1654,10 +1673,20 @@ class BillingConfig(AppConfig):
         from . import permissions
         from .models import Depense, Facture, Proforma, Reglement
 
-        audit_model(Facture, module="FINANCES")
+        audit_model(
+            Facture,
+            module="FINANCES",
+            validation=("statut", ("EMISE",)),
+            auto_validation=("cree_par", ("validee_par",)),
+        )
         audit_model(Reglement, module="FINANCES")
         audit_model(Depense, module="FINANCES")
-        audit_model(Proforma, module="FINANCES")
+        audit_model(
+            Proforma,
+            module="FINANCES",
+            validation=("statut", ("VALIDEE",)),
+            auto_validation=("cree_par", ("valide_par_finances", "valide_par_direction")),
+        )
         enregistrer(
             EntreeMenu(
                 "Facturation", "billing:factures", "fa-file-invoice-dollar",
@@ -2943,6 +2972,84 @@ def test_un_recepteur_en_erreur_ne_bloque_jamais_la_facturation(caplog):
     assert facture.statut == StatutFacture.EMISE and "en erreur" in caplog.text
 ```
 
+#### `apps/missions/tests/test_encaissement_annule.py`
+
+*71 lignes* — Audit (Lot H, limite connue) : annuler un règlement retire son reflet de la prévision de trésorerie de la mission.
+
+```python
+"""Audit (Lot H, limite connue) : annuler un règlement retire son reflet de la prévision de trésorerie de la mission."""
+
+from decimal import Decimal
+
+import pytest
+from django.core.management import call_command
+
+from apps.billing import services as billing
+from apps.billing.models import ModePaiement, Reglement
+from apps.billing.tests.helpers import JOUR, emise, finances
+from apps.missions.models import FraisMission, TypeFraisMission
+
+pytestmark = pytest.mark.django_db
+
+
+def _encaissements(mission):
+    return FraisMission.objects.filter(mission=mission, type_frais=TypeFraisMission.ENCAISSEMENT)
+
+
+def _reglement(facture, montant="100000"):
+    return billing.enregistrer_reglement(
+        facture, finances(), montant=Decimal(montant), mode=ModePaiement.VIREMENT, date_reglement=JOUR
+    )
+
+
+def test_un_reglement_se_reflete_sur_la_mission_avec_son_lien():
+    facture = emise(prix="1000000")
+    reglement = _reglement(facture)
+
+    ligne = _encaissements(facture.mission).get()
+
+    assert ligne.reglement == reglement
+
+
+def test_annuler_le_reglement_retire_l_encaissement_de_la_mission():
+    facture = emise(prix="1000000")
+    premier, second = _reglement(facture, "100000"), _reglement(facture, "200000")
+
+    billing.annuler_reglement(premier, finances(), motif="Erreur de saisie")
+
+    restantes = _encaissements(facture.mission)
+    assert [(l.reglement_id, l.montant) for l in restantes] == [(second.pk, Decimal("200000.00"))]
+    # soft delete : la ligne reste en base, tracée
+    assert FraisMission.all_objects.filter(reglement=premier, is_deleted=True).count() == 1
+
+
+def test_la_commande_de_reprise_rattache_et_retire_les_anciens_encaissements():
+    facture = emise(prix="1000000")
+    garde, annule = _reglement(facture, "100000"), _reglement(facture, "250000")
+    billing.annuler_reglement(annule, finances(), motif="Erreur")
+    # état « avant ce lot » : aucune ligne n'avait de lien, et celle de l'annulé était restée
+    FraisMission.all_objects.filter(type_frais=TypeFraisMission.ENCAISSEMENT).update(
+        reglement=None, is_deleted=False, deleted_at=None
+    )
+
+    call_command("rattacher_encaissements_missions")
+    call_command("rattacher_encaissements_missions")  # rejouable
+
+    actives = _encaissements(facture.mission)
+    assert [(l.reglement_id, l.montant) for l in actives] == [(garde.pk, Decimal("100000.00"))]
+    assert Reglement.all_objects.get(pk=annule.pk).is_deleted
+
+
+def test_la_commande_en_simulation_n_ecrit_rien():
+    facture = emise(prix="1000000")
+    _reglement(facture)
+    FraisMission.objects.filter(type_frais=TypeFraisMission.ENCAISSEMENT).update(reglement=None)
+
+    call_command("rattacher_encaissements_missions", "--dry-run")
+
+    assert _encaissements(facture.mission).get().reglement_id is None
+```
+
 ## Étape 5 — Déclarer l'application et migrer
 
 #### `config/settings/base.py` — modifications
@@ -2997,6 +3104,23 @@ reprend son trajet et son prix). C'est exactement ce que fait la vraie migration
 +        help_text=_("Devis accepté dont cette mission reprend le trajet et le prix (R6)."),
      )
      vehicule = models.ForeignKey(
+@@ -198,4 +207,16 @@
+         _("justificatif"), upload_to="frais_mission/justificatifs/%Y/%m/", blank=True
+     )
++    reglement = models.ForeignKey(
++        "billing.Reglement",
++        verbose_name=_("règlement"),
++        null=True,
++        blank=True,
++        on_delete=models.SET_NULL,
++        related_name="+",
++        help_text=_(
++            "Renseigné pour un encaissement : le règlement qu'il reflète. Si ce règlement est annulé, "
++            "l'encaissement disparaît de la prévision de trésorerie de la mission."
++        ),
++    )
+     statut = models.CharField(
+         _("statut"), max_length=10, choices=StatutFraisMission.choices, default=StatutFraisMission.PREVU
 ```
 
 #### `apps/missions/README.md` — modifications
@@ -3040,10 +3164,17 @@ python manage.py check
 ```
 
 ```bash
-python -m pytest apps/billing/tests/test_proforma.py apps/billing/tests/test_r6_creer_mission.py apps/billing/tests/test_services.py -q --no-cov
+python -m pytest apps/billing/tests/test_proforma.py apps/billing/tests/test_r6_creer_mission.py apps/billing/tests/test_services.py apps/missions/tests/test_encaissement_annule.py -q --no-cov
 ```
 
-**Résultat attendu :** `100 passed` (pour les 3 fichier(s) de tests présentés dans ce chapitre).
+**Résultat attendu :** `100 passed, 4 failed` (pour les 4 fichier(s) de tests présentés dans ce chapitre).
+
+Des tests échouent à ce stade, **c'est normal** : ils vérifient des écrans qui n'existent pas encore (par exemple la page d'accueil). Ils passeront au chapitre indiqué :
+
+- `test_encaissement_annule.py::test_annuler_le_reglement_retire_l_encaissement_de_la_mission` → chapitre 14 (« La trésorerie : l'app finance »)
+- `test_encaissement_annule.py::test_la_commande_de_reprise_rattache_et_retire_les_anciens_encaissements` → chapitre 14 (« La trésorerie : l'app finance »)
+- `test_encaissement_annule.py::test_la_commande_en_simulation_n_ecrit_rien` → chapitre 14 (« La trésorerie : l'app finance »)
+- `test_encaissement_annule.py::test_un_reglement_se_reflete_sur_la_mission_avec_son_lien` → chapitre 14 (« La trésorerie : l'app finance »)
 
 (Les tests d'écrans de `billing` sont présentés au chapitre 26.)
 

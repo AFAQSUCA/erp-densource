@@ -17,6 +17,10 @@ consommation est calculée, pour repérer très vite les anomalies : fuite, vol,
 Tous les seuils sont **stricts** (« supérieur à », pas « supérieur ou égal »). Les alertes jaune/rouge et la
 saisie suspecte sont indépendantes : +65 % est *à la fois* rouge et suspect.
 
+**Cohérence de la saisie.** Un plein est refusé avant d'être enregistré si sa **date est dans le futur** (elle bloquerait toutes
+les saisies suivantes du camion), si son **volume dépasse le réservoir** du camion, ou si son **kilométrage** est à plus de
+5 000 km du relevé précédent (`fleet.ECART_KM_MAX`) : le compteur d'un camion ne reculant jamais, un chiffre en trop le figerait.
+
 ## Prérequis
 
 - Chapitres 1 à 11 terminés.

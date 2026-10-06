@@ -287,7 +287,7 @@ Montez les adresses :
 ```diff
 --- config/urls.py (avant)
 +++ config/urls.py (après)
-@@ -17,4 +17,5 @@
+@@ -19,4 +19,5 @@
      path("", include("apps.accounts.urls")),
      path("rh/", include("apps.hr.urls")),
 +    path("chauffeurs/", include("apps.drivers.urls")),

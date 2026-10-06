@@ -1,6 +1,6 @@
 # Chapitre 14 — La trésorerie : l'app finance
 
-> 16 fichier(s) dans ce chapitre, 2276 lignes de code.
+> 15 fichier(s) dans ce chapitre, 1946 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -29,6 +29,14 @@ espèces → caisse, Wave / Orange Money / MTN → mobile money.
 > chiffres**. Le **rapprochement bancaire** (compte Banque uniquement : saisie du relevé, suggestion de
 > pointage même sens/montant, écart) vit dans ces mêmes `models.py`/`services.py` ; son écran arrive plus tard,
 > au chapitre « Écrans : facturation, dépenses et trésorerie ».
+
+**Marge nette hors taxes.** La marge nette est calculée comme le compte de résultat comptable : **CA HT − charges HT**
+(charges TTC moins TVA déductible). Les charges affichées restent TTC — même total que la page Dépenses et la trésorerie —, avec la
+TVA récupérable en plus (`charges()["tva_deductible"]`).
+
+**Rapprochement bancaire.** `pointer_ligne_releve` vérifie que le mouvement existe sur le compte **Banque**, qu'il a le même sens
+et le même montant que la ligne, et que la ligne n'est pas déjà pointée. Un écart persistant (frais bancaires) se corrige par un
+**mouvement de trésorerie** sur la Banque, pas par une opération diverse comptable seule.
 
 ## Prérequis
 
@@ -330,7 +338,7 @@ Un seul modèle : `MouvementManuel`. Tout le reste de la trésorerie vient des m
 
 #### `apps/finance/services.py`
 
-*508 lignes* — Trésorerie et indicateurs financiers — cahier-des-charges.md:195-199.
+*547 lignes* — Trésorerie et indicateurs financiers — cahier-des-charges.md:195-199.
 
 ```python
 """Trésorerie et indicateurs financiers — cahier-des-charges.md:195-199.
@@ -339,8 +347,10 @@ Trésorerie = ce qui a réellement bougé : règlements reçus (entrées), dépe
 et mouvements manuels. Le compte (banque, caisse, mobile money) se déduit du mode de paiement.
 
 Charges du mois (indicateur, distinct de la trésorerie) = dépenses saisies + carburant (pleins)
-+ coût des OR clôturés (main-d'œuvre et pièces). Marge nette = CA HT - charges. Les trois
-composantes restent visibles séparément.
++ coût des OR clôturés (main-d'œuvre et pièces). Les trois composantes restent visibles séparément.
+Les charges sont comptées TTC (ce qui a été payé : même total que la page Dépenses et la trésorerie) ;
+la marge nette, elle, se calcule **hors taxes**, comme le compte de résultat : CA HT - (charges - TVA
+déductible). Retrancher des charges TTC d'un CA HT sous-estimait la marge de la TVA récupérable.
 
 Rapprochement bancaire (avenant-comptabilite-autonomie.md § Lot G) : confronte les lignes du
 relevé bancaire, saisies à la main, aux mouvements de trésorerie déjà enregistrés sur le compte
@@ -436,6 +446,8 @@ def annuler_mouvement(mouvement: MouvementManuel, acteur, *, motif: str) -> None
     mouvement.motif_annulation = motif.strip()
     mouvement.save(update_fields=["motif_annulation", "updated_at"])
     mouvement.delete(deleted_by=acteur)
+    depointer_mouvement("MANUEL", mouvement.pk)
+    signals.mouvement_annule.send(sender=MouvementManuel, mouvement=mouvement)
 
 
 # --- lecture ---
@@ -577,18 +589,48 @@ def suggestions_pointage(ligne: LigneReleve) -> list[dict]:
 @transaction.atomic
 def pointer_ligne_releve(ligne: LigneReleve, acteur, *, origine: str, mouvement_id: int) -> LigneReleve:
     """Associe la ligne de relevé à un mouvement de trésorerie précis (un règlement, une dépense
-    ou un mouvement manuel), identifié par son origine et son identifiant."""
+    ou un mouvement manuel), identifié par son origine et son identifiant.
+
+    Le mouvement doit exister sur le compte Banque (un relevé bancaire ne concerne ni la caisse ni le Mobile
+    Money), avoir le même sens et le même montant que la ligne, et la ligne ne doit pas déjà être pointée :
+    sinon on rapprocherait deux choses qui ne se correspondent pas."""
     if acteur.role_effectif not in billing_permissions.SAISIE:
         raise ActionFactureNonAutorisee("Vous n'avez pas le droit de pointer une ligne de relevé.")
     if origine not in {"REGLEMENT", "DEPENSE", "MANUEL"}:
         raise MontantInvalide("Origine de mouvement inconnue.")
+    ligne = LigneReleve.objects.select_for_update().get(pk=ligne.pk)
+    if ligne.pointee:
+        raise MontantInvalide("Cette ligne du relevé est déjà pointée : dépointez-la d'abord pour la réassocier.")
     if (origine, mouvement_id) in _mouvements_deja_pointes():
         raise MontantInvalide("Ce mouvement est déjà pointé sur une autre ligne du relevé.")
+    mouvement = next(
+        (
+            m
+            for m in mouvements(compte=CompteTresorerie.BANQUE)
+            if m["origine"] == origine and m["pk"] == mouvement_id
+        ),
+        None,
+    )
+    if mouvement is None:
+        raise MontantInvalide("Ce mouvement n'existe pas sur le compte Banque.")
+    if mouvement["sens"] != ligne.sens or mouvement["montant"] != ligne.montant:
+        raise MontantInvalide(
+            "Ce mouvement ne correspond pas à la ligne du relevé : même sens et même montant attendus."
+        )
     ligne.pointee = True
     ligne.mouvement_origine = origine
     ligne.mouvement_id = mouvement_id
     ligne.save(update_fields=["pointee", "mouvement_origine", "mouvement_id", "updated_at"])
     return ligne
+
+
+def depointer_mouvement(origine: str, mouvement_id: int) -> int:
+    """Défait le pointage d'une ligne de relevé sur un mouvement qui vient d'être annulé : la ligne
+    redevient à pointer, au lieu de rester associée à un mouvement qui n'existe plus. Renvoie le
+    nombre de lignes concernées."""
+    return LigneReleve.objects.filter(
+        pointee=True, mouvement_origine=origine, mouvement_id=mouvement_id
+    ).update(pointee=False, mouvement_origine="", mouvement_id=None, updated_at=timezone.now())
 
 
 def depointer_ligne_releve(ligne: LigneReleve, acteur) -> LigneReleve:
@@ -606,7 +648,8 @@ def rapprochement_bancaire(*, debut: date, fin: date) -> dict:
     """État du rapprochement sur la période : solde du relevé, solde des mouvements Banque déjà
     enregistrés, écart entre les deux, et le détail de chaque côté non encore pointé (un écart
     persistant après pointage signale une opération jamais saisie — frais bancaires, par exemple —
-    à corriger via une écriture manuelle existante, pas un nouveau mécanisme ici)."""
+    à enregistrer comme mouvement manuel de trésorerie (nature « Frais bancaires », compte Banque) : c'est lui
+    qui entre dans ``solde_comptable`` et dans le grand livre, pas une opération diverse comptable seule)."""
     lignes_releve = list(
         LigneReleve.objects.filter(date_operation__gte=debut, date_operation__lte=fin)
     )
@@ -717,7 +760,8 @@ def charges(debut: date, fin: date) -> dict:
     (avance, dépense prévue, imprévu — R4) sont des dépenses comme les autres (``finance.receivers``) :
     la page Dépenses, la trésorerie et ces charges donnent le même total. Ventilation : ``carburant``,
     ``pieces`` (achetées), ``main_oeuvre`` (des OR), ``maintenance`` (pièces + main-d'œuvre),
-    ``frais_mission`` et ``depenses`` (le reste : péages, frais, saisies à la main).
+    ``frais_mission`` et ``depenses`` (le reste : péages, frais, saisies à la main). ``total`` est TTC (payé) ;
+    ``tva_deductible`` en est la part récupérable et ``total_ht`` la charge réelle (``total - tva_deductible``).
     """
     par_categorie = {c["code"]: c["total"] for c in billing_services.depenses_par_categorie(debut, fin)}
     carburant = par_categorie[CategorieDepense.CARBURANT]
@@ -725,6 +769,7 @@ def charges(debut: date, fin: date) -> dict:
     main_oeuvre = par_categorie[CategorieDepense.MAINTENANCE]
     frais_mission = par_categorie[CategorieDepense.FRAIS_MISSION]
     total = sum(par_categorie.values(), ZERO)
+    tva_deductible = billing_services.total_tva_deductible(debut, fin)
     return {
         "depenses": total - carburant - pieces - main_oeuvre - frais_mission,
         "carburant": carburant,
@@ -733,6 +778,8 @@ def charges(debut: date, fin: date) -> dict:
         "maintenance": pieces + main_oeuvre,
         "frais_mission": frais_mission,
         "total": total,
+        "tva_deductible": tva_deductible,
+        "total_ht": total - tva_deductible,
     }
 
 
@@ -772,7 +819,7 @@ def indicateurs(debut: date, fin: date, *, aujourd_hui: date | None = None) -> d
         "chiffre_affaires": ca,
         "encaisse": billing_services.encaissements(debut, fin),
         "charges": charges_periode,
-        "marge_nette": ca - charges_periode["total"],
+        "marge_nette": ca - charges_periode["total_ht"],  # HT des deux côtés, comme le compte de résultat
         "creances": billing_services.creances(aujourd_hui),
         "tresorerie": soldes_par_compte()["total"],
     }
@@ -891,7 +938,7 @@ Elle **réutilise** celles de `billing` : mêmes droits, écrits une seule fois.
 
 #### `apps/finance/apps.py`
 
-*37 lignes*
+*45 lignes*
 
 ```python
 from django.apps import AppConfig
@@ -905,15 +952,23 @@ class FinanceConfig(AppConfig):
     def ready(self):
         from apps.accounts.navigation import EntreeMenu, enregistrer
         from apps.audit.registry import audit_model
+        from apps.core.medias import enregistrer_media
 
         from . import permissions, receivers  # noqa: F401  (connecte les récepteurs)
         from .models import DemandeDepense, EnveloppeDepense, LigneReleve, MouvementManuel, OrdreDecaissement
 
         audit_model(MouvementManuel, module="FINANCES")
         audit_model(EnveloppeDepense, module="FINANCES")
-        audit_model(DemandeDepense, module="FINANCES")
+        audit_model(
+            DemandeDepense,
+            module="FINANCES",
+            validation=("statut", ("VALIDEE",)),
+            auto_validation=("demandeur", ("valide_par",)),
+        )
         audit_model(OrdreDecaissement, module="FINANCES")
         audit_model(LigneReleve, module="FINANCES")
+        enregistrer_media("demandes_depense", permissions.DEMANDE_CONSULTATION)
+        enregistrer_media("ordres_decaissement", permissions.DEMANDE_CONSULTATION)
         enregistrer(
             EntreeMenu(
                 "Trésorerie", "finance:tresorerie", "fa-wallet", permissions.CONSULTATION, ordre=62
@@ -935,7 +990,7 @@ class FinanceConfig(AppConfig):
 
 #### `apps/finance/README.md`
 
-*109 lignes* — finance
+*114 lignes* — finance
 
 ````markdown
 # finance
@@ -1030,7 +1085,7 @@ pour le graphique du tableau de bord ; le mois en cours reprend les indicateurs 
 - CA facturé = total **HT** des factures émises ; encaissé = règlements du mois ;
 - charges = **toutes les dépenses** (`services.charges`), y compris celles du parc auto et des missions qui se
   créent toutes seules (voir ci-dessous) ; ventilées en carburant, pièces, main-d'œuvre, frais de mission et autres ;
-- marge nette = CA HT - charges ; créances = reste à recouvrer (dont échu) ; trésorerie = solde.
+- marge nette = CA HT - charges HT (charges TTC moins TVA déductible, comme le compte de résultat) ; créances = reste à recouvrer (dont échu) ; trésorerie = solde.
   Les charges (économiques) et la trésorerie (réelle) ne sont volontairement pas les mêmes chiffres.
 
 **Rapprochement bancaire** (`/finances/rapprochement/`, Lot G — avenant-comptabilite-autonomie.md) :
@@ -1047,11 +1102,16 @@ mécanisme. Les écritures comptables (partie double, SYSCOHADA) sont générée
 chaque événement de trésorerie — voir `apps/accounting/README.md` et `avenant-comptabilite-syscohada.md`.
 
 Rapport imprimable de la trésorerie (`/finances/imprimer/`, bouton « Imprimer ») : soldes par compte, synthèse et journal de la période filtrée, mêmes filtres que l'écran, plafonné à 500 lignes (voir `apps/core/README.md`).
+
+**Rapprochement bancaire** : `pointer_ligne_releve` vérifie que le mouvement existe sur le compte Banque, qu'il a le même
+sens et le même montant que la ligne, et que la ligne n'est pas déjà pointée. Un écart persistant (frais bancaires) se
+corrige par un **mouvement de trésorerie** sur la Banque (nature « Frais bancaires »), qui entre dans le solde comptable et
+dans le grand livre — pas par une opération diverse comptable seule. Export Excel du journal : `/finances/excel/`.
 ````
 
 #### `apps/finance/signals.py`
 
-*34 lignes* — Événements des dépenses pré-approuvées du parc auto (R2), souscrits par ``notifications``.
+*39 lignes* — Événements des dépenses pré-approuvées du parc auto (R2), souscrits par ``notifications``.
 
 ```python
 """Événements des dépenses pré-approuvées du parc auto (R2), souscrits par ``notifications``.
@@ -1083,6 +1143,11 @@ ordre_depassement = Signal()
 # trésorerie non tracé). Argument : ``mouvement``.
 mouvement_a_comptabiliser = Signal()
 
+# Un mouvement manuel vient d'être annulé (``annuler_mouvement``) : son écriture comptable doit être
+# contre-passée. ``send()`` brut, même principe que ``mouvement_a_comptabiliser``. Argument :
+# ``mouvement`` (déjà supprimé logiquement, ``motif_annulation`` renseigné).
+mouvement_annule = Signal()
+
 
 def emettre(signal: Signal, **arguments) -> None:
     for recepteur, resultat in signal.send_robust(sender=None, **arguments):
@@ -1092,7 +1157,7 @@ def emettre(signal: Signal, **arguments) -> None:
 
 #### `apps/finance/receivers.py`
 
-*104 lignes* — Comptabilisation automatique des dépenses du parc auto.
+*118 lignes* — Comptabilisation automatique des dépenses du parc auto.
 
 ```python
 """Comptabilisation automatique des dépenses du parc auto.
@@ -1114,7 +1179,7 @@ from django.utils import timezone
 
 from apps.billing import services as billing_services
 from apps.billing.models import CategorieDepense, OrigineDepense
-from apps.billing.signals import reglement_enregistre
+from apps.billing.signals import reglement_annule, reglement_enregistre
 from apps.fuel.signals import plein_enregistre
 from apps.garage.signals import or_cloture
 from apps.inventory.signals import entree_stock_enregistree
@@ -1122,7 +1187,7 @@ from apps.missions import terrain as missions_terrain
 from apps.missions.models import TypeFraisMission
 from apps.missions.signals import frais_mission_confirme
 
-from . import demandes
+from . import demandes, services
 
 
 @receiver(plein_enregistre)
@@ -1198,7 +1263,21 @@ def refleter_l_encaissement_sur_la_mission(sender, reglement, **kwargs):
         montant=reglement.montant,
         libelle=f"Règlement {reglement.facture.numero} ({reglement.get_mode_display()})",
         saisi_par=reglement.saisi_par,
+        reglement=reglement,
     )
+
+
+@receiver(reglement_annule)
+def retirer_l_encaissement_d_un_reglement_annule(sender, reglement, **kwargs):
+    """Le reflet du règlement dans la prévision de trésorerie de la mission disparaît avec lui."""
+    missions_terrain.retirer_encaissements_du_reglement(reglement)
+
+
+@receiver(reglement_annule)
+def defaire_le_pointage_d_un_reglement_annule(sender, reglement, **kwargs):
+    """Une ligne de relevé pointée sur ce règlement redevient à pointer (``send()`` brut : avec la
+    contre-passation comptable, l'annulation d'un règlement est tout ou rien)."""
+    services.depointer_mouvement("REGLEMENT", reglement.pk)
 ```
 
 #### `apps/finance/demandes.py`
@@ -2019,413 +2098,6 @@ def test_un_reglement_recu_se_reflete_dans_les_frais_de_la_mission():
     assert not Depense.objects.filter(mission=facture.mission).exists()
 ```
 
-#### `apps/finance/tests/test_services.py`
-
-*400 lignes* — Trésorerie (règlements, dépenses, mouvements manuels) et indicateurs financiers.
-
-```python
-"""Trésorerie (règlements, dépenses, mouvements manuels) et indicateurs financiers."""
-
-from datetime import date, timedelta
-from decimal import Decimal
-
-import pytest
-from django.utils import timezone
-
-from apps.accounts.models import Role
-from apps.accounts.tests.factories import UserFactory
-from apps.billing import services as billing
-from apps.billing.exceptions import ActionFactureNonAutorisee, MontantInvalide
-from apps.billing.models import ModePaiement
-from apps.billing.tests.helpers import JOUR, direction, emise, finances
-from apps.drivers.tests.factories import ChauffeurFactory
-from apps.finance import services
-from apps.finance.models import MouvementManuel, SensMouvement
-from apps.fleet.tests.factories import VehiculeFactory
-from apps.fuel import services as fuel
-from apps.garage import services as garage
-from apps.garage.models import LieuReparation, TypeOr
-from apps.inventory import services as stock
-from apps.inventory.tests.factories import ArticleFactory
-
-pytestmark = pytest.mark.django_db
-
-SEPT = (date(2026, 9, 1), date(2026, 9, 30))
-
-
-def _manuel(sens=SensMouvement.ENTREE, montant="100000", *, mode=ModePaiement.VIREMENT, jour=JOUR,
-            libelle="Apport", acteur=None):
-    return services.enregistrer_mouvement(
-        acteur or finances(), sens=sens, date_mouvement=jour, libelle=libelle,
-        montant=Decimal(montant), mode=mode,
-    )
-
-
-def _reglement(facture, montant, mode=ModePaiement.VIREMENT, jour=JOUR):
-    return billing.enregistrer_reglement(
-        facture, finances(), montant=Decimal(montant), mode=mode, date_reglement=jour
-    )
-
-
-def _depense(montant, mode=ModePaiement.ESPECES, jour=JOUR, categorie="PEAGES"):
-    return billing.enregistrer_depense(
-        finances(), categorie=categorie, date_depense=jour, libelle="Péage", montant=Decimal(montant), mode=mode
-    )
-
-
-# --- mouvements manuels ---
-
-
-def test_un_mouvement_manuel_s_enregistre_et_s_annule_avec_un_motif():
-    mouvement = _manuel()
-
-    services.annuler_mouvement(mouvement, finances(), motif="Doublon")
-
-    assert not MouvementManuel.objects.filter(pk=mouvement.pk).exists()
-    assert MouvementManuel.all_objects.get(pk=mouvement.pk).motif_annulation == "Doublon"
-
-
-@pytest.mark.parametrize(
-    ("libelle", "montant", "jour", "message"),
-    [
-        ("  ", "10", JOUR, "libellé"),
-        ("x", "0", JOUR, "strictement positif"),
-        ("x", "10", date(2999, 1, 1), "futur"),
-    ],
-)
-def test_mouvements_invalides(libelle, montant, jour, message):
-    with pytest.raises(MontantInvalide, match=message):
-        _manuel(libelle=libelle, montant=montant, jour=jour)
-
-
-def test_les_mouvements_sont_reserves_a_la_saisie_facturation():
-    # Retour réunion : la DIRECTION (même largeur que l'ADMIN) est désormais dans la SAISIE ;
-    # le Parc Auto, lui, n'y a jamais eu accès.
-    with pytest.raises(ActionFactureNonAutorisee):
-        _manuel(acteur=UserFactory(role=Role.PARCAUTO))
-    mouvement = _manuel()
-    with pytest.raises(ActionFactureNonAutorisee):
-        services.annuler_mouvement(mouvement, UserFactory(role=Role.PARCAUTO), motif="x")
-    with pytest.raises(MontantInvalide, match="motif"):
-        services.annuler_mouvement(mouvement, finances(), motif=" ")
-
-
-def test_la_direction_peut_desormais_saisir_un_mouvement():
-    """Retour réunion : la DIRECTION a la même largeur que l'ADMIN pour la saisie."""
-    assert _manuel(acteur=direction()).pk
-
-
-# --- journal et soldes ---
-
-
-def test_le_solde_reunit_reglements_depenses_et_mouvements_par_compte():
-    facture = emise(prix="1000000")  # TTC 1 180 000
-    _reglement(facture, "500000", ModePaiement.VIREMENT)
-    _reglement(facture, "100000", ModePaiement.WAVE)
-    _depense("20000", ModePaiement.ESPECES)
-    _manuel(SensMouvement.ENTREE, "50000", mode=ModePaiement.ESPECES, libelle="Solde de caisse")
-    _manuel(SensMouvement.SORTIE, "5000", mode=ModePaiement.VIREMENT, libelle="Frais bancaires")
-
-    soldes = services.soldes_par_compte()
-
-    assert soldes["BANQUE"] == Decimal("495000")  # 500 000 - 5 000
-    assert soldes["CAISSE"] == Decimal("30000")  # 50 000 - 20 000
-    assert soldes["MOBILE_MONEY"] == Decimal("100000")
-    assert soldes["total"] == Decimal("625000")
-
-
-def test_un_reglement_annule_ne_compte_plus():
-    facture = emise(prix="1000000")
-    reglement = _reglement(facture, "300000")
-    billing.annuler_reglement(reglement, finances(), motif="Erreur")
-
-    assert services.soldes_par_compte()["total"] == 0
-    assert services.mouvements() == []
-
-
-def test_le_journal_est_trie_et_decrit_chaque_origine():
-    facture = emise(prix="1000000")
-    _reglement(facture, "100000", jour=date(2026, 9, 3))
-    _depense("5000", jour=date(2026, 9, 5))
-    _manuel(jour=date(2026, 9, 4), libelle="Apport")
-
-    journal = services.mouvements()
-
-    assert [(m["origine"], m["sens"]) for m in journal] == [
-        ("DEPENSE", "SORTIE"), ("MANUEL", "ENTREE"), ("REGLEMENT", "ENTREE"),
-    ]
-    assert journal[2]["libelle"].startswith(f"Règlement {facture.numero} · ")
-    assert journal[2]["compte"] == "BANQUE" and journal[0]["compte"] == "CAISSE"
-
-
-def test_le_journal_se_filtre_par_periode_sens_et_compte():
-    facture = emise(prix="1000000")
-    _reglement(facture, "100000", ModePaiement.WAVE, date(2026, 9, 3))
-    _depense("5000", ModePaiement.ESPECES, date(2026, 9, 10))
-    _manuel(SensMouvement.SORTIE, "1000", mode=ModePaiement.VIREMENT, jour=date(2026, 9, 15), libelle="Frais")
-
-    assert len(services.mouvements(date_debut=date(2026, 9, 5))) == 2
-    assert len(services.mouvements(date_fin=date(2026, 9, 5))) == 1
-    assert [m["origine"] for m in services.mouvements(sens="ENTREE")] == ["REGLEMENT"]
-    assert sorted(m["origine"] for m in services.mouvements(sens="SORTIE")) == ["DEPENSE", "MANUEL"]
-    assert [m["origine"] for m in services.mouvements(compte="MOBILE_MONEY")] == ["REGLEMENT"]
-    assert services.mouvements(compte="CAISSE")[0]["origine"] == "DEPENSE"
-
-
-def test_synthese_de_periode_entrees_sorties_variation():
-    facture = emise(prix="1000000")
-    _reglement(facture, "400000", jour=date(2026, 9, 3))
-    _manuel(SensMouvement.ENTREE, "100000", jour=date(2026, 9, 4))
-    _depense("30000", jour=date(2026, 9, 6))
-    _manuel(SensMouvement.SORTIE, "20000", jour=date(2026, 9, 7), libelle="Frais")
-    _depense("999", jour=date(2026, 8, 6))  # hors période
-
-    assert services.synthese_periode(*SEPT) == {
-        "entrees": Decimal("500000"), "sorties": Decimal("50000"), "variation": Decimal("450000"),
-    }
-
-
-def test_sans_mouvement_tout_est_a_zero():
-    assert services.soldes_par_compte()["total"] == 0
-    assert services.synthese_periode(*SEPT)["variation"] == 0
-
-
-# --- charges et indicateurs ---
-
-
-def _or_cloture(jour_cloture, main_oeuvre="30000", pieces=2):
-    ordre = garage.ouvrir_or(
-        VehiculeFactory(), type_or=TypeOr.CURATIF, lieu=LieuReparation.INTERNE, motif="Freins"
-    )
-    article = ArticleFactory(reference=f"P-{ordre.pk}", quantite=0)
-    stock.enregistrer_entree(article, quantite=10, prix_unitaire=Decimal("5000"))
-    stock.sortir_pour_or(article, quantite=pieces, ordre=ordre)
-    garage.cloturer_or(ordre, cout_main_oeuvre=Decimal(main_oeuvre))
-    type(ordre).objects.filter(pk=ordre.pk).update(
-        date_cloture=timezone.now().replace(year=jour_cloture.year, month=jour_cloture.month, day=jour_cloture.day)
-    )
-    return ordre
-
-
-def _plein(litres, prix, jour, camion=None, km=1000, ticket="T"):
-    return fuel.enregistrer_plein(
-        vehicule=camion or VehiculeFactory(), chauffeur=ChauffeurFactory(), date_plein=jour, station="T",
-        quantite_litres=Decimal(litres), prix_unitaire=Decimal(prix), km_compteur=km, numero_ticket=ticket,
-    )
-
-
-def test_le_cout_du_carburant_est_litres_fois_prix_sur_la_periode():
-    _plein("100", "655", date(2026, 9, 3), ticket="A")
-    _plein("50", "660", date(2026, 9, 8), ticket="B")
-    _plein("999", "700", date(2026, 8, 30), ticket="C")  # hors période
-
-    assert fuel.cout_carburant(*SEPT) == Decimal("98500")  # 65 500 + 33 000
-
-
-def test_le_cout_des_or_clotures_compte_main_d_oeuvre_et_pieces_de_la_periode():
-    _or_cloture(date(2026, 9, 10), main_oeuvre="30000", pieces=2)  # 30 000 + 2 x 5 000
-    _or_cloture(date(2026, 8, 10), main_oeuvre="99999", pieces=1)  # hors période
-
-    assert stock.cout_des_or_clotures(*SEPT) == Decimal("40000")
-
-
-def test_charges_regroupe_depenses_carburant_pieces_et_main_d_oeuvre():
-    """Le carburant, les pièces achetées et la main-d'œuvre des OR sont des dépenses comme les autres."""
-    from apps.billing.models import Depense, OrigineDepense
-
-    _depense("20000", jour=date(2026, 9, 2))
-    _plein("100", "655", date(2026, 9, 3))
-    _or_cloture(date(2026, 9, 10), main_oeuvre="30000", pieces=2)  # achat de 10 pièces à 5 000 + main-d'œuvre
-    Depense.objects.filter(origine__in=[OrigineDepense.ACHAT_STOCK, OrigineDepense.MAIN_OEUVRE_OR]).update(
-        date_depense=date(2026, 9, 10)
-    )
-
-    charges = services.charges(*SEPT)
-
-    assert charges == {
-        "depenses": Decimal("20000"),
-        "carburant": Decimal("65500"),
-        "pieces": Decimal("50000"),  # comptées à l'achat, pas à la sortie vers l'OR
-        "main_oeuvre": Decimal("30000"),
-        "maintenance": Decimal("80000"),
-        "frais_mission": Decimal("0"),
-        "total": Decimal("165500"),
-    }
-
-
-def test_indicateurs_du_mois():
-    facture = emise(prix="1000000", aujourd_hui=date(2026, 9, 10))
-    emise(prix="500000", aujourd_hui=date(2026, 9, 12))  # créance non échue au 20/09
-    _reglement(facture, "600000", jour=date(2026, 9, 15))
-    _depense("100000", jour=date(2026, 9, 5))
-
-    kpi = services.indicateurs(*SEPT, aujourd_hui=date(2026, 9, 20))
-
-    assert kpi["chiffre_affaires"] == Decimal("1500000")  # HT
-    assert kpi["encaisse"] == Decimal("600000")
-    assert kpi["charges"]["total"] == Decimal("100000")
-    assert kpi["marge_nette"] == Decimal("1400000")
-    assert kpi["creances"]["total"] == Decimal("1180000") - Decimal("600000") + Decimal("590000")
-    assert kpi["creances"]["nombre_echues"] == 0
-    assert kpi["tresorerie"] == Decimal("500000")  # 600 000 encaissés - 100 000 dépensés
-
-
-def test_la_marge_peut_etre_negative():
-    _depense("300000", jour=date(2026, 9, 5))
-
-    assert services.indicateurs(*SEPT)["marge_nette"] == Decimal("-300000")
-
-
-def test_un_utilisateur_de_role_rh_saisit_desormais_comme_la_finance():
-    """Retour réunion : la RH fait tout ce que fait la FINANCES, y compris la trésorerie."""
-    assert _manuel(acteur=UserFactory(role=Role.RH)).pk
-
-
-# --- rapprochement bancaire (Lot G) ---
-
-
-def _ligne_releve(sens=SensMouvement.ENTREE, montant="100000", jour=JOUR, libelle="Virement client",
-                   acteur=None, reference=""):
-    return services.saisir_ligne_releve(
-        acteur or finances(), date_operation=jour, libelle=libelle, montant=Decimal(montant), sens=sens,
-        reference=reference,
-    )
-
-
-def test_une_ligne_de_releve_se_saisit_a_la_main():
-    ligne = _ligne_releve(reference="REF1")
-
-    assert ligne.pk
-    assert ligne.pointee is False
-    assert ligne.reference == "REF1"
-
-
-@pytest.mark.parametrize(
-    ("libelle", "montant", "sens", "jour", "message"),
-    [
-        ("  ", "10", SensMouvement.ENTREE, JOUR, "libellé"),
-        ("x", "0", SensMouvement.ENTREE, JOUR, "strictement positif"),
-        ("x", "10", "AUTRE", JOUR, "Sens inconnu"),
-        ("x", "10", SensMouvement.ENTREE, date(2999, 1, 1), "futur"),
-    ],
-)
-def test_saisie_de_ligne_de_releve_invalide(libelle, montant, sens, jour, message):
-    with pytest.raises(MontantInvalide, match=message):
-        services.saisir_ligne_releve(
-            finances(), date_operation=jour, libelle=libelle, montant=Decimal(montant), sens=sens,
-        )
-
-
-def test_la_saisie_d_une_ligne_de_releve_est_reservee_a_la_saisie_facturation():
-    with pytest.raises(ActionFactureNonAutorisee):
-        _ligne_releve(acteur=UserFactory(role=Role.PARCAUTO))
-
-
-def test_les_suggestions_proposent_le_mouvement_banque_de_meme_sens_et_montant_le_plus_proche():
-    facture = emise(prix="1000000")
-    proche = _reglement(facture, "100000", ModePaiement.VIREMENT, jour=date(2026, 9, 4))
-    _reglement(facture, "200000", ModePaiement.VIREMENT, jour=date(2026, 9, 3))  # autre montant
-    _depense("100000", ModePaiement.ESPECES, jour=date(2026, 9, 4))  # autre compte (Caisse)
-    ligne = _ligne_releve(montant="100000", jour=date(2026, 9, 5))
-
-    suggestions = services.suggestions_pointage(ligne)
-
-    assert len(suggestions) == 1
-    assert suggestions[0]["origine"] == "REGLEMENT" and suggestions[0]["pk"] == proche.pk
-
-
-def test_pointer_associe_la_ligne_au_mouvement_choisi():
-    facture = emise(prix="1000000")
-    reglement = _reglement(facture, "100000", ModePaiement.VIREMENT)
-    ligne = _ligne_releve(montant="100000")
-
-    pointee = services.pointer_ligne_releve(ligne, finances(), origine="REGLEMENT", mouvement_id=reglement.pk)
-
-    assert pointee.pointee is True
-    assert pointee.mouvement_origine == "REGLEMENT" and pointee.mouvement_id == reglement.pk
-
-
-def test_pointer_refuse_un_mouvement_deja_pointe_sur_une_autre_ligne():
-    facture = emise(prix="1000000")
-    reglement = _reglement(facture, "100000", ModePaiement.VIREMENT)
-    premiere = _ligne_releve(montant="100000")
-    services.pointer_ligne_releve(premiere, finances(), origine="REGLEMENT", mouvement_id=reglement.pk)
-    seconde = _ligne_releve(montant="100000", libelle="Doublon")
-
-    with pytest.raises(MontantInvalide, match="déjà pointé"):
-        services.pointer_ligne_releve(seconde, finances(), origine="REGLEMENT", mouvement_id=reglement.pk)
-
-
-def test_pointer_refuse_une_origine_inconnue():
-    ligne = _ligne_releve()
-    with pytest.raises(MontantInvalide, match="Origine"):
-        services.pointer_ligne_releve(ligne, finances(), origine="AUTRE", mouvement_id=1)
-
-
-def test_pointer_est_reserve_a_la_saisie_facturation():
-    ligne = _ligne_releve()
-    with pytest.raises(ActionFactureNonAutorisee):
-        services.pointer_ligne_releve(ligne, UserFactory(role=Role.PARCAUTO), origine="MANUEL", mouvement_id=1)
-
-
-def test_depointer_annule_le_pointage():
-    facture = emise(prix="1000000")
-    reglement = _reglement(facture, "100000", ModePaiement.VIREMENT)
-    ligne = _ligne_releve(montant="100000")
-    services.pointer_ligne_releve(ligne, finances(), origine="REGLEMENT", mouvement_id=reglement.pk)
-
-    depointee = services.depointer_ligne_releve(ligne, finances())
-
-    assert depointee.pointee is False
-    assert depointee.mouvement_origine == "" and depointee.mouvement_id is None
-
-
-def test_depointer_est_reserve_a_la_saisie_facturation():
-    ligne = _ligne_releve()
-    with pytest.raises(ActionFactureNonAutorisee):
-        services.depointer_ligne_releve(ligne, UserFactory(role=Role.PARCAUTO))
-
-
-def test_le_rapprochement_calcule_les_deux_soldes_et_l_ecart_quand_ils_concordent():
-    facture = emise(prix="1000000")
-    reglement = _reglement(facture, "100000", ModePaiement.VIREMENT, jour=date(2026, 9, 4))
-    ligne = _ligne_releve(montant="100000", jour=date(2026, 9, 4))
-    services.pointer_ligne_releve(ligne, finances(), origine="REGLEMENT", mouvement_id=reglement.pk)
-
-    etat = services.rapprochement_bancaire(debut=date(2026, 9, 1), fin=date(2026, 9, 30))
-
-    assert etat["solde_releve"] == Decimal("100000")
-    assert etat["solde_comptable"] == Decimal("100000")
-    assert etat["ecart"] == 0
-    assert etat["lignes_non_pointees"] == []
-    assert etat["mouvements_non_pointes"] == []
-
-
-def test_le_rapprochement_signale_un_ecart_quand_une_operation_n_a_pas_ete_saisie():
-    facture = emise(prix="1000000")
-    _reglement(facture, "100000", ModePaiement.VIREMENT, jour=date(2026, 9, 4))  # jamais pointé
-    _ligne_releve(montant="50000", jour=date(2026, 9, 5))  # frais bancaires jamais comptabilisés
-
-    etat = services.rapprochement_bancaire(debut=date(2026, 9, 1), fin=date(2026, 9, 30))
-
-    assert etat["solde_releve"] == Decimal("50000")
-    assert etat["solde_comptable"] == Decimal("100000")
-    assert etat["ecart"] == Decimal("-50000")
-    assert len(etat["lignes_non_pointees"]) == 1
-    assert len(etat["mouvements_non_pointes"]) == 1
-
-
-def test_le_rapprochement_ignore_la_caisse_et_le_mobile_money():
-    _depense("20000", ModePaiement.ESPECES, jour=date(2026, 9, 4))
-    facture = emise(prix="1000000")
-    _reglement(facture, "30000", ModePaiement.WAVE, jour=date(2026, 9, 4))
-
-    etat = services.rapprochement_bancaire(debut=date(2026, 9, 1), fin=date(2026, 9, 30))
-
-    assert etat["solde_comptable"] == 0
-    assert etat["mouvements_banque"] == []
-```
-
 ## Étape 3 — Déclarer l'application et migrer
 
 #### `config/settings/base.py` — modifications
@@ -2457,10 +2129,10 @@ python manage.py check
 ```
 
 ```bash
-python -m pytest apps/finance/tests/test_demandes.py apps/finance/tests/test_frais_mission_receivers.py apps/finance/tests/test_services.py -q --no-cov
+python -m pytest apps/finance/tests/test_demandes.py apps/finance/tests/test_frais_mission_receivers.py -q --no-cov
 ```
 
-**Résultat attendu :** `67 passed` (pour les 3 fichier(s) de tests présentés dans ce chapitre).
+**Résultat attendu :** `33 passed` (pour les 2 fichier(s) de tests présentés dans ce chapitre).
 
 Essai dans le shell (base sans règlement ni dépense) :
 

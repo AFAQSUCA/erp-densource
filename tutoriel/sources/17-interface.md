@@ -13,6 +13,9 @@ même les écrans métier.
 | **Notifications** | la liste et la cloche de l'en-tête |
 | Page d'accueil **provisoire** | le temps que le tableau de bord (chapitre 28) existe |
 
+L'interface comprend aussi l'écran **Utilisateurs** (`/utilisateurs/`, réservé à l'ADMIN) : liste filtrable, création, modification,
+activation/désactivation des comptes, par-dessus `accounts/services.py` (chapitre 3). Ses gabarits sont `templates/accounts/utilisateur_*.html`.
+
 ## Prérequis
 
 - Chapitres 1 à 16 terminés ; `python manage.py migrate` à jour.

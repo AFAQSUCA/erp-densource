@@ -1,6 +1,6 @@
 # Chapitre 27 — Écrans : plan comptable, opérations diverses et rapports comptables
 
-> 22 fichier(s) dans ce chapitre, 1969 lignes de code.
+> 26 fichier(s) dans ce chapitre, 2700 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -20,6 +20,10 @@ seule.
 
 Chacun des 5 rapports a sa **version imprimable** (`.../imprimer/`), accessible depuis le menu « Rapports
 comptables ».
+
+Chaque rapport (grand livre, balance, bilan, compte de résultat, déclaration TVA) a aussi un bouton **Excel**. Sur une opération
+diverse **validée**, la **DIRECTION** voit un bloc « Corriger cette écriture » : la contre-passation pose l'écriture inverse
+(motif obligatoire, une seule fois) ; une écriture automatique (facture, règlement…) se corrige, elle, à la source.
 
 ## Prérequis
 
@@ -132,7 +136,7 @@ couvrent la saisie manuelle ; `CompteForm` et `CompteModifierForm`, le plan comp
 
 #### `apps/accounting/views.py`
 
-*457 lignes* — Écrans de la saisie manuelle d'opérations diverses (Phase 4), de la clôture d'exercice
+*617 lignes* — Écrans de la saisie manuelle d'opérations diverses (Phase 4), de la clôture d'exercice
 
 ```python
 """Écrans de la saisie manuelle d'opérations diverses (Phase 4), de la clôture d'exercice
@@ -146,6 +150,7 @@ Aucune règle métier ici : les vues contrôlent le rôle, lisent le formulaire 
 import calendar
 
 from django.contrib import messages
+from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect
 from django.utils import timezone
 from django.views import View
@@ -154,6 +159,7 @@ from django.views.generic import DetailView, FormView, ListView, TemplateView
 from apps.accounts.mixins import RoleRequiredMixin
 from apps.core.rapports import contexte_rapport
 from apps.core.views import PaginationTolerante
+from apps.core.xlsx import reponse_classeur
 
 from . import permissions, services
 from .exceptions import AccountingError, CompteDejaExistant
@@ -227,6 +233,13 @@ class EcritureManuelleDetailView(RoleRequiredMixin, DetailView):
                 and total_debit == total_credit
             ),
             form_ligne=LigneManuelleForm() if peut_saisir else None,
+            contre_passation=services.contre_passation_de(ecriture) if ecriture.statut == StatutEcriture.VALIDEE else None,
+            peut_contre_passer=(
+                self.request.user.role in permissions.VALIDATION_OD
+                and ecriture.statut == StatutEcriture.VALIDEE
+                and not ecriture.origine
+                and services.contre_passation_de(ecriture) is None
+            ),
         )
         return contexte
 
@@ -282,6 +295,23 @@ class EcritureManuelleValiderView(RoleRequiredMixin, View):
             messages.error(request, str(erreur))
         else:
             messages.success(request, f"Écriture {ecriture.numero} validée.")
+        return redirect("accounting:ecriture_manuelle", pk=pk)
+
+
+class EcritureManuelleContrePasserView(RoleRequiredMixin, View):
+    roles = permissions.VALIDATION_OD
+    http_method_names = ["post"]
+
+    def post(self, request, pk):
+        ecriture = get_object_or_404(_ecritures_manuelles_queryset(), pk=pk)
+        try:
+            inverse = services.contre_passer_ecriture_manuelle(
+                ecriture, request.user, motif=request.POST.get("motif", "")
+            )
+        except AccountingError as erreur:
+            messages.error(request, str(erreur))
+        else:
+            messages.success(request, f"Écriture {ecriture.numero} contre-passée par {inverse.numero}.")
         return redirect("accounting:ecriture_manuelle", pk=pk)
 
 
@@ -515,6 +545,140 @@ class DeclarationTvaImprimerView(RoleRequiredMixin, TemplateView):
         return contexte
 
 
+class GrandLivreXlsxView(RoleRequiredMixin, View):
+    roles = permissions.CONSULTATION
+
+    def get(self, request):
+        form = GrandLivreForm(request.GET or None)
+        if not (form.is_valid() and form.cleaned_data.get("compte")):
+            raise Http404("Choisissez un compte.")
+        compte = form.cleaned_data["compte"]
+        lignes = services.grand_livre_avec_solde(
+            compte, debut=form.cleaned_data.get("debut"), fin=form.cleaned_data.get("fin")
+        )
+        feuille = {
+            "titre": f"Grand livre {compte.numero}",
+            "sous_titre": f"{compte.numero} — {compte.libelle}",
+            "entetes": ["Date", "Écriture", "Pièce", "Libellé", "Débit", "Crédit", "Solde cumulé (débit +, crédit -)"],
+            "lignes": [
+                [
+                    l["ligne"].ecriture.date_ecriture, l["ligne"].ecriture.numero, l["ligne"].ecriture.piece_reference,
+                    l["ligne"].libelle or l["ligne"].ecriture.libelle,
+                    l["ligne"].montant if l["ligne"].sens == SensEcriture.DEBIT else None,
+                    l["ligne"].montant if l["ligne"].sens == SensEcriture.CREDIT else None,
+                    l["solde_cumule"],
+                ]
+                for l in lignes
+            ],
+        }
+        return reponse_classeur(f"grand_livre_{compte.numero}", [feuille])
+
+
+class BalanceXlsxView(RoleRequiredMixin, View):
+    roles = permissions.CONSULTATION
+
+    def get(self, request):
+        form = PeriodeForm(request.GET or None)
+        debut = fin = None
+        if form.is_valid():
+            debut, fin = form.cleaned_data.get("debut"), form.cleaned_data.get("fin")
+        lignes = services.balance(debut=debut, fin=fin)
+        periode = (
+            f"du {debut:%d/%m/%Y}" if debut else "depuis l'origine"
+        ) + (f" au {fin:%d/%m/%Y}" if fin else "")
+        feuille = {
+            "titre": "Balance générale",
+            "sous_titre": periode,
+            "entetes": ["Compte", "Libellé", "Total débit", "Total crédit", "Solde débiteur", "Solde créditeur"],
+            "lignes": [
+                [
+                    l["compte__numero"], l["compte__libelle"], l["total_debit"], l["total_credit"],
+                    l["solde_debiteur"], l["solde_crediteur"],
+                ]
+                for l in lignes
+            ],
+            "pied": [
+                "", "Total",
+                sum((l["total_debit"] for l in lignes), 0), sum((l["total_credit"] for l in lignes), 0),
+                sum((l["solde_debiteur"] for l in lignes), 0), sum((l["solde_crediteur"] for l in lignes), 0),
+            ],
+        }
+        return reponse_classeur("balance", [feuille])
+
+
+class _RapportExerciceXlsxView(RoleRequiredMixin, View):
+    roles = permissions.CONSULTATION
+
+    def exercice(self, request):
+        exercices = ExerciceComptable.objects.order_by("-annee")
+        annee = request.GET.get("exercice")
+        exercice = (exercices.filter(annee=annee).first() if annee else None) or exercices.first()
+        if exercice is None:
+            raise Http404("Aucun exercice.")
+        return exercice
+
+
+class BilanXlsxView(_RapportExerciceXlsxView):
+    def get(self, request):
+        exercice = self.exercice(request)
+        rapport = services.bilan(exercice)
+        passif = [[l["compte__numero"], l["compte__libelle"], l["montant"]] for l in rapport["passif"]]
+        if rapport["resultat_net"]:
+            passif.append(["", "Résultat en cours, pas encore viré au 120000 (calculé)", rapport["resultat_net"]])
+        actif = [[l["compte__numero"], l["compte__libelle"], l["montant"]] for l in rapport["actif"]]
+        sous_titre = f"Exercice {exercice.annee}, au {exercice.date_fin:%d/%m/%Y}"
+        entetes = ["Compte", "Libellé", "Montant"]
+        return reponse_classeur(
+            f"bilan_{exercice.annee}",
+            [
+                {"titre": "Actif", "sous_titre": sous_titre, "entetes": entetes, "lignes": actif,
+                 "pied": ["", "Total actif", rapport["total_actif"]]},
+                {"titre": "Passif", "sous_titre": sous_titre, "entetes": entetes, "lignes": passif,
+                 "pied": ["", "Total passif", rapport["total_passif_avec_resultat"]]},
+            ],
+        )
+
+
+class CompteDeResultatXlsxView(_RapportExerciceXlsxView):
+    def get(self, request):
+        exercice = self.exercice(request)
+        rapport = services.compte_de_resultat(exercice)
+        sous_titre = f"Exercice {exercice.annee}"
+        entetes = ["Compte", "Libellé", "Montant"]
+        return reponse_classeur(
+            f"compte_de_resultat_{exercice.annee}",
+            [
+                {"titre": "Produits", "sous_titre": sous_titre, "entetes": entetes,
+                 "lignes": [[l["compte__numero"], l["compte__libelle"], l["montant"]] for l in rapport["produits"]],
+                 "pied": ["", "Total produits", rapport["total_produits"]]},
+                {"titre": "Charges", "sous_titre": sous_titre, "entetes": entetes,
+                 "lignes": [[l["compte__numero"], l["compte__libelle"], l["montant"]] for l in rapport["charges"]],
+                 "pied": ["", "Total charges", rapport["total_charges"]]},
+                {"titre": "Résultat", "sous_titre": sous_titre, "entetes": ["Libellé", "Montant"],
+                 "lignes": [["Résultat net (bénéfice si positif)", rapport["resultat_net"]]]},
+            ],
+        )
+
+
+class DeclarationTvaXlsxView(RoleRequiredMixin, View):
+    roles = permissions.CONSULTATION
+
+    def get(self, request):
+        debut, fin = _periode_declaration_tva(PeriodeForm(request.GET or None))
+        rapport = services.declaration_tva(debut=debut, fin=fin)
+        feuille = {
+            "titre": "Déclaration TVA",
+            "sous_titre": f"du {debut:%d/%m/%Y} au {fin:%d/%m/%Y}",
+            "entetes": ["Libellé", "Montant (FCFA)"],
+            "lignes": [
+                ["TVA collectée (443300)", rapport["tva_collectee"]],
+                ["TVA déductible (445200)", rapport["tva_deductible"]],
+                ["TVA nette à payer (négatif : crédit de TVA)", rapport["tva_nette"]],
+            ],
+        }
+        return reponse_classeur("declaration_tva", [feuille])
+
+
 class _RapportExerciceView(RoleRequiredMixin, TemplateView):
     """Un rapport (bilan, compte de résultat) porte toujours sur un exercice choisi dans la
     liste existante — le plus récent par défaut."""
@@ -601,7 +765,7 @@ effectif — jamais le gabarit. `_RapportExerciceView` factorise le choix de l'e
 
 #### `apps/accounting/urls.py`
 
-*30 lignes*
+*36 lignes*
 
 ```python
 from django.urls import path
@@ -615,6 +779,7 @@ urlpatterns = [
     path("operations-diverses/nouvelle/", views.EcritureManuelleCreateView.as_view(), name="ecriture_manuelle_nouvelle"),
     path("operations-diverses/<int:pk>/", views.EcritureManuelleDetailView.as_view(), name="ecriture_manuelle"),
     path("operations-diverses/<int:pk>/valider/", views.EcritureManuelleValiderView.as_view(), name="ecriture_manuelle_valider"),
+    path("operations-diverses/<int:pk>/contre-passer/", views.EcritureManuelleContrePasserView.as_view(), name="ecriture_manuelle_contre_passer"),
     path("operations-diverses/<int:pk>/abandonner/", views.EcritureManuelleAbandonnerView.as_view(), name="ecriture_manuelle_abandonner"),
     path("operations-diverses/<int:pk>/lignes/", views.LigneAjouterView.as_view(), name="ligne_ajouter"),
     path("operations-diverses/<int:pk>/lignes/<int:ligne_pk>/supprimer/", views.LigneSupprimerView.as_view(), name="ligne_supprimer"),
@@ -625,14 +790,19 @@ urlpatterns = [
     path("plan-comptable/<int:pk>/modifier/", views.CompteModifierView.as_view(), name="compte_modifier"),
     path("grand-livre/", views.GrandLivreView.as_view(), name="grand_livre"),
     path("grand-livre/imprimer/", views.GrandLivreImprimerView.as_view(), name="grand_livre_imprimer"),
+    path("grand-livre/excel/", views.GrandLivreXlsxView.as_view(), name="grand_livre_xlsx"),
     path("balance/", views.BalanceView.as_view(), name="balance"),
     path("balance/imprimer/", views.BalanceImprimerView.as_view(), name="balance_imprimer"),
+    path("balance/excel/", views.BalanceXlsxView.as_view(), name="balance_xlsx"),
     path("bilan/", views.BilanView.as_view(), name="bilan"),
     path("bilan/imprimer/", views.BilanImprimerView.as_view(), name="bilan_imprimer"),
+    path("bilan/excel/", views.BilanXlsxView.as_view(), name="bilan_xlsx"),
     path("compte-de-resultat/", views.CompteDeResultatView.as_view(), name="compte_resultat"),
     path("compte-de-resultat/imprimer/", views.CompteDeResultatImprimerView.as_view(), name="compte_resultat_imprimer"),
+    path("compte-de-resultat/excel/", views.CompteDeResultatXlsxView.as_view(), name="compte_resultat_xlsx"),
     path("declaration-tva/", views.DeclarationTvaView.as_view(), name="declaration_tva"),
     path("declaration-tva/imprimer/", views.DeclarationTvaImprimerView.as_view(), name="declaration_tva_imprimer"),
+    path("declaration-tva/excel/", views.DeclarationTvaXlsxView.as_view(), name="declaration_tva_xlsx"),
 ]
 ```
 
@@ -643,7 +813,7 @@ urlpatterns = [
 ```diff
 --- config/urls.py (avant)
 +++ config/urls.py (après)
-@@ -26,4 +26,5 @@
+@@ -28,4 +28,5 @@
      path("facturation/", include("apps.billing.urls")),
      path("finances/", include("apps.finance.urls")),
 +    path("comptabilite/", include("apps.accounting.urls")),
@@ -896,7 +1066,7 @@ mkdir -p apps/accounting/templates/accounting
 
 #### `apps/accounting/templates/accounting/ecriture_manuelle_detail.html`
 
-*102 lignes*
+*120 lignes*
 
 ```django
 {% extends "base.html" %}
@@ -981,6 +1151,24 @@ mkdir -p apps/accounting/templates/accounting
       </form>
     {% endif %}
   </section>
+
+  {% if contre_passation %}
+    <p class="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700"><i class="fa-solid fa-rotate-left" aria-hidden="true"></i> Cette écriture a été contre-passée par l'écriture <strong>{{ contre_passation.numero }}</strong> du {{ contre_passation.date_ecriture|date:"d/m/Y" }} ({{ contre_passation.libelle }}).</p>
+  {% endif %}
+
+  {% if peut_contre_passer %}
+    <section class="mt-5 rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-contre-passation">
+      <h2 id="titre-contre-passation" class="text-base font-semibold text-slate-900">Corriger cette écriture</h2>
+      <p class="mt-1 text-sm text-slate-600">Une écriture validée ne se modifie pas : la contre-passation pose l'écriture inverse, datée d'aujourd'hui. Les deux restent au grand livre.</p>
+      <form method="post" action="{% url 'accounting:ecriture_manuelle_contre_passer' ecriture.pk %}" data-confirm="Contre-passer cette écriture ? L'écriture inverse sera validée immédiatement." class="mt-3 flex flex-wrap items-end gap-3">{% csrf_token %}
+        <div class="grow">
+          <label for="motif-contre-passation" class="block text-sm font-medium text-slate-700">Motif (obligatoire)</label>
+          <input id="motif-contre-passation" name="motif" type="text" required maxlength="200" class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-marque-600 focus:outline-none focus:ring-2 focus:ring-marque-600">
+        </div>
+        <button type="submit" class="rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-800 hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-700">Contre-passer</button>
+      </form>
+    </section>
+  {% endif %}
 
   {% if peut_valider or peut_saisir %}
     <section class="mt-5 rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-actions">
@@ -1086,7 +1274,7 @@ Incluse par les cinq gabarits de rapport suivants (`{% include %}`), pour l'ongl
 
 #### `apps/accounting/templates/accounting/grand_livre.html`
 
-*56 lignes*
+*59 lignes*
 
 ```django
 {% extends "base.html" %}
@@ -1098,10 +1286,13 @@ Incluse par les cinq gabarits de rapport suivants (`{% include %}`), pour l'ongl
 <div class="mx-auto max-w-4xl">
   <div class="flex flex-wrap items-start justify-between gap-3">
     <h1 class="text-2xl font-bold text-slate-900">Rapports comptables</h1>
+    <div class="flex flex-wrap items-center gap-2">
     <a href="{% url 'accounting:grand_livre_imprimer' %}?{{ request.GET.urlencode }}" target="_blank" rel="noopener"
        class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
       <i class="fa-solid fa-print" aria-hidden="true"></i> Imprimer
     </a>
+    {% url 'accounting:grand_livre_xlsx' as url_xlsx %}{% include "components/_bouton_xlsx.html" with url=url_xlsx %}
+    </div>
   </div>
   {% include "accounting/_nav_rapports.html" %}
 
@@ -1202,7 +1393,7 @@ Incluse par les cinq gabarits de rapport suivants (`{% include %}`), pour l'ongl
 
 #### `apps/accounting/templates/accounting/balance.html`
 
-*62 lignes*
+*65 lignes*
 
 ```django
 {% extends "base.html" %}
@@ -1214,10 +1405,13 @@ Incluse par les cinq gabarits de rapport suivants (`{% include %}`), pour l'ongl
 <div class="mx-auto max-w-4xl">
   <div class="flex flex-wrap items-start justify-between gap-3">
     <h1 class="text-2xl font-bold text-slate-900">Rapports comptables</h1>
+    <div class="flex flex-wrap items-center gap-2">
     <a href="{% url 'accounting:balance_imprimer' %}?{{ request.GET.urlencode }}" target="_blank" rel="noopener"
        class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
       <i class="fa-solid fa-print" aria-hidden="true"></i> Imprimer
     </a>
+    {% url 'accounting:balance_xlsx' as url_xlsx %}{% include "components/_bouton_xlsx.html" with url=url_xlsx %}
+    </div>
   </div>
   {% include "accounting/_nav_rapports.html" %}
 
@@ -1329,7 +1523,7 @@ Incluse par les cinq gabarits de rapport suivants (`{% include %}`), pour l'ongl
 
 #### `apps/accounting/templates/accounting/bilan.html`
 
-*66 lignes*
+*69 lignes*
 
 ```django
 {% extends "base.html" %}
@@ -1341,10 +1535,13 @@ Incluse par les cinq gabarits de rapport suivants (`{% include %}`), pour l'ongl
 <div class="mx-auto max-w-4xl">
   <div class="flex flex-wrap items-start justify-between gap-3">
     <h1 class="text-2xl font-bold text-slate-900">Rapports comptables</h1>
+    <div class="flex flex-wrap items-center gap-2">
     <a href="{% url 'accounting:bilan_imprimer' %}?{{ request.GET.urlencode }}" target="_blank" rel="noopener"
        class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
       <i class="fa-solid fa-print" aria-hidden="true"></i> Imprimer
     </a>
+    {% url 'accounting:bilan_xlsx' as url_xlsx %}{% include "components/_bouton_xlsx.html" with url=url_xlsx %}
+    </div>
   </div>
   {% include "accounting/_nav_rapports.html" %}
 
@@ -1360,9 +1557,9 @@ Incluse par les cinq gabarits de rapport suivants (`{% include %}`), pour l'ongl
 
   {% if rapport %}
     <p class="mt-3 text-sm text-slate-600">
-      Photo cumulée depuis l'origine jusqu'au {{ exercice.date_fin|date:"d/m/Y" }} — le résultat de
-      l'exercice {{ exercice.annee }} est ajouté au passif pour équilibrer le bilan (aucune écriture
-      de clôture ne l'a encore imputé au compte 120000, voir « Limite connue », avenant-comptabilite-syscohada.md § P6).
+      Photo cumulée depuis l'origine jusqu'au {{ exercice.date_fin|date:"d/m/Y" }}. Le résultat des exercices
+      clôturés figure déjà au compte 120000 (écriture de clôture) ; le résultat qui n'a pas encore été viré
+      (exercice en cours) est ajouté au passif.
     </p>
     <div class="mt-4 grid grid-cols-1 gap-5 sm:grid-cols-2">
       <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-actif">
@@ -1385,7 +1582,7 @@ Incluse par les cinq gabarits de rapport suivants (`{% include %}`), pour l'ongl
           {% empty %}
             <p class="text-slate-600">Aucun compte de passif mouvementé.</p>
           {% endfor %}
-          <div class="flex justify-between gap-3"><dt class="text-slate-600">Résultat de l'exercice {{ exercice.annee }} (calculé)</dt><dd class="font-medium text-slate-900">{{ rapport.resultat_net|floatformat:0|intcomma }}</dd></div>
+          {% if rapport.resultat_net %}<div class="flex justify-between gap-3"><dt class="text-slate-600">Résultat en cours, pas encore viré au 120000 (calculé)</dt><dd class="font-medium text-slate-900">{{ rapport.resultat_net|floatformat:0|intcomma }}</dd></div>{% endif %}
         </dl>
         <p class="mt-3 flex justify-between border-t border-slate-200 pt-3 font-semibold text-slate-900"><span>Total passif</span><span>{{ rapport.total_passif_avec_resultat|floatformat:0|intcomma }}</span></p>
       </section>
@@ -1445,7 +1642,7 @@ Incluse par les cinq gabarits de rapport suivants (`{% include %}`), pour l'ongl
         {% empty %}
           <tr><td colspan="2">Aucun compte de passif mouvementé.</td></tr>
         {% endfor %}
-        <tr><td>Résultat de l'exercice {{ exercice.annee }} (calculé)</td><td class="droite">{{ rapport_bilan.resultat_net|floatformat:0|intcomma }}</td></tr>
+        {% if rapport_bilan.resultat_net %}<tr><td>Résultat en cours, pas encore viré au 120000 (calculé)</td><td class="droite">{{ rapport_bilan.resultat_net|floatformat:0|intcomma }}</td></tr>{% endif %}
       </tbody>
       <tfoot><tr><td><strong>Total passif</strong></td><td class="droite"><strong>{{ rapport_bilan.total_passif_avec_resultat|floatformat:0|intcomma }}</strong></td></tr></tfoot>
     </table>
@@ -1461,7 +1658,7 @@ Incluse par les cinq gabarits de rapport suivants (`{% include %}`), pour l'ongl
 
 #### `apps/accounting/templates/accounting/compte_resultat.html`
 
-*71 lignes*
+*74 lignes*
 
 ```django
 {% extends "base.html" %}
@@ -1473,10 +1670,13 @@ Incluse par les cinq gabarits de rapport suivants (`{% include %}`), pour l'ongl
 <div class="mx-auto max-w-4xl">
   <div class="flex flex-wrap items-start justify-between gap-3">
     <h1 class="text-2xl font-bold text-slate-900">Rapports comptables</h1>
+    <div class="flex flex-wrap items-center gap-2">
     <a href="{% url 'accounting:compte_resultat_imprimer' %}?{{ request.GET.urlencode }}" target="_blank" rel="noopener"
        class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
       <i class="fa-solid fa-print" aria-hidden="true"></i> Imprimer
     </a>
+    {% url 'accounting:compte_resultat_xlsx' as url_xlsx %}{% include "components/_bouton_xlsx.html" with url=url_xlsx %}
+    </div>
   </div>
   {% include "accounting/_nav_rapports.html" %}
 
@@ -1600,7 +1800,7 @@ Incluse par les cinq gabarits de rapport suivants (`{% include %}`), pour l'ongl
 
 #### `apps/accounting/templates/accounting/declaration_tva.html`
 
-*50 lignes*
+*53 lignes*
 
 ```django
 {% extends "base.html" %}
@@ -1612,10 +1812,13 @@ Incluse par les cinq gabarits de rapport suivants (`{% include %}`), pour l'ongl
 <div class="mx-auto max-w-4xl">
   <div class="flex flex-wrap items-start justify-between gap-3">
     <h1 class="text-2xl font-bold text-slate-900">Rapports comptables</h1>
+    <div class="flex flex-wrap items-center gap-2">
     <a href="{% url 'accounting:declaration_tva_imprimer' %}?{{ request.GET.urlencode }}" target="_blank" rel="noopener"
        class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
       <i class="fa-solid fa-print" aria-hidden="true"></i> Imprimer
     </a>
+    {% url 'accounting:declaration_tva_xlsx' as url_xlsx %}{% include "components/_bouton_xlsx.html" with url=url_xlsx %}
+    </div>
   </div>
   {% include "accounting/_nav_rapports.html" %}
 
@@ -1694,6 +1897,220 @@ Incluse par les cinq gabarits de rapport suivants (`{% include %}`), pour l'ongl
 ```
 
 ## Étape 4 — Tests et compilation des styles
+
+#### `apps/accounting/tests/test_admin_lecture_seule.py`
+
+*94 lignes* — Audit ACC-01 : le grand livre est en lecture seule dans l'admin, et un sens inconnu est refusé.
+
+```python
+"""Audit ACC-01 : le grand livre est en lecture seule dans l'admin, et un sens inconnu est refusé."""
+
+from datetime import date
+from decimal import Decimal
+
+import pytest
+from django.urls import reverse
+
+from apps.accounting import services
+from apps.accounting.exceptions import EcritureNonEquilibree
+from apps.accounting.models import Compte, EcritureComptable, Journal, SensEcriture, StatutEcriture
+from apps.accounting.services import LigneSaisie
+from apps.accounts.models import Role
+from apps.accounts.tests.factories import UserFactory
+
+pytestmark = pytest.mark.django_db
+
+
+def _ecriture():
+    return services.passer_ecriture(
+        journal=Journal.OPERATIONS_DIVERSES, date_ecriture=date(2026, 3, 1), libelle="Apport",
+        lignes=[
+            LigneSaisie(compte="571000", sens=SensEcriture.DEBIT, montant=Decimal("500")),
+            LigneSaisie(compte="101000", sens=SensEcriture.CREDIT, montant=Decimal("500")),
+        ],
+    )
+
+
+@pytest.fixture
+def admin_client(client):
+    client.force_login(UserFactory(role=Role.ADMIN, is_staff=True, is_superuser=True))
+    return client
+
+
+def test_un_sens_inconnu_est_refuse_au_lieu_d_etre_stocke_hors_des_totaux():
+    with pytest.raises(EcritureNonEquilibree, match="Sens inconnu"):
+        services.passer_ecriture(
+            journal=Journal.OPERATIONS_DIVERSES, date_ecriture=date(2026, 3, 1), libelle="Piège",
+            lignes=[
+                LigneSaisie(compte="571000", sens=SensEcriture.DEBIT, montant=Decimal("500")),
+                LigneSaisie(compte="101000", sens=SensEcriture.CREDIT, montant=Decimal("500")),
+                LigneSaisie(compte="108000", sens="X", montant=Decimal("999")),
+            ],
+        )
+
+    assert not EcritureComptable.objects.exists()
+
+
+def test_l_admin_ne_permet_pas_de_creer_ni_de_modifier_une_ecriture(admin_client):
+    ecriture = _ecriture()
+
+    ajout = admin_client.get(reverse("admin:accounting_ecriturecomptable_add"))
+    modification = admin_client.post(
+        reverse("admin:accounting_ecriturecomptable_change", args=[ecriture.pk]), {"statut": StatutEcriture.BROUILLON}
+    )
+
+    assert ajout.status_code == 403
+    ecriture.refresh_from_db()
+    assert ecriture.statut == StatutEcriture.VALIDEE
+    assert modification.status_code in (200, 302, 403)  # jamais une modification appliquée
+
+
+def test_l_admin_affiche_une_ecriture_en_lecture_seule(admin_client):
+    ecriture = _ecriture()
+
+    reponse = admin_client.get(reverse("admin:accounting_ecriturecomptable_change", args=[ecriture.pk]))
+
+    assert reponse.status_code == 200
+    assert b'name="_save"' not in reponse.content  # pas de bouton « Enregistrer »
+
+
+def test_l_admin_ne_peut_pas_rouvrir_un_exercice(admin_client):
+    exercice = services.exercice_pour(date(2025, 6, 1))
+    exercice.statut = "CLOTURE"
+    exercice.save(update_fields=["statut", "updated_at"])
+
+    admin_client.post(
+        reverse("admin:accounting_exercicecomptable_change", args=[exercice.pk]), {"statut": "OUVERT"}
+    )
+
+    exercice.refresh_from_db()
+    assert exercice.statut == "CLOTURE"
+
+
+def test_le_numero_et_la_nature_d_un_compte_ne_se_modifient_plus_dans_l_admin(admin_client):
+    compte = Compte.objects.get(numero="571000")
+
+    admin_client.post(
+        reverse("admin:accounting_compte_change", args=[compte.pk]),
+        {"numero": "999999", "libelle": "Caisse", "nature": "CHARGE", "actif": "on"},
+    )
+
+    compte.refresh_from_db()
+    assert (compte.numero, compte.nature) == ("571000", "ACTIF")
+```
+
+#### `apps/accounting/tests/test_contre_passation_manuelle.py`
+
+*106 lignes* — Corriger une opération diverse validée : contre-passation depuis l'écran, DIRECTION seulement, motif obligatoire.
+
+```python
+"""Corriger une opération diverse validée : contre-passation depuis l'écran, DIRECTION seulement, motif obligatoire."""
+
+from datetime import date
+from decimal import Decimal
+
+import pytest
+from django.urls import reverse
+
+from apps.accounting import services
+from apps.accounting.exceptions import ActionComptableNonAutorisee, ContrePassationImpossible
+from apps.accounting.models import EcritureComptable, SensEcriture, StatutEcriture
+from apps.accounts.models import Role
+from apps.accounts.tests.factories import UserFactory
+from apps.billing.tests.helpers import direction, finances
+
+pytestmark = pytest.mark.django_db
+
+
+def _od_validee():
+    ecriture = services.creer_ecriture_manuelle(finances(), date_ecriture=date(2026, 3, 1), libelle="Apport")
+    services.ajouter_ligne_manuelle(ecriture, finances(), compte="571000", sens=SensEcriture.DEBIT, montant=Decimal("500"))
+    services.ajouter_ligne_manuelle(ecriture, finances(), compte="101000", sens=SensEcriture.CREDIT, montant=Decimal("500"))
+    return services.valider_ecriture_manuelle(ecriture, direction())
+
+
+def test_la_direction_contre_passe_une_operation_diverse_validee():
+    ecriture = _od_validee()
+
+    inverse = services.contre_passer_ecriture_manuelle(ecriture, direction(), motif="Montant erroné")
+
+    assert inverse.statut == StatutEcriture.VALIDEE
+    assert services.contre_passation_de(ecriture) == inverse
+    sens = {(l.compte.numero, l.sens) for l in inverse.lignes.select_related("compte")}
+    assert sens == {("571000", SensEcriture.CREDIT), ("101000", SensEcriture.DEBIT)}
+    assert "Montant erroné" in inverse.libelle
+
+
+def test_la_contre_passation_est_reservee_a_la_direction_en_controle_strict():
+    ecriture = _od_validee()
+
+    for acteur in (finances(), UserFactory(role=Role.ADMIN, is_superuser=True)):
+        with pytest.raises(ActionComptableNonAutorisee):
+            services.contre_passer_ecriture_manuelle(ecriture, acteur, motif="Test")
+
+
+def test_le_motif_est_obligatoire():
+    with pytest.raises(ContrePassationImpossible, match="motif"):
+        services.contre_passer_ecriture_manuelle(_od_validee(), direction(), motif="   ")
+
+
+def test_une_ecriture_deja_contre_passee_ne_l_est_pas_deux_fois():
+    ecriture = _od_validee()
+    services.contre_passer_ecriture_manuelle(ecriture, direction(), motif="Erreur")
+
+    with pytest.raises(ContrePassationImpossible, match="déjà contre-passée"):
+        services.contre_passer_ecriture_manuelle(ecriture, direction(), motif="Encore")
+
+    assert EcritureComptable.objects.filter(origine=services.ORIGINE_CONTRE_PASSATION).count() == 1
+
+
+def test_une_ecriture_automatique_ne_se_contre_passe_pas_par_cette_voie():
+    automatique = services.passer_ecriture(
+        journal="OD", date_ecriture=date(2026, 3, 1), libelle="Auto", origine="MOUVEMENT", origine_id=1,
+        lignes=[
+            services.LigneSaisie(compte="571000", sens=SensEcriture.DEBIT, montant=Decimal("10")),
+            services.LigneSaisie(compte="101000", sens=SensEcriture.CREDIT, montant=Decimal("10")),
+        ],
+    )
+
+    with pytest.raises(ContrePassationImpossible, match="à la source"):
+        services.contre_passer_ecriture_manuelle(automatique, direction(), motif="Test")
+
+
+def test_un_brouillon_ne_se_contre_passe_pas():
+    brouillon = services.creer_ecriture_manuelle(finances(), date_ecriture=date(2026, 3, 1), libelle="B")
+
+    with pytest.raises(ContrePassationImpossible):
+        services.contre_passer_ecriture_manuelle(brouillon, direction(), motif="Test")
+
+
+def test_l_ecran_propose_la_contre_passation_a_la_direction_seulement(client):
+    ecriture = _od_validee()
+    url_detail = reverse("accounting:ecriture_manuelle", args=[ecriture.pk])
+    url_action = reverse("accounting:ecriture_manuelle_contre_passer", args=[ecriture.pk])
+
+    client.force_login(UserFactory(role=Role.DIRECTION))
+    assert url_action in client.get(url_detail).content.decode()
+    client.force_login(UserFactory(role=Role.FINANCES))
+    assert url_action not in client.get(url_detail).content.decode()
+    assert client.post(url_action, {"motif": "x"}).status_code == 403
+
+
+def test_contre_passer_via_l_ecran_affiche_le_resultat_puis_masque_le_bouton(client):
+    ecriture = _od_validee()
+    client.force_login(UserFactory(role=Role.DIRECTION))
+    url_detail = reverse("accounting:ecriture_manuelle", args=[ecriture.pk])
+    url_action = reverse("accounting:ecriture_manuelle_contre_passer", args=[ecriture.pk])
+
+    sans_motif = client.post(url_action, {"motif": ""}, follow=True)
+    assert "motif" in sans_motif.content.decode().lower()
+    assert not EcritureComptable.objects.filter(origine=services.ORIGINE_CONTRE_PASSATION).exists()
+
+    reponse = client.post(url_action, {"motif": "Montant erroné"}, follow=True)
+    page = reponse.content.decode()
+    assert "contre-passée par" in page
+    assert url_action not in client.get(url_detail).content.decode()
+```
 
 #### `apps/accounting/tests/test_views.py`
 
@@ -1871,7 +2288,7 @@ def test_seule_la_direction_voit_le_bouton_cloturer(client):
 
 
 def test_cloturer_via_l_ecran_est_reserve_a_la_direction(client):
-    exercice = services.exercice_pour(date(2026, 9, 5))
+    exercice = services.exercice_pour(date(2024, 6, 5))
 
     _connecte(client, Role.FINANCES)
     assert client.post(reverse("accounting:exercice_cloturer", args=[exercice.pk])).status_code == 403
@@ -2183,6 +2600,348 @@ def test_declaration_tva_imprimer_affiche_les_totaux(client):
     assert "Généré le" in contenu
 ```
 
+#### `apps/audit/tests/test_validation_suppression.py`
+
+*123 lignes* — Audit M1-06 : les validations sortent en VALIDATE, une suppression physique est journalisée, le copilote est
+
+```python
+"""Audit M1-06 : les validations sortent en VALIDATE, une suppression physique est journalisée, le copilote est
+audité ; M1-09 : le CSV contient aussi les anciennes/nouvelles valeurs et le user-agent."""
+
+from datetime import date
+from decimal import Decimal
+
+import pytest
+from django.urls import reverse
+
+from apps.accounting import services as compta
+from apps.accounting.models import Journal, LigneEcriture, SensEcriture
+from apps.accounting.services import LigneSaisie
+from apps.accounts.models import Role
+from apps.accounts.tests.factories import UserFactory
+from apps.audit.models import ActionChoices, AuditLog
+from apps.billing.tests.helpers import direction, emise
+
+pytestmark = pytest.mark.django_db
+
+
+def test_la_validation_d_une_facture_est_journalisee_en_validate():
+    facture = emise(prix="1000000")  # brouillon -> émise par la DIRECTION
+
+    validations = AuditLog.objects.filter(action=ActionChoices.VALIDATE, entite="Facture", entite_id=facture.pk)
+
+    assert validations.count() == 1
+    assert validations.get().nouvelle_valeur["statut"] == "EMISE"
+    # et non plus une simple « modification » du statut
+    assert not AuditLog.objects.filter(
+        action=ActionChoices.UPDATE, entite="Facture", entite_id=facture.pk, nouvelle_valeur__statut="EMISE"
+    ).exists()
+
+
+def test_la_validation_d_une_ecriture_manuelle_est_journalisee_en_validate():
+    from apps.billing.tests.helpers import finances
+
+    ecriture = compta.creer_ecriture_manuelle(finances(), date_ecriture=date(2026, 3, 1), libelle="Apport")
+    compta.ajouter_ligne_manuelle(ecriture, finances(), compte="571000", sens=SensEcriture.DEBIT, montant=Decimal("500"))
+    compta.ajouter_ligne_manuelle(ecriture, finances(), compte="101000", sens=SensEcriture.CREDIT, montant=Decimal("500"))
+
+    compta.valider_ecriture_manuelle(ecriture, direction())
+
+    assert AuditLog.objects.filter(action=ActionChoices.VALIDATE, entite="EcritureComptable", entite_id=ecriture.pk).count() == 1
+
+
+def test_une_modification_ordinaire_reste_une_modification():
+    from apps.billing.models import Facture
+
+    facture = emise(prix="1000000")
+    Facture.objects.filter(pk=facture.pk)  # lisible
+    facture.refresh_from_db()
+    facture.date_echeance = date(2027, 1, 31)
+    facture.save()
+
+    assert AuditLog.objects.filter(action=ActionChoices.UPDATE, entite="Facture", entite_id=facture.pk).exists()
+    assert AuditLog.objects.filter(action=ActionChoices.VALIDATE, entite="Facture", entite_id=facture.pk).count() == 1
+
+
+def test_une_suppression_physique_est_journalisee():
+    ecriture = compta.creer_ecriture_manuelle(
+        direction(), date_ecriture=date(2026, 3, 1), libelle="Brouillon à corriger"
+    )
+    ligne = compta.ajouter_ligne_manuelle(
+        ecriture, direction(), compte="571000", sens=SensEcriture.DEBIT, montant=Decimal("500")
+    )
+
+    identifiant = ligne.pk  # Django remet le pk à None sur l'instance supprimée
+    compta.supprimer_ligne_manuelle(ligne, direction())
+
+    suppression = AuditLog.objects.get(action=ActionChoices.DELETE, entite="LigneEcriture", entite_id=identifiant)
+    assert suppression.ancienne_valeur["montant"] == "500.00"
+    assert suppression.nouvelle_valeur is None
+    assert not LigneEcriture.objects.filter(pk=identifiant).exists()
+
+
+def test_le_copilote_est_audite():
+    from apps.drivers.models import Copilote
+    from apps.hr.tests.factories import PersonnelFactory
+
+    personnel = PersonnelFactory(poste="Copilote")
+    copilote = Copilote.objects.get(personnel=personnel)
+    copilote.statut = "SUSPENDU"
+    copilote.save()
+
+    assert AuditLog.objects.filter(entite="Copilote", entite_id=copilote.pk, action=ActionChoices.UPDATE).exists()
+
+
+def test_le_csv_contient_les_valeurs_modifiees_et_le_user_agent(client):
+    client.force_login(UserFactory(role=Role.ADMIN))
+    AuditLog.objects.create(
+        action=ActionChoices.UPDATE, module="RH", entite="Personnel", entite_id=3,
+        ancienne_valeur={"salaire": "100"}, nouvelle_valeur={"salaire": "200"}, user_agent="=cmd|' /C calc'!A0",
+    )
+
+    contenu = client.get(reverse("audit:export_csv"), {"module": "RH"}).content.decode("utf-8-sig")
+
+    assert "Ancienne valeur;Nouvelle valeur;User-agent" in contenu
+    assert '{""salaire"": ""100""}' in contenu and '{""salaire"": ""200""}' in contenu
+    assert "'=cmd" in contenu  # le user-agent ne s'exécute pas comme une formule dans Excel
+
+
+def _od_validee_par(auteur, validateur):
+    ecriture = compta.creer_ecriture_manuelle(auteur, date_ecriture=date(2026, 3, 1), libelle="Apport")
+    compta.ajouter_ligne_manuelle(ecriture, auteur, compte="571000", sens=SensEcriture.DEBIT, montant=Decimal("500"))
+    compta.ajouter_ligne_manuelle(ecriture, auteur, compte="101000", sens=SensEcriture.CREDIT, montant=Decimal("500"))
+    compta.valider_ecriture_manuelle(ecriture, validateur)
+    return AuditLog.objects.get(action=ActionChoices.VALIDATE, entite="EcritureComptable", entite_id=ecriture.pk)
+
+
+def test_une_validation_par_l_auteur_lui_meme_est_signalee_dans_le_journal():
+    patron = direction()
+
+    validation = _od_validee_par(patron, patron)
+
+    assert validation.nouvelle_valeur["auto_validation"] is True
+
+
+def test_une_validation_par_une_autre_personne_n_est_pas_signalee():
+    from apps.billing.tests.helpers import finances
+
+    validation = _od_validee_par(finances(), direction())
+
+    assert "auto_validation" not in validation.nouvelle_valeur
+```
+
+#### `apps/core/tests/test_xlsx.py`
+
+*205 lignes* — Export Excel : valeurs brutes (nombres, dates), pas de formule injectée, droits de la liste respectés.
+
+```python
+"""Export Excel : valeurs brutes (nombres, dates), pas de formule injectée, droits de la liste respectés."""
+
+from datetime import date, datetime, timezone
+from decimal import Decimal
+from io import BytesIO
+
+import pytest
+from django.urls import reverse
+from openpyxl import load_workbook
+
+from apps.accounting import services as compta
+from apps.accounting.models import Journal, SensEcriture
+from apps.accounting.services import LigneSaisie
+from apps.accounts.models import Role
+from apps.accounts.tests.factories import UserFactory
+from apps.billing.tests.helpers import JOUR, direction, emise, finances
+from apps.core.xlsx import TYPE_XLSX, classeur
+
+pytestmark = pytest.mark.django_db
+
+
+def _ouvrir(reponse):
+    assert reponse.status_code == 200
+    assert reponse["Content-Type"] == TYPE_XLSX
+    assert reponse["Content-Disposition"].startswith('attachment; filename="')
+    return load_workbook(BytesIO(reponse.content))
+
+
+def _lignes(feuille):
+    return [[c.value for c in ligne] for ligne in feuille.iter_rows()]
+
+
+# --- le classeur ---
+
+
+def test_les_montants_sont_des_nombres_les_dates_des_dates_et_les_formules_du_texte():
+    octets = classeur([{
+        "titre": "Essai", "sous_titre": "Période", "entetes": ["A", "B", "C", "D"],
+        "lignes": [[Decimal("1234.50"), date(2026, 3, 1), datetime(2026, 3, 1, 8, 30, tzinfo=timezone.utc), "=1+1"]],
+        "pied": ["", "", "Total", Decimal("1234.50")],
+    }])
+
+    feuille = load_workbook(BytesIO(octets))["Essai"]
+
+    assert feuille["A5"].value == 1234.5 and feuille["A5"].number_format == "#,##0.00"
+    assert feuille["B5"].value.date() == date(2026, 3, 1)
+    assert feuille["D5"].value == "=1+1" and feuille["D5"].data_type == "s"  # du texte, jamais une formule
+    assert feuille["D6"].value == 1234.5 and feuille["D6"].font.bold
+
+
+def test_les_titres_de_feuille_sont_rendus_valides_et_uniques():
+    octets = classeur([
+        {"titre": "Bilan: actif/passif [2026]", "entetes": ["X"], "lignes": []},
+        {"titre": "Bilan: actif/passif [2026]", "entetes": ["X"], "lignes": []},
+    ])
+
+    noms = load_workbook(BytesIO(octets)).sheetnames
+
+    assert len(noms) == 2 and len(set(n.lower() for n in noms)) == 2
+    assert all(len(n) <= 31 and not set("[]:*?/\\") & set(n) for n in noms)
+
+
+# --- listes ---
+
+
+def test_export_des_factures_avec_montants_numeriques(client):
+    emise(prix="1000000")
+    client.force_login(finances())
+
+    feuille = _ouvrir(client.get(reverse("billing:factures_xlsx"))).active
+
+    lignes = _lignes(feuille)
+    entetes = next(l for l in lignes if l[0] == "N°")
+    donnees = lignes[lignes.index(entetes) + 1]
+    assert entetes[-4:] == ["HT (FCFA)", "TVA (FCFA)", "TTC (FCFA)", "Reste à recouvrer (FCFA)"]
+    assert donnees[-4] == 1000000 and isinstance(donnees[-2], (int, float))
+
+
+def test_export_des_depenses_et_droits(client):
+    from apps.billing import services as billing
+    from apps.billing.models import ModePaiement
+
+    billing.enregistrer_depense(
+        finances(), categorie="PEAGES", date_depense=JOUR, libelle="=SOMME(A1)", montant=Decimal("11800"),
+        mode=ModePaiement.ESPECES, montant_tva=Decimal("1800"),
+    )
+    client.force_login(finances())
+
+    feuille = _ouvrir(client.get(reverse("billing:depenses_xlsx"))).active
+    lignes = _lignes(feuille)
+
+    ligne = next(l for l in lignes if l and l[1] == "=SOMME(A1)")
+    assert ligne[4] == 11800 and ligne[5] == 1800
+    client.force_login(UserFactory(role=Role.CHAUFFEUR))
+    assert client.get(reverse("billing:depenses_xlsx")).status_code == 403
+
+
+def test_export_de_la_tresorerie_signe_les_sorties(client):
+    from apps.billing import services as billing
+    from apps.billing.models import ModePaiement
+
+    billing.enregistrer_reglement(
+        emise(prix="1000000"), finances(), montant=Decimal("500000"), mode=ModePaiement.VIREMENT, date_reglement=JOUR
+    )
+    billing.enregistrer_depense(
+        finances(), categorie="PEAGES", date_depense=JOUR, libelle="Péage", montant=Decimal("100000"),
+        mode=ModePaiement.ESPECES,
+    )
+    client.force_login(finances())
+
+    feuille = _ouvrir(client.get(reverse("finance:xlsx"), {"date_debut": "2020-01-01", "date_fin": "2099-12-31"})).active
+    lignes = [l for l in _lignes(feuille) if l and isinstance(l[0], (datetime, date))]
+
+    montants = sorted(l[5] for l in lignes)
+    assert montants == [-100000, 500000]
+    assert _lignes(feuille)[-1][-1] == 400000  # total
+
+
+# --- rapports comptables ---
+
+
+def _ecritures():
+    compta.passer_ecriture(
+        journal=Journal.VENTES, date_ecriture=date(2026, 3, 1), libelle="Vente",
+        lignes=[
+            LigneSaisie(compte="411000", sens=SensEcriture.DEBIT, montant=Decimal("1000")),
+            LigneSaisie(compte="706100", sens=SensEcriture.CREDIT, montant=Decimal("1000")),
+        ],
+    )
+
+
+def test_balance_en_excel_avec_totaux(client):
+    _ecritures()
+    client.force_login(finances())
+
+    feuille = _ouvrir(client.get(reverse("accounting:balance_xlsx"))).active
+    lignes = _lignes(feuille)
+
+    pied = lignes[-1]
+    assert pied[1] == "Total" and pied[2] == 1000 and pied[3] == 1000
+    assert any(l[0] == "411000" and l[2] == 1000 for l in lignes)
+
+
+def test_grand_livre_en_excel_exige_un_compte(client):
+    _ecritures()
+    client.force_login(finances())
+    from apps.accounting.models import Compte
+
+    assert client.get(reverse("accounting:grand_livre_xlsx")).status_code == 404
+    compte = Compte.objects.get(numero="411000")
+
+    feuille = _ouvrir(client.get(reverse("accounting:grand_livre_xlsx"), {"compte": compte.numero})).active
+    lignes = _lignes(feuille)
+
+    assert any(l[0] is not None and l[4] == 1000 and l[6] == 1000 for l in lignes[4:])
+
+
+def test_bilan_et_compte_de_resultat_en_excel(client):
+    _ecritures()
+    client.force_login(direction())
+
+    bilan = _ouvrir(client.get(reverse("accounting:bilan_xlsx")))
+    resultat = _ouvrir(client.get(reverse("accounting:compte_resultat_xlsx")))
+
+    assert bilan.sheetnames == ["Actif", "Passif"]
+    assert _lignes(bilan["Actif"])[-1] == [None, "Total actif", 1000]
+    assert _lignes(bilan["Passif"])[-1] == [None, "Total passif", 1000]  # résultat en cours compris
+    assert resultat.sheetnames == ["Produits", "Charges", "Résultat"]
+    assert _lignes(resultat["Résultat"])[-1][1] == 1000
+
+
+def test_declaration_tva_en_excel(client):
+    client.force_login(finances())
+
+    feuille = _ouvrir(client.get(reverse("accounting:declaration_tva_xlsx"))).active
+
+    assert [l[0] for l in _lignes(feuille)[-3:]][0].startswith("TVA collectée")
+
+
+@pytest.mark.parametrize("nom", ["balance_xlsx", "bilan_xlsx", "compte_resultat_xlsx", "declaration_tva_xlsx"])
+def test_les_exports_comptables_sont_reserves_aux_roles_de_consultation(client, nom):
+    client.force_login(UserFactory(role=Role.PARCAUTO))
+
+    assert client.get(reverse(f"accounting:{nom}")).status_code == 403
+
+
+@pytest.mark.parametrize(
+    "ecran, export, role",
+    [
+        ("billing:factures", "billing:factures_xlsx", Role.FINANCES),
+        ("billing:depenses", "billing:depenses_xlsx", Role.FINANCES),
+        ("finance:tresorerie", "finance:xlsx", Role.FINANCES),
+        ("accounting:balance", "accounting:balance_xlsx", Role.FINANCES),
+        ("accounting:bilan", "accounting:bilan_xlsx", Role.FINANCES),
+        ("accounting:compte_resultat", "accounting:compte_resultat_xlsx", Role.FINANCES),
+        ("accounting:declaration_tva", "accounting:declaration_tva_xlsx", Role.FINANCES),
+        ("accounting:grand_livre", "accounting:grand_livre_xlsx", Role.FINANCES),
+    ],
+)
+def test_chaque_ecran_propose_le_bouton_excel(client, ecran, export, role):
+    client.force_login(UserFactory(role=role))
+
+    page = client.get(reverse(ecran)).content.decode()
+
+    assert reverse(export) in page and "fa-file-excel" in page
+```
+
 ```bash
 cd frontend
 npm run build:css
@@ -2196,10 +2955,10 @@ python manage.py check
 ```
 
 ```bash
-python -m pytest apps/accounting/tests/test_views.py -q --no-cov
+python -m pytest apps/accounting/tests/test_admin_lecture_seule.py apps/accounting/tests/test_contre_passation_manuelle.py apps/accounting/tests/test_views.py apps/audit/tests/test_validation_suppression.py apps/core/tests/test_xlsx.py -q --no-cov
 ```
 
-**Résultat attendu :** `87 passed` (pour les 1 fichier(s) de tests présentés dans ce chapitre).
+**Résultat attendu :** `129 passed` (pour les 5 fichier(s) de tests présentés dans ce chapitre).
 
 **Le cycle d'une opération diverse, dans le navigateur** (le plan comptable est déjà seedé depuis le
 chapitre 15 : `571000` Caisse, `101000` Capital social… y figurent déjà) :

@@ -8,9 +8,10 @@ Trois idées à retenir :
 
 | Idée | Réalisation |
 |---|---|
-| **Le journal ne peut pas être modifié ni effacé** | `AuditLog.save()` refuse toute modification, `delete()` est interdit, l'administration est en lecture seule |
+| **Le journal ne peut pas être modifié ni effacé** | `save()` / `delete()` du modèle refusent, le manager refuse `update()` / `delete()` en masse (`AppendOnlyQuerySet`, chapitre 2), un **trigger PostgreSQL** refuse même le SQL direct, l'administration est en lecture seule |
 | **Tracer un modèle coûte une ligne** | `audit_model(MonModele, module="…")` dans l'`apps.py` de chaque app |
 | **Les secrets n'y entrent jamais** | `audit_model(..., exclure=("code_expediteur",))` retire des champs du journal |
+| **Une validation n'est pas une modification** | `audit_model(..., validation=("statut", ("EMISE",)))` fait sortir ce changement de statut en action `VALIDATE` ; `auto_validation` signale quand la même personne a saisi **et** validé |
 
 ## Prérequis
 
@@ -84,6 +85,15 @@ DIRECTION doit en plus avoir l'accès à l'administration (case « statut équip
 
 {{FICHIER apps/audit/apps.py}}
 
+## Étape 4 bis — La migration du trigger PostgreSQL
+
+Le trigger n'est pas déduit des modèles : c'est une migration **écrite à la main**, la seconde de l'app. Elle appelle
+`poser_triggers` (chapitre 2), qui **ne fait rien sous SQLite** (développement, tests) et pose sur PostgreSQL un
+trigger `BEFORE UPDATE OR DELETE` ; le seul `UPDATE` toléré est le détachement de l'utilisateur
+(`utilisateur_id` → `NULL`, quand un compte disparaît). Vous la créerez à l'étape 6, une fois la migration `0001` générée.
+
+{{FICHIER apps/audit/migrations/0002_trigger_append_only.py}}
+
 ## Étape 5 — README et test
 
 {{RESTANTS}}
@@ -98,6 +108,24 @@ python manage.py migrate
 ```
 
 **Résultat attendu :** `Create model AuditLog`, puis `Applying audit.0001_initial... OK`.
+
+### La migration du trigger PostgreSQL
+
+Le trigger n'est pas déduit des modèles : c'est une migration **écrite à la main**, la seconde de l'app. Elle appelle
+`poser_triggers` (chapitre 2), qui **ne fait rien sous SQLite** (développement, tests) et pose sur PostgreSQL un
+trigger `BEFORE UPDATE OR DELETE` ; le seul `UPDATE` toléré est le détachement de l'utilisateur
+(`utilisateur_id` → `NULL`, quand un compte disparaît).
+
+(Le fichier est présenté plus haut, à l'étape « La migration du trigger ».)
+
+Créez une migration **vide** et complétez-la avec ce contenu :
+
+```bash
+python manage.py makemigrations audit --empty --name trigger_append_only
+python manage.py migrate
+```
+
+**Résultat attendu :** `Applying audit.0002_trigger_append_only... OK`.
 
 ## Vérifier le chapitre
 

@@ -16,6 +16,17 @@ Brouillon → Planifiée → Affectée → En cours (départ → colis récupér
 | **Livrer** | il faut le **code du destinataire** et le kilométrage d'arrivée (le compteur du camion est mis à jour ; camion et chauffeur sont libérés) |
 | **Clôturer** | validation finale (la Direction) |
 
+**Règles d'affectation** (`services.py`) : un chauffeur dont le **permis ou la visite médicale est expiré** ne peut être ni
+affecté ni partir (une date non renseignée ne bloque pas : l'alerte « manquant » la signale). La **réaffectation** d'une mission
+déjà affectée ne revérifie que ce qui change — on peut changer **seulement le camion** ou **seulement le chauffeur** — et une hausse
+du poids est recontrôlée contre la capacité du camion conservé. À la livraison, un kilométrage d'arrivée à plus de 5 000 km du
+départ est refusé. L'alerte « mission pendant le congé » (`missions_du_personnel_sur_periode`) couvre aussi une mission **déjà
+en cours** qui déborde sur le congé, et le **copilote**.
+
+**Encaissements.** Un règlement reçu se reflète dans la prévision de trésorerie de la mission (`FraisMission` de type
+`ENCAISSEMENT`) ; la ligne garde le lien avec son **règlement** (`FraisMission.reglement`, ajouté au chapitre 13, quand `billing`
+existe) pour disparaître si le règlement est annulé. La commande `rattacher_encaissements_missions` reprend les lignes antérieures.
+
 ## Prérequis
 
 - Chapitres 1 à 8 terminés.

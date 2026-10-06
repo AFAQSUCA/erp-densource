@@ -30,5 +30,29 @@
   "apps/core/tests/test_graphiques.py::test_un_graphique_vide_affiche_le_message_sans_barre": {
     "presente_au": 2,
     "vert_au": 17
+  },
+  "apps/missions/tests/test_encaissement_annule.py::test_annuler_le_reglement_retire_l_encaissement_de_la_mission": {
+    "presente_au": 13,
+    "vert_au": 14
+  },
+  "apps/missions/tests/test_encaissement_annule.py::test_la_commande_de_reprise_rattache_et_retire_les_anciens_encaissements": {
+    "presente_au": 13,
+    "vert_au": 14
+  },
+  "apps/missions/tests/test_encaissement_annule.py::test_la_commande_en_simulation_n_ecrit_rien": {
+    "presente_au": 13,
+    "vert_au": 14
+  },
+  "apps/missions/tests/test_encaissement_annule.py::test_un_reglement_se_reflete_sur_la_mission_avec_son_lien": {
+    "presente_au": 13,
+    "vert_au": 14
+  },
+  "apps/missions/tests/test_frais_mission.py::test_creer_encaissement_est_directement_confirme": {
+    "presente_au": 9,
+    "vert_au": 13
+  },
+  "apps/missions/tests/test_frais_mission.py::test_totaux_ne_comptent_que_les_lignes_confirmees": {
+    "presente_au": 9,
+    "vert_au": 13
   }
 }

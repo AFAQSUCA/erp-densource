@@ -37,7 +37,7 @@ ce qui le concerne.
 | **Un téléphone** | Android ou iPhone | la double authentification (application d'authentification) | — |
 
 Vous n'avez **pas besoin** de PostgreSQL, Redis ni Docker pour ce tutoriel : en développement, la base est
-un simple fichier SQLite. (La mise en production avec PostgreSQL, Redis et Docker est le sujet du chapitre 31
+un simple fichier SQLite. (La mise en production avec PostgreSQL, Redis et Docker est le sujet du chapitre 32
 « Aller plus loin ».)
 
 Espace disque : environ 400 Mo (dont 300 Mo pour `node_modules`). Durée : comptez **20 à 30 heures** en
@@ -110,7 +110,9 @@ erp-densource/
 │   │   │   │   ├── __init__.py  ← ch. 15
 │   │   │   │   ├── comptabiliser_historique_depenses.py  ← ch. 15
 │   │   │   │   ├── comptabiliser_historique_factures.py  ← ch. 15
-│   │   │   │   └── comptabiliser_historique_reglements.py  ← ch. 15
+│   │   │   │   ├── comptabiliser_historique_reglements.py  ← ch. 15
+│   │   │   │   ├── contre_passer_historique_annulations.py  ← ch. 15
+│   │   │   │   └── ecrire_clotures_historiques.py  ← ch. 15
 │   │   │   └── __init__.py  ← ch. 15
 │   │   ├── migrations/
 │   │   │   ├── 0001_initial.py  ← (généré par `python manage.py makemigrations`)
@@ -140,6 +142,11 @@ erp-densource/
 │   │   ├── tests/
 │   │   │   ├── __init__.py  ← ch. 15
 │   │   │   ├── factories.py  ← ch. 15
+│   │   │   ├── test_admin_lecture_seule.py  ← ch. 27
+│   │   │   ├── test_cloture_resultat.py  ← ch. 15
+│   │   │   ├── test_contre_passation.py  ← ch. 15
+│   │   │   ├── test_contre_passation_manuelle.py  ← ch. 27
+│   │   │   ├── test_exercice_cloture_erreurs.py  ← ch. 30
 │   │   │   ├── test_models.py  ← ch. 15
 │   │   │   ├── test_receivers.py  ← ch. 15
 │   │   │   ├── test_services.py  ← ch. 15
@@ -176,6 +183,7 @@ erp-densource/
 │   │   │   ├── test_password_reset.py  ← ch. 17
 │   │   │   ├── test_permissions.py  ← ch. 3
 │   │   │   ├── test_securite_connexion.py  ← ch. 30
+│   │   │   ├── test_utilisateurs_ecran.py  ← ch. 17
 │   │   │   └── test_web.py  ← ch. 26
 │   │   ├── README.md  ← ch. 3
 │   │   ├── __init__.py  ← ch. 3
@@ -189,11 +197,13 @@ erp-densource/
 │   │   ├── models.py  ← ch. 3
 │   │   ├── navigation.py  ← ch. 3
 │   │   ├── permissions.py  ← ch. 3
+│   │   ├── services.py  ← ch. 3
 │   │   ├── signals.py  ← ch. 3
 │   │   ├── throttle.py  ← ch. 3
 │   │   ├── urls.py  ← ch. 17
 │   │   ├── views.py  ← ch. 17
-│   │   └── views_mfa.py  ← ch. 17
+│   │   ├── views_mfa.py  ← ch. 17
+│   │   └── views_utilisateurs.py  ← ch. 17
 │   ├── api/
 │   │   ├── tests/
 │   │   │   ├── __init__.py  ← ch. 30
@@ -215,15 +225,19 @@ erp-densource/
 │   ├── audit/
 │   │   ├── migrations/
 │   │   │   ├── 0001_initial.py  ← (généré par `python manage.py makemigrations`)
+│   │   │   ├── 0002_trigger_append_only.py  ← ch. 4
 │   │   │   └── __init__.py  ← (généré par `python manage.py makemigrations`)
 │   │   ├── templates/
 │   │   │   └── audit/
 │   │   │       └── journal_list.html  ← ch. 17
 │   │   ├── tests/
 │   │   │   ├── __init__.py  ← ch. 4
+│   │   │   ├── test_immuable.py  ← ch. 11
 │   │   │   ├── test_models.py  ← ch. 4
 │   │   │   ├── test_services.py  ← ch. 17
 │   │   │   ├── test_signals.py  ← ch. 17
+│   │   │   ├── test_utilisateurs.py  ← ch. 17
+│   │   │   ├── test_validation_suppression.py  ← ch. 27
 │   │   │   └── test_views.py  ← ch. 17
 │   │   ├── README.md  ← ch. 4
 │   │   ├── __init__.py  ← ch. 4
@@ -293,26 +307,33 @@ erp-densource/
 │   │   │   ├── test_forms_date.py  ← ch. 29
 │   │   │   ├── test_graphiques.py  ← ch. 2
 │   │   │   ├── test_impression_listes.py  ← ch. 26
+│   │   │   ├── test_medias.py  ← ch. 26
 │   │   │   ├── test_models.py  ← ch. 2
 │   │   │   ├── test_numerotation.py  ← ch. 2
 │   │   │   ├── test_rapports.py  ← ch. 17
 │   │   │   ├── test_search.py  ← ch. 25
-│   │   │   └── test_sections.py  ← ch. 2
+│   │   │   ├── test_secret_key_prod.py  ← ch. 2
+│   │   │   ├── test_sections.py  ← ch. 2
+│   │   │   └── test_xlsx.py  ← ch. 27
 │   │   ├── README.md  ← ch. 2
 │   │   ├── __init__.py  ← ch. 2
 │   │   ├── admin.py  ← ch. 2
 │   │   ├── apps.py  ← ch. 2
 │   │   ├── constants.py  ← ch. 2
+│   │   ├── exceptions.py  ← ch. 2
 │   │   ├── formats.py  ← ch. 2
 │   │   ├── forms.py  ← ch. 2
 │   │   ├── graphiques.py  ← ch. 2
+│   │   ├── immuable.py  ← ch. 2
+│   │   ├── medias.py  ← ch. 2
 │   │   ├── middleware.py  ← ch. 2
 │   │   ├── models.py  ← ch. 2
 │   │   ├── rapports.py  ← ch. 2
 │   │   ├── search.py  ← ch. 2
 │   │   ├── sections.py  ← ch. 2
 │   │   ├── services.py  ← ch. 2
-│   │   └── views.py  ← ch. 17
+│   │   ├── views.py  ← ch. 17
+│   │   └── xlsx.py  ← ch. 2
 │   ├── customers/
 │   │   ├── migrations/
 │   │   │   ├── 0001_initial.py  ← (généré par `python manage.py makemigrations`)
@@ -414,10 +435,11 @@ erp-densource/
 │   │   │   ├── test_demandes.py  ← ch. 14
 │   │   │   ├── test_demandes_views.py  ← ch. 26
 │   │   │   ├── test_depenses_parc_auto.py  ← ch. 26
+│   │   │   ├── test_erreurs_depense_automatique.py  ← ch. 30
 │   │   │   ├── test_frais_mission_receivers.py  ← ch. 14
 │   │   │   ├── test_impression.py  ← ch. 26
 │   │   │   ├── test_rapprochement_views.py  ← ch. 26
-│   │   │   ├── test_services.py  ← ch. 14
+│   │   │   ├── test_services.py  ← ch. 15
 │   │   │   ├── test_versements.py  ← ch. 26
 │   │   │   └── test_views.py  ← ch. 26
 │   │   ├── README.md  ← ch. 14
@@ -444,6 +466,7 @@ erp-densource/
 │   │   ├── tests/
 │   │   │   ├── __init__.py  ← ch. 8
 │   │   │   ├── factories.py  ← ch. 8
+│   │   │   ├── test_correction_compteur.py  ← ch. 21
 │   │   │   ├── test_fiche.py  ← ch. 8
 │   │   │   ├── test_models.py  ← ch. 8
 │   │   │   ├── test_services.py  ← ch. 8
@@ -472,6 +495,7 @@ erp-densource/
 │   │   ├── tests/
 │   │   │   ├── __init__.py  ← ch. 12
 │   │   │   ├── factories.py  ← ch. 12
+│   │   │   ├── test_coherence_saisie.py  ← ch. 12
 │   │   │   ├── test_lecture.py  ← ch. 12
 │   │   │   ├── test_models.py  ← ch. 12
 │   │   │   ├── test_services.py  ← ch. 12
@@ -561,6 +585,7 @@ erp-densource/
 │   │   │   ├── factories.py  ← ch. 5
 │   │   │   ├── test_audit.py  ← ch. 5
 │   │   │   ├── test_comptes_demo.py  ← ch. 6
+│   │   │   ├── test_conge_statut_chauffeur.py  ← ch. 6
 │   │   │   ├── test_conges.py  ← ch. 6
 │   │   │   ├── test_direction_remplace.py  ← ch. 18
 │   │   │   ├── test_droits_conges.py  ← ch. 6
@@ -586,9 +611,29 @@ erp-densource/
 │   │   ├── signals.py  ← ch. 5
 │   │   ├── urls.py  ← ch. 18
 │   │   └── views.py  ← ch. 18
+│   ├── importation/
+│   │   ├── management/
+│   │   │   ├── commands/
+│   │   │   │   ├── __init__.py  ← ch. 31
+│   │   │   │   └── generer_modele_import.py  ← ch. 31
+│   │   │   └── __init__.py  ← ch. 31
+│   │   ├── tests/
+│   │   │   ├── __init__.py  ← ch. 31
+│   │   │   ├── helpers.py  ← ch. 31
+│   │   │   └── test_import.py  ← ch. 31
+│   │   ├── README.md  ← ch. 31
+│   │   ├── __init__.py  ← ch. 31
+│   │   ├── apps.py  ← ch. 31
+│   │   ├── forms.py  ← ch. 31
+│   │   ├── modele.py  ← ch. 31
+│   │   ├── permissions.py  ← ch. 31
+│   │   ├── services.py  ← ch. 31
+│   │   ├── urls.py  ← ch. 31
+│   │   └── views.py  ← ch. 31
 │   ├── inventory/
 │   │   ├── migrations/
 │   │   │   ├── 0001_initial.py  ← (généré par `python manage.py makemigrations`)
+│   │   │   ├── 0002_trigger_append_only.py  ← ch. 11
 │   │   │   └── __init__.py  ← (généré par `python manage.py makemigrations`)
 │   │   ├── templates/
 │   │   │   └── inventory/
@@ -604,7 +649,7 @@ erp-densource/
 │   │   │   ├── test_models.py  ← ch. 11
 │   │   │   ├── test_services.py  ← ch. 11
 │   │   │   ├── test_stock_views.py  ← ch. 24
-│   │   │   └── test_views.py  ← ch. 24
+│   │   │   └── test_views.py  ← ch. 26
 │   │   ├── README.md  ← ch. 11
 │   │   ├── __init__.py  ← ch. 11
 │   │   ├── admin.py  ← ch. 11
@@ -619,12 +664,18 @@ erp-densource/
 │   │   ├── urls.py  ← ch. 24
 │   │   └── views.py  ← ch. 24
 │   ├── missions/
+│   │   ├── management/
+│   │   │   ├── commands/
+│   │   │   │   ├── __init__.py  ← ch. 9
+│   │   │   │   └── rattacher_encaissements_missions.py  ← ch. 9
+│   │   │   └── __init__.py  ← ch. 9
 │   │   ├── migrations/
 │   │   │   ├── 0001_initial.py  ← (généré par `python manage.py makemigrations`)
 │   │   │   ├── 0002_fraismission.py  ← (généré par `python manage.py makemigrations`)
 │   │   │   ├── 0002_mission_proforma.py  ← (généré par `python manage.py makemigrations`)
 │   │   │   ├── 0003_merge_0002_fraismission_0002_mission_proforma.py  ← (généré par `python manage.py makemigrations`)
 │   │   │   ├── 0004_mission_copilote.py  ← (généré par `python manage.py makemigrations`)
+│   │   │   ├── 0005_frais_mission_reglement.py  ← (généré par `python manage.py makemigrations`)
 │   │   │   └── __init__.py  ← (généré par `python manage.py makemigrations`)
 │   │   ├── templates/
 │   │   │   └── missions/
@@ -642,11 +693,14 @@ erp-densource/
 │   │   │   ├── factories.py  ← ch. 9
 │   │   │   ├── test_alerte_conge.py  ← ch. 22
 │   │   │   ├── test_documents.py  ← ch. 22
+│   │   │   ├── test_documents_et_reaffectation.py  ← ch. 22
+│   │   │   ├── test_encaissement_annule.py  ← ch. 13
 │   │   │   ├── test_frais_mission.py  ← ch. 9
 │   │   │   ├── test_frais_mission_views.py  ← ch. 22
 │   │   │   ├── test_models.py  ← ch. 9
 │   │   │   ├── test_modification.py  ← ch. 22
 │   │   │   ├── test_permissions.py  ← ch. 9
+│   │   │   ├── test_plausibilite_km.py  ← ch. 9
 │   │   │   ├── test_qr.py  ← ch. 22
 │   │   │   ├── test_services.py  ← ch. 9
 │   │   │   ├── test_temps_reel.py  ← ch. 9
@@ -677,6 +731,7 @@ erp-densource/
 │   │   │       ├── accueil.html  ← ch. 29
 │   │   │       ├── base.html  ← ch. 29
 │   │   │       ├── checklist.html  ← ch. 29
+│   │   │       ├── conges.html  ← ch. 29
 │   │   │       ├── hors_ligne.html  ← ch. 29
 │   │   │       ├── imprevu.html  ← ch. 29
 │   │   │       ├── incident.html  ← ch. 29
@@ -688,6 +743,7 @@ erp-densource/
 │   │   │   ├── __init__.py  ← ch. 29
 │   │   │   ├── helpers.py  ← ch. 29
 │   │   │   ├── test_api.py  ← ch. 30
+│   │   │   ├── test_conges.py  ← ch. 30
 │   │   │   ├── test_frais_mission.py  ← ch. 30
 │   │   │   ├── test_services.py  ← ch. 29
 │   │   │   └── test_web.py  ← ch. 29
@@ -765,7 +821,9 @@ erp-densource/
 │   ├── tailwind.config.js  ← ch. 17
 │   └── vendor.js  ← ch. 17
 ├── nginx/
-│   └── nginx.conf  ← (mise en production)
+│   ├── Dockerfile  ← (mise en production)
+│   ├── nginx.conf  ← (mise en production)
+│   └── preparer-https.sh  ← (mise en production)
 ├── ops/
 │   ├── entrypoint.sh  ← (mise en production)
 │   ├── gunicorn.conf.py  ← (mise en production)
@@ -791,27 +849,35 @@ erp-densource/
 │   └── vendor/
 │       ├── alpine/
 │       │   └── alpine.min.js  ← (généré par `npm run build`)
-│       └── fontawesome/
-│           ├── css/
-│           │   └── all.min.css  ← (généré par `npm run build`)
-│           ├── webfonts/
-│           │   ├── fa-regular-400.woff2  ← (généré par `npm run build`)
-│           │   └── fa-solid-900.woff2  ← (généré par `npm run build`)
-│           └── LICENSE.txt  ← (généré par `npm run build`)
+│       ├── fontawesome/
+│       │   ├── css/
+│       │   │   └── all.min.css  ← (généré par `npm run build`)
+│       │   ├── webfonts/
+│       │   │   ├── fa-regular-400.woff2  ← (généré par `npm run build`)
+│       │   │   └── fa-solid-900.woff2  ← (généré par `npm run build`)
+│       │   └── LICENSE.txt  ← (généré par `npm run build`)
+│       └── jsqr/
+│           ├── LICENSE  ← (généré par `npm run build`)
+│           └── jsQR.js  ← (généré par `npm run build`)
 ├── templates/
 │   ├── accounts/
 │   │   ├── mfa_activer.html  ← ch. 17
 │   │   ├── mfa_codes.html  ← ch. 17
 │   │   ├── mfa_codes_affiches.html  ← ch. 17
-│   │   └── mfa_verifier.html  ← ch. 17
+│   │   ├── mfa_verifier.html  ← ch. 17
+│   │   ├── utilisateur_form.html  ← ch. 17
+│   │   └── utilisateur_list.html  ← ch. 17
 │   ├── components/
 │   │   ├── _assets.html  ← ch. 17
+│   │   ├── _bouton_xlsx.html  ← ch. 17
 │   │   ├── _champ.html  ← ch. 17
 │   │   ├── _graphique_barres.html  ← ch. 17
 │   │   ├── _graphique_colonnes.html  ← ch. 17
 │   │   ├── _messages.html  ← ch. 17
 │   │   ├── _pagination.html  ← ch. 17
 │   │   └── _suivi_direct.html  ← ch. 17
+│   ├── importation/
+│   │   └── importer.html  ← ch. 31
 │   ├── rapports/
 │   │   ├── _entete_impression.html  ← ch. 17
 │   │   ├── _pied_impression.html  ← ch. 17
@@ -830,6 +896,7 @@ erp-densource/
 │   └── base.html  ← ch. 17
 ├── .dockerignore  ← (mise en production)
 ├── .env.example  ← ch. 1
+├── .gitattributes  ← ch. 1
 ├── .gitignore  ← ch. 1
 ├── CAHIER DES CHARGES FONCTIONNEL ET TECHNIQUE.docx  ← (documents de présentation, sans rapport avec le fonctionnement)
 ├── Dockerfile  ← (mise en production)
@@ -838,7 +905,7 @@ erp-densource/
 ├── GUIDE-PARCOURS.md  ← (documents de référence à lire)
 ├── Presentation-ERP-DEN-Source.docx  ← (documents de présentation, sans rapport avec le fonctionnement)
 ├── Presentation-ERP-DEN-Source.pptx  ← (documents de présentation, sans rapport avec le fonctionnement)
-├── README.md  ← ch. 31
+├── README.md  ← ch. 32
 ├── architecture.md  ← (documents de référence à lire)
 ├── audit-checklist.md  ← (documents de référence à lire)
 ├── avenant-comptabilite-autonomie.md  ← (documents de référence à lire)
@@ -849,6 +916,7 @@ erp-densource/
 ├── docker-compose.yml  ← (mise en production)
 ├── glossaire-metier.md  ← (documents de référence à lire)
 ├── manage.py  ← ch. 1
+├── modele-donnees-entreprise-DEN-Source.xlsx  ← (classeur Excel modèle, généré par `python manage.py generer_modele_import`)
 └── pytest.ini  ← ch. 1
 ```
 

@@ -82,6 +82,10 @@ python -c "import django, rest_framework, pytest, pyotp, qrcode; print('Django',
 Ce fichier dit à Git **ce qu'il ne doit jamais versionner** : l'environnement virtuel (`.venv/`), la base de
 développement (`db.sqlite3`), les secrets (`.env`), les fichiers générés (`__pycache__/`, `staticfiles/`).
 
+{{FICHIER .gitattributes}}
+
+Ce fichier force les **scripts shell** (`*.sh`) en fins de ligne Unix (LF), même sur Windows : un script avec des fins de ligne Windows (CRLF) ne s'exécute pas dans un conteneur Linux.
+
 {{FICHIER .env.example}}
 
 `.env.example` est un **modèle** qu'on commite ; le vrai `.env` reste local. Copiez-le :
@@ -160,7 +164,7 @@ authentification imposée (les tests qui la vérifient la réactivent), plafonds
 {{FICHIER config/settings/prod.py}}
 
 En production : HTTPS obligatoire, cookies sécurisés, base PostgreSQL et Redis fournis par l'environnement.
-Ce fichier n'est pas utilisé dans ce tutoriel (voir « Aller plus loin », chapitre 31).
+Ce fichier n'est pas utilisé dans ce tutoriel (voir « Aller plus loin », chapitre 32).
 
 ## Étape 6 — Les adresses et la configuration des tests
 
