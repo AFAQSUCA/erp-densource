@@ -1,6 +1,6 @@
 # Chapitre 18 — Écrans : personnel et congés
 
-> 14 fichier(s) dans ce chapitre, 2513 lignes de code.
+> 14 fichier(s) dans ce chapitre, 2517 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -894,8 +894,8 @@ Montez ces adresses : voici la modification à faire dans `config/urls.py` :
 ```diff
 --- config/urls.py (avant)
 +++ config/urls.py (après)
-@@ -16,4 +16,5 @@
-     path("favicon.ico", RedirectView.as_view(url=settings.STATIC_URL + "img/favicon.png", permanent=True)),
+@@ -18,4 +18,5 @@
+     path("medias/<path:chemin>", MediaProtegeView.as_view(), name="media"),
      path("", include("apps.accounts.urls")),
 +    path("rh/", include("apps.hr.urls")),
      path("audit/", include("apps.audit.urls")),
@@ -1800,7 +1800,7 @@ def test_l_ecran_explique_pourquoi_la_direction_peut_decider(client):
 
 #### `apps/hr/tests/test_report_conge.py`
 
-*421 lignes* — Report du solde d'un congé en cours — avenant-separation-des-taches.md § R7 : l'employé écourte
+*425 lignes* — Report du solde d'un congé en cours — avenant-separation-des-taches.md § R7 : l'employé écourte
 
 ```python
 """Report du solde d'un congé en cours — avenant-separation-des-taches.md § R7 : l'employé écourte
@@ -1926,7 +1926,11 @@ def test_refuse_une_date_de_reprise_hors_de_la_periode(nouvelle_date_fin):
     employe = hierarchie[0]
 
     with pytest.raises(CongeError, match="comprise entre"):
-        services.demander_report(conge, employe.utilisateur, nouvelle_date_fin=nouvelle_date_fin, motif="x")
+        # « aujourd'hui » fixé avant le début du congé : sinon, dès que la date réelle dépasse le 04/10/2026, le premier
+        # cas serait refusé comme « dans le passé » avant d'être jugé hors de la période.
+        services.demander_report(
+            conge, employe.utilisateur, nouvelle_date_fin=nouvelle_date_fin, motif="x", aujourd_hui=date(2026, 10, 1)
+        )
 
 
 def test_refuse_une_date_de_reprise_dans_le_passe():

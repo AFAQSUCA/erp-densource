@@ -1,6 +1,6 @@
 # Chapitre 22 — Écrans : missions et codes QR
 
-> 22 fichier(s) dans ce chapitre, 3683 lignes de code.
+> 23 fichier(s) dans ce chapitre, 3874 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -743,8 +743,8 @@ urlpatterns = [
 ```diff
 --- config/urls.py (avant)
 +++ config/urls.py (après)
-@@ -16,4 +16,5 @@
-     path("favicon.ico", RedirectView.as_view(url=settings.STATIC_URL + "img/favicon.png", permanent=True)),
+@@ -18,4 +18,5 @@
+     path("medias/<path:chemin>", MediaProtegeView.as_view(), name="media"),
      path("", include("apps.accounts.urls")),
 +    path("missions/", include("apps.missions.urls")),
      path("clients/", include("apps.customers.urls")),
@@ -1606,7 +1606,7 @@ elles-mêmes sont relues par une requête ordinaire, avec les droits de l'utilis
 
 #### `apps/customers/tests/test_views.py`
 
-*377 lignes* — Écrans clients : accès par rôle, portefeuille, fiche, création, interactions.
+*411 lignes* — Écrans clients : accès par rôle, portefeuille, fiche, création, interactions.
 
 ```python
 """Écrans clients : accès par rôle, portefeuille, fiche, création, interactions."""
@@ -1986,6 +1986,40 @@ def test_le_delai_de_paiement_doit_etre_entre_1_et_365_jours(client):
         reponse = client.post(reverse("customers:creer"), _donnees(delai_paiement_jours=valeur))
         assert reponse.status_code == 200, valeur
     assert not Client.objects.exists()
+
+
+# --- chargé attitré désactivé (audit M4-05) ---
+
+
+def test_modifier_un_client_dont_le_charge_a_ete_desactive_le_conserve(client):
+    charge = UserFactory(role=Role.CHARGE_CLIENTELE)
+    fiche = ClientFactory(raison_sociale="Cimaf", ncc_nif="CI-1", charge_clientele=charge)
+    charge.is_active = False
+    charge.save()
+    _connecte(client, Role.DIRECTION)
+
+    page = client.get(reverse("customers:modifier", args=[fiche.pk])).content.decode()
+    assert f'value="{charge.pk}" selected' in page  # toujours proposé, et sélectionné
+
+    reponse = client.post(
+        reverse("customers:modifier", args=[fiche.pk]),
+        _donnees(raison_sociale="Cimaf CI", ncc_nif="CI-1", charge_clientele=charge.pk),
+        follow=True,
+    )
+
+    fiche.refresh_from_db()
+    assert fiche.raison_sociale == "Cimaf CI" and fiche.charge_clientele_id == charge.pk  # plus remplacé par « aucun »
+
+
+def test_un_nouveau_charge_desactive_reste_refuse(client):
+    inactif = UserFactory(role=Role.CHARGE_CLIENTELE, is_active=False)
+    fiche = ClientFactory(ncc_nif="CI-2")
+    _connecte(client, Role.DIRECTION)
+
+    client.post(reverse("customers:modifier", args=[fiche.pk]), _donnees(ncc_nif="CI-2", charge_clientele=inactif.pk))
+
+    fiche.refresh_from_db()
+    assert fiche.charge_clientele_id is None
 ```
 
 #### `apps/drivers/tests/test_views.py`
@@ -2349,7 +2383,7 @@ def test_les_formulaires_des_chauffeurs_sont_proteges_par_csrf():
 
 #### `apps/missions/tests/test_alerte_conge.py`
 
-*116 lignes* — Alerte N1 : le chauffeur qui demande un congé a une mission prévue sur la période.
+*155 lignes* — Alerte N1 : le chauffeur qui demande un congé a une mission prévue sur la période.
 
 ```python
 """Alerte N1 : le chauffeur qui demande un congé a une mission prévue sur la période.
@@ -2468,6 +2502,45 @@ def test_la_section_missions_du_client_est_reservee_aux_roles_des_missions():
 
     assert sections.section_missions_client(fiche, UserFactory(role=Role.RH)) is None
     assert sections.section_missions_client(fiche, UserFactory(role=Role.DIRECTION)) is not None
+
+
+# --- chevauchement et copilote (audit M11-06) ---
+
+
+def test_une_mission_deja_en_cours_qui_deborde_sur_le_conge_declenche_l_alerte(client, cas):
+    conge, fiche, compte_sup = cas
+    MissionFactory(
+        chauffeur=fiche, statut=StatutMission.EN_COURS_COLIS_RECUPERE, vehicule=VehiculeFactory(),
+        date_depart_prevue=date(2026, 10, 1), date_depart=datetime(2026, 10, 1, 7, 0, tzinfo=dt_timezone.utc),
+    )
+
+    assert "1 mission prévue pendant cette période" in _page(client, compte_sup, conge)
+
+
+def test_une_mission_en_cours_partie_apres_la_fin_du_conge_ne_declenche_pas_d_alerte(client, cas):
+    conge, fiche, compte_sup = cas
+    MissionFactory(
+        chauffeur=fiche, statut=StatutMission.EN_COURS_DEPART, vehicule=VehiculeFactory(),
+        date_depart_prevue=date(2026, 10, 12), date_depart=datetime(2026, 10, 12, 7, 0, tzinfo=dt_timezone.utc),
+    )
+
+    assert "mission prévue" not in _page(client, compte_sup, conge)
+
+
+def test_le_copilote_en_conge_est_prevenu_comme_le_chauffeur(client):
+    from apps.drivers.models import Copilote
+
+    compte_sup = UserFactory(role=Role.PARCAUTO)
+    superieur = PersonnelFactory(utilisateur=compte_sup)
+    personnel = PersonnelFactory(poste="Copilote", superieur=superieur)
+    copilote = Copilote.objects.get(personnel=personnel)
+    conge = services.demander_conge(personnel, date_debut=DEBUT, date_fin=FIN, motif="Repos", maintenant=MAINTENANT)
+    MissionFactory(
+        chauffeur=ChauffeurFactory(), copilote=copilote, statut=StatutMission.PLANIFIEE,
+        date_depart_prevue=date(2026, 10, 7),
+    )
+
+    assert "1 mission prévue pendant cette période" in _page(client, compte_sup, conge)
 ```
 
 #### `apps/missions/tests/test_documents.py`
@@ -2593,6 +2666,130 @@ def test_la_fiche_propose_le_telechargement_du_pdf(client):
     contenu = client.get(reverse("missions:detail", args=[mission.pk])).content.decode()
 
     assert reverse("missions:codes_pdf", args=[mission.pk]) in contenu
+```
+
+#### `apps/missions/tests/test_documents_et_reaffectation.py`
+
+*117 lignes* — Audit M3-10 : un chauffeur au permis ou à la visite médicale expiré n'est pas affectable.
+
+```python
+"""Audit M3-10 : un chauffeur au permis ou à la visite médicale expiré n'est pas affectable.
+Audit M5-09 : réaffecter seulement le camion ou seulement le chauffeur marche, et une hausse du poids est
+recontrôlée contre la capacité du camion conservé."""
+
+from datetime import date, timedelta
+from decimal import Decimal
+
+import pytest
+from django.utils import timezone
+
+from apps.drivers.tests.factories import ChauffeurFactory
+from apps.fleet.tests.factories import VehiculeFactory
+from apps.missions import services
+from apps.missions.exceptions import AffectationImpossible, DemarrageImpossible
+
+from .test_modification import _champs
+from .test_services import _affectee, _planifiee
+
+pytestmark = pytest.mark.django_db
+
+HIER = timezone.localdate() - timedelta(days=1)
+DEMAIN = timezone.localdate() + timedelta(days=1)
+
+
+# --- documents du chauffeur ---
+
+
+def test_un_permis_expire_bloque_l_affectation():
+    mission = _planifiee()
+    chauffeur = ChauffeurFactory(date_expiration_permis=HIER)
+
+    with pytest.raises(AffectationImpossible, match=r"permis de conduire \(expiré le"):
+        services.affecter_mission(mission, vehicule=VehiculeFactory(), chauffeur=chauffeur)
+
+
+def test_une_visite_medicale_expiree_bloque_l_affectation():
+    mission = _planifiee()
+    chauffeur = ChauffeurFactory(date_expiration_visite_medicale=HIER)
+
+    with pytest.raises(AffectationImpossible, match="visite médicale"):
+        services.affecter_mission(mission, vehicule=VehiculeFactory(), chauffeur=chauffeur)
+
+
+def test_les_deux_documents_expires_sont_nommes():
+    mission = _planifiee()
+    chauffeur = ChauffeurFactory(date_expiration_permis=HIER, date_expiration_visite_medicale=HIER)
+
+    with pytest.raises(AffectationImpossible, match="permis de conduire.* et visite médicale"):
+        services.affecter_mission(mission, vehicule=VehiculeFactory(), chauffeur=chauffeur)
+
+
+def test_l_expiration_aujourd_hui_ne_bloque_pas_encore_et_les_dates_absentes_non_plus():
+    aujourd_hui = timezone.localdate()
+    ok = ChauffeurFactory(date_expiration_permis=aujourd_hui, date_expiration_visite_medicale=DEMAIN)
+    sans_date = ChauffeurFactory()  # dates non renseignées : signalées par l'alerte, pas bloquantes
+
+    for chauffeur in (ok, sans_date):
+        mission = services.affecter_mission(_planifiee(), vehicule=VehiculeFactory(), chauffeur=chauffeur)
+        assert mission.chauffeur == chauffeur
+
+
+def test_le_depart_est_refuse_si_un_document_a_expire_depuis_l_affectation():
+    chauffeur = ChauffeurFactory(date_expiration_permis=DEMAIN)
+    mission = _affectee(chauffeur=chauffeur)
+    type(chauffeur).objects.filter(pk=chauffeur.pk).update(date_expiration_permis=HIER)
+
+    with pytest.raises(DemarrageImpossible, match="permis de conduire"):
+        services.demarrer_mission(mission)
+
+
+def test_reaffecter_vers_un_chauffeur_au_permis_expire_est_refuse():
+    mission = _affectee()
+
+    with pytest.raises(AffectationImpossible, match="permis de conduire"):
+        services.modifier_mission(
+            mission, **_champs(mission), vehicule=mission.vehicule,
+            chauffeur=ChauffeurFactory(date_expiration_permis=HIER),
+        )
+
+
+# --- réaffectation partielle ---
+
+
+def test_changer_seulement_le_camion_garde_le_chauffeur():
+    mission = _affectee()
+    chauffeur, nouveau = mission.chauffeur, VehiculeFactory()
+
+    modifiee = services.modifier_mission(mission, **_champs(mission), vehicule=nouveau, chauffeur=chauffeur)
+
+    assert (modifiee.vehicule, modifiee.chauffeur) == (nouveau, chauffeur)
+
+
+def test_changer_seulement_le_chauffeur_garde_le_camion():
+    mission = _affectee()
+    vehicule, nouveau = mission.vehicule, ChauffeurFactory()
+
+    modifiee = services.modifier_mission(mission, **_champs(mission), vehicule=vehicule, chauffeur=nouveau)
+
+    assert (modifiee.vehicule, modifiee.chauffeur) == (vehicule, nouveau)
+
+
+def test_une_hausse_du_poids_est_recontrolee_contre_le_camion_conserve():
+    mission = _affectee()
+    capacite = mission.vehicule.capacite_charge_t
+
+    with pytest.raises(AffectationImpossible, match="capacité du camion"):
+        services.modifier_mission(mission, **_champs(mission, poids_t=capacite + Decimal("1")))
+
+
+def test_un_poids_dans_la_capacite_reste_accepte():
+    mission = _affectee()
+
+    modifiee = services.modifier_mission(
+        mission, **_champs(mission, poids_t=mission.vehicule.capacite_charge_t)
+    )
+
+    assert modifiee.poids_t == mission.vehicule.capacite_charge_t
 ```
 
 #### `apps/missions/tests/test_frais_mission_views.py`
@@ -3912,10 +4109,10 @@ python manage.py check
 ```
 
 ```bash
-python -m pytest apps/customers/tests/test_views.py apps/drivers/tests/test_views.py apps/missions/tests/test_alerte_conge.py apps/missions/tests/test_documents.py apps/missions/tests/test_frais_mission_views.py apps/missions/tests/test_modification.py apps/missions/tests/test_qr.py apps/missions/tests/test_views.py apps/notifications/tests/test_receivers_frais_mission.py -q --no-cov
+python -m pytest apps/customers/tests/test_views.py apps/drivers/tests/test_views.py apps/missions/tests/test_alerte_conge.py apps/missions/tests/test_documents.py apps/missions/tests/test_documents_et_reaffectation.py apps/missions/tests/test_frais_mission_views.py apps/missions/tests/test_modification.py apps/missions/tests/test_qr.py apps/missions/tests/test_views.py apps/notifications/tests/test_receivers_frais_mission.py -q --no-cov
 ```
 
-**Résultat attendu :** `210 passed` (pour les 9 fichier(s) de tests présentés dans ce chapitre).
+**Résultat attendu :** `225 passed` (pour les 10 fichier(s) de tests présentés dans ce chapitre).
 
 Les cinq tests de `accounts/test_web.py` qui dépendent du **tableau de bord** échouent encore : ils passeront au
 chapitre 28 (c'est attendu).

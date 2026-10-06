@@ -13,6 +13,11 @@
 Et quatre **documents** par camion (carte grise, assurance, visite technique, patente), avec une **alerte 30
 jours avant** l'expiration.
 
+**Le compteur ne recule jamais** (`enregistrer_kilometrage`) : une faute de frappe qui le gonfle le fige donc pour toujours.
+Deux parades : `ECART_KM_MAX` (5 000 km) borne la distance crédible entre deux relevés — `fuel` et `missions` s'en servent — et
+`corriger_kilometrage` permet à l'**ADMIN** de rattraper une faute, avec un **motif obligatoire** et une trace au journal d'audit
+(l'écran est présenté au chapitre 21).
+
 ## Prérequis
 
 - Chapitres 1 à 7 terminés.

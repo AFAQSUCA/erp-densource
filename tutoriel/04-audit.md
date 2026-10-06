@@ -1,6 +1,6 @@
 # Chapitre 4 — Le journal d'audit : l'app audit
 
-> 11 fichier(s) dans ce chapitre, 513 lignes de code.
+> 12 fichier(s) dans ce chapitre, 601 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -12,9 +12,10 @@ Trois idées à retenir :
 
 | Idée | Réalisation |
 |---|---|
-| **Le journal ne peut pas être modifié ni effacé** | `AuditLog.save()` refuse toute modification, `delete()` est interdit, l'administration est en lecture seule |
+| **Le journal ne peut pas être modifié ni effacé** | `save()` / `delete()` du modèle refusent, le manager refuse `update()` / `delete()` en masse (`AppendOnlyQuerySet`, chapitre 2), un **trigger PostgreSQL** refuse même le SQL direct, l'administration est en lecture seule |
 | **Tracer un modèle coûte une ligne** | `audit_model(MonModele, module="…")` dans l'`apps.py` de chaque app |
 | **Les secrets n'y entrent jamais** | `audit_model(..., exclure=("code_expediteur",))` retire des champs du journal |
+| **Une validation n'est pas une modification** | `audit_model(..., validation=("statut", ("EMISE",)))` fait sortir ce changement de statut en action `VALIDATE` ; `auto_validation` signale quand la même personne a saisi **et** validé |
 
 ## Prérequis
 
@@ -53,12 +54,14 @@ touch apps/audit/tests/__init__.py
 
 #### `apps/audit/models.py`
 
-*75 lignes*
+*81 lignes*
 
 ```python
 from django.conf import settings
 from django.db import models
 from django.utils.translation import gettext_lazy as _
+
+from apps.core.immuable import AppendOnlyQuerySet
 
 
 class ActionChoices(models.TextChoices):
@@ -108,6 +111,10 @@ class AuditLog(models.Model):
         choices=StatutChoices.choices,
         default=StatutChoices.SUCCESS,
     )
+
+    # Le manager refuse update()/delete() en masse (apps/core/immuable.py) ; un trigger PostgreSQL ferme aussi
+    # l'accès SQL direct (migration 0002).
+    objects = AppendOnlyQuerySet.as_manager()
 
     class Meta:
         db_table = "audit_log"
@@ -294,7 +301,7 @@ IP et le navigateur de la requête courante.
 
 #### `apps/audit/registry.py`
 
-*108 lignes* — Branchement de l'audit automatique sur les modèles sensibles.
+*155 lignes* — Branchement de l'audit automatique sur les modèles sensibles.
 
 ```python
 """Branchement de l'audit automatique sur les modèles sensibles.
@@ -307,12 +314,13 @@ logique produit alors une ligne ``audit_log`` avec les valeurs avant/après.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from decimal import Decimal
 
 from django.core.serializers.json import DjangoJSONEncoder
 from django.db.models import DecimalField, FileField, Model
-from django.db.models.signals import post_save, pre_save
+from django.db.models.signals import post_delete, post_save, pre_save
 
 from apps.core.middleware import get_current_request, get_current_user
 
@@ -338,10 +346,18 @@ def _valeur(field, valeur):
     return valeur
 
 
-def _snapshot(instance: Model, exclure: frozenset[str] = frozenset()) -> dict:
+def _empreinte(valeur) -> str:
+    """Trace d'un secret (mot de passe haché) : prouve qu'il a changé sans jamais l'écrire dans le journal."""
+    return "masqué:" + hashlib.sha256(str(valeur).encode()).hexdigest()[:8]
+
+
+def _snapshot(
+    instance: Model, exclure: frozenset[str] = frozenset(), masquer: frozenset[str] = frozenset()
+) -> dict:
     """Valeurs des colonnes de l'instance, sérialisables en JSON."""
     data = {
-        f.attname: _valeur(f, getattr(instance, f.attname))
+        f.attname: _empreinte(getattr(instance, f.attname)) if f.attname in masquer
+        else _valeur(f, getattr(instance, f.attname))
         for f in instance._meta.concrete_fields
         if f.attname not in CHAMPS_IGNORES and f.attname not in exclure
     }
@@ -349,16 +365,28 @@ def _snapshot(instance: Model, exclure: frozenset[str] = frozenset()) -> dict:
 
 
 def audit_model(
-    model: type[Model], module: str, exclure: tuple[str, ...] = ()
+    model: type[Model],
+    module: str,
+    exclure: tuple[str, ...] = (),
+    masquer: tuple[str, ...] = (),
+    validation: tuple[str, tuple[str, ...]] | None = None,
+    auto_validation: tuple[str, tuple[str, ...]] | None = None,
 ) -> None:
     """Active l'audit automatique de ``model`` sous le nom de module ``module``.
 
     ``exclure`` liste les champs à ne jamais écrire dans le journal (secrets :
     codes de mission, etc.). Un changement sur ces seuls champs ne produit
-    aucune entrée.
+    aucune entrée. ``masquer`` liste les champs dont seule une empreinte est journalisée : le
+    changement reste visible (mot de passe modifié) sans que la valeur soit écrite.
+    ``validation`` = ``(champ, valeurs)`` : un changement qui amène ``champ`` à l'une de ces valeurs est
+    une **validation** (action ``VALIDATE``, filtre « Validation » du journal) et non une simple modification.
+    ``auto_validation`` = ``(champ_auteur, champs_validateurs)`` : noms des clés étrangères vers l'utilisateur qui
+    désignent celui qui a saisi l'opération et ceux qui la valident ; quand c'est la même personne, l'entrée
+    porte ``auto_validation: true`` — permis (petite structure), mais jamais passé sous silence.
     """
     label = model._meta.label
     exclus = frozenset(exclure)
+    masques = frozenset(masquer)
     entite = model.__name__
 
     def capturer_avant(sender, instance, raw=False, **kwargs):
@@ -368,12 +396,12 @@ def audit_model(
         if instance.pk:
             ancien = sender._base_manager.filter(pk=instance.pk).first()
             if ancien is not None:
-                instance._audit_avant = _snapshot(ancien, exclus)
+                instance._audit_avant = _snapshot(ancien, exclus, masques)
 
     def journaliser(sender, instance, created, raw=False, **kwargs):
         if raw:
             return
-        apres = _snapshot(instance, exclus)
+        apres = _snapshot(instance, exclus, masques)
         avant = getattr(instance, "_audit_avant", None)
 
         if created or avant is None:
@@ -387,6 +415,15 @@ def audit_model(
             action = ActionChoices.DELETE if supprime else ActionChoices.UPDATE
             ancienne = {k: avant.get(k) for k in changes}
             nouvelle = {k: apres[k] for k in changes}
+            if validation and not supprime and validation[0] in changes and apres[validation[0]] in validation[1]:
+                action = ActionChoices.VALIDATE
+                if auto_validation:
+                    champ_auteur, champs_validateurs = auto_validation
+                    auteur_id = getattr(instance, f"{champ_auteur}_id", None)
+                    if auteur_id is not None and auteur_id in {
+                        getattr(instance, f"{champ}_id", None) for champ in champs_validateurs
+                    }:
+                        nouvelle["auto_validation"] = True
 
         services.log_action(
             action=action,
@@ -399,8 +436,25 @@ def audit_model(
             request=get_current_request(),
         )
 
+    def journaliser_suppression(sender, instance, **kwargs):
+        """Suppression physique (``hard_delete``, ligne d'un brouillon retirée...) : la suppression logique
+        passe déjà par ``post_save`` (``is_deleted``), celle-ci ne laissait aucune trace."""
+        services.log_action(
+            action=ActionChoices.DELETE,
+            module=module,
+            entite=entite,
+            entite_id=instance.pk,
+            utilisateur=get_current_user(),
+            ancienne_valeur=_snapshot(instance, exclus, masques),
+            nouvelle_valeur=None,
+            request=get_current_request(),
+        )
+
     pre_save.connect(
         capturer_avant, sender=model, weak=False, dispatch_uid=f"audit-pre-{label}"
+    )
+    post_delete.connect(
+        journaliser_suppression, sender=model, weak=False, dispatch_uid=f"audit-del-{label}"
     )
     post_save.connect(
         journaliser, sender=model, weak=False, dispatch_uid=f"audit-post-{label}"
@@ -569,11 +623,45 @@ class AuditConfig(AppConfig):
         )
 ```
 
+## Étape 4 bis — La migration du trigger PostgreSQL
+
+Le trigger n'est pas déduit des modèles : c'est une migration **écrite à la main**, la seconde de l'app. Elle appelle
+`poser_triggers` (chapitre 2), qui **ne fait rien sous SQLite** (développement, tests) et pose sur PostgreSQL un
+trigger `BEFORE UPDATE OR DELETE` ; le seul `UPDATE` toléré est le détachement de l'utilisateur
+(`utilisateur_id` → `NULL`, quand un compte disparaît). Vous la créerez à l'étape 6, une fois la migration `0001` générée.
+
+#### `apps/audit/migrations/0002_trigger_append_only.py`
+
+*20 lignes*
+
+```python
+from django.db import migrations
+
+from apps.core.immuable import poser_triggers, retirer_triggers
+
+TABLE = "audit_log"
+
+
+def poser(apps, schema_editor):
+    # Seul détachement toléré : ``utilisateur_id`` -> NULL (``on_delete=SET_NULL``), le nom reste dénormalisé.
+    poser_triggers(schema_editor, TABLE, tolere_detachement_utilisateur=True)
+
+
+def retirer(apps, schema_editor):
+    retirer_triggers(schema_editor, TABLE)
+
+
+class Migration(migrations.Migration):
+    dependencies = [("audit", "0001_initial")]
+
+    operations = [migrations.RunPython(poser, retirer)]
+```
+
 ## Étape 5 — README et test
 
 #### `apps/audit/README.md`
 
-*19 lignes* — audit
+*33 lignes* — audit
 
 ```markdown
 # audit
@@ -583,18 +671,32 @@ cahier-des-charges.md:56-82. Capture LOGIN/LOGOUT/CREATE/UPDATE/DELETE/
 VALIDATE via middleware + signals `post_save` (ADR-003, architecture.md:488-493).
 Dépend de `core` (architecture.md:135).
 
-Entités principales : `AuditLog`. `registry.audit_model()` branche l'audit automatique (CREATE/UPDATE/DELETE avant/après) sur un modèle. Un champ fichier (`FileField`/`ImageField`, ex. `missions.FraisMission.justificatif` (R4), `finance.DemandeDepense.piece_jointe`/`finance.OrdreDecaissement.justificatif` (R2)) est normalisé en son chemin (chaîne vide sans fichier) avant l'écriture JSON : la valeur brute (`FieldFile`) n'est pas sérialisable telle quelle.
+Entités principales : `AuditLog`. `registry.audit_model()` branche l'audit automatique (CREATE/UPDATE/DELETE avant/après) sur un modèle. Un champ fichier (`FileField`/`ImageField`, ex. `missions.FraisMission.justificatif` (R4), `finance.DemandeDepense.piece_jointe`/`finance.OrdreDecaissement.justificatif` (R2)) est normalisé en son chemin (chaîne vide sans fichier) avant l'écriture JSON : la valeur brute (`FieldFile`) n'est pas sérialisable telle quelle. `audit_model(..., masquer=("champ",))` ne journalise qu'une empreinte du champ (`masqué:ab12cd34`) : le changement reste visible sans écrire la valeur. Les comptes (`accounts.User`, module `UTILISATEURS`) sont audités ainsi : création, rôle, activation, droits d'administration, mot de passe (empreinte seulement) ; `last_login` est exclu (il change à chaque connexion).
 
 Règles :
-- Immuabilité stricte : aucun `update()`/`delete()` autorisé sur ce modèle.
-- Conservation ≥ 5 ans.
+- Immuabilité stricte, en profondeur : `save()` / `delete()` du modèle refusent, le manager
+  (`apps.core.immuable.AppendOnlyQuerySet`) refuse `update()` / `delete()` / `bulk_update()` en masse, et sur
+  PostgreSQL un trigger `BEFORE UPDATE OR DELETE` (migration `0002`) refuse aussi le SQL direct — seul le
+  détachement de l'utilisateur (`utilisateur_id` → NULL, `on_delete=SET_NULL`) est toléré. Même protection sur
+  le journal des mouvements de stock (`inventory.0002`).
+- Validations : `audit_model(..., validation=("statut", ("EMISE",)))` fait sortir un changement de statut vers
+  l'une de ces valeurs en action `VALIDATE` (factures, devis, demandes de dépense, congés, frais de mission,
+  écritures manuelles) ; `auto_validation=("cree_par", ("validee_par",))` ajoute `auto_validation: true` quand
+  la même personne a saisi et validé (permis, mais jamais passé sous silence). Les suppressions physiques
+  (`post_delete`) sont journalisées.
+- Conservation ≥ 5 ans : aucune purge applicative n'existe. La purge éventuelle se fait hors application, par
+  l'administrateur de la base, qui doit désactiver explicitement le trigger le temps de l'opération
+  (`ALTER TABLE audit_log DISABLE TRIGGER append_only`) puis le réactiver. Les sauvegardes
+  (`ops/sauvegarde.sh`, rotation `SAUVEGARDE_CONSERVER_JOURS`, 30 jours par défaut) ne servent pas d'archive :
+  pour garder ≥ 5 ans, régler la rotation en conséquence ou archiver les fichiers chiffrés à part.
 - Consultation : ADMIN (complet), DIRECTION (lecture seule). En pratique les deux ont le même accès en
   lecture (`permissions.CONSULTATION`) : il n'y a de toute façon aucune écriture possible depuis l'écran.
 
 Écran (`/audit/`, menu « Journal d'audit ») : liste filtrable (texte sur utilisateur/entité/IP, module,
 action, statut, période), `services.rechercher()`. Export PDF/CSV pour les audits externes
 (cahier-des-charges.md:82) : bouton « Imprimer » (rapport HTML, voir `apps/core/rapports.py`) et bouton
-« Exporter en CSV » (`JournalExporterCsvView`, mêmes filtres, `;` en séparateur pour Excel).
+« Exporter en CSV » (`JournalExporterCsvView`, mêmes filtres, `;` en séparateur pour Excel ; en plus des colonnes de
+l'écran : anciennes et nouvelles valeurs en JSON et user-agent).
 ```
 
 #### `apps/audit/permissions.py`
@@ -676,6 +778,24 @@ python manage.py migrate
 ```
 
 **Résultat attendu :** `Create model AuditLog`, puis `Applying audit.0001_initial... OK`.
+
+### La migration du trigger PostgreSQL
+
+Le trigger n'est pas déduit des modèles : c'est une migration **écrite à la main**, la seconde de l'app. Elle appelle
+`poser_triggers` (chapitre 2), qui **ne fait rien sous SQLite** (développement, tests) et pose sur PostgreSQL un
+trigger `BEFORE UPDATE OR DELETE` ; le seul `UPDATE` toléré est le détachement de l'utilisateur
+(`utilisateur_id` → `NULL`, quand un compte disparaît).
+
+(Le fichier est présenté plus haut, à l'étape « La migration du trigger ».)
+
+Créez une migration **vide** et complétez-la avec ce contenu :
+
+```bash
+python manage.py makemigrations audit --empty --name trigger_append_only
+python manage.py migrate
+```
+
+**Résultat attendu :** `Applying audit.0002_trigger_append_only... OK`.
 
 ## Vérifier le chapitre
 

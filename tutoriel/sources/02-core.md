@@ -13,6 +13,18 @@ On y trouve :
 | `RegistreSections` | un mécanisme pour qu'une fiche affiche des blocs fournis par d'autres apps |
 | middlewares | mémoriser la requête courante (pour l'audit) et ajouter les en-têtes de sécurité |
 
+Le socle porte aussi quatre mécanismes plus récents, présentés avec les fichiers restants de l'étape 6 :
+
+| Élément | À quoi il sert |
+|---|---|
+| `ErreurMetier` + `ErreurMetierMiddleware` | une règle métier refusée **par une autre app** (budget dépassé, exercice clôturé…) devient un **message** suivi d'un retour à la page précédente, au lieu d'une erreur 500 |
+| `medias.py` | les **fichiers téléversés** ne sont jamais servis librement : Django contrôle le rôle, puis demande à Nginx de les envoyer (`X-Accel-Redirect`) |
+| `immuable.py` | les **tables append-only** (journal d'audit, mouvements de stock) : un manager qui refuse `update()` / `delete()` en masse, et les triggers PostgreSQL posés par les migrations des chapitres 4 et 11 |
+| `xlsx.py` | l'**export Excel** : `reponse_classeur` fabrique un `.xlsx` aux **valeurs brutes** (montants en nombres, dates en dates) ; un texte qui commence par `=` reste du texte, jamais une formule |
+
+La recherche texte (`search.py`) transforme chaque champ en texte avant de le comparer : sur PostgreSQL,
+`LOWER()` refuse un champ d'adresse IP, et la recherche du journal d'audit en dépend.
+
 ## Prérequis
 
 - Chapitre 1 terminé : `python manage.py check` répond « no issues ».

@@ -26,6 +26,14 @@ espèces → caisse, Wave / Orange Money / MTN → mobile money.
 > pointage même sens/montant, écart) vit dans ces mêmes `models.py`/`services.py` ; son écran arrive plus tard,
 > au chapitre « Écrans : facturation, dépenses et trésorerie ».
 
+**Marge nette hors taxes.** La marge nette est calculée comme le compte de résultat comptable : **CA HT − charges HT**
+(charges TTC moins TVA déductible). Les charges affichées restent TTC — même total que la page Dépenses et la trésorerie —, avec la
+TVA récupérable en plus (`charges()["tva_deductible"]`).
+
+**Rapprochement bancaire.** `pointer_ligne_releve` vérifie que le mouvement existe sur le compte **Banque**, qu'il a le même sens
+et le même montant que la ligne, et que la ligne n'est pas déjà pointée. Un écart persistant (frais bancaires) se corrige par un
+**mouvement de trésorerie** sur la Banque, pas par une opération diverse comptable seule.
+
 ## Prérequis
 
 - Chapitres 1 à 13 terminés.

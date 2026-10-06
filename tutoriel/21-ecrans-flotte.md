@@ -1,6 +1,6 @@
 # Chapitre 21 — Écrans : flotte
 
-> 8 fichier(s) dans ce chapitre, 1166 lignes de code.
+> 9 fichier(s) dans ce chapitre, 1294 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -14,6 +14,9 @@ Les **écrans de la flotte**, accessibles à l'ADMIN, à la DIRECTION et au PARC
 | Enregistrer / renouveler un document | `/flotte/<id>/document/` (POST) | carte grise, assurance, visite technique, patente |
 
 Le **statut** est affiché mais **jamais modifiable** dans un formulaire : il se calcule (chapitre 8).
+
+Sur la fiche d'un camion, l'**ADMIN** (et lui seul) voit un bloc **« Corriger le compteur »** : nouvelle valeur et motif obligatoire,
+tracés au journal d'audit (`fleet.services.corriger_kilometrage`).
 
 ## Prérequis
 
@@ -32,7 +35,7 @@ Le **statut** est affiché mais **jamais modifiable** dans un formulaire : il se
 
 #### `apps/fleet/forms.py`
 
-*49 lignes*
+*56 lignes*
 
 ```python
 from datetime import date
@@ -44,6 +47,13 @@ from apps.core.forms import StyleTailwindMixin
 from apps.drivers import services as drivers_services
 
 from .models import TypeDocument
+
+
+class CorrectionCompteurForm(StyleTailwindMixin, forms.Form):
+    """Correction du compteur d'un camion (ADMIN) : nouvelle valeur et motif obligatoire."""
+
+    kilometrage = forms.IntegerField(label="Kilométrage du compteur", min_value=0)
+    motif = forms.CharField(label="Motif de la correction", max_length=200)
 
 
 class VehiculeForm(StyleTailwindMixin, forms.Form):
@@ -88,7 +98,7 @@ class DocumentForm(StyleTailwindMixin, forms.Form):
 
 #### `apps/fleet/views.py`
 
-*189 lignes* — Écrans de la flotte : liste, fiche, création, modification, documents.
+*217 lignes* — Écrans de la flotte : liste, fiche, création, modification, documents.
 
 ```python
 """Écrans de la flotte : liste, fiche, création, modification, documents.
@@ -107,7 +117,7 @@ from apps.core.views import ImpressionListeMixin, PaginationTolerante
 
 from . import permissions, sections, services
 from .exceptions import FlotteError
-from .forms import DocumentForm, VehiculeForm
+from .forms import CorrectionCompteurForm, DocumentForm, VehiculeForm
 from .models import StatutVehicule, TypeDocument
 
 
@@ -175,6 +185,11 @@ class VehiculeDetailView(RoleRequiredMixin, DetailView):
             documents=services.etat_documents(self.object),
             sections=sections.DETAIL_VEHICULE.sections(self.object, self.request.user),
             peut_modifier=peut_modifier,
+            form_compteur=(
+                CorrectionCompteurForm(initial={"kilometrage": self.object.kilometrage})
+                if self.request.user.role_effectif in permissions.CORRECTION_COMPTEUR
+                else None
+            ),
             form_document=(
                 DocumentForm(
                     initial={
@@ -256,6 +271,29 @@ class VehiculeUpdateView(RoleRequiredMixin, FormView):
         return redirect("fleet:detail", pk=self.vehicule.pk)
 
 
+class CompteurCorrectionView(RoleRequiredMixin, View):
+    """Corrige le compteur d'un camion (POST) — ADMIN seulement, motif obligatoire, tracé."""
+
+    roles = permissions.CORRECTION_COMPTEUR
+    http_method_names = ["post"]
+
+    def post(self, request, pk):
+        vehicule = get_object_or_404(services.vehicules_queryset(), pk=pk)
+        form = CorrectionCompteurForm(request.POST)
+        if not form.is_valid():
+            for erreurs in form.errors.values():
+                for erreur in erreurs:
+                    messages.error(request, erreur)
+            return redirect("fleet:detail", pk=vehicule.pk)
+        try:
+            services.corriger_kilometrage(vehicule, request.user, **form.cleaned_data)
+        except FlotteError as erreur:
+            messages.error(request, str(erreur))
+        else:
+            messages.success(request, f"Compteur de {vehicule.immatriculation} corrigé : {vehicule.kilometrage} km.")
+        return redirect("fleet:detail", pk=vehicule.pk)
+
+
 class DocumentView(RoleRequiredMixin, View):
     """Enregistre ou renouvelle un document réglementaire (POST)."""
 
@@ -284,7 +322,7 @@ class DocumentView(RoleRequiredMixin, View):
 
 #### `apps/fleet/urls.py`
 
-*14 lignes*
+*15 lignes*
 
 ```python
 from django.urls import path
@@ -300,6 +338,7 @@ urlpatterns = [
     path("<int:pk>/", views.VehiculeDetailView.as_view(), name="detail"),
     path("<int:pk>/modifier/", views.VehiculeUpdateView.as_view(), name="modifier"),
     path("<int:pk>/document/", views.DocumentView.as_view(), name="document"),
+    path("<int:pk>/compteur/", views.CompteurCorrectionView.as_view(), name="compteur"),
 ]
 ```
 
@@ -310,7 +349,7 @@ urlpatterns = [
 ```diff
 --- config/urls.py (avant)
 +++ config/urls.py (après)
-@@ -17,4 +17,5 @@
+@@ -19,4 +19,5 @@
      path("", include("apps.accounts.urls")),
      path("clients/", include("apps.customers.urls")),
 +    path("flotte/", include("apps.fleet.urls")),
@@ -434,7 +473,7 @@ mkdir -p apps/fleet/templates/fleet
 
 #### `apps/fleet/templates/fleet/vehicule_detail.html`
 
-*103 lignes*
+*115 lignes*
 
 ```django
 {% extends "base.html" %}
@@ -474,6 +513,18 @@ mkdir -p apps/fleet/templates/fleet
         <div><dt class="text-slate-600">Chauffeur habituel</dt>
           <dd class="mt-0.5 font-medium text-slate-900">{% if vehicule.chauffeur_habituel %}{{ vehicule.chauffeur_habituel.personnel.prenom }} {{ vehicule.chauffeur_habituel.personnel.nom }}{% else %}Aucun{% endif %}</dd></div>
       </dl>
+      {% if form_compteur %}
+        <details class="mt-4 border-t border-slate-200 pt-3 text-sm">
+          <summary class="cursor-pointer font-semibold text-slate-800">Corriger le compteur</summary>
+          <form method="post" action="{% url 'fleet:compteur' vehicule.pk %}" class="mt-3 space-y-3" data-confirm="Corriger le compteur ? La correction est tracée au journal d'audit.">
+            {% csrf_token %}
+            <p class="text-xs text-slate-600">Le compteur ne recule jamais autrement : à n'utiliser que pour une faute de saisie. Tracé avec son motif.</p>
+            {% include "components/_champ.html" with champ=form_compteur.kilometrage %}
+            {% include "components/_champ.html" with champ=form_compteur.motif %}
+            <button type="submit" class="rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-800 hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-700">Corriger</button>
+          </form>
+        </details>
+      {% endif %}
     </section>
 
     <div class="space-y-6 xl:col-span-2">
@@ -595,6 +646,92 @@ mkdir -p apps/fleet/templates/fleet
 ```
 
 ## Étape 3 — Tests et compilation des styles
+
+#### `apps/fleet/tests/test_correction_compteur.py`
+
+*79 lignes* — Audit M5-10 : le compteur d'un camion ne recule jamais, sauf correction tracée de l'ADMIN (motif obligatoire).
+
+```python
+"""Audit M5-10 : le compteur d'un camion ne recule jamais, sauf correction tracée de l'ADMIN (motif obligatoire)."""
+
+import pytest
+from django.urls import reverse
+
+from apps.accounts.models import Role
+from apps.accounts.tests.factories import UserFactory
+from apps.audit.models import AuditLog
+from apps.fleet import services
+from apps.fleet.exceptions import ActionNonAutorisee, KilometrageInvalide
+
+from .factories import VehiculeFactory
+
+pytestmark = pytest.mark.django_db
+
+
+def _admin():
+    return UserFactory(role=Role.ADMIN)
+
+
+def test_l_admin_corrige_un_compteur_gonfle_et_la_correction_est_tracee():
+    camion = VehiculeFactory(kilometrage=1200000)  # un zéro de trop
+    admin = _admin()
+
+    services.corriger_kilometrage(camion, admin, kilometrage=120000, motif="Faute de frappe sur le plein T-42")
+
+    camion.refresh_from_db()
+    assert camion.kilometrage == 120000
+    trace = AuditLog.objects.filter(entite="Vehicule", entite_id=camion.pk, nouvelle_valeur__motif__isnull=False).get()
+    assert trace.ancienne_valeur == {"correction_kilometrage": 1200000}
+    assert trace.nouvelle_valeur == {"correction_kilometrage": 120000, "motif": "Faute de frappe sur le plein T-42"}
+    assert trace.utilisateur == admin
+
+
+@pytest.mark.parametrize("role", [Role.DIRECTION, Role.PARCAUTO, Role.FINANCES, Role.CHAUFFEUR])
+def test_les_autres_roles_ne_corrigent_pas_le_compteur(role):
+    camion = VehiculeFactory(kilometrage=5000)
+
+    with pytest.raises(ActionNonAutorisee):
+        services.corriger_kilometrage(camion, UserFactory(role=role), kilometrage=100, motif="Test")
+
+    camion.refresh_from_db()
+    assert camion.kilometrage == 5000
+
+
+def test_le_motif_est_obligatoire_et_la_valeur_doit_changer():
+    camion = VehiculeFactory(kilometrage=5000)
+
+    with pytest.raises(KilometrageInvalide, match="motif"):
+        services.corriger_kilometrage(camion, _admin(), kilometrage=100, motif="  ")
+    with pytest.raises(KilometrageInvalide, match="déjà"):
+        services.corriger_kilometrage(camion, _admin(), kilometrage=5000, motif="Rien")
+    with pytest.raises(KilometrageInvalide, match="négatif"):
+        services.corriger_kilometrage(camion, _admin(), kilometrage=-1, motif="Test")
+
+
+def test_l_ecran_propose_la_correction_a_l_admin_seulement(client):
+    camion = VehiculeFactory(kilometrage=1200000)
+    url_detail = reverse("fleet:detail", args=[camion.pk])
+    url_action = reverse("fleet:compteur", args=[camion.pk])
+
+    client.force_login(_admin())
+    assert url_action in client.get(url_detail).content.decode()
+    client.force_login(UserFactory(role=Role.PARCAUTO))
+    assert url_action not in client.get(url_detail).content.decode()
+    assert client.post(url_action, {"kilometrage": 10, "motif": "x"}).status_code == 403
+
+
+def test_corriger_via_l_ecran(client):
+    camion = VehiculeFactory(kilometrage=1200000)
+    client.force_login(_admin())
+
+    reponse = client.post(
+        reverse("fleet:compteur", args=[camion.pk]), {"kilometrage": 120000, "motif": "Faute de frappe"}, follow=True
+    )
+
+    camion.refresh_from_db()
+    assert camion.kilometrage == 120000
+    assert any("corrigé" in str(m) for m in reponse.context["messages"])
+```
 
 #### `apps/fleet/tests/test_views.py`
 
@@ -1283,10 +1420,10 @@ python manage.py check
 ```
 
 ```bash
-python -m pytest apps/fleet/tests/test_views.py apps/notifications/tests/test_taches.py -q --no-cov
+python -m pytest apps/fleet/tests/test_correction_compteur.py apps/fleet/tests/test_views.py apps/notifications/tests/test_taches.py -q --no-cov
 ```
 
-**Résultat attendu :** `54 passed` (pour les 2 fichier(s) de tests présentés dans ce chapitre).
+**Résultat attendu :** `62 passed` (pour les 3 fichier(s) de tests présentés dans ce chapitre).
 
 **Dans le navigateur :**
 

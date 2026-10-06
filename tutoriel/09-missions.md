@@ -1,6 +1,6 @@
 # Chapitre 9 — Les missions de transport : l'app missions
 
-> 22 fichier(s) dans ce chapitre, 2885 lignes de code.
+> 26 fichier(s) dans ce chapitre, 3103 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -19,6 +19,17 @@ Brouillon → Planifiée → Affectée → En cours (départ → colis récupér
 | **Confirmer la récupération** | il faut le **code de l'expéditeur** |
 | **Livrer** | il faut le **code du destinataire** et le kilométrage d'arrivée (le compteur du camion est mis à jour ; camion et chauffeur sont libérés) |
 | **Clôturer** | validation finale (la Direction) |
+
+**Règles d'affectation** (`services.py`) : un chauffeur dont le **permis ou la visite médicale est expiré** ne peut être ni
+affecté ni partir (une date non renseignée ne bloque pas : l'alerte « manquant » la signale). La **réaffectation** d'une mission
+déjà affectée ne revérifie que ce qui change — on peut changer **seulement le camion** ou **seulement le chauffeur** — et une hausse
+du poids est recontrôlée contre la capacité du camion conservé. À la livraison, un kilométrage d'arrivée à plus de 5 000 km du
+départ est refusé. L'alerte « mission pendant le congé » (`missions_du_personnel_sur_periode`) couvre aussi une mission **déjà
+en cours** qui déborde sur le congé, et le **copilote**.
+
+**Encaissements.** Un règlement reçu se reflète dans la prévision de trésorerie de la mission (`FraisMission` de type
+`ENCAISSEMENT`) ; la ligne garde le lien avec son **règlement** (`FraisMission.reglement`, ajouté au chapitre 13, quand `billing`
+existe) pour disparaître si le règlement est annulé. La commande `rattacher_encaissements_missions` reprend les lignes antérieures.
 
 ## Prérequis
 
@@ -51,8 +62,10 @@ mkdir -p apps/missions/tests
 Ces fichiers n'ont aucun contenu ; ils servent à faire de leur dossier un *paquet Python* (sans eux, `import apps.xxx` échouerait). Créez d'abord les dossiers, puis les fichiers :
 
 ```bash
-mkdir -p apps\missions apps\missions\tests
+mkdir -p apps\missions apps\missions\management apps\missions\management\commands apps\missions\tests
 touch apps/missions/__init__.py
+touch apps/missions/management/__init__.py
+touch apps/missions/management/commands/__init__.py
 touch apps/missions/tests/__init__.py
 ```
 
@@ -385,7 +398,7 @@ class ActionFraisNonAutorisee(MissionError):
 
 #### `apps/missions/services.py`
 
-*518 lignes* — Logique métier des missions — cycle de vie du CDC (cahier-des-charges.md:127-143).
+*592 lignes* — Logique métier des missions — cycle de vie du CDC (cahier-des-charges.md:127-143).
 
 ```python
 """Logique métier des missions — cycle de vie du CDC (cahier-des-charges.md:127-143).
@@ -407,11 +420,11 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from django.db import transaction
-from django.db.models import Count, QuerySet, Sum
+from django.db.models import Count, Q, QuerySet, Sum
 from django.utils import timezone
 
 from apps.core.search import filtrer_par_texte, normaliser
-from apps.core.services import prochain_numero, total_par_mois
+from apps.core.services import etat_echeance, prochain_numero, total_par_mois
 from apps.customers.models import Client
 from apps.drivers import services as drivers_services
 from apps.drivers.models import Chauffeur, Copilote, StatutChauffeur
@@ -524,20 +537,25 @@ STATUTS_A_SURVEILLER = (
 
 
 def missions_du_personnel_sur_periode(personnel_id: int, debut, fin) -> QuerySet[Mission]:
-    """Missions planifiées, affectées ou en cours d'un chauffeur (identifié par sa fiche du
-    personnel) dont le départ prévu tombe dans la période.
+    """Missions planifiées, affectées ou en cours d'un employé (identifié par sa fiche du personnel), en
+    tant que chauffeur ou copilote, qui touchent la période.
 
-    Alimente l'alerte N1 des congés (cahier-des-charges.md:219-221). Une mission sans date
-    de départ prévue ne peut pas être détectée.
+    Alimente l'alerte N1 des congés (cahier-des-charges.md:219-221). Deux cas : le départ prévu tombe dans la
+    période, ou la mission est déjà en cours (partie avant ou pendant la période, pas encore livrée : elle
+    déborde sur le congé). Une mission non commencée et sans date de départ prévue ne peut pas être détectée.
     """
+    en_cours = Q(
+        statut__in=(StatutMission.EN_COURS_DEPART, StatutMission.EN_COURS_COLIS_RECUPERE),
+        date_depart__date__lte=fin,
+    )
     return (
         Mission.objects.filter(
-            chauffeur__personnel_id=personnel_id,
+            Q(chauffeur__personnel_id=personnel_id) | Q(copilote__personnel_id=personnel_id),
             statut__in=STATUTS_A_SURVEILLER,
-            date_depart_prevue__range=(debut, fin),
         )
+        .filter(Q(date_depart_prevue__range=(debut, fin)) | en_cours)
         .select_related("client")
-        .order_by("date_depart_prevue")
+        .order_by("date_depart_prevue", "pk")
     )
 
 
@@ -600,22 +618,29 @@ def meilleurs_clients(
     ]
 
 
-def vehicule_a_mission_active(vehicule: Vehicule) -> bool:
+def _missions_actives(sauf: Mission | None = None):
+    """Missions affectées ou en cours, hors ``sauf`` : la mission qu'on est en train de modifier ne compte pas
+    comme « une autre mission » qui réserverait déjà son propre camion ou son propre chauffeur."""
+    missions = Mission.objects.filter(statut__in=STATUTS_ACTIFS)
+    return missions.exclude(pk=sauf.pk) if sauf is not None else missions
+
+
+def vehicule_a_mission_active(vehicule: Vehicule, *, sauf: Mission | None = None) -> bool:
     """Vrai si le camion est réservé par une mission affectée ou en cours.
 
     Fournit ``mission_active`` à ``fleet.services.calculer_statut`` (règle 2,
     cahier-des-charges.md:96-100). Une mission « planifiée » n'a pas encore de
     camion : seule l'affectation réserve un camion.
     """
-    return Mission.objects.filter(vehicule=vehicule, statut__in=STATUTS_ACTIFS).exists()
+    return _missions_actives(sauf).filter(vehicule=vehicule).exists()
 
 
-def chauffeur_a_mission_active(chauffeur: Chauffeur) -> bool:
-    return Mission.objects.filter(chauffeur=chauffeur, statut__in=STATUTS_ACTIFS).exists()
+def chauffeur_a_mission_active(chauffeur: Chauffeur, *, sauf: Mission | None = None) -> bool:
+    return _missions_actives(sauf).filter(chauffeur=chauffeur).exists()
 
 
-def copilote_a_mission_active(copilote: Copilote) -> bool:
-    return Mission.objects.filter(copilote=copilote, statut__in=STATUTS_ACTIFS).exists()
+def copilote_a_mission_active(copilote: Copilote, *, sauf: Mission | None = None) -> bool:
+    return _missions_actives(sauf).filter(copilote=copilote).exists()
 
 
 # --- cycle de vie ---
@@ -716,10 +741,18 @@ def modifier_mission(
             )
         _recharger(vehicule)
         _recharger(chauffeur)
-        _verifier_disponibilite(vehicule, chauffeur, poids_t)
+        # Seul ce qui change est revérifié : le camion ou le chauffeur conservé est déjà réservé par cette
+        # mission (elle ne compte pas comme « une autre mission ») et son statut n'a pas à être « Disponible ».
+        if vehicule.pk != mission.vehicule_id:
+            _verifier_vehicule(vehicule, poids_t, sauf=mission)
+        if chauffeur.pk != mission.chauffeur_id:
+            _verifier_chauffeur(chauffeur, sauf=mission)
         mission.vehicule = vehicule
         mission.chauffeur = chauffeur
         champs += ["vehicule", "chauffeur"]
+    if mission.vehicule_id and (vehicule is None or vehicule.pk == mission.vehicule_id):
+        # Camion inchangé : une hausse du poids doit quand même rester dans sa capacité.
+        _verifier_capacite(mission.vehicule, poids_t)
 
     mission.save(update_fields=champs)
     return mission
@@ -735,45 +768,92 @@ def planifier_mission(mission: Mission) -> Mission:
     return mission
 
 
-def _verifier_disponibilite(
-    vehicule: Vehicule, chauffeur: Chauffeur, poids_t: Decimal, copilote: Copilote | None = None
-) -> None:
-    """Camion et chauffeur disponibles, non réservés par une autre mission active, et le camion
-    capable d'emporter la charge (cahier-des-charges.md:130-131). Partagé par l'affectation et la
-    réaffectation (modification d'une mission déjà affectée, cahier-des-charges.md « modification
-    mission »). ``copilote`` facultatif : certains voyages exigent un assistant au chauffeur."""
+def _verifier_vehicule(vehicule: Vehicule, poids_t: Decimal, sauf: Mission | None = None) -> None:
+    """Camion disponible, non réservé par une autre mission, et capable d'emporter la charge."""
     if vehicule.statut != StatutVehicule.DISPONIBLE:
         raise AffectationImpossible(
             f"Le camion {vehicule.immatriculation} n'est pas disponible "
             f"({vehicule.get_statut_display()})."
         )
-    if chauffeur.statut != StatutChauffeur.DISPONIBLE:
-        raise AffectationImpossible(
-            f"Le chauffeur {chauffeur} n'est pas disponible "
-            f"({chauffeur.get_statut_display()})."
-        )
-    if vehicule_a_mission_active(vehicule):
+    if vehicule_a_mission_active(vehicule, sauf=sauf):
         raise AffectationImpossible(
             f"Le camion {vehicule.immatriculation} est déjà réservé par une autre mission."
         )
-    if chauffeur_a_mission_active(chauffeur):
-        raise AffectationImpossible(
-            f"Le chauffeur {chauffeur} est déjà réservé par une autre mission."
-        )
+    _verifier_capacite(vehicule, poids_t)
+
+
+def _verifier_capacite(vehicule: Vehicule, poids_t: Decimal) -> None:
     if poids_t > vehicule.capacite_charge_t:
         raise AffectationImpossible(
             f"Charge de {poids_t} t supérieure à la capacité du camion "
             f"({vehicule.capacite_charge_t} t)."
         )
+
+
+def documents_expires_du_chauffeur(chauffeur: Chauffeur, *, aujourd_hui: date | None = None) -> list[str]:
+    """Libellés (« permis », « visite médicale ») des documents du chauffeur dont la date est dépassée. Une date
+    non renseignée n'est pas une expiration : l'alerte ``MANQUANT`` la signale, mais elle ne bloque pas."""
+    expires = []
+    for libelle, echeance in (
+        ("permis de conduire", chauffeur.date_expiration_permis),
+        ("visite médicale", chauffeur.date_expiration_visite_medicale),
+    ):
+        etat, _ = etat_echeance(echeance, aujourd_hui=aujourd_hui)
+        if etat == "EXPIRE":
+            expires.append(f"{libelle} (expiré le {echeance:%d/%m/%Y})")
+    return expires
+
+
+def _exiger_documents_valides(chauffeur: Chauffeur, erreur: type[MissionError]) -> None:
+    """Un chauffeur au permis ou à la visite médicale expiré ne peut pas conduire, donc pas être affecté
+    (règle annoncée par l'alerte de ``notifications.taches.alerter_echeances_chauffeurs``)."""
+    expires = documents_expires_du_chauffeur(chauffeur)
+    if expires:
+        raise erreur(f"Le chauffeur {chauffeur} ne peut pas conduire : {' et '.join(expires)}.")
+
+
+def _verifier_chauffeur(chauffeur: Chauffeur, sauf: Mission | None = None) -> None:
+    """Chauffeur disponible, non réservé par une autre mission, aux documents en règle."""
+    if chauffeur.statut != StatutChauffeur.DISPONIBLE:
+        raise AffectationImpossible(
+            f"Le chauffeur {chauffeur} n'est pas disponible "
+            f"({chauffeur.get_statut_display()})."
+        )
+    if chauffeur_a_mission_active(chauffeur, sauf=sauf):
+        raise AffectationImpossible(
+            f"Le chauffeur {chauffeur} est déjà réservé par une autre mission."
+        )
+    _exiger_documents_valides(chauffeur, AffectationImpossible)
+
+
+def _verifier_copilote(copilote: Copilote, sauf: Mission | None = None) -> None:
+    if copilote.statut != StatutChauffeur.DISPONIBLE:
+        raise AffectationImpossible(
+            f"Le copilote {copilote} n'est pas disponible ({copilote.get_statut_display()})."
+        )
+    if copilote_a_mission_active(copilote, sauf=sauf):
+        raise AffectationImpossible(
+            f"Le copilote {copilote} est déjà réservé par une autre mission."
+        )
+
+
+def _verifier_disponibilite(
+    vehicule: Vehicule,
+    chauffeur: Chauffeur,
+    poids_t: Decimal,
+    copilote: Copilote | None = None,
+    *,
+    sauf: Mission | None = None,
+) -> None:
+    """Camion et chauffeur disponibles, non réservés par une autre mission active, chauffeur aux documents en
+    règle, et camion capable d'emporter la charge (cahier-des-charges.md:130-131). Utilisé par l'affectation ;
+    la réaffectation (modification d'une mission déjà affectée) revérifie, elle, seulement ce qui change.
+    ``copilote`` facultatif : certains voyages exigent un assistant au chauffeur. ``sauf`` : la mission en
+    cours de modification, qui ne compte pas comme « une autre mission »."""
+    _verifier_vehicule(vehicule, poids_t, sauf)
+    _verifier_chauffeur(chauffeur, sauf)
     if copilote is not None:
-        if copilote.statut != StatutChauffeur.DISPONIBLE:
-            raise AffectationImpossible(
-                f"Le copilote {copilote} n'est pas disponible ({copilote.get_statut_display()})."
-            )
-        if copilote_a_mission_active(copilote):
-            raise AffectationImpossible(
-                f"Le copilote {copilote} est déjà réservé par une autre mission."
-            )
+        _verifier_copilote(copilote, sauf)
 
 
 @transaction.atomic
@@ -823,6 +903,7 @@ def demarrer_mission(mission: Mission) -> Mission:
             f"Le chauffeur {chauffeur} n'est plus disponible "
             f"({chauffeur.get_statut_display()})."
         )
+    _exiger_documents_valides(chauffeur, DemarrageImpossible)  # un document a pu expirer depuis l'affectation
     copilote = _recharger(mission.copilote) if mission.copilote_id else None
     if copilote is not None and copilote.statut != StatutChauffeur.DISPONIBLE:
         raise DemarrageImpossible(
@@ -876,6 +957,12 @@ def livrer_mission(mission: Mission, *, code: str, km_arrivee: int) -> Mission:
         raise KilometrageInvalide(
             f"Le kilométrage d'arrivée ({km_arrivee}) est inférieur au départ "
             f"({mission.km_depart})."
+        )
+    if not fleet_services.distance_plausible(mission.km_depart, km_arrivee):
+        raise KilometrageInvalide(
+            f"Le kilométrage d'arrivée ({km_arrivee}) est {km_arrivee - mission.km_depart} km au-dessus du "
+            f"départ ({mission.km_depart}) : plus de {fleet_services.ECART_KM_MAX} km sur une mission, "
+            "vérifiez la saisie (le compteur du camion ne peut plus reculer ensuite)."
         )
     vehicule = _recharger(mission.vehicule)
     try:
@@ -1160,7 +1247,7 @@ class MissionAdmin(admin.ModelAdmin):
 
 #### `apps/missions/apps.py`
 
-*42 lignes*
+*49 lignes*
 
 ```python
 from django.apps import AppConfig
@@ -1175,6 +1262,7 @@ class MissionsConfig(AppConfig):
         from apps.accounts.navigation import EntreeMenu, enregistrer
         from apps.audit.registry import audit_model
 
+        from apps.core.medias import enregistrer_media
         from apps.customers.sections import DETAIL_CLIENT
         from apps.hr.sections import DETAIL_CONGE
 
@@ -1187,7 +1275,13 @@ class MissionsConfig(AppConfig):
         audit_model(
             Mission, module="MISSION", exclure=("code_expediteur", "code_destinataire")
         )
-        audit_model(FraisMission, module="FINANCES")
+        audit_model(
+            FraisMission,
+            module="FINANCES",
+            validation=("statut", ("CONFIRME",)),
+            auto_validation=("saisi_par", ("valide_parcauto_par",)),
+        )
+        enregistrer_media("frais_mission", permissions.FRAIS_CONSULTATION)
         # Suivi en direct : tout changement d'une mission est diffusé aux écrans ouverts.
         post_save.connect(
             temps_reel.diffuser_apres_enregistrement, sender=Mission, dispatch_uid="missions.suivi_en_direct"
@@ -1242,7 +1336,7 @@ class MissionFactory(factory.django.DjangoModelFactory):
 
 #### `apps/missions/README.md`
 
-*125 lignes* — missions
+*135 lignes* — missions
 
 ```markdown
 # missions
@@ -1370,11 +1464,21 @@ Reste à faire :
 - Alerte N1 des congés « chauffeur avec mission sur la période » (via `date_depart_prevue`).
 
 Rapport imprimable des missions (bouton « Imprimer » sur la liste, mêmes filtres) : voir `apps/core/README.md` (`ImpressionListeMixin`).
+
+**Affectation** : un chauffeur au permis ou à la visite médicale **expiré** ne peut pas être affecté ni partir
+(`documents_expires_du_chauffeur` ; une date non renseignée ne bloque pas, l'alerte `MANQUANT` la signale). La
+réaffectation (`modifier_mission`) ne revérifie que ce qui change : changer seulement le camion ou seulement le
+chauffeur marche (la mission elle-même n'est pas « une autre mission active »), et une hausse du poids est
+recontrôlée contre la capacité du camion conservé. Au retour (`livrer_mission`), un kilométrage d'arrivée à plus
+de `fleet.services.ECART_KM_MAX` (5 000 km) du départ est refusé : une faute de frappe figerait le compteur du
+camion, qui ne recule jamais. L'alerte N1 des congés (`missions_du_personnel_sur_periode`) couvre aussi une
+mission déjà en cours qui déborde sur le congé et le copilote. Un règlement annulé retire son encaissement de la
+prévision de trésorerie (`FraisMission.reglement`, `rattacher_encaissements_missions [--dry-run]` pour l'existant).
 ```
 
 #### `apps/missions/terrain.py`
 
-*196 lignes* — Prévision de trésorerie des missions (R4) : avances, dépenses prévues et imprévus.
+*211 lignes* — Prévision de trésorerie des missions (R4) : avances, dépenses prévues et imprévus.
 
 ```python
 """Prévision de trésorerie des missions (R4) : avances, dépenses prévues et imprévus.
@@ -1562,9 +1666,12 @@ def rejeter(frais: FraisMission, acteur, *, motif: str) -> FraisMission:
     return frais
 
 
-def creer_encaissement(mission: Mission, *, montant: Decimal, libelle: str, saisi_par=None) -> FraisMission:
+def creer_encaissement(
+    mission: Mission, *, montant: Decimal, libelle: str, saisi_par=None, reglement=None
+) -> FraisMission:
     """Reflet automatique d'un règlement reçu pour la facture de cette mission : aucune double
-    saisie, directement confirmé (appelé par ``finance.receivers``)."""
+    saisie, directement confirmé (appelé par ``finance.receivers``). ``reglement`` garde le lien avec
+    le règlement reflété, pour pouvoir retirer la ligne si ce règlement est annulé."""
     return FraisMission.objects.create(
         mission=mission,
         type_frais=TypeFraisMission.ENCAISSEMENT,
@@ -1572,7 +1679,19 @@ def creer_encaissement(mission: Mission, *, montant: Decimal, libelle: str, sais
         description=libelle,
         statut=StatutFraisMission.CONFIRME,
         saisi_par=saisi_par,
+        reglement=reglement,
     )
+
+
+def retirer_encaissements_du_reglement(reglement) -> int:
+    """Un règlement annulé ne doit plus figurer comme encaissé dans la prévision de trésorerie de la mission :
+    la ligne est retirée (suppression logique, tracée dans l'audit). Renvoie le nombre de lignes retirées."""
+    lignes = list(
+        FraisMission.objects.filter(reglement=reglement, type_frais=TypeFraisMission.ENCAISSEMENT)
+    )
+    for ligne in lignes:
+        ligne.delete()
+    return len(lignes)
 ```
 
 #### `apps/missions/consumers.py`
@@ -1894,6 +2013,75 @@ def diffuser(mission) -> None:
 def diffuser_apres_enregistrement(sender, instance, **kwargs) -> None:
     """Récepteur de ``post_save`` (branché dans ``MissionsConfig.ready``)."""
     transaction.on_commit(lambda: diffuser(instance))
+```
+
+#### `apps/missions/management/commands/rattacher_encaissements_missions.py`
+
+*62 lignes* — Reprise, à la demande, des lignes « Encaissement » créées **avant** que la ligne garde le lien avec son
+
+```python
+"""Reprise, à la demande, des lignes « Encaissement » créées **avant** que la ligne garde le lien avec son
+règlement (``FraisMission.reglement``) : sans lui, annuler un règlement laissait son encaissement dans la
+prévision de trésorerie de la mission.
+
+Chaque ligne d'encaissement sans lien est rapprochée du règlement de même montant de la facture de sa mission
+(le libellé de la ligne reprend le numéro de facture) quand ce rapprochement est sans ambiguïté ; une ligne
+dont le règlement a été annulé est alors retirée. Les cas ambigus sont signalés, jamais devinés.
+
+Rejouable sans effet de bord : une ligne déjà rattachée n'est plus traitée.
+"""
+
+from django.core.management.base import BaseCommand
+from django.db import transaction
+
+from apps.billing.models import Reglement
+from apps.missions.models import FraisMission, TypeFraisMission
+
+
+class Command(BaseCommand):
+    help = "Rattache les encaissements de mission à leur règlement et retire ceux d'un règlement annulé."
+
+    def add_arguments(self, parser):
+        parser.add_argument("--dry-run", action="store_true", help="Affiche ce qui serait fait sans rien écrire.")
+
+    def handle(self, *args, dry_run=False, **options):
+        rattaches = retires = ambigus = 0
+        with transaction.atomic():
+            orphelins = FraisMission.objects.filter(
+                type_frais=TypeFraisMission.ENCAISSEMENT, reglement__isnull=True
+            ).select_related("mission")
+            for ligne in orphelins:
+                candidats = [
+                    r
+                    for r in Reglement.all_objects.filter(
+                        facture__mission=ligne.mission, montant=ligne.montant
+                    ).select_related("facture")
+                    if r.facture.numero and r.facture.numero in ligne.description
+                ]
+                dejà_lies = set(
+                    FraisMission.all_objects.filter(reglement__in=candidats).values_list("reglement_id", flat=True)
+                )
+                libres = [r for r in candidats if r.pk not in dejà_lies]
+                if len(libres) != 1:
+                    ambigus += 1
+                    self.stderr.write(f"Encaissement #{ligne.pk} (mission {ligne.mission.numero}) : rapprochement ambigu.")
+                    continue
+                reglement = libres[0]
+                if reglement.is_deleted:
+                    ligne.delete()
+                    retires += 1
+                else:
+                    ligne.reglement = reglement
+                    ligne.save(update_fields=["reglement", "updated_at"])
+                    rattaches += 1
+            if dry_run:
+                transaction.set_rollback(True)
+
+        prefixe = "[Simulation, rien n'a été écrit] " if dry_run else ""
+        self.stdout.write(
+            f"{prefixe}{rattaches} encaissement(s) rattaché(s), {retires} retiré(s) (règlement annulé), "
+            f"{ambigus} ambigu(s)."
+        )
 ```
 
 #### `apps/missions/tests/test_frais_mission.py`
@@ -2328,6 +2516,47 @@ def test_le_parc_auto_consulte_les_missions_sans_voir_les_codes():
     expéditeur/destinataire restent réservés à ceux qui gèrent la relation client (VOIR_CODES)."""
     assert Role.PARCAUTO in permissions.CONSULTATION
     assert Role.PARCAUTO not in permissions.VOIR_CODES
+```
+
+#### `apps/missions/tests/test_plausibilite_km.py`
+
+*34 lignes* — Audit M5-10 : le kilométrage d'arrivée d'une mission est borné (il fige ensuite le compteur du camion).
+
+```python
+"""Audit M5-10 : le kilométrage d'arrivée d'une mission est borné (il fige ensuite le compteur du camion)."""
+
+import pytest
+
+from apps.fleet import services as fleet_services
+from apps.missions import services
+from apps.missions.exceptions import KilometrageInvalide
+
+from .test_services import _recuperee
+
+pytestmark = pytest.mark.django_db
+
+
+def test_une_faute_de_frappe_sur_le_km_d_arrivee_est_refusee_et_le_compteur_reste_intact():
+    mission = _recuperee()
+    compteur = mission.vehicule.kilometrage
+
+    with pytest.raises(KilometrageInvalide, match="vérifiez la saisie"):
+        services.livrer_mission(
+            mission, code=mission.code_destinataire, km_arrivee=mission.km_depart + 100000
+        )
+
+    mission.vehicule.refresh_from_db()
+    assert mission.vehicule.kilometrage == compteur
+
+
+def test_la_distance_maximale_d_une_mission_est_acceptee():
+    mission = _recuperee()
+
+    livree = services.livrer_mission(
+        mission, code=mission.code_destinataire, km_arrivee=mission.km_depart + fleet_services.ECART_KM_MAX
+    )
+
+    assert livree.km_arrivee == mission.km_depart + 5000
 ```
 
 #### `apps/missions/tests/test_services.py`
@@ -3116,10 +3345,15 @@ python manage.py check
 ```
 
 ```bash
-python -m pytest apps/missions/tests/test_frais_mission.py apps/missions/tests/test_models.py apps/missions/tests/test_permissions.py apps/missions/tests/test_services.py apps/missions/tests/test_temps_reel.py -q --no-cov
+python -m pytest apps/missions/tests/test_frais_mission.py apps/missions/tests/test_models.py apps/missions/tests/test_permissions.py apps/missions/tests/test_plausibilite_km.py apps/missions/tests/test_services.py apps/missions/tests/test_temps_reel.py -q --no-cov
 ```
 
-**Résultat attendu :** `125 passed` (pour les 5 fichier(s) de tests présentés dans ce chapitre).
+**Résultat attendu :** `125 passed, 2 failed` (pour les 6 fichier(s) de tests présentés dans ce chapitre).
+
+Des tests échouent à ce stade, **c'est normal** : ils vérifient des écrans qui n'existent pas encore (par exemple la page d'accueil). Ils passeront au chapitre indiqué :
+
+- `test_frais_mission.py::test_creer_encaissement_est_directement_confirme` → chapitre 13 (« La facturation : l'app billing »)
+- `test_frais_mission.py::test_totaux_ne_comptent_que_les_lignes_confirmees` → chapitre 13 (« La facturation : l'app billing »)
 
 Essais dans le shell (avec le client `Cimaf CI` créé au chapitre 7) :
 

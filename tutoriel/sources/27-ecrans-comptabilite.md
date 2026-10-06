@@ -17,6 +17,10 @@ seule.
 Chacun des 5 rapports a sa **version imprimable** (`.../imprimer/`), accessible depuis le menu « Rapports
 comptables ».
 
+Chaque rapport (grand livre, balance, bilan, compte de résultat, déclaration TVA) a aussi un bouton **Excel**. Sur une opération
+diverse **validée**, la **DIRECTION** voit un bloc « Corriger cette écriture » : la contre-passation pose l'écriture inverse
+(motif obligatoire, une seule fois) ; une écriture automatique (facture, règlement…) se corrige, elle, à la source.
+
 ## Prérequis
 
 - Chapitres 1 à 26 terminés.

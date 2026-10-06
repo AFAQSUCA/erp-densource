@@ -1,6 +1,6 @@
 # Chapitre 6 — Les chauffeurs : l'app drivers
 
-> 19 fichier(s) dans ce chapitre, 1984 lignes de code.
+> 20 fichier(s) dans ce chapitre, 2160 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -212,7 +212,7 @@ class StatutNonModifiable(ChauffeurError):
 
 #### `apps/drivers/services.py`
 
-*293 lignes* — Logique métier des chauffeurs — conventions.md §2.
+*310 lignes* — Logique métier des chauffeurs — conventions.md §2.
 
 ```python
 """Logique métier des chauffeurs — conventions.md §2."""
@@ -228,7 +228,7 @@ from django.utils import timezone
 from apps.core.constants import DELAI_ALERTE_JOURS
 from apps.core.search import filtrer_par_texte
 from apps.core.services import etat_echeance
-from apps.hr.models import Personnel
+from apps.hr.models import Conge, Personnel, StatutConge
 
 from .exceptions import CategorieInvalide, StatutNonModifiable
 from .models import CategoriePermis, Chauffeur, Copilote, StatutChauffeur
@@ -281,17 +281,29 @@ def mettre_en_mission(chauffeur: Chauffeur) -> Chauffeur:
     return changer_statut(chauffeur, StatutChauffeur.EN_MISSION)
 
 
+def _statut_de_retour(personnel_id: int) -> str:
+    """Statut d'un chauffeur (ou copilote) qui redevient libre : « En congé » si un congé est en cours
+    (il est parti en congé pendant sa mission, ou sa suspension vient d'être levée en plein congé),
+    « Disponible » sinon. Sans cela il serait affectable pendant son congé."""
+    en_conge = Conge.objects.filter(employe_id=personnel_id, statut=StatutConge.EN_COURS).exists()
+    return StatutChauffeur.EN_CONGE if en_conge else StatutChauffeur.DISPONIBLE
+
+
 def rappeler_de_mission(chauffeur: Chauffeur) -> Chauffeur:
-    """Fin de mission : « Disponible », sauf statut changé entre-temps
-    (En congé, Suspendu, Inactif), qui reste alors conservé."""
+    """Fin de mission : « Disponible » (ou « En congé » si un congé a démarré pendant la mission),
+    sauf statut changé entre-temps (En congé, Suspendu, Inactif), qui reste alors conservé."""
     if chauffeur.statut == StatutChauffeur.EN_MISSION:
-        return changer_statut(chauffeur, StatutChauffeur.DISPONIBLE)
+        return changer_statut(chauffeur, _statut_de_retour(chauffeur.personnel_id))
     return chauffeur
 
 
 def mettre_en_conge(chauffeur: Chauffeur) -> Chauffeur:
-    """Début d'un congé : statut « En congé »."""
-    return changer_statut(chauffeur, StatutChauffeur.EN_CONGE)
+    """Début d'un congé : « En congé », mais seulement depuis « Disponible ». Un chauffeur suspendu ou
+    inactif le reste (le congé ne lève pas une sanction) ; un chauffeur en mission le reste jusqu'à la fin
+    de sa mission (``rappeler_de_mission`` le passe alors en congé)."""
+    if chauffeur.statut == StatutChauffeur.DISPONIBLE:
+        return changer_statut(chauffeur, StatutChauffeur.EN_CONGE)
+    return chauffeur
 
 
 def rappeler_de_conge(chauffeur: Chauffeur) -> Chauffeur:
@@ -341,12 +353,15 @@ def mettre_en_mission_copilote(copilote: Copilote) -> Copilote:
 
 def rappeler_copilote_de_mission(copilote: Copilote) -> Copilote:
     if copilote.statut == StatutChauffeur.EN_MISSION:
-        return changer_statut_copilote(copilote, StatutChauffeur.DISPONIBLE)
+        return changer_statut_copilote(copilote, _statut_de_retour(copilote.personnel_id))
     return copilote
 
 
 def mettre_copilote_en_conge(copilote: Copilote) -> Copilote:
-    return changer_statut_copilote(copilote, StatutChauffeur.EN_CONGE)
+    """Même règle que ``mettre_en_conge`` : seulement depuis « Disponible »."""
+    if copilote.statut == StatutChauffeur.DISPONIBLE:
+        return changer_statut_copilote(copilote, StatutChauffeur.EN_CONGE)
+    return copilote
 
 
 def rappeler_copilote_de_conge(copilote: Copilote) -> Copilote:
@@ -496,6 +511,8 @@ def changer_statut_manuel(chauffeur: Chauffeur, statut: str) -> Chauffeur:
             f"Le chauffeur est « {chauffeur.get_statut_display()} » : ce statut est géré "
             "par les missions et les congés."
         )
+    if statut == StatutChauffeur.DISPONIBLE:
+        statut = _statut_de_retour(chauffeur.personnel_id)  # suspension levée en plein congé : reste en congé
     return changer_statut(chauffeur, statut)
 
 
@@ -638,7 +655,7 @@ class CopiloteAdmin(admin.ModelAdmin):
 
 #### `apps/drivers/apps.py`
 
-*21 lignes*
+*22 lignes*
 
 ```python
 from django.apps import AppConfig
@@ -654,9 +671,10 @@ class DriversConfig(AppConfig):
         from apps.audit.registry import audit_model
 
         from . import permissions, signals  # noqa: F401
-        from .models import Chauffeur
+        from .models import Chauffeur, Copilote
 
         audit_model(Chauffeur, module="CHAUFFEUR")
+        audit_model(Copilote, module="CHAUFFEUR")
         enregistrer(
             EntreeMenu(
                 "Chauffeurs", "drivers:liste", "fa-id-card", permissions.CONSULTATION, ordre=30
@@ -720,7 +738,7 @@ class CopiloteFactory(factory.django.DjangoModelFactory):
 
 #### `apps/drivers/README.md`
 
-*30 lignes* — drivers
+*34 lignes* — drivers
 
 ```markdown
 # drivers
@@ -749,6 +767,10 @@ visite à renouveler), fiche avec l'état du permis et de la visite médicale (a
 / réactivation. Accès : ADMIN, DIRECTION, RH (`permissions.py`). Matricule, nom et
 prénom viennent de la fiche du personnel et ne se modifient pas ici ; « En mission » et
 « En congé » sont posés par les missions et les congés et ne se changent pas à la main.
+Un congé ne pose « En congé » que depuis « Disponible » : un chauffeur (ou copilote) suspendu ou inactif
+le reste, jamais remis « Disponible » à la fin du congé ; en mission, il le reste jusqu'au retour, où
+`rappeler_de_mission` le passe « En congé » si un congé est en cours (sinon « Disponible »). Lever une suspension
+en plein congé le garde « En congé » (`_statut_de_retour`).
 Services ajoutés : `rechercher_chauffeurs`, `etat_echeances`, `modifier_chauffeur`,
 `changer_statut_manuel`, `chauffeurs_avec_echeance_proche`.
 
@@ -1372,6 +1394,166 @@ def test_le_workflow_de_conges_fonctionne_avec_ces_comptes(settings):
     assert conge.statut == StatutConge.APPROUVE
 ```
 
+#### `apps/hr/tests/test_conge_statut_chauffeur.py`
+
+*153 lignes* — Un congé ne doit jamais écraser un statut posé par ailleurs (audit : M3-08).
+
+```python
+"""Un congé ne doit jamais écraser un statut posé par ailleurs (audit : M3-08).
+
+« En congé » ne se pose que depuis « Disponible » : un chauffeur suspendu, inactif ou en mission garde son
+statut. Sans cela, la fin du congé le remettait « Disponible » et la suspension disparaissait sans trace."""
+
+from datetime import timedelta
+
+import pytest
+
+from apps.drivers import services as drivers_services
+from apps.drivers.exceptions import StatutNonModifiable
+from apps.drivers.models import Chauffeur, Copilote, StatutChauffeur
+from apps.hr import services
+
+from .test_conges import DEBUT, FIN, _approuve, _hierarchie
+
+pytestmark = pytest.mark.django_db
+
+
+def _fiche_en_conge_en_cours(statut_avant=None):
+    """Chauffeur dont le congé démarre ; ``statut_avant`` est posé juste avant le départ."""
+    hierarchie = _hierarchie(poste="Chauffeur")
+    fiche = Chauffeur.objects.get(personnel=hierarchie[0])
+    _approuve(hierarchie)
+    if statut_avant:
+        drivers_services.changer_statut(fiche, statut_avant)
+    services.synchroniser_statuts_conges(aujourd_hui=DEBUT)
+    fiche.refresh_from_db()
+    return fiche
+
+
+def _fin_du_conge():
+    services.synchroniser_statuts_conges(aujourd_hui=FIN + timedelta(days=1))
+
+
+@pytest.mark.parametrize("statut", [StatutChauffeur.SUSPENDU, StatutChauffeur.INACTIF])
+def test_un_conge_ne_leve_pas_une_suspension_ni_une_desactivation(statut):
+    fiche = _fiche_en_conge_en_cours(statut)
+
+    assert fiche.statut == statut  # le départ en congé ne change rien
+
+    _fin_du_conge()
+    fiche.refresh_from_db()
+    assert fiche.statut == statut  # la fin du congé non plus : jamais « Disponible » par erreur
+
+
+def test_un_chauffeur_disponible_passe_toujours_en_conge():
+    fiche = _fiche_en_conge_en_cours()
+
+    assert fiche.statut == StatutChauffeur.EN_CONGE
+
+
+def test_un_chauffeur_en_mission_le_reste_au_depart_en_conge():
+    fiche = _fiche_en_conge_en_cours(StatutChauffeur.EN_MISSION)
+
+    assert fiche.statut == StatutChauffeur.EN_MISSION
+
+
+def test_a_la_fin_de_sa_mission_un_chauffeur_en_conge_passe_en_conge_et_non_disponible():
+    fiche = _fiche_en_conge_en_cours(StatutChauffeur.EN_MISSION)
+
+    drivers_services.rappeler_de_mission(fiche)
+
+    fiche.refresh_from_db()
+    assert fiche.statut == StatutChauffeur.EN_CONGE  # il n'est pas affectable pendant son congé
+    _fin_du_conge()
+    fiche.refresh_from_db()
+    assert fiche.statut == StatutChauffeur.DISPONIBLE
+
+
+def test_a_la_fin_de_sa_mission_sans_conge_un_chauffeur_redevient_disponible():
+    hierarchie = _hierarchie(poste="Chauffeur")
+    fiche = Chauffeur.objects.get(personnel=hierarchie[0])
+    drivers_services.mettre_en_mission(fiche)
+
+    drivers_services.rappeler_de_mission(fiche)
+
+    fiche.refresh_from_db()
+    assert fiche.statut == StatutChauffeur.DISPONIBLE
+
+
+def test_lever_une_suspension_en_plein_conge_garde_le_chauffeur_en_conge():
+    fiche = _fiche_en_conge_en_cours(StatutChauffeur.SUSPENDU)
+
+    drivers_services.changer_statut_manuel(fiche, StatutChauffeur.DISPONIBLE)
+
+    fiche.refresh_from_db()
+    assert fiche.statut == StatutChauffeur.EN_CONGE
+    _fin_du_conge()
+    fiche.refresh_from_db()
+    assert fiche.statut == StatutChauffeur.DISPONIBLE
+
+
+def test_lever_une_suspension_hors_conge_remet_disponible():
+    hierarchie = _hierarchie(poste="Chauffeur")
+    fiche = Chauffeur.objects.get(personnel=hierarchie[0])
+    drivers_services.changer_statut(fiche, StatutChauffeur.SUSPENDU)
+
+    drivers_services.changer_statut_manuel(fiche, StatutChauffeur.DISPONIBLE)
+
+    fiche.refresh_from_db()
+    assert fiche.statut == StatutChauffeur.DISPONIBLE
+
+
+def test_le_statut_en_conge_reste_non_modifiable_a_la_main():
+    fiche = _fiche_en_conge_en_cours()
+
+    with pytest.raises(StatutNonModifiable):
+        drivers_services.changer_statut_manuel(fiche, StatutChauffeur.SUSPENDU)
+
+
+# --- copilotes : mêmes règles ---
+
+
+def _copilote_en_conge_en_cours(statut_avant=None):
+    hierarchie = _hierarchie(poste="Copilote")
+    fiche = Copilote.objects.get(personnel=hierarchie[0])
+    _approuve(hierarchie)
+    if statut_avant:
+        drivers_services.changer_statut_copilote(fiche, statut_avant)
+    services.synchroniser_statuts_conges(aujourd_hui=DEBUT)
+    fiche.refresh_from_db()
+    return fiche
+
+
+@pytest.mark.parametrize("statut", [StatutChauffeur.SUSPENDU, StatutChauffeur.INACTIF])
+def test_un_conge_ne_leve_pas_la_suspension_d_un_copilote(statut):
+    fiche = _copilote_en_conge_en_cours(statut)
+    _fin_du_conge()
+
+    fiche.refresh_from_db()
+    assert fiche.statut == statut
+
+
+def test_a_la_fin_de_sa_mission_un_copilote_en_conge_passe_en_conge():
+    fiche = _copilote_en_conge_en_cours(StatutChauffeur.EN_MISSION)
+    assert fiche.statut == StatutChauffeur.EN_MISSION
+
+    drivers_services.rappeler_copilote_de_mission(fiche)
+
+    fiche.refresh_from_db()
+    assert fiche.statut == StatutChauffeur.EN_CONGE
+
+
+def test_a_la_fin_de_sa_mission_sans_conge_un_copilote_redevient_disponible():
+    hierarchie = _hierarchie(poste="Copilote")
+    fiche = Copilote.objects.get(personnel=hierarchie[0])
+    drivers_services.mettre_en_mission_copilote(fiche)
+
+    drivers_services.rappeler_copilote_de_mission(fiche)
+
+    fiche.refresh_from_db()
+    assert fiche.statut == StatutChauffeur.DISPONIBLE
+```
+
 #### `apps/hr/tests/test_conges.py`
 
 *496 lignes* — Workflow de congés en 3 niveaux — cahier-des-charges.md:211-221.
@@ -1790,13 +1972,13 @@ def test_copilote_passe_en_conge_au_demarrage_puis_redevient_disponible():
 # --- audit ---
 
 
-def test_les_transitions_de_statut_sont_auditees():
+def test_les_transitions_de_statut_sont_auditees():  # une validation sort en VALIDATE (audit M1-06)
     conge, superieur = _demande()
     services.valider_n1(conge, superieur)
 
     entrees = AuditLog.objects.filter(entite="Conge", entite_id=conge.pk)
     assert entrees.get(action=ActionChoices.CREATE).module == "RH"
-    modif = entrees.filter(action=ActionChoices.UPDATE).latest("date_heure")
+    modif = entrees.filter(action=ActionChoices.VALIDATE).latest("date_heure")
     assert modif.ancienne_valeur["statut"] == "DEMANDE"
     assert modif.nouvelle_valeur["statut"] == "VALIDATION_N1"
 
@@ -2196,10 +2378,10 @@ python manage.py check
 ```
 
 ```bash
-python -m pytest apps/drivers/tests/test_copilote.py apps/drivers/tests/test_fiche.py apps/drivers/tests/test_models.py apps/drivers/tests/test_services.py apps/hr/tests/test_comptes_demo.py apps/hr/tests/test_conges.py apps/hr/tests/test_droits_conges.py apps/hr/tests/test_recrutement.py -q --no-cov
+python -m pytest apps/drivers/tests/test_copilote.py apps/drivers/tests/test_fiche.py apps/drivers/tests/test_models.py apps/drivers/tests/test_services.py apps/hr/tests/test_comptes_demo.py apps/hr/tests/test_conge_statut_chauffeur.py apps/hr/tests/test_conges.py apps/hr/tests/test_droits_conges.py apps/hr/tests/test_recrutement.py -q --no-cov
 ```
 
-**Résultat attendu :** `125 passed` (pour les 8 fichier(s) de tests présentés dans ce chapitre).
+**Résultat attendu :** `138 passed` (pour les 9 fichier(s) de tests présentés dans ce chapitre).
 
 **Créez maintenant vos comptes d'essai** (un par rôle) et vérifiez que la fiche chauffeur s'est créée
 toute seule :

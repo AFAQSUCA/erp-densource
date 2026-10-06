@@ -82,6 +82,13 @@ de consulter le stock.
 
 {{FICHIER apps/inventory/tests/factories.py}}
 
+### La migration du trigger PostgreSQL
+
+Comme le journal d'audit (chapitre 4), le journal des mouvements de stock est **append-only jusque dans la base** : une migration
+écrite à la main pose un trigger PostgreSQL (sans effet sous SQLite). Vous la créerez à l'étape 5, une fois la migration `0001` générée.
+
+{{FICHIER apps/inventory/migrations/0002_trigger_append_only.py}}
+
 {{RESTANTS}}
 
 ## Étape 5 — Déclarer l'application et migrer
@@ -95,6 +102,20 @@ python manage.py migrate
 
 **Résultat attendu :** `Create model Article`, `Create model MouvementStock`, puis
 `Applying inventory.0001_initial... OK`.
+
+### La migration du trigger PostgreSQL
+
+Comme le journal d'audit (chapitre 4), le journal des mouvements de stock est **append-only jusque dans la base** : une migration
+écrite à la main pose un trigger PostgreSQL (sans effet sous SQLite). Créez une migration **vide**, complétez-la avec ce contenu :
+
+(Le fichier est présenté plus haut, à l'étape « La migration du trigger ».)
+
+```bash
+python manage.py makemigrations inventory --empty --name trigger_append_only
+python manage.py migrate
+```
+
+**Résultat attendu :** `Applying inventory.0002_trigger_append_only... OK`.
 
 ## Vérifier le chapitre
 

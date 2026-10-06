@@ -1,6 +1,6 @@
 # Chapitre 11 — Le stock de pièces : l'app inventory
 
-> 16 fichier(s) dans ce chapitre, 1459 lignes de code.
+> 18 fichier(s) dans ce chapitre, 1531 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -56,7 +56,7 @@ touch apps/inventory/tests/__init__.py
 
 #### `apps/inventory/models.py`
 
-*153 lignes*
+*156 lignes*
 
 ```python
 from decimal import Decimal
@@ -66,6 +66,7 @@ from django.db import models
 from django.db.models import Q
 from django.utils.translation import gettext_lazy as _
 
+from apps.core.immuable import AppendOnlyQuerySet
 from apps.core.models import BaseModel
 
 
@@ -202,6 +203,8 @@ class MouvementStock(models.Model):
 
     def __str__(self):
         return f"{self.get_type_mouvement_display()} {self.variation:+d} {self.article.reference}"
+
+    objects = AppendOnlyQuerySet.as_manager()
 
     def save(self, *args, **kwargs):
         if self.pk is not None:
@@ -871,6 +874,37 @@ class ArticleFactory(factory.django.DjangoModelFactory):
     emplacement = "Rayon A1"
 ```
 
+### La migration du trigger PostgreSQL
+
+Comme le journal d'audit (chapitre 4), le journal des mouvements de stock est **append-only jusque dans la base** : une migration
+écrite à la main pose un trigger PostgreSQL (sans effet sous SQLite). Vous la créerez à l'étape 5, une fois la migration `0001` générée.
+
+#### `apps/inventory/migrations/0002_trigger_append_only.py`
+
+*19 lignes*
+
+```python
+from django.db import migrations
+
+from apps.core.immuable import poser_triggers, retirer_triggers
+
+TABLE = "inventory_mouvementstock"
+
+
+def poser(apps, schema_editor):
+    poser_triggers(schema_editor, TABLE)
+
+
+def retirer(apps, schema_editor):
+    retirer_triggers(schema_editor, TABLE)
+
+
+class Migration(migrations.Migration):
+    dependencies = [("inventory", "0001_initial")]
+
+    operations = [migrations.RunPython(poser, retirer)]
+```
+
 #### `apps/inventory/README.md`
 
 *38 lignes* — inventory
@@ -914,6 +948,61 @@ Services ajoutés : `rechercher_articles`, `categories_articles`, `valeur_totale
 `modifier_article`, `rechercher_mouvements`, `mouvements_de_l_article`.
 
 Rapport imprimable du stock (bouton « Imprimer » sur la liste, mêmes filtres) : voir `apps/core/README.md` (`ImpressionListeMixin`).
+```
+
+#### `apps/audit/tests/test_immuable.py`
+
+*48 lignes* — Audit M1-05 / M8-06 : le journal d'audit et le journal des mouvements de stock refusent aussi les
+
+```python
+"""Audit M1-05 / M8-06 : le journal d'audit et le journal des mouvements de stock refusent aussi les
+modifications et suppressions en masse (``QuerySet``), pas seulement celles d'une instance."""
+
+import pytest
+
+from apps.audit.models import ActionChoices, AuditLog
+from apps.inventory.models import MouvementStock
+from apps.inventory.tests.factories import ArticleFactory
+from apps.inventory import services as stock
+from decimal import Decimal
+
+pytestmark = pytest.mark.django_db
+
+
+def _entree():
+    return AuditLog.objects.create(action=ActionChoices.UPDATE, module="FLEET", entite="Vehicule", entite_id=1)
+
+
+def test_le_journal_d_audit_refuse_update_et_delete_en_masse():
+    _entree()
+
+    with pytest.raises(ValueError, match="append-only"):
+        AuditLog.objects.filter(module="FLEET").update(module="X")
+    with pytest.raises(ValueError, match="append-only"):
+        AuditLog.objects.all().delete()
+    with pytest.raises(ValueError, match="append-only"):
+        AuditLog.objects.bulk_update([_entree()], ["module"])
+
+    assert AuditLog.objects.filter(module="FLEET").count() == 2
+
+
+def test_le_journal_d_audit_reste_ecrivable_et_lisible():
+    entree = _entree()
+
+    assert AuditLog.objects.get(pk=entree.pk).module == "FLEET"
+    assert AuditLog.objects.filter(action=ActionChoices.UPDATE).exists()
+
+
+def test_le_journal_des_mouvements_de_stock_refuse_update_et_delete_en_masse():
+    article = ArticleFactory()
+    stock.enregistrer_entree(article, quantite=5, prix_unitaire=Decimal("1000"))
+
+    with pytest.raises(ValueError, match="append-only"):
+        MouvementStock.objects.update(variation=99)
+    with pytest.raises(ValueError, match="append-only"):
+        MouvementStock.objects.all().delete()
+
+    assert MouvementStock.objects.count() == 1
 ```
 
 #### `apps/inventory/tests/test_fiche.py`
@@ -1642,6 +1731,20 @@ python manage.py migrate
 **Résultat attendu :** `Create model Article`, `Create model MouvementStock`, puis
 `Applying inventory.0001_initial... OK`.
 
+### La migration du trigger PostgreSQL
+
+Comme le journal d'audit (chapitre 4), le journal des mouvements de stock est **append-only jusque dans la base** : une migration
+écrite à la main pose un trigger PostgreSQL (sans effet sous SQLite). Créez une migration **vide**, complétez-la avec ce contenu :
+
+(Le fichier est présenté plus haut, à l'étape « La migration du trigger ».)
+
+```bash
+python manage.py makemigrations inventory --empty --name trigger_append_only
+python manage.py migrate
+```
+
+**Résultat attendu :** `Applying inventory.0002_trigger_append_only... OK`.
+
 ## Vérifier le chapitre
 
 ```bash
@@ -1649,10 +1752,10 @@ python manage.py check
 ```
 
 ```bash
-python -m pytest apps/inventory/tests/test_fiche.py apps/inventory/tests/test_models.py apps/inventory/tests/test_services.py -q --no-cov
+python -m pytest apps/audit/tests/test_immuable.py apps/inventory/tests/test_fiche.py apps/inventory/tests/test_models.py apps/inventory/tests/test_services.py -q --no-cov
 ```
 
-**Résultat attendu :** `69 passed` (pour les 3 fichier(s) de tests présentés dans ce chapitre).
+**Résultat attendu :** `72 passed` (pour les 4 fichier(s) de tests présentés dans ce chapitre).
 
 Essai dans le shell : vérifier le calcul du PUMP.
 

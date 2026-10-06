@@ -1,4 +1,4 @@
-# Chapitre 31 — Finalisation, vérifications et déploiement
+# Chapitre 32 — Finalisation, vérifications et déploiement
 
 > 1 fichier(s) dans ce chapitre, 132 lignes de code.
 
@@ -173,7 +173,7 @@ python manage.py check
 python -m pytest -q --no-cov
 ```
 
-**Résultat attendu :** `2549 passed` (tous les tests du projet).
+**Résultat attendu :** `2827 passed` (tous les tests du projet).
 **La couverture des tests** (quelle part du code est exécutée par les tests) :
 
 ```bash
@@ -235,29 +235,33 @@ dépôt de référence :
 | **Pilotage** | `notifications`, `dashboard` |
 | **Terrain** | `mobile_api` (PWA du chauffeur, codes QR) |
 | **Ouverture** | `api` (REST, JWT + MFA, documentation) |
+| **Reprise de données** | `importation` (import Excel des données par l'administrateur) |
 
 ## Ce qui n'est pas dans ce tutoriel : la mise en production
 
 Volontairement, ce tutoriel s'arrête au **développement** : base SQLite, un seul processus. Une mise en
 production demande encore (les « lots 2 et 3 » de l'étape 7 du cahier des charges) :
 
-- **PostgreSQL** à la place de SQLite : pour les verrous de ligne effectifs, la recherche sans accents native et les
-  performances. La recherche `filtrer_par_texte` a une branche PostgreSQL (`LOWER(TRANSLATE(...))`) écrite mais
-  **non testée** sur cette base ;
+- **PostgreSQL** à la place de SQLite : pour les verrous de ligne effectifs, la recherche sans accents native, les triggers
+  des journaux append-only et les performances. Toute la suite de tests a été rejouée sur PostgreSQL (elle y a révélé un défaut de
+  la recherche du journal d'audit, corrigé) ;
 - **Redis** pour le cache partagé (compteurs anti force brute, tableau de bord) et **Celery** pour lancer
   `taches_quotidiennes` chaque jour et envoyer les e-mails en arrière-plan ;
 - **Docker, Gunicorn et Nginx** : HTTPS (avec `SECURE_PROXY_SSL_HEADER`), en-têtes, **limitation de débit au niveau
-  du serveur**, `collectstatic` ;
-- **Sauvegardes chiffrées et testées**, **supervision** (Sentry) ;
-- `config/settings/prod.py` existe déjà (chapitre 1) mais **n'a pas été exercé** : il attend ces briques.
+  du serveur**, `collectstatic`. Sur un serveur neuf, Nginx démarre avec un **certificat provisoire** le temps que Let's Encrypt
+  délivre le vrai (`nginx/preparer-https.sh`) ;
+- **Sauvegardes chiffrées et testées** (phrase de passe par fichier, rotation, copie hors serveur), **supervision** (Sentry) ;
+- `config/settings/prod.py` **refuse de démarrer** avec une `SECRET_KEY` par défaut ou trop courte, et `docker-compose.yml`
+  n'a aucun mot de passe PostgreSQL par défaut.
+
+Tout cela est décrit pas à pas dans `GUIDE-DEPLOIEMENT.md`, à la racine du dépôt de référence.
 
 Sont aussi **hors périmètre**, sur décision du client : le **mode hors ligne** du chauffeur (saisie sans réseau,
 synchronisation différée), l'envoi de SMS et de notifications push, les photos d'incident.
 
 ## Aller plus loin
 
-- Ajoutez un **écran d'administration des utilisateurs** dans l'interface (aujourd'hui : l'administration
-  Django).
+- Ajoutez l'**import Excel** d'autres données (devis, stock de pièces…) sur le modèle de `importation`.
 - Écrivez un **nouveau module** en suivant le plan : `models.py` → `services.py` → `tests` → `views.py`
   → `templates`. Le meilleur exercice : un module « Contrats clients » (renouvellement à 30 jours) sur le
   modèle de `fleet`.
@@ -275,4 +279,4 @@ Bravo : vous avez reconstruit l'ERP DEN Source Group de A à Z.
 
 ---
 
-[← Chapitre 30](30-api.md) · [Sommaire](README.md)
+[← Chapitre 31](31-importation.md) · [Sommaire](README.md)

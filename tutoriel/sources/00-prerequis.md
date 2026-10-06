@@ -35,7 +35,7 @@ ce qui le concerne.
 | **Un téléphone** | Android ou iPhone | la double authentification (application d'authentification) | — |
 
 Vous n'avez **pas besoin** de PostgreSQL, Redis ni Docker pour ce tutoriel : en développement, la base est
-un simple fichier SQLite. (La mise en production avec PostgreSQL, Redis et Docker est le sujet du chapitre 31
+un simple fichier SQLite. (La mise en production avec PostgreSQL, Redis et Docker est le sujet du chapitre 32
 « Aller plus loin ».)
 
 Espace disque : environ 400 Mo (dont 300 Mo pour `node_modules`). Durée : comptez **20 à 30 heures** en

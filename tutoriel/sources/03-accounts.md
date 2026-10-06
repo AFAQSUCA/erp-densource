@@ -11,6 +11,12 @@
 | `mfa` | **double authentification** (application d'authentification + codes de secours), obligatoire pour l'ADMIN et la DIRECTION |
 | `middleware` | la **porte** qui refuse tout tant que la double authentification n'est pas passée |
 
+**Gestion des comptes.** L'administrateur crée, modifie et désactive les comptes (cahier des charges : « création/suppression
+utilisateurs »). Les règles vivent dans `services.py` — jamais un compte supprimé (on le **désactive**), jamais un
+**superutilisateur** touché depuis l'écran, jamais soi-même (on ne se désactive pas, on ne change pas son propre rôle), un
+mot de passe initial validé par les validateurs de Django, et tout est tracé au journal d'audit (le mot de passe n'y figure
+qu'en empreinte). L'écran « Utilisateurs » lui-même est présenté au chapitre 17.
+
 ## Prérequis
 
 - Chapitres 1 et 2 terminés (`python -m pytest apps/core -q` est vert).

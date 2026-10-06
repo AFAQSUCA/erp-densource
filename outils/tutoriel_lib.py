@@ -62,6 +62,7 @@ _LISTE = [
     ("tableau-de-bord", "La page d'accueil : le tableau de bord"),
     ("mobile", "L'espace mobile du chauffeur"),
     ("api", "L'API REST"),
+    ("importation", "L'import Excel des données : l'app importation"),
     ("finalisation", "Finalisation, vérifications et déploiement"),
 ]
 CHAPITRES = {i: (slug, titre) for i, (slug, titre) in enumerate(_LISTE)}
@@ -72,6 +73,7 @@ DERNIER = len(_LISTE) - 1
 ORDRE_APPS = [
     "core", "accounts", "audit", "hr", "drivers", "customers", "fleet", "missions", "garage",
     "inventory", "fuel", "billing", "finance", "accounting", "notifications", "dashboard", "mobile_api", "api",
+    "importation",
 ]
 RANG = {a: i for i, a in enumerate(ORDRE_APPS)}
 
@@ -83,7 +85,7 @@ CH_METIER = {
     "fuel": NUM["fuel"], "billing": NUM["billing"], "finance": NUM["finance"],
     "accounting": NUM["accounting"],
     "notifications": NUM["notifications"], "dashboard": NUM["tableau-de-bord"],
-    "mobile_api": NUM["mobile"], "api": NUM["api"],
+    "mobile_api": NUM["mobile"], "api": NUM["api"], "importation": NUM["importation"],
 }
 # ... et où sa partie « écrans » (vues, adresses, formulaires, gabarits) est écrite.
 CH_ECRANS = {
@@ -94,6 +96,7 @@ CH_ECRANS = {
     "billing": NUM["ecrans-finances"], "finance": NUM["ecrans-finances"],
     "accounting": NUM["ecrans-comptabilite"],
     "dashboard": NUM["tableau-de-bord"], "mobile_api": NUM["mobile"], "api": NUM["api"],
+    "importation": NUM["importation"],
 }
 CH_TESTS_DASHBOARD = NUM["tableau-de-bord"]
 
@@ -103,9 +106,12 @@ EXCLUS = [
     (r"^static/vendor/", "généré par `npm run build` (bibliothèques Alpine.js et Font Awesome)"),
     (r"^static/css/tailwind\.css$", "généré par `npm run build` (Tailwind compilé)"),
     (r"^frontend/package-lock\.json$", "généré par `npm install`"),
-    (r"^apps/[^/]+/migrations/(?!0002_plan_comptable_seed\.py$)",
-     "généré par `python manage.py makemigrations` (sauf la migration de données du plan comptable, "
-     "écrite à la main : voir le chapitre « La comptabilité en partie double »)"),
+    (r"^apps/[^/]+/migrations/(?!0002_plan_comptable_seed\.py$|0002_trigger_append_only\.py$)",
+     "généré par `python manage.py makemigrations` (sauf les migrations écrites à la main : le plan comptable, "
+     "voir le chapitre « La comptabilité en partie double », et les triggers PostgreSQL des journaux "
+     "append-only, voir les chapitres « Le journal d'audit » et « Le stock de pièces »)"),
+    (r"\.xlsx$", "classeur Excel modèle, généré par `python manage.py generer_modele_import` "
+     "(voir le chapitre « L'import Excel des données »)"),
     (r"^static/img/", "identité visuelle de DEN Source Group : à copier depuis le dépôt (voir le chapitre « Le socle de l'interface »)"),
     (r"\.(docx|pptx)$", "documents de présentation, sans rapport avec le fonctionnement"),
     (r"^(cahier-des-charges|architecture|conventions|glossaire-metier|audit-checklist|GUIDE-INTERFACE|GUIDE-PARCOURS|GUIDE-DEPLOIEMENT|avenant-[\w-]+)\.md$",
@@ -198,13 +204,13 @@ _PREFIXES_URL = {
     "missions": "missions", "clients": "customers", "flotte": "fleet", "rh": "hr", "chauffeurs": "drivers",
     "garage": "garage", "carburant": "fuel", "stock": "inventory", "facturation": "billing",
     "finances": "finance", "comptabilite": "accounting", "chauffeur": "mobile_api", "api": "api",
-    "notifications": "notifications",
+    "notifications": "notifications", "import": "importation",
 }
 _ESPACES_NOMS = {
     "missions": "missions", "customers": "customers", "fleet": "fleet", "hr": "hr", "drivers": "drivers",
     "garage": "garage", "fuel": "fuel", "inventory": "inventory", "billing": "billing",
     "finance": "finance", "accounting": "accounting", "chauffeur": "mobile_api",
-    "notifications": "notifications", "api": "api", "mobile": "api",
+    "notifications": "notifications", "api": "api", "mobile": "api", "importation": "importation",
 }
 
 
@@ -245,6 +251,8 @@ def chapitre_de(chemin: str) -> int | None:
         return FORCES_AU_METIER[chemin]
     # --- hors des apps ---
     if not chemin.startswith("apps/"):
+        if chemin.startswith("templates/importation/"):
+            return NUM["importation"]
         if chemin.startswith(("templates/", "frontend/")) or chemin in ("static/js/app.js",):
             return NUM["interface"]
         if chemin in ("static/js/sw-register.js", "static/js/scanner.js"):
@@ -384,6 +392,7 @@ _REGLES_SETTINGS = [
     (r'apps\.notifications\.context_processors\.', NUM["interface"]),
 ]
 _REGLES_URLS = [
+    (r'MediaProtegeView', NUM["core"]),
     (r'apps\.dashboard|Dashboard\w*View', NUM["tableau-de-bord"]),
     (r'apps\.accounts\.urls', NUM["interface"]), (r'apps\.notifications\.urls', NUM["interface"]),
     (r'apps\.audit\.urls', NUM["interface"]),
@@ -394,6 +403,7 @@ _REGLES_URLS = [
     (r'apps\.billing\.urls', NUM["ecrans-finances"]), (r'apps\.finance\.urls', NUM["ecrans-finances"]),
     (r'apps\.accounting\.urls', NUM["ecrans-comptabilite"]),
     (r'apps\.mobile_api\.urls_web', NUM["mobile"]), (r'apps\.api\.urls', NUM["api"]),
+    (r'apps\.importation\.urls', NUM["importation"]),
 ]
 # Fichier écrit seulement pour le tutoriel : une page d'accueil provisoire, le temps que les écrans
 # (vers lesquels le tableau de bord renvoie) existent. Elle est supprimée au chapitre du tableau de bord.
@@ -461,7 +471,8 @@ def chapitres_ou_config_change(chemin: str) -> list[int]:
 
 # --- blocs dont l'apparition dans un fichier déjà présenté est retardée -----------------------------
 
-# ``apps/missions/models.py`` déclare ``Mission.proforma``, qui référence ``billing.Proforma`` — mais
+# ``apps/missions/models.py`` déclare ``Mission.proforma`` et ``FraisMission.reglement``, qui référencent
+# ``billing.Proforma`` et ``billing.Reglement`` — mais
 # l'app ``billing`` n'existe qu'au chapitre 13, bien après ``missions`` (chapitre 9). Ce n'est pas un
 # accident : ``billing`` dépend elle-même de ``missions`` (``billing.services`` importe ``Mission``),
 # donc les deux apps ne peuvent pas être réordonnées l'une avant l'autre dans ``ORDRE_APPS``. C'est
@@ -478,6 +489,13 @@ def chapitres_ou_config_change(chemin: str) -> list[int]:
 CHAMPS_DIFFERES: dict[str, list[tuple[str, str, int, bool]]] = {
     "apps/missions/models.py": [
         (r'^\s*proforma = models\.OneToOneField\(\s*$', r'^\s*\)\s*$', NUM["billing"], True),
+        (r'^\s*reglement = models\.ForeignKey\(\s*$', r'^\s*\)\s*$', NUM["billing"], True),
+    ],
+    # ``accounts`` branche l'audit sur ``User`` dans ``ready()`` ; ``audit`` n'existe qu'au chapitre 4 (et c'est lui
+    # qui importe ``accounts``, pas l'inverse) : l'import et l'abonnement apparaissent donc à ce chapitre.
+    "apps/accounts/apps.py": [
+        (r'^\s*from apps\.audit\.registry import audit_model$', r'^$', NUM["audit"], True),
+        (r'^\s*# Création de compte, changement de rôle', r'audit_model\(User, ', NUM["audit"], True),
     ],
     "apps/missions/README.md": [
         (r'^### Mission créée depuis un devis accepté \(R6\)$', r'^### ', NUM["billing"], False),

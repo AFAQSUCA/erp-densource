@@ -1,6 +1,6 @@
 # Chapitre 2 — Le socle : l'app core
 
-> 21 fichier(s) dans ce chapitre, 1093 lignes de code.
+> 26 fichier(s) dans ce chapitre, 1476 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -16,6 +16,18 @@ On y trouve :
 | `nombre`, `pourcentage_signe` | affichage des nombres à la française |
 | `RegistreSections` | un mécanisme pour qu'une fiche affiche des blocs fournis par d'autres apps |
 | middlewares | mémoriser la requête courante (pour l'audit) et ajouter les en-têtes de sécurité |
+
+Le socle porte aussi quatre mécanismes plus récents, présentés avec les fichiers restants de l'étape 6 :
+
+| Élément | À quoi il sert |
+|---|---|
+| `ErreurMetier` + `ErreurMetierMiddleware` | une règle métier refusée **par une autre app** (budget dépassé, exercice clôturé…) devient un **message** suivi d'un retour à la page précédente, au lieu d'une erreur 500 |
+| `medias.py` | les **fichiers téléversés** ne sont jamais servis librement : Django contrôle le rôle, puis demande à Nginx de les envoyer (`X-Accel-Redirect`) |
+| `immuable.py` | les **tables append-only** (journal d'audit, mouvements de stock) : un manager qui refuse `update()` / `delete()` en masse, et les triggers PostgreSQL posés par les migrations des chapitres 4 et 11 |
+| `xlsx.py` | l'**export Excel** : `reponse_classeur` fabrique un `.xlsx` aux **valeurs brutes** (montants en nombres, dates en dates) ; un texte qui commence par `=` reste du texte, jamais une formule |
+
+La recherche texte (`search.py`) transforme chaque champ en texte avant de le comparer : sur PostgreSQL,
+`LOWER()` refuse un champ d'adresse IP, et la recherche du journal d'audit en dépend.
 
 ## Prérequis
 
@@ -292,7 +304,7 @@ est donc très simple à tester (voir `test_echeance.py`).
 
 #### `apps/core/search.py`
 
-*72 lignes* — Recherche texte insensible aux accents et à la casse (« traore » trouve « Traoré »).
+*74 lignes* — Recherche texte insensible aux accents et à la casse (« traore » trouve « Traoré »).
 
 ```python
 """Recherche texte insensible aux accents et à la casse (« traore » trouve « Traoré »).
@@ -311,7 +323,7 @@ côtés restent identiques. Plusieurs mots : chacun doit se trouver dans au moin
 """
 
 from django.db.models import CharField, Func, Q, QuerySet, Value
-from django.db.models.functions import Lower
+from django.db.models.functions import Cast, Lower
 
 ACCENTS = "àâäáãåçéèêëíìîïñóòôöõúùûüýÿ"
 SANS_ACCENT = "aaaaaaceeeeiiiinooooouuuuyy"
@@ -339,7 +351,9 @@ class Normalise(Func):
         # majuscule (« É » → toujours « É » après TRANSLATE, puis « é » après LOWER : l'accent
         # reste). Même ordre que `normaliser()` ci-dessus (``.lower().translate(...)``).
         (expression,) = self.get_source_expressions()
-        minuscule = Lower(expression)
+        # Cast en texte : sur PostgreSQL, LOWER() n'accepte pas un champ « inet » (adresse IP du journal d'audit)
+        # et la recherche répondait par une erreur 500. Sans effet sur un champ déjà texte.
+        minuscule = Lower(Cast(expression, CharField()))
         traduit = Func(minuscule, Value(ACCENTS), Value(SANS_ACCENT), function="TRANSLATE")
         return traduit.as_sql(compiler, connection)
 
@@ -483,12 +497,20 @@ Les blocs dont le gabarit n'existe pas (encore) sont simplement ignorés.
 
 #### `apps/core/middleware.py`
 
-*80 lignes*
+*118 lignes*
 
 ```python
+import logging
 import threading
 
 from django.conf import settings
+from django.contrib import messages
+from django.shortcuts import redirect
+from django.utils.http import url_has_allowed_host_and_scheme
+
+from .exceptions import ErreurMetier
+
+logger = logging.getLogger(__name__)
 
 _local = threading.local()
 
@@ -512,6 +534,36 @@ class CurrentRequestMiddleware:
             return self.get_response(request)
         finally:
             _local.request = None
+
+
+class ErreurMetierMiddleware:
+    """Filet de sécurité : une erreur métier non interceptée par son écran devient un message.
+
+    L'opération est déjà annulée (les services sont atomiques). L'utilisateur revient à la page d'où
+    il vient avec le message de l'erreur, au lieu d'une erreur 500. L'API a son propre gestionnaire
+    (``apps.api.exceptions``) et n'est pas concernée.
+    """
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        return self.get_response(request)
+
+    def process_exception(self, request, exception):
+        if not isinstance(exception, ErreurMetier) or request.path.startswith("/api/"):
+            return None
+        origine = request.META.get("HTTP_REFERER", "")
+        if not url_has_allowed_host_and_scheme(
+            origine, allowed_hosts={request.get_host()}, require_https=request.is_secure()
+        ):
+            origine = ""
+        # Un GET qui échoue ne doit pas se renvoyer vers lui-même (boucle de redirections).
+        if request.method == "GET" and (not origine or origine.split("?")[0].endswith(request.path)):
+            return None
+        logger.warning("Erreur métier non interceptée sur %s : %s", request.path, exception)
+        messages.error(request, str(exception))
+        return redirect(origine or "/")
 
 
 def get_current_request():
@@ -677,12 +729,33 @@ Modifiez `config/settings/base.py` :
 +    "apps.core.middleware.SecurityHeadersMiddleware",
      "corsheaders.middleware.CorsMiddleware",
      "django.contrib.sessions.middleware.SessionMiddleware",
-@@ -81,4 +83,5 @@
+@@ -81,4 +83,6 @@
      "django.contrib.messages.middleware.MessageMiddleware",
      "django.middleware.clickjacking.XFrameOptionsMiddleware",
 +    "apps.core.middleware.CurrentRequestMiddleware",
++    "apps.core.middleware.ErreurMetierMiddleware",
  ]
  
+```
+
+#### `config/urls.py` — modifications
+
+*Les lignes précédées de `+` sont à ajouter ; les autres sont là pour vous repérer.*
+
+```diff
+--- config/urls.py (avant)
++++ config/urls.py (après)
+@@ -10,8 +10,10 @@
+ from django.views.generic import RedirectView
+ 
++from apps.core.medias import MediaProtegeView
+ 
+ urlpatterns = [
+     # Les navigateurs (et l'administration Django) réclament /favicon.ico : on renvoie vers l'icône du site.
+     path("favicon.ico", RedirectView.as_view(url=settings.STATIC_URL + "img/favicon.png", permanent=True)),
++    path("medias/<path:chemin>", MediaProtegeView.as_view(), name="media"),
+     path("admin/", admin.site.urls),
+ ]
 ```
 
 Les deux lignes de `MIDDLEWARE` ajoutent nos deux middlewares ; `"apps.core"` déclare l'application.
@@ -691,7 +764,7 @@ Les deux lignes de `MIDDLEWARE` ajoutent nos deux middlewares ; `"apps.core"` d�
 
 #### `apps/core/README.md`
 
-*37 lignes* — core
+*47 lignes* — core
 
 ```markdown
 # core
@@ -731,6 +804,30 @@ de liste : sous-classer le `ListView` existant, ajouter `titre_impression` et `c
 
 En-tête commune (`_entete_impression.html`) : logo (`static/img/logo-emblem.jpg`), raison sociale en bordeaux (`#8b0319`) et filet orange (`#f28a14`) — les couleurs du logo (`frontend/tailwind.config.js`), reprises aussi par le PDF des codes de mission (`apps/missions/documents.py`, ReportLab). Tout nouveau document imprimable doit inclure `_style_impression.html` et `_entete_impression.html` pour rester cohérent avec les autres ; c'est aussi le cas de la facture (`billing.facture_print`), qui les réutilise pour son propre en-tête.
 
+**Fichiers téléversés** (`medias.py`) : jamais servis en libre accès. Une app qui stocke des fichiers déclare le préfixe de son `upload_to` et les rôles autorisés (`enregistrer_media("demandes_depense", permissions.X)` dans `AppConfig.ready()`) ; `/medias/<chemin>` (`MediaProtegeView`) exige la connexion et le rôle, refuse les chemins avec `..`, et ne sert à personne un préfixe non déclaré. Seuls les PDF et images courantes s'affichent dans le navigateur, le reste (HTML, SVG...) est téléchargé. En production (`MEDIA_ACCEL_REDIRECT`), Django répond `X-Accel-Redirect` et Nginx envoie le fichier depuis `/medias-internes/`, emplacement `internal` : Django ne lit pas le fichier. `MEDIA_URL` vaut `medias/`, donc `champ.url` pointe déjà vers cette vue.
+
+**Erreurs métier** (`exceptions.ErreurMetier`, `middleware.ErreurMetierMiddleware`) : une opération peut échouer à cause d'une autre app (plein refusé parce que l'enveloppe de dépense est dépassée) ; l'erreur traverse alors l'écran d'origine, qui ne connaît pas cette famille. Les erreurs métier héritent d'`ErreurMetier` (`BillingError` pour l'instant) et, si l'écran ne les attrape pas, le middleware les transforme en message avec retour à la page d'origine au lieu d'une erreur 500 (l'API a son propre gestionnaire, `apps/api/exceptions.py`). Un GET sans page d'origine n'est pas masqué (pas de boucle de redirections).
+
+**Export Excel** (`xlsx.py`) : `reponse_classeur(nom, feuilles)` fabrique un .xlsx aux **valeurs brutes** (montants en nombres, dates en
+dates) ; un texte commençant par `=` reste du texte (pas de formule injectée). `ExportXlsxMixin` fait d'une vue d'impression de liste
+(`ImpressionListeMixin`) un export Excel de mêmes droits et filtres : `class XExporterXlsxView(ExportXlsxMixin, XImprimerView)`, avec des
+`colonnes` en valeurs brutes. **Tables append-only** (`immuable.py`) : `AppendOnlyQuerySet` (manager qui refuse `update`/`delete` en masse)
+et triggers PostgreSQL (journal d'audit, mouvements de stock). La recherche texte (`search.py`) caste les champs en texte : sur PostgreSQL,
+`LOWER()` refusait un champ `inet` (adresse IP du journal d'audit).
+```
+
+#### `apps/core/exceptions.py`
+
+*7 lignes*
+
+```python
+class ErreurMetier(Exception):
+    """Base des erreurs métier d'une app dont le message est destiné à l'utilisateur.
+
+    Une opération peut échouer à cause d'une autre app (ex. un plein refusé parce que l'enveloppe de
+    dépense est dépassée) : l'erreur traverse alors l'écran d'origine, qui ne connaît pas cette famille
+    d'erreurs. ``ErreurMetierMiddleware`` la transforme en message plutôt qu'en erreur 500.
+    """
 ```
 
 #### `apps/core/graphiques.py`
@@ -879,6 +976,154 @@ def colonnes_groupees(categories, series, *, unite: str = "", entier: bool = Fal
     }
 ```
 
+#### `apps/core/immuable.py`
+
+*69 lignes* — Tables append-only (journal d'audit, journal des mouvements de stock) : protection en profondeur.
+
+```python
+"""Tables append-only (journal d'audit, journal des mouvements de stock) : protection en profondeur.
+
+Une ligne de ces journaux ne se modifie ni ne se supprime jamais. ``save()`` / ``delete()`` du modèle
+refusent déjà, mais ``QuerySet.update()``, ``QuerySet.delete()`` ou du SQL direct les contournaient
+(audit M1-05 / M8-06). Deux protections s'ajoutent :
+
+* :class:`AppendOnlyQuerySet` : le manager du modèle refuse ``update`` / ``delete`` / ``bulk_update`` ;
+* un trigger PostgreSQL ``BEFORE UPDATE OR DELETE`` (migrations ``audit.0002`` et ``inventory.0002``) :
+  même un accès SQL direct à la base lève une erreur. Sans effet sous SQLite (développement, tests).
+
+Purge légale (rétention du journal d'audit : ≥ 5 ans, README de ``audit``) : elle se fait hors application,
+par un administrateur de la base qui désactive explicitement le trigger le temps de l'opération.
+"""
+
+from django.db import models
+
+FONCTION = "interdire_modification_append_only"
+
+
+class AppendOnlyQuerySet(models.QuerySet):
+    """QuerySet qui refuse toute modification ou suppression en masse."""
+
+    def update(self, **kwargs):
+        raise ValueError(f"{self.model.__name__} est append-only : modification interdite.")
+
+    def bulk_update(self, objs, fields, batch_size=None):
+        raise ValueError(f"{self.model.__name__} est append-only : modification interdite.")
+
+    def delete(self):
+        raise ValueError(f"{self.model.__name__} est append-only : suppression interdite.")
+
+
+def poser_triggers(schema_editor, table: str, *, tolere_detachement_utilisateur: bool = False) -> None:
+    """Pose le trigger append-only sur ``table`` (PostgreSQL seulement, sinon ne fait rien).
+
+    ``tolere_detachement_utilisateur`` : le journal d'audit garde ``on_delete=SET_NULL`` sur l'utilisateur ;
+    le seul UPDATE admis est donc celui qui passe ``utilisateur_id`` à NULL sans toucher à rien d'autre.
+    """
+    if schema_editor.connection.vendor != "postgresql":
+        return
+    schema_editor.execute(
+        f"""
+        CREATE OR REPLACE FUNCTION {FONCTION}() RETURNS trigger AS $fn$
+        BEGIN
+            IF TG_OP = 'DELETE' THEN
+                RAISE EXCEPTION '% est append-only : suppression interdite', TG_TABLE_NAME;
+            END IF;
+            IF TG_OP = 'UPDATE' AND TG_ARGV[0] = 'detachement' AND NEW.utilisateur_id IS NULL
+               AND (to_jsonb(NEW) - 'utilisateur_id') = (to_jsonb(OLD) - 'utilisateur_id') THEN
+                RETURN NEW;
+            END IF;
+            RAISE EXCEPTION '% est append-only : modification interdite', TG_TABLE_NAME;
+        END;
+        $fn$ LANGUAGE plpgsql;
+        """,
+        params=None,  # le « % » de RAISE EXCEPTION n'est pas un paramètre à substituer
+    )
+    argument = "detachement" if tolere_detachement_utilisateur else "strict"
+    schema_editor.execute(f"DROP TRIGGER IF EXISTS append_only ON {table};")
+    schema_editor.execute(
+        f"CREATE TRIGGER append_only BEFORE UPDATE OR DELETE ON {table} "
+        f"FOR EACH ROW EXECUTE FUNCTION {FONCTION}('{argument}');"
+    )
+
+
+def retirer_triggers(schema_editor, table: str) -> None:
+    if schema_editor.connection.vendor != "postgresql":
+        return
+    schema_editor.execute(f"DROP TRIGGER IF EXISTS append_only ON {table};")
+```
+
+#### `apps/core/medias.py`
+
+*65 lignes* — Fichiers téléversés (devis, justificatifs) : servis par l'application, jamais en accès libre.
+
+```python
+"""Fichiers téléversés (devis, justificatifs) : servis par l'application, jamais en accès libre.
+
+Chaque app qui stocke des fichiers déclare le préfixe de son ``upload_to`` et les rôles autorisés à les
+lire (``enregistrer_media``). Un fichier dont le préfixe n'est déclaré nulle part n'est servi à personne.
+En production, Django ne lit pas le fichier : il répond ``X-Accel-Redirect`` et Nginx l'envoie depuis un
+emplacement interne (``MEDIA_ACCEL_REDIRECT``), inaccessible directement depuis l'extérieur.
+"""
+
+from __future__ import annotations
+
+import mimetypes
+from collections.abc import Iterable
+
+from django.conf import settings
+from django.contrib.auth.mixins import LoginRequiredMixin
+from django.core.exceptions import SuspiciousFileOperation
+from django.http import FileResponse, Http404, HttpResponse
+from django.utils._os import safe_join
+from django.views import View
+
+_PREFIXES: dict[str, frozenset[str]] = {}
+
+# Types affichés dans le navigateur ; tout le reste (HTML, SVG...) est téléchargé, jamais exécuté.
+TYPES_AFFICHABLES = frozenset({"application/pdf", "image/png", "image/jpeg", "image/gif", "image/webp"})
+
+
+def enregistrer_media(prefixe: str, roles: Iterable[str]) -> None:
+    _PREFIXES[prefixe.strip("/") + "/"] = frozenset(roles)
+
+
+class MediaProtegeView(LoginRequiredMixin, View):
+    http_method_names = ["get"]
+
+    def get(self, request, chemin):
+        # Le rôle se contrôle sur le préfixe : un « .. » permettrait d'en sortir tout en restant dans MEDIA_ROOT.
+        segments = chemin.replace("\\", "/").split("/")
+        if "\0" in chemin or any(s in ("", ".", "..") for s in segments):
+            raise Http404
+        roles = next((r for prefixe, r in _PREFIXES.items() if chemin.startswith(prefixe)), None)
+        if roles is None or request.user.role_effectif not in roles:
+            raise Http404
+        try:
+            fichier = safe_join(settings.MEDIA_ROOT, chemin)
+        except SuspiciousFileOperation:
+            raise Http404
+        type_mime = mimetypes.guess_type(fichier)[0] or "application/octet-stream"
+        affichable = type_mime in TYPES_AFFICHABLES
+        if getattr(settings, "MEDIA_ACCEL_REDIRECT", False):
+            reponse = HttpResponse(content_type=type_mime)
+            reponse["X-Accel-Redirect"] = "/medias-internes/" + chemin
+            reponse["Content-Disposition"] = _disposition(affichable, chemin)
+        else:
+            try:
+                reponse = FileResponse(open(fichier, "rb"), content_type=type_mime)
+            except (FileNotFoundError, IsADirectoryError):
+                raise Http404
+            reponse["Content-Disposition"] = _disposition(affichable, chemin)
+        reponse["X-Content-Type-Options"] = "nosniff"
+        reponse["Cache-Control"] = "private, no-store"
+        return reponse
+
+
+def _disposition(affichable: bool, chemin: str) -> str:
+    nom = chemin.rsplit("/", 1)[-1].replace('"', "")
+    return f'{"inline" if affichable else "attachment"}; filename="{nom}"'
+```
+
 #### `apps/core/rapports.py`
 
 *35 lignes* — Aides communes aux rapports imprimables (trésorerie, tableau de bord, listes, journal d'audit).
@@ -919,6 +1164,149 @@ def contexte_rapport(request, *, titre: str, sous_titre: str = "") -> dict:
         "genere_par": utilisateur.get_full_name() or utilisateur.get_username(),
         "genere_le": timezone.now(),
     }
+```
+
+#### `apps/core/xlsx.py`
+
+*136 lignes* — Export Excel (.xlsx) des listes et des rapports.
+
+```python
+"""Export Excel (.xlsx) des listes et des rapports.
+
+Le même contenu que l'impression, mais exploitable dans un tableur : les montants sont de vrais nombres
+(totaux, tris et filtres fonctionnent) et les dates de vraies dates, pas du texte formaté.
+
+Une feuille = un dictionnaire ``{"titre", "sous_titre", "entetes", "lignes", "pied"}`` (``sous_titre`` et ``pied``
+facultatifs ; ``pied`` est une ligne de totaux en gras). :func:`reponse_classeur` en fait un téléchargement.
+
+Un texte qui commence par ``=`` est écrit comme du texte, jamais comme une formule : un libellé saisi par un
+utilisateur ne doit pas pouvoir s'exécuter à l'ouverture du fichier.
+"""
+
+from __future__ import annotations
+
+from datetime import date, datetime
+from decimal import Decimal
+from io import BytesIO
+
+from django.http import HttpResponse
+from django.utils import timezone
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.utils import get_column_letter
+
+TYPE_XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+FORMAT_MONTANT = "#,##0.00"
+FORMAT_DATE = "dd/mm/yyyy"
+FORMAT_DATE_HEURE = "dd/mm/yyyy hh:mm"
+LARGEUR_MAX = 60
+INTERDITS_TITRE = set("[]:*?/\\")
+
+
+def _ecrire(cellule, valeur) -> None:
+    if isinstance(valeur, bool):
+        cellule.value = "Oui" if valeur else "Non"
+    elif isinstance(valeur, Decimal):
+        cellule.value = float(valeur)
+        cellule.number_format = FORMAT_MONTANT
+    elif isinstance(valeur, datetime):
+        if timezone.is_aware(valeur):
+            valeur = timezone.localtime(valeur).replace(tzinfo=None)
+        cellule.value = valeur
+        cellule.number_format = FORMAT_DATE_HEURE
+    elif isinstance(valeur, date):
+        cellule.value = valeur
+        cellule.number_format = FORMAT_DATE
+    elif isinstance(valeur, str):
+        cellule.value = valeur
+        if valeur.startswith("="):
+            cellule.data_type = "s"  # du texte, pas une formule
+    else:
+        cellule.value = valeur
+
+
+def _titre_feuille(titre: str, deja: set[str]) -> str:
+    propre = "".join("-" if c in INTERDITS_TITRE else c for c in titre).strip()[:31] or "Feuille"
+    candidat, n = propre, 2
+    while candidat.lower() in deja:
+        suffixe = f" ({n})"
+        candidat = propre[: 31 - len(suffixe)] + suffixe
+        n += 1
+    deja.add(candidat.lower())
+    return candidat
+
+
+def classeur(feuilles: list[dict]) -> bytes:
+    """Classeur Excel (octets) : une feuille par élément de ``feuilles``."""
+    wb = Workbook()
+    wb.remove(wb.active)
+    noms: set[str] = set()
+    gras = Font(bold=True)
+    fond_entete = PatternFill("solid", fgColor="E2E8F0")
+    for donnees in feuilles:
+        feuille = wb.create_sheet(_titre_feuille(donnees["titre"], noms))
+        ligne = 1
+        feuille.cell(row=ligne, column=1, value=donnees["titre"]).font = Font(bold=True, size=14)
+        ligne += 1
+        if donnees.get("sous_titre"):
+            _ecrire(feuille.cell(row=ligne, column=1), donnees["sous_titre"])
+            ligne += 1
+        ligne += 1
+        ligne_entetes = ligne
+        for colonne, entete in enumerate(donnees["entetes"], start=1):
+            cellule = feuille.cell(row=ligne, column=colonne, value=entete)
+            cellule.font, cellule.fill = gras, fond_entete
+            cellule.alignment = Alignment(wrap_text=True, vertical="center")
+        for valeurs in donnees["lignes"]:
+            ligne += 1
+            for colonne, valeur in enumerate(valeurs, start=1):
+                _ecrire(feuille.cell(row=ligne, column=colonne), valeur)
+        if donnees.get("pied"):
+            ligne += 1
+            for colonne, valeur in enumerate(donnees["pied"], start=1):
+                cellule = feuille.cell(row=ligne, column=colonne)
+                _ecrire(cellule, valeur)
+                cellule.font = gras
+        feuille.freeze_panes = feuille.cell(row=ligne_entetes + 1, column=1)
+        for colonne, entete in enumerate(donnees["entetes"], start=1):
+            plus_long = max(
+                [len(str(entete))]
+                + [len(str(v)) for v in (ligne_[colonne - 1] for ligne_ in donnees["lignes"] if len(ligne_) >= colonne)]
+            )
+            feuille.column_dimensions[get_column_letter(colonne)].width = min(max(plus_long + 2, 10), LARGEUR_MAX)
+    tampon = BytesIO()
+    wb.save(tampon)
+    return tampon.getvalue()
+
+
+def reponse_classeur(nom_fichier: str, feuilles: list[dict]) -> HttpResponse:
+    """Téléchargement d'un classeur ; ``nom_fichier`` sans extension (la date du jour y est ajoutée)."""
+    reponse = HttpResponse(classeur(feuilles), content_type=TYPE_XLSX)
+    reponse["Content-Disposition"] = f'attachment; filename="{nom_fichier}_{timezone.localdate():%Y-%m-%d}.xlsx"'
+    return reponse
+
+
+class ExportXlsxMixin:
+    """Fait d'une vue d'impression de liste (:class:`apps.core.views.ImpressionListeMixin`) un export Excel.
+
+    ``class XExporterXlsxView(ExportXlsxMixin, XImprimerView)`` : mêmes droits, mêmes filtres, mêmes lignes
+    que l'impression. ``colonnes`` y est redéclaré avec des **valeurs brutes** (nombres, dates) au lieu du texte
+    formaté de l'impression ; ``nom_fichier`` donne le nom du téléchargement.
+    """
+
+    nom_fichier = "export"
+    limite_impression = 10000  # un tableur supporte bien plus qu'une page imprimée
+
+    def render_to_response(self, context, **kwargs):
+        feuille = {
+            "titre": self.get_titre_impression(),
+            "sous_titre": self.get_sous_titre_impression(),
+            "entetes": context["entetes"],
+            "lignes": context["lignes"],
+        }
+        if context.get("tronque"):
+            feuille["pied"] = [f"Export limité aux {self.limite_impression} premières lignes : affinez les filtres."]
+        return reponse_classeur(self.nom_fichier, [feuille])
 ```
 
 #### `apps/core/tests/test_echeance.py`
@@ -1296,6 +1684,64 @@ def test_au_dela_de_9999_le_numero_s_allonge_sans_collision():
     assert prochain_numero("MIS", 2026) == "MIS-2026-10000"
 ```
 
+#### `apps/core/tests/test_secret_key_prod.py`
+
+*51 lignes* — Le réglage de production refuse de démarrer avec une SECRET_KEY publique (audit : SECRET_KEY par défaut).
+
+```python
+"""Le réglage de production refuse de démarrer avec une SECRET_KEY publique (audit : SECRET_KEY par défaut)."""
+
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+RACINE = Path(__file__).resolve().parents[3]
+CLE_SURE = "k" * 10 + "Z" * 10 + "9" * 10 + "!" * 10 + "abcdef"
+
+
+def _importer_prod(**variables):
+    env = {
+        k: v for k, v in os.environ.items() if k not in ("SECRET_KEY", "DJANGO_SETTINGS_MODULE")
+    }
+    env.update(
+        ALLOWED_HOSTS="erp.example.org",
+        DATABASE_URL="postgres://u:p@localhost:5432/d",
+        REDIS_URL="redis://localhost:6379/0",
+        **variables,
+    )
+    return subprocess.run(
+        [sys.executable, "-c", "import config.settings.prod"],
+        cwd=RACINE, env=env, capture_output=True, text=True, timeout=60,
+    )
+
+
+@pytest.mark.parametrize(
+    "cle",
+    ["django-insecure-change-me-in-env", "django-insecure-autre", "change-me", "trop-courte"],
+)
+def test_la_production_refuse_une_cle_par_defaut_ou_trop_courte(cle):
+    resultat = _importer_prod(SECRET_KEY=cle)
+
+    assert resultat.returncode != 0
+    assert "SECRET_KEY" in resultat.stderr and "ImproperlyConfigured" in resultat.stderr
+
+
+def test_la_production_refuse_l_absence_de_cle():
+    resultat = _importer_prod()  # ni .env ni variable : la valeur par défaut du dépôt s'applique
+
+    assert resultat.returncode != 0
+    assert "ImproperlyConfigured" in resultat.stderr
+
+
+def test_la_production_demarre_avec_une_vraie_cle():
+    resultat = _importer_prod(SECRET_KEY=CLE_SURE)
+
+    assert resultat.returncode == 0, resultat.stderr
+```
+
 #### `apps/core/tests/test_sections.py`
 
 *64 lignes*
@@ -1400,10 +1846,10 @@ python manage.py check
 ```
 
 ```bash
-python -m pytest apps/core/tests/test_echeance.py apps/core/tests/test_formats.py apps/core/tests/test_graphiques.py apps/core/tests/test_models.py apps/core/tests/test_numerotation.py apps/core/tests/test_sections.py -q --no-cov
+python -m pytest apps/core/tests/test_echeance.py apps/core/tests/test_formats.py apps/core/tests/test_graphiques.py apps/core/tests/test_models.py apps/core/tests/test_numerotation.py apps/core/tests/test_secret_key_prod.py apps/core/tests/test_sections.py -q --no-cov
 ```
 
-**Résultat attendu :** `57 passed, 3 failed` (pour les 6 fichier(s) de tests présentés dans ce chapitre).
+**Résultat attendu :** `63 passed, 3 failed` (pour les 7 fichier(s) de tests présentés dans ce chapitre).
 
 Des tests échouent à ce stade, **c'est normal** : ils vérifient des écrans qui n'existent pas encore (par exemple la page d'accueil). Ils passeront au chapitre indiqué :
 

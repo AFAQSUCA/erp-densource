@@ -1,6 +1,6 @@
 # Chapitre 8 — Les camions : l'app fleet
 
-> 14 fichier(s) dans ce chapitre, 1191 lignes de code.
+> 14 fichier(s) dans ce chapitre, 1244 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -16,6 +16,11 @@
 
 Et quatre **documents** par camion (carte grise, assurance, visite technique, patente), avec une **alerte 30
 jours avant** l'expiration.
+
+**Le compteur ne recule jamais** (`enregistrer_kilometrage`) : une faute de frappe qui le gonfle le fige donc pour toujours.
+Deux parades : `ECART_KM_MAX` (5 000 km) borne la distance crédible entre deux relevés — `fuel` et `missions` s'en servent — et
+`corriger_kilometrage` permet à l'**ADMIN** de rattraper une faute, avec un **motif obligatoire** et une trace au journal d'audit
+(l'écran est présenté au chapitre 21).
 
 ## Prérequis
 
@@ -181,7 +186,7 @@ class DocumentReglementaire(BaseModel):
 
 #### `apps/fleet/exceptions.py`
 
-*18 lignes*
+*22 lignes*
 
 ```python
 class FlotteError(Exception):
@@ -200,13 +205,17 @@ class KilometrageInvalide(FlotteError):
     """Le compteur d'un camion ne peut pas reculer."""
 
 
+class ActionNonAutorisee(FlotteError):
+    """L'utilisateur n'a pas le droit de faire cette action sur la flotte."""
+
+
 class DocumentInvalide(FlotteError):
     """Dates d'un document réglementaire incohérentes."""
 ```
 
 #### `apps/fleet/services.py`
 
-*338 lignes* — Logique métier de la flotte — conventions.md §2.
+*379 lignes* — Logique métier de la flotte — conventions.md §2.
 
 ```python
 """Logique métier de la flotte — conventions.md §2."""
@@ -221,13 +230,17 @@ from django.db import transaction
 from django.db.models import Count, QuerySet
 from django.utils import timezone
 
+from apps.audit import services as audit_services
+from apps.audit.models import ActionChoices
 from apps.core.constants import DELAI_ALERTE_JOURS
 from apps.core.search import filtrer_par_texte
 from apps.core.services import etat_echeance
 
 from apps.drivers.models import Chauffeur
 
+from . import permissions
 from .exceptions import (
+    ActionNonAutorisee,
     DocumentInvalide,
     DoublonVehicule,
     KilometrageInvalide,
@@ -299,12 +312,49 @@ def liberer_apres_mission(vehicule: Vehicule) -> Vehicule:
     return vehicule
 
 
+# Distance maximale crédible entre deux relevés du compteur d'un même camion (deux pleins, ou le départ et
+# l'arrivée d'une mission) : au-delà, c'est une faute de frappe (un chiffre en trop) plutôt qu'un trajet.
+# Le compteur ne pouvant jamais reculer, une valeur trop haute le fige définitivement (audit M5-10 / M6-09).
+ECART_KM_MAX = 5000
+
+
+def distance_plausible(depuis_km: int, jusqu_a_km: int) -> bool:
+    """Faux si la distance parcourue dépasse :data:`ECART_KM_MAX`."""
+    return jusqu_a_km - depuis_km <= ECART_KM_MAX
+
+
 def enregistrer_kilometrage(vehicule: Vehicule, kilometrage: int) -> Vehicule:
     """Met à jour le compteur ; il ne peut jamais reculer (cahier-des-charges.md:139)."""
     if kilometrage < vehicule.kilometrage:
         raise ValueError("Le kilométrage ne peut pas diminuer.")
     vehicule.kilometrage = kilometrage
     vehicule.save(update_fields=["kilometrage", "updated_at"])
+    return vehicule
+
+
+def corriger_kilometrage(vehicule: Vehicule, acteur, *, kilometrage: int, motif: str) -> Vehicule:
+    """Corrige le compteur d'un camion, y compris à la baisse (:func:`enregistrer_kilometrage` ne recule jamais).
+
+    Pour rattraper une faute de frappe qui l'a gonflé (un chiffre en trop sur un plein ou un retour de mission) : sans
+    cela, la valeur fausse sert ensuite de plancher à tous les relevés suivants. Réservé à l'ADMIN, motif obligatoire,
+    tracé dans le journal d'audit (ancienne et nouvelle valeur, motif, auteur)."""
+    if acteur.role_effectif not in permissions.CORRECTION_COMPTEUR:
+        raise ActionNonAutorisee("Seul l'administrateur peut corriger le compteur d'un camion.")
+    motif = motif.strip()
+    if not motif:
+        raise KilometrageInvalide("Le motif de la correction est obligatoire.")
+    if kilometrage < 0:
+        raise KilometrageInvalide("Le kilométrage ne peut pas être négatif.")
+    ancien = vehicule.kilometrage
+    if kilometrage == ancien:
+        raise KilometrageInvalide("Ce kilométrage est déjà celui du compteur.")
+    vehicule.kilometrage = kilometrage
+    vehicule.save(update_fields=["kilometrage", "updated_at"])
+    audit_services.log_action(
+        action=ActionChoices.UPDATE, module="PARC_AUTO", entite="Vehicule", entite_id=vehicule.pk, utilisateur=acteur,
+        ancienne_valeur={"correction_kilometrage": ancien},
+        nouvelle_valeur={"correction_kilometrage": kilometrage, "motif": motif},
+    )
     return vehicule
 
 
@@ -562,7 +612,7 @@ Lisez dans cet ordre :
 
 #### `apps/fleet/permissions.py`
 
-*12 lignes* — Qui peut consulter et modifier la flotte.
+*15 lignes* — Qui peut consulter et modifier la flotte.
 
 ```python
 """Qui peut consulter et modifier la flotte.
@@ -577,6 +627,9 @@ from apps.accounts.models import Role
 
 CONSULTATION = frozenset({Role.ADMIN, Role.DIRECTION, Role.PARCAUTO})
 MODIFICATION = frozenset({Role.ADMIN, Role.DIRECTION, Role.PARCAUTO})
+# Corriger le compteur d'un camion (faute de frappe qui l'a gonflé : il ne recule jamais autrement) : l'ADMIN
+# seulement, motif obligatoire, tracé dans le journal d'audit.
+CORRECTION_COMPTEUR = frozenset({Role.ADMIN})
 ```
 
 #### `apps/fleet/sections.py`
@@ -694,7 +747,7 @@ class DocumentReglementaireFactory(factory.django.DjangoModelFactory):
 
 #### `apps/fleet/README.md`
 
-*24 lignes* — fleet
+*29 lignes* — fleet
 
 ```markdown
 # fleet
@@ -721,6 +774,11 @@ La fiche d'un camion accueille des blocs enregistrés par d'autres apps
 d'immobilisation / remise en service.
 
 Rapport imprimable de la flotte (bouton « Imprimer » sur la liste, mêmes filtres) : voir `apps/core/README.md` (`ImpressionListeMixin`).
+
+**Compteur** : `enregistrer_kilometrage` ne recule jamais. Une faute de frappe qui l'a gonflé se rattrape par
+`corriger_kilometrage` (écran du camion, « Corriger le compteur ») : ADMIN seulement, motif obligatoire, tracé au
+journal d'audit (ancienne et nouvelle valeur, motif, auteur). Les relevés (plein, retour de mission) sont par ailleurs
+bornés à `ECART_KM_MAX` (5 000 km) au-dessus du précédent. La correction d'un plein déjà enregistré n'existe pas encore.
 ```
 
 #### `apps/fleet/tests/test_fiche.py`

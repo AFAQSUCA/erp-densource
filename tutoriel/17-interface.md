@@ -1,6 +1,6 @@
 # Chapitre 17 — Le socle de l'interface : gabarits, styles, connexion, notifications
 
-> 54 fichier(s) dans ce chapitre, 2421 lignes de code.
+> 60 fichier(s) dans ce chapitre, 2976 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -16,6 +16,9 @@ même les écrans métier.
 | **Double authentification** | pages d'activation (QR code), de vérification et de codes de secours |
 | **Notifications** | la liste et la cloche de l'en-tête |
 | Page d'accueil **provisoire** | le temps que le tableau de bord (chapitre 28) existe |
+
+L'interface comprend aussi l'écran **Utilisateurs** (`/utilisateurs/`, réservé à l'ADMIN) : liste filtrable, création, modification,
+activation/désactivation des comptes, par-dessus `accounts/services.py` (chapitre 3). Ses gabarits sont `templates/accounts/utilisateur_*.html`.
 
 ## Prérequis
 
@@ -98,7 +101,7 @@ les fichiers produits (`static/css/tailwind.css`, `static/vendor/…`) suffisent
 
 #### `frontend/package.json`
 
-*15 lignes*
+*16 lignes*
 
 ```json
 {
@@ -113,6 +116,7 @@ les fichiers produits (`static/css/tailwind.css`, `static/vendor/…`) suffisent
   "devDependencies": {
     "@fortawesome/fontawesome-free": "6.5.2",
     "alpinejs": "3.14.1",
+    "jsqr": "^1.4.0",
     "tailwindcss": "3.4.17"
   }
 }
@@ -242,10 +246,10 @@ classe par morceaux (`"bg-" + couleur`) : Tailwind ne le verrait pas.
 
 #### `frontend/vendor.js`
 
-*21 lignes*
+*24 lignes*
 
 ```javascript
-// Copie dans static/vendor/ les fichiers des bibliothèques (Alpine.js, Font Awesome) : ils sont
+// Copie dans static/vendor/ les fichiers des bibliothèques (Alpine.js, Font Awesome, jsQR) : ils sont
 // servis par l'application elle-même, sans CDN. À relancer après une mise à jour de version.
 const fs = require("fs");
 const path = require("path");
@@ -266,6 +270,9 @@ for (const police of ["fa-solid-900.woff2", "fa-regular-400.woff2"]) {
   copier(path.join(fa, "webfonts", police), path.join(racine, "fontawesome/webfonts", police));
 }
 copier(path.join(fa, "LICENSE.txt"), path.join(racine, "fontawesome/LICENSE.txt"));
+// jsQR : lecture d'un code QR dans une image, pour les navigateurs sans BarcodeDetector (Safari, Firefox).
+copier(path.join(modules, "jsqr/dist/jsQR.js"), path.join(racine, "jsqr/jsQR.js"));
+copier(path.join(modules, "jsqr/LICENSE"), path.join(racine, "jsqr/LICENSE"));
 ```
 
 #### `frontend/.gitignore`
@@ -755,12 +762,14 @@ même de vérifier le mot de passe) et la **session de 15 minutes** pour les cha
 
 #### `apps/accounts/forms.py`
 
-*24 lignes*
+*66 lignes*
 
 ```python
 from django import forms
 
 from apps.core.forms import StyleTailwindMixin
+
+from .models import Role
 
 
 class CodeMFAForm(StyleTailwindMixin, forms.Form):
@@ -782,6 +791,46 @@ class CodeMFAForm(StyleTailwindMixin, forms.Form):
 
     def clean_code(self):
         return self.cleaned_data["code"].strip()
+
+
+class _CoordonneesForm(StyleTailwindMixin, forms.Form):
+    first_name = forms.CharField(label="Prénom", max_length=150)
+    last_name = forms.CharField(label="Nom", max_length=150)
+    email = forms.EmailField(label="Adresse e-mail", help_text="Sert à réinitialiser le mot de passe.")
+    telephone = forms.CharField(label="Téléphone", max_length=20, required=False)
+    role = forms.ChoiceField(label="Rôle", choices=Role.choices)
+
+
+class UtilisateurCreationForm(_CoordonneesForm):
+    """Nouveau compte : identifiant, coordonnées, rôle et mot de passe initial (à changer par la personne)."""
+
+    username = forms.CharField(label="Identifiant de connexion", max_length=150)
+    password1 = forms.CharField(
+        label="Mot de passe initial", strip=False, widget=forms.PasswordInput(attrs={"autocomplete": "new-password"}),
+        help_text="10 caractères au moins, ni trop courant, ni uniquement des chiffres, ni proche de l'identifiant.",
+    )
+    password2 = forms.CharField(
+        label="Confirmer le mot de passe", strip=False, widget=forms.PasswordInput(attrs={"autocomplete": "new-password"})
+    )
+    field_order = ["username", "first_name", "last_name", "email", "telephone", "role", "password1", "password2"]
+
+    def clean(self):
+        donnees = super().clean()
+        if donnees.get("password1") and donnees.get("password2") and donnees["password1"] != donnees["password2"]:
+            self.add_error("password2", "Les deux mots de passe ne correspondent pas.")
+        return donnees
+
+
+class UtilisateurModificationForm(_CoordonneesForm):
+    """Coordonnées et rôle d'un compte existant (l'identifiant et le mot de passe ne se changent pas ici)."""
+
+
+class FiltreUtilisateursForm(StyleTailwindMixin, forms.Form):
+    q = forms.CharField(label="Recherche", required=False)
+    role = forms.ChoiceField(label="Rôle", choices=[("", "Tous les rôles")] + list(Role.choices), required=False)
+    actif = forms.ChoiceField(
+        label="Statut", choices=[("", "Tous"), ("oui", "Actifs"), ("non", "Désactivés")], required=False
+    )
 ```
 
 #### `apps/accounts/views_mfa.py`
@@ -1003,12 +1052,12 @@ code + codes de secours affichés **une seule fois**), **QR** (l'image, jamais m
 
 #### `apps/accounts/urls.py`
 
-*32 lignes*
+*41 lignes*
 
 ```python
 from django.urls import path
 
-from . import views, views_mfa
+from . import views, views_mfa, views_utilisateurs
 
 app_name = "accounts"
 
@@ -1020,6 +1069,15 @@ urlpatterns = [
     path("mfa/activer/", views_mfa.MFAActiverView.as_view(), name="mfa_activer"),
     path("mfa/qr/", views_mfa.MFAQrView.as_view(), name="mfa_qr"),
     path("mfa/codes/", views_mfa.MFACodesView.as_view(), name="mfa_codes"),
+    # Gestion des comptes (ADMIN).
+    path("utilisateurs/", views_utilisateurs.UtilisateurListView.as_view(), name="utilisateurs"),
+    path("utilisateurs/nouveau/", views_utilisateurs.UtilisateurCreateView.as_view(), name="utilisateur_nouveau"),
+    path("utilisateurs/<int:pk>/modifier/", views_utilisateurs.UtilisateurUpdateView.as_view(), name="utilisateur_modifier"),
+    path(
+        "utilisateurs/<int:pk>/activation/",
+        views_utilisateurs.UtilisateurActivationView.as_view(),
+        name="utilisateur_activation",
+    ),
     # Mot de passe oublié : ouvert à tous, avant connexion.
     path("mot-de-passe/", views.ReinitialiserMotDePasseView.as_view(), name="password_reset"),
     path(
@@ -1624,7 +1682,7 @@ def notifications(request):
 
 #### `apps/audit/views.py`
 
-*97 lignes* — Écran du journal d'audit : liste filtrable, export CSV, rapport imprimable — ADMIN et DIRECTION
+*117 lignes* — Écran du journal d'audit : liste filtrable, export CSV, rapport imprimable — ADMIN et DIRECTION
 
 ```python
 """Écran du journal d'audit : liste filtrable, export CSV, rapport imprimable — ADMIN et DIRECTION
@@ -1633,6 +1691,7 @@ def notifications(request):
 """
 
 import csv
+import json
 
 from django.http import HttpResponse
 from django.views.generic import ListView
@@ -1674,6 +1733,25 @@ COLONNES_EXPORT = (
     ("Action", "get_action_display"), ("Module", "module"), ("Entité", "entite"),
     ("ID entité", lambda e: e.entite_id if e.entite_id is not None else "—"),
     ("Statut", "get_statut_display"), ("Adresse IP", lambda e: e.adresse_ip or "—"),
+)
+
+
+def _json(valeur):
+    return json.dumps(valeur, ensure_ascii=False, sort_keys=True, default=str) if valeur is not None else ""
+
+
+def _texte_sur(valeur: str) -> str:
+    """Neutralise l'injection de formule d'un tableur : un texte qui commence par = + - @ s'exécuterait à
+    l'ouverture dans Excel (le user-agent est fourni par le client)."""
+    return f"'{valeur}" if valeur[:1] in ("=", "+", "-", "@", "\t", "\r") else valeur
+
+
+# Le CSV sert aux audits externes : en plus des colonnes de l'écran, ce qui a réellement changé (anciennes et
+# nouvelles valeurs) et le navigateur utilisé. Le rapport imprimable garde les colonnes de l'écran.
+COLONNES_CSV = COLONNES_EXPORT + (
+    ("Ancienne valeur", lambda e: _texte_sur(_json(e.ancienne_valeur))),
+    ("Nouvelle valeur", lambda e: _texte_sur(_json(e.nouvelle_valeur))),
+    ("User-agent", lambda e: _texte_sur(e.user_agent)),
 )
 
 
@@ -1720,9 +1798,9 @@ class JournalExporterCsvView(RoleRequiredMixin, ListView):
         reponse["Content-Disposition"] = 'attachment; filename="journal_audit.csv"'
         reponse.write("﻿")  # BOM : Excel ouvre l'UTF-8 sans le déformer
         redacteur = csv.writer(reponse, delimiter=";")
-        redacteur.writerow([libelle for libelle, _ in COLONNES_EXPORT])
+        redacteur.writerow([libelle for libelle, _ in COLONNES_CSV])
         for entree in self.get_queryset():
-            redacteur.writerow([ImpressionListeMixin._valeur(entree, cle) for _, cle in COLONNES_EXPORT])
+            redacteur.writerow([ImpressionListeMixin._valeur(entree, cle) for _, cle in COLONNES_CSV])
         return reponse
 ```
 
@@ -1760,6 +1838,129 @@ touch apps/core/templatetags/__init__.py
 ```
 
 > Sous PowerShell, `mkdir -p` s'écrit `New-Item -ItemType Directory -Force <dossier>` et `touch fichier` s'écrit `New-Item -ItemType File -Force fichier`. Vous pouvez aussi créer ces fichiers avec votre éditeur.
+
+#### `templates/accounts/utilisateur_form.html`
+
+*30 lignes*
+
+```django
+{% extends "base.html" %}
+{% block titre %}{% if compte %}Modifier {{ compte.username }}{% else %}Nouveau compte{% endif %}{% endblock %}
+{% block entete %}Administration{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-2xl">
+  <nav aria-label="Fil d'Ariane" class="text-sm text-slate-600">
+    <a href="{% url 'accounts:utilisateurs' %}" class="underline-offset-2 hover:underline">Utilisateurs</a>
+    <span aria-hidden="true">/</span> {% if compte %}{{ compte.username }}{% else %}Nouveau compte{% endif %}
+  </nav>
+  <h1 class="mt-2 text-2xl font-bold text-slate-900">{% if compte %}Modifier {{ compte.username }}{% else %}Nouveau compte{% endif %}</h1>
+  {% if not compte %}
+    <p class="mt-1 text-sm text-slate-600">La personne se connecte avec l'identifiant et le mot de passe initial ci-dessous ; elle peut ensuite le changer avec « Mot de passe oublié ». Pour les rôles Administrateur et Direction, la double authentification est demandée à la première connexion.</p>
+  {% endif %}
+
+  <form method="post" novalidate class="mt-6 space-y-4 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+      <div role="alert" class="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">{% for erreur in form.non_field_errors %}<p>{{ erreur }}</p>{% endfor %}</div>
+    {% endif %}
+    {% for champ in form %}
+      {% include "components/_champ.html" with champ=champ %}
+    {% endfor %}
+    <div class="flex items-center justify-end gap-3 border-t border-slate-100 pt-5">
+      <a href="{% url 'accounts:utilisateurs' %}" class="rounded-lg px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Annuler</a>
+      <button type="submit" class="rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">{% if compte %}Enregistrer{% else %}Créer le compte{% endif %}</button>
+    </div>
+  </form>
+</div>
+{% endblock %}
+```
+
+#### `templates/accounts/utilisateur_list.html`
+
+*68 lignes*
+
+```django
+{% extends "base.html" %}
+{% block titre %}Utilisateurs{% endblock %}
+{% block entete %}Administration{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-6xl">
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <div>
+      <h1 class="text-2xl font-bold text-slate-900">Utilisateurs</h1>
+      <p class="mt-1 text-sm text-slate-600">{{ paginator.count|default:0 }} compte{{ paginator.count|pluralize }}. Un compte ne se supprime jamais : on le désactive, son historique reste attribué à son nom.</p>
+    </div>
+    <a href="{% url 'accounts:utilisateur_nouveau' %}" class="inline-flex items-center gap-2 rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">
+      <i class="fa-solid fa-user-plus" aria-hidden="true"></i> Nouveau compte
+    </a>
+  </div>
+
+  <form method="get" class="mt-5 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    {% include "components/_champ.html" with champ=filtre.q %}
+    {% include "components/_champ.html" with champ=filtre.role %}
+    {% include "components/_champ.html" with champ=filtre.actif %}
+    <button type="submit" class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">Filtrer</button>
+  </form>
+
+  <div class="mt-5 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+    <table class="min-w-full divide-y divide-slate-200 text-sm">
+      <caption class="sr-only">Comptes utilisateurs</caption>
+      <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+        <tr>
+          <th scope="col" class="px-4 py-3">Identifiant</th>
+          <th scope="col" class="px-4 py-3">Nom</th>
+          <th scope="col" class="px-4 py-3">Rôle</th>
+          <th scope="col" class="px-4 py-3">Double authentification</th>
+          <th scope="col" class="px-4 py-3">Statut</th>
+          <th scope="col" class="px-4 py-3"><span class="sr-only">Actions</span></th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for c in comptes %}
+          <tr class="hover:bg-slate-50">
+            <td class="whitespace-nowrap px-4 py-3 font-semibold text-slate-900">{{ c.username }}{% if c.pk == moi.pk %} <span class="text-xs font-normal text-slate-600">(vous)</span>{% endif %}</td>
+            <td class="px-4 py-3 text-slate-700">{{ c.get_full_name|default:"—" }}<span class="block text-xs text-slate-600">{{ c.email }}</span></td>
+            <td class="px-4 py-3 text-slate-700">{% if c.is_superuser %}Superutilisateur{% else %}{{ c.get_role_display|default:"—" }}{% endif %}</td>
+            <td class="px-4 py-3 text-slate-700">{% if c.mfa_enabled %}Activée{% else %}—{% endif %}</td>
+            <td class="px-4 py-3">{% if c.is_active %}<span class="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-900">Actif</span>{% else %}<span class="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-semibold text-slate-800">Désactivé</span>{% endif %}</td>
+            <td class="whitespace-nowrap px-4 py-3 text-right">
+              {% if c.is_superuser %}
+                <span class="text-xs text-slate-600">géré en ligne de commande</span>
+              {% else %}
+                <a href="{% url 'accounts:utilisateur_modifier' c.pk %}" class="font-medium text-marque-700 underline-offset-2 hover:underline">Modifier</a>
+                {% if c.pk != moi.pk %}
+                  <form method="post" action="{% url 'accounts:utilisateur_activation' c.pk %}" class="ml-3 inline" data-confirm="{% if c.is_active %}Désactiver ce compte ? La personne ne pourra plus se connecter.{% else %}Réactiver ce compte ?{% endif %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="actif" value="{% if c.is_active %}non{% else %}oui{% endif %}">
+                    <button type="submit" class="font-medium text-red-800 underline-offset-2 hover:underline">{% if c.is_active %}Désactiver{% else %}Réactiver{% endif %}</button>
+                  </form>
+                {% endif %}
+              {% endif %}
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" class="px-4 py-8 text-center text-slate-600">Aucun compte ne correspond.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% include "components/_pagination.html" %}
+  </div>
+</div>
+{% endblock %}
+```
+
+#### `templates/components/_bouton_xlsx.html`
+
+*4 lignes*
+
+```django
+<a href="{{ url }}?{{ request.GET.urlencode }}" download
+   class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+  <i class="fa-solid fa-file-excel" aria-hidden="true"></i> Excel
+</a>
+```
 
 #### `templates/components/_graphique_barres.html`
 
@@ -2218,6 +2419,107 @@ class FiltreJournalForm(StyleTailwindMixin, forms.Form):
         }
 ```
 
+#### `apps/accounts/views_utilisateurs.py`
+
+*94 lignes* — Écran « Utilisateurs » (ADMIN) : liste, création, modification, activation. Les règles sont dans
+
+```python
+"""Écran « Utilisateurs » (ADMIN) : liste, création, modification, activation. Les règles sont dans
+``accounts.services`` ; ces vues n'ajoutent que l'affichage."""
+
+from django.contrib import messages
+from django.shortcuts import get_object_or_404, redirect
+from django.views import View
+from django.views.generic import FormView, ListView
+
+from apps.core.views import PaginationTolerante
+
+from . import permissions, services
+from .forms import FiltreUtilisateursForm, UtilisateurCreationForm, UtilisateurModificationForm
+from .mixins import RoleRequiredMixin
+from .models import User
+
+
+class UtilisateurListView(PaginationTolerante, RoleRequiredMixin, ListView):
+    roles = permissions.GESTION_UTILISATEURS
+    template_name = "accounts/utilisateur_list.html"
+    context_object_name = "comptes"
+    paginate_by = 25
+
+    def get_filtre(self):
+        return FiltreUtilisateursForm(self.request.GET)
+
+    def get_queryset(self):
+        filtre = self.get_filtre()
+        donnees = filtre.cleaned_data if filtre.is_valid() else {}
+        return services.utilisateurs(
+            recherche=donnees.get("q", ""), role=donnees.get("role", ""), actif=donnees.get("actif", "")
+        )
+
+    def get_context_data(self, **kwargs):
+        return super().get_context_data(filtre=self.get_filtre(), moi=self.request.user, **kwargs)
+
+
+class UtilisateurCreateView(RoleRequiredMixin, FormView):
+    roles = permissions.GESTION_UTILISATEURS
+    template_name = "accounts/utilisateur_form.html"
+    form_class = UtilisateurCreationForm
+
+    def form_valid(self, form):
+        try:
+            donnees = dict(form.cleaned_data)
+            donnees["password"] = donnees.pop("password1")
+            donnees.pop("password2")
+            compte = services.creer_utilisateur(self.request.user, **donnees)
+        except services.UtilisateurError as erreur:
+            form.add_error(None, str(erreur))
+            return self.form_invalid(form)
+        messages.success(self.request, f"Compte {compte.username} créé.")
+        return redirect("accounts:utilisateurs")
+
+
+class UtilisateurUpdateView(RoleRequiredMixin, FormView):
+    roles = permissions.GESTION_UTILISATEURS
+    template_name = "accounts/utilisateur_form.html"
+    form_class = UtilisateurModificationForm
+
+    def dispatch(self, request, *args, **kwargs):
+        self.compte = get_object_or_404(User, pk=kwargs["pk"])
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_initial(self):
+        c = self.compte
+        return {"first_name": c.first_name, "last_name": c.last_name, "email": c.email, "telephone": c.telephone, "role": c.role}
+
+    def get_context_data(self, **kwargs):
+        return super().get_context_data(compte=self.compte, **kwargs)
+
+    def form_valid(self, form):
+        try:
+            services.modifier_utilisateur(self.request.user, self.compte, **form.cleaned_data)
+        except services.UtilisateurError as erreur:
+            form.add_error(None, str(erreur))
+            return self.form_invalid(form)
+        messages.success(self.request, f"Compte {self.compte.username} modifié.")
+        return redirect("accounts:utilisateurs")
+
+
+class UtilisateurActivationView(RoleRequiredMixin, View):
+    roles = permissions.GESTION_UTILISATEURS
+    http_method_names = ["post"]
+
+    def post(self, request, pk):
+        compte = get_object_or_404(User, pk=pk)
+        actif = request.POST.get("actif") == "oui"
+        try:
+            services.definir_actif(request.user, compte, actif)
+        except services.UtilisateurError as erreur:
+            messages.error(request, str(erreur))
+        else:
+            messages.success(request, f"Compte {compte.username} {'activé' if actif else 'désactivé'}.")
+        return redirect("accounts:utilisateurs")
+```
+
 #### `apps/audit/urls.py`
 
 *11 lignes*
@@ -2524,6 +2826,215 @@ def test_le_lien_mot_de_passe_oublie_est_sur_la_page_de_connexion(client):
     assert reverse("accounts:password_reset") in reponse.content.decode()
 ```
 
+#### `apps/accounts/tests/test_utilisateurs_ecran.py`
+
+*202 lignes* — Écran « Utilisateurs » (audit M1-02) : l'ADMIN crée, modifie, active et désactive les comptes — jamais un
+
+```python
+"""Écran « Utilisateurs » (audit M1-02) : l'ADMIN crée, modifie, active et désactive les comptes — jamais un
+superutilisateur, jamais soi-même, toujours tracé."""
+
+import pytest
+from django.test import Client
+from django.urls import reverse
+
+from apps.accounts import services
+from apps.accounts.models import Role, User
+from apps.accounts.tests.factories import UserFactory
+from apps.audit.models import ActionChoices, AuditLog
+
+pytestmark = pytest.mark.django_db
+
+MOT_DE_PASSE = "Camion-vert-2026!"
+
+
+def _admin():
+    return UserFactory(role=Role.ADMIN, is_staff=False)
+
+
+def _donnees(**surcharges):
+    donnees = {
+        "username": "awa.kone", "first_name": "Awa", "last_name": "Koné", "email": "awa@densource.ci",
+        "telephone": "+2250700000000", "role": Role.FINANCES, "password1": MOT_DE_PASSE, "password2": MOT_DE_PASSE,
+    }
+    donnees.update(surcharges)
+    return donnees
+
+
+@pytest.fixture
+def admin_client(client):
+    client.force_login(_admin())
+    return client
+
+
+# --- droits ---
+
+
+@pytest.mark.parametrize("role", [Role.DIRECTION, Role.RH, Role.FINANCES, Role.PARCAUTO, Role.CHAUFFEUR])
+def test_seul_l_admin_accede_a_l_ecran_des_utilisateurs(client, role):
+    client.force_login(UserFactory(role=role))
+
+    for nom in ("utilisateurs", "utilisateur_nouveau"):
+        assert client.get(reverse(f"accounts:{nom}")).status_code == 403
+    cible = UserFactory(role=Role.RH)
+    assert client.post(reverse("accounts:utilisateur_activation", args=[cible.pk]), {"actif": "non"}).status_code == 403
+    cible.refresh_from_db()
+    assert cible.is_active
+
+
+def test_le_menu_propose_utilisateurs_a_l_admin_seulement(client):
+    client.force_login(_admin())
+    assert reverse("accounts:utilisateurs") in client.get(reverse("home")).content.decode()
+    client.force_login(UserFactory(role=Role.FINANCES))
+    assert reverse("accounts:utilisateurs") not in client.get(reverse("home")).content.decode()
+
+
+# --- création ---
+
+
+def test_l_admin_cree_un_compte_qui_peut_se_connecter(admin_client):
+    reponse = admin_client.post(reverse("accounts:utilisateur_nouveau"), _donnees(), follow=True)
+
+    compte = User.objects.get(username="awa.kone")
+    assert compte.role == Role.FINANCES and compte.is_active and not compte.is_staff and not compte.is_superuser
+    assert compte.check_password(MOT_DE_PASSE)
+    assert any("créé" in str(m) for m in reponse.context["messages"])
+    assert AuditLog.objects.filter(entite="User", entite_id=compte.pk, action=ActionChoices.CREATE).exists()
+
+
+def test_le_mot_de_passe_n_est_jamais_ecrit_en_clair_dans_le_journal(admin_client):
+    admin_client.post(reverse("accounts:utilisateur_nouveau"), _donnees())
+
+    trace = AuditLog.objects.get(entite="User", action=ActionChoices.CREATE, nouvelle_valeur__username="awa.kone")
+
+    assert MOT_DE_PASSE not in str(trace.nouvelle_valeur) and trace.nouvelle_valeur["password"].startswith("masqué:")
+
+
+@pytest.mark.parametrize(
+    "surcharges, attendu",
+    [
+        ({"password2": "autre-chose-1234"}, "ne correspondent pas"),
+        ({"password1": "court1", "password2": "court1"}, "trop court"),
+        ({"password1": "1234567890", "password2": "1234567890"}, "numérique"),
+        ({"username": "ADMIN.EXISTANT"}, "déjà pris"),
+        ({"email": ""}, "obligatoire"),
+        ({"role": "SUPER"}, "Sélectionnez"),
+    ],
+)
+def test_une_creation_invalide_est_refusee_avec_son_message(admin_client, surcharges, attendu):
+    UserFactory(username="admin.existant")
+
+    reponse = admin_client.post(reverse("accounts:utilisateur_nouveau"), _donnees(**surcharges))
+
+    assert reponse.status_code == 200 and attendu in reponse.content.decode()
+    assert not User.objects.filter(username="awa.kone").exists()
+
+
+def test_un_email_deja_utilise_est_refuse(admin_client):
+    UserFactory(email="awa@densource.ci")
+
+    reponse = admin_client.post(reverse("accounts:utilisateur_nouveau"), _donnees())
+
+    assert "déjà utilisée" in reponse.content.decode()
+
+
+# --- modification et activation ---
+
+
+def test_l_admin_change_le_role_et_la_modification_est_tracee(admin_client):
+    compte = UserFactory(role=Role.RH, email="rh@densource.ci")
+
+    admin_client.post(
+        reverse("accounts:utilisateur_modifier", args=[compte.pk]),
+        {"first_name": "Marie", "last_name": "Yao", "email": "rh@densource.ci", "telephone": "", "role": Role.FINANCES},
+    )
+
+    compte.refresh_from_db()
+    assert compte.role == Role.FINANCES and compte.first_name == "Marie"
+    trace = AuditLog.objects.filter(entite="User", entite_id=compte.pk, action=ActionChoices.UPDATE).latest("date_heure")
+    assert trace.ancienne_valeur["role"] == Role.RH and trace.nouvelle_valeur["role"] == Role.FINANCES
+
+
+def test_on_ne_change_pas_son_propre_role(client):
+    admin = _admin()
+    client.force_login(admin)
+
+    reponse = client.post(
+        reverse("accounts:utilisateur_modifier", args=[admin.pk]),
+        {"first_name": "A", "last_name": "B", "email": "a@b.ci", "telephone": "", "role": Role.CHAUFFEUR},
+    )
+
+    admin.refresh_from_db()
+    assert admin.role == Role.ADMIN and "propre rôle" in reponse.content.decode()
+
+
+def test_desactiver_puis_reactiver_un_compte(admin_client):
+    compte = UserFactory(role=Role.RH)
+    url = reverse("accounts:utilisateur_activation", args=[compte.pk])
+
+    admin_client.post(url, {"actif": "non"})
+    compte.refresh_from_db()
+    assert compte.is_active is False
+    admin_client.post(url, {"actif": "oui"})
+    compte.refresh_from_db()
+    assert compte.is_active is True
+
+
+def test_un_compte_desactive_ne_se_connecte_plus(admin_client):
+    compte = UserFactory(role=Role.RH, username="rh.desactive")
+    compte.set_password(MOT_DE_PASSE)
+    compte.save()
+    admin_client.post(reverse("accounts:utilisateur_activation", args=[compte.pk]), {"actif": "non"})
+
+    assert Client().login(username="rh.desactive", password=MOT_DE_PASSE) is False
+
+
+def test_on_ne_se_desactive_pas_soi_meme(client):
+    admin = _admin()
+    client.force_login(admin)
+
+    client.post(reverse("accounts:utilisateur_activation", args=[admin.pk]), {"actif": "non"})
+
+    admin.refresh_from_db()
+    assert admin.is_active
+
+
+def test_un_superutilisateur_n_est_jamais_modifie_ni_desactive_par_cet_ecran(admin_client):
+    super_ = UserFactory(role=Role.ADMIN, is_superuser=True, is_staff=True)
+
+    reponse = admin_client.post(reverse("accounts:utilisateur_activation", args=[super_.pk]), {"actif": "non"}, follow=True)
+    modification = admin_client.post(
+        reverse("accounts:utilisateur_modifier", args=[super_.pk]),
+        {"first_name": "X", "last_name": "Y", "email": "x@y.ci", "telephone": "", "role": Role.CHAUFFEUR},
+    )
+
+    super_.refresh_from_db()
+    assert super_.is_active and super_.role == Role.ADMIN and super_.first_name != "X"
+    assert "superutilisateur" in reponse.content.decode().lower()
+    assert "superutilisateur" in modification.content.decode().lower()
+
+
+def test_les_services_refusent_un_acteur_qui_n_est_pas_admin():
+    with pytest.raises(services.ActionUtilisateurNonAutorisee):
+        services.creer_utilisateur(
+            UserFactory(role=Role.DIRECTION), username="x", first_name="", last_name="", email="x@y.ci",
+            role=Role.RH, password=MOT_DE_PASSE,
+        )
+
+
+def test_la_liste_se_filtre_par_role_statut_et_texte(admin_client):
+    UserFactory(username="rh.un", role=Role.RH)
+    UserFactory(username="fin.un", role=Role.FINANCES, is_active=False)
+
+    en_rh = admin_client.get(reverse("accounts:utilisateurs"), {"role": Role.RH}).content.decode()
+    inactifs = admin_client.get(reverse("accounts:utilisateurs"), {"actif": "non"}).content.decode()
+    texte = admin_client.get(reverse("accounts:utilisateurs"), {"q": "fin.un"}).content.decode()
+
+    assert "rh.un" in en_rh and "fin.un" not in en_rh
+    assert "fin.un" in inactifs and "rh.un" not in inactifs
+    assert "fin.un" in texte and "rh.un" not in texte
+```
+
 #### `apps/audit/tests/test_services.py`
 
 *68 lignes*
@@ -2647,15 +3158,96 @@ def test_failed_login_creates_audit_entry_with_failed_status():
     ).exists()
 ```
 
+#### `apps/audit/tests/test_utilisateurs.py`
+
+*72 lignes* — Les comptes utilisateurs sont audités : rôle, droits et activation, jamais le mot de passe en clair.
+
+```python
+"""Les comptes utilisateurs sont audités : rôle, droits et activation, jamais le mot de passe en clair."""
+
+import pytest
+from django.test import Client
+
+from apps.accounts.models import Role, User
+from apps.accounts.tests.factories import UserFactory
+from apps.audit.models import ActionChoices, AuditLog
+
+pytestmark = pytest.mark.django_db
+
+
+def _entrees(user, action=None):
+    qs = AuditLog.objects.filter(module="UTILISATEURS", entite="User", entite_id=user.pk)
+    return qs.filter(action=action) if action else qs
+
+
+def test_la_creation_d_un_compte_est_journalisee_sans_le_mot_de_passe():
+    user = User.objects.create_user(username="nouveau", password="Secret-12345!", role=Role.FINANCES)
+
+    entree = _entrees(user, ActionChoices.CREATE).get()
+
+    assert entree.nouvelle_valeur["role"] == Role.FINANCES
+    assert entree.nouvelle_valeur["password"].startswith("masqué:")
+    assert user.password not in str(entree.nouvelle_valeur)
+    assert "Secret-12345!" not in str(entree.nouvelle_valeur)
+
+
+def test_un_changement_de_role_est_journalise_avec_l_ancienne_valeur():
+    user = UserFactory(role=Role.RH)
+
+    user.role = Role.DIRECTION
+    user.save()
+
+    entree = _entrees(user, ActionChoices.UPDATE).filter(nouvelle_valeur__role=Role.DIRECTION).get()
+    assert entree.ancienne_valeur == {"role": Role.RH}
+
+
+def test_la_desactivation_et_les_droits_d_administration_sont_journalises():
+    user = UserFactory(role=Role.ADMIN)
+
+    user.is_active = False
+    user.is_superuser = True
+    user.save()
+
+    entree = _entrees(user, ActionChoices.UPDATE).filter(nouvelle_valeur__is_active=False).get()
+    assert entree.nouvelle_valeur == {"is_active": False, "is_superuser": True}
+    assert entree.ancienne_valeur == {"is_active": True, "is_superuser": False}
+
+
+def test_un_changement_de_mot_de_passe_est_visible_sans_ecrire_le_hash():
+    user = UserFactory(role=Role.RH)
+    ancien_hash = user.password
+
+    user.set_password("Autre-mot-de-passe-9876!")
+    user.save()
+
+    entree = _entrees(user, ActionChoices.UPDATE).filter(nouvelle_valeur__has_key="password").latest("pk")
+    assert entree.ancienne_valeur["password"].startswith("masqué:")
+    assert entree.nouvelle_valeur["password"].startswith("masqué:")
+    assert entree.ancienne_valeur["password"] != entree.nouvelle_valeur["password"]
+    assert ancien_hash not in str(entree.ancienne_valeur)
+    assert user.password not in str(entree.nouvelle_valeur)
+
+
+def test_la_connexion_ne_produit_pas_de_modification_de_compte():
+    user = UserFactory(role=Role.FINANCES)
+    avant = _entrees(user, ActionChoices.UPDATE).count()
+
+    Client().force_login(user)
+
+    assert _entrees(user, ActionChoices.UPDATE).count() == avant
+```
+
 #### `apps/audit/tests/test_views.py`
 
-*152 lignes* — Écran du journal d'audit : accès, filtres, export CSV, rapport imprimable.
+*156 lignes* — Écran du journal d'audit : accès, filtres, export CSV, rapport imprimable.
 
 ```python
 """Écran du journal d'audit : accès, filtres, export CSV, rapport imprimable."""
 
 from datetime import date, datetime
 from datetime import timezone as dt_timezone
+
+from unittest import mock
 
 import pytest
 from django.urls import reverse
@@ -2678,11 +3270,13 @@ def _entree(**surcharges):
         utilisateur_nom="Awa Koné", role=Role.PARCAUTO, adresse_ip="10.0.0.1",
     )
     donnees.update(surcharges)
-    entree = AuditLog.objects.create(**donnees)
     if "date_heure" in surcharges:
-        AuditLog.objects.filter(pk=entree.pk).update(date_heure=surcharges["date_heure"])
-        entree.refresh_from_db()
-    return entree
+        # ``date_heure`` est posée à la création (auto_now_add) et le journal est append-only, y compris en base
+        # PostgreSQL (trigger) : on fixe donc l'horloge le temps de la création plutôt que de modifier la ligne.
+        donnees.pop("date_heure")
+        with mock.patch("django.utils.timezone.now", return_value=surcharges["date_heure"]):
+            return AuditLog.objects.create(**donnees)
+    return AuditLog.objects.create(**donnees)
 
 
 # --- accès ---
@@ -2925,7 +3519,7 @@ def test_le_rendu_echappe_les_libelles():
 ```diff
 --- config/settings/base.py (avant)
 +++ config/settings/base.py (après)
-@@ -114,4 +114,6 @@
+@@ -115,4 +115,6 @@
                  "django.contrib.auth.context_processors.auth",
                  "django.contrib.messages.context_processors.messages",
 +                "apps.accounts.context_processors.menu",
@@ -2941,17 +3535,19 @@ def test_le_rendu_echappe_les_libelles():
 ```diff
 --- config/urls.py (avant)
 +++ config/urls.py (après)
-@@ -8,10 +8,14 @@
+@@ -8,12 +8,16 @@
  from django.contrib import admin
  from django.urls import include, path
 -from django.views.generic import RedirectView
 +from django.views.generic import RedirectView, TemplateView
  
+ from apps.core.medias import MediaProtegeView
  
  urlpatterns = [
 +    path("", TemplateView.as_view(template_name="accueil_provisoire.html"), name="home"),
      # Les navigateurs (et l'administration Django) réclament /favicon.ico : on renvoie vers l'icône du site.
      path("favicon.ico", RedirectView.as_view(url=settings.STATIC_URL + "img/favicon.png", permanent=True)),
+     path("medias/<path:chemin>", MediaProtegeView.as_view(), name="media"),
 +    path("", include("apps.accounts.urls")),
 +    path("audit/", include("apps.audit.urls")),
 +    path("notifications/", include("apps.notifications.urls")),
@@ -2990,10 +3586,10 @@ python manage.py check
 ```
 
 ```bash
-python -m pytest apps/accounts/tests/test_password_reset.py apps/audit/tests/test_services.py apps/audit/tests/test_signals.py apps/audit/tests/test_views.py apps/core/tests/test_rapports.py -q --no-cov
+python -m pytest apps/accounts/tests/test_password_reset.py apps/accounts/tests/test_utilisateurs_ecran.py apps/audit/tests/test_services.py apps/audit/tests/test_signals.py apps/audit/tests/test_utilisateurs.py apps/audit/tests/test_views.py apps/core/tests/test_rapports.py -q --no-cov
 ```
 
-**Résultat attendu :** `44 passed` (pour les 5 fichier(s) de tests présentés dans ce chapitre).
+**Résultat attendu :** `72 passed` (pour les 7 fichier(s) de tests présentés dans ce chapitre).
 
 **Maintenant, regardez le résultat dans un navigateur :**
 

@@ -10,6 +10,7 @@ L'**espace mobile du chauffeur**, sous `/chauffeur/` : des pages **tactiles** (g
 | **Une mission** | `/chauffeur/missions/<id>/` | **check-list**, **démarrer**, **confirmer la récupération** puis **la livraison** (code ou **scan du QR**) |
 | **Plein** | `/chauffeur/plein/` | saisir un plein (avec la confirmation d'une saisie suspecte) |
 | **Panne** | `/chauffeur/incident/` | signaler un incident |
+| **Congés** | `/chauffeur/conges/` | voir son solde, demander un congé (son supérieur valide en N1, la RH en N2), suivre ses demandes |
 | Fichiers de l'application | `manifest.webmanifest`, `sw.js`, `hors-ligne/` | installation, page « hors connexion » |
 
 **Règles de sécurité** propres à cet espace :
@@ -36,7 +37,7 @@ L'**espace mobile du chauffeur**, sous `/chauffeur/` : des pages **tactiles** (g
   couleurs, page de départ) et un **service worker** (un script que le navigateur exécute en tâche de fond).
 - **Servir un fichier depuis une vue** : `sw.js` et `manifest.webmanifest` sont fabriqués par des vues
   (`ServiceWorkerView`, `ManifesteView`) pour connaître le bon préfixe d'adresse et rester à jour.
-- **`BarcodeDetector`** : une API du navigateur (Chrome sur Android) qui lit un code QR avec la caméra.
+- **`BarcodeDetector`** : une API du navigateur (Chrome sur Android) qui lit un code QR avec la caméra. Sans elle (Safari sur iPhone, Firefox), `scanner.js` copie l'image de la caméra dans un `<canvas>` et la fait lire par la bibliothèque **jsQR** (`static/vendor/jsqr/`, chargée seulement à ce moment-là).
   `scanner.js` l'utilise ; quand elle n'existe pas, le bouton n'apparaît pas et le chauffeur **saisit le code à la
   main**.
 - **Pas de JavaScript en ligne** : même le *service worker* est enregistré par `sw-register.js`, à qui la
