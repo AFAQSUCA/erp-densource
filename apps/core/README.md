@@ -45,3 +45,8 @@ dates) ; un texte commençant par `=` reste du texte (pas de formule injectée).
 `colonnes` en valeurs brutes. **Tables append-only** (`immuable.py`) : `AppendOnlyQuerySet` (manager qui refuse `update`/`delete` en masse)
 et triggers PostgreSQL (journal d'audit, mouvements de stock). La recherche texte (`search.py`) caste les champs en texte : sur PostgreSQL,
 `LOWER()` refusait un champ `inet` (adresse IP du journal d'audit).
+
+**Fichiers statiques versionnés** (`statiques.py`) : en production (`config/settings/prod.py`), `StockageStatiqueVersionne` renomme chaque fichier avec une
+empreinte de son contenu (`tailwind.41cac255b7fb.css`). Nginx garde `/static/` 30 jours : sans empreinte, un téléphone continuait d'afficher l'ancien
+`tailwind.css` avec de nouveaux gabarits, et une classe ajoutée depuis (`grid-cols-6`) manquait — la barre de navigation du chauffeur s'empilait en
+colonne. Une référence introuvable dans une feuille de style (polices Font Awesome non copiées) laisse l'URL telle quelle au lieu de faire échouer `collectstatic`.
