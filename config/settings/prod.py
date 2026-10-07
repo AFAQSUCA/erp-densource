@@ -25,6 +25,16 @@ if SECRET_KEY.startswith("django-insecure-") or SECRET_KEY == "change-me" or len
         "avec « python -c \"import secrets; print(secrets.token_urlsafe(50))\" » et placez-la dans .env."
     )
 
+# Fichiers statiques à noms versionnés (``tailwind.4f2a9c.css``) : Nginx les garde 30 jours en cache
+# (nginx/nginx.conf). Sans cela, après un déploiement, les téléphones continuaient d'afficher l'ancien
+# ``tailwind.css`` avec les nouveaux gabarits : une classe ajoutée depuis (``grid-cols-6``...) manquait et la
+# barre de navigation du chauffeur s'empilait en colonne au milieu de l'écran. Le nom change quand le contenu
+# change (``collectstatic``, lancé par ops/entrypoint.sh), donc le cache ne sert jamais un fichier périmé.
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {"BACKEND": "apps.core.statiques.StockageStatiqueVersionne"},
+}
+
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS")
 
 DATABASES = {
