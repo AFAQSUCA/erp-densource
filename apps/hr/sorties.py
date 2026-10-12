@@ -172,7 +172,11 @@ def enregistrer_sortie(
 def appliquer_sortie(sortie: SortiePersonnel, *, acteur=None) -> dict:
     """Applique les effets de la sortie (voir le module). Sans effet si elle est annulée ou déjà appliquée.
     Lève ``SortieImpossible`` (rien n'est modifié) si une autre app la refuse."""
-    sortie = SortiePersonnel.objects.select_for_update().select_related("employe__utilisateur").get(pk=sortie.pk)
+    # of=("self",) : PostgreSQL refuse de verrouiller le côté facultatif d'une jointure (compte utilisateur absent),
+    # SQLite ne verrouille rien et laissait passer : erreur 500 en production (audit, suite rejouée sur PostgreSQL).
+    sortie = (
+        SortiePersonnel.objects.select_for_update(of=("self",)).select_related("employe__utilisateur").get(pk=sortie.pk)
+    )
     if sortie.annulee_le is not None or sortie.appliquee_le is not None:
         return {}
     employe = sortie.employe
@@ -241,7 +245,7 @@ def annuler_sortie(sortie: SortiePersonnel, acteur, *, motif: str) -> SortiePers
     """Annule une sortie (erreur, réintégration), motif obligatoire. Rien n'est réactivé automatiquement : le
     compte (écran Utilisateurs) et les fiches chauffeur ou copilote se réactivent à la main, les congés annulés
     se redemandent."""
-    sortie = SortiePersonnel.objects.select_for_update().select_related("employe").get(pk=sortie.pk)
+    sortie = SortiePersonnel.objects.select_for_update(of=("self",)).select_related("employe").get(pk=sortie.pk)
     _exiger_droit(acteur, sortie.employe)
     if sortie.annulee_le is not None:
         raise SortieImpossible("Cette sortie est déjà annulée.")
