@@ -315,6 +315,11 @@ def _est_sommet_hierarchie(employe: Personnel) -> bool:
     return employe.superieur_id is None and compte is not None and compte.role == Role.DIRECTION
 
 
+def _decide_pour_lui_meme(acteur, conge: Conge) -> bool:
+    """Vrai si le validateur est l'employé lui-même (le directeur sur son propre N1) : marqué sur la décision."""
+    return acteur is not None and conge.employe.utilisateur_id == acteur.pk
+
+
 def _est_superieur_de(acteur, employe: Personnel) -> bool:
     """Vrai si ``acteur`` peut faire la validation N1 de la demande de l'employé.
 
@@ -697,6 +702,7 @@ def valider_n1(
         validateur=acteur,
         decision=DecisionConge.APPROUVE,
         commentaire=commentaire,
+        auto_validation=_decide_pour_lui_meme(acteur, conge),
     )
     conge.statut = StatutConge.VALIDATION_N1
     conge.date_limite_n2 = (maintenant or timezone.now()) + timedelta(
@@ -725,6 +731,7 @@ def valider_n2(conge: Conge, acteur, *, commentaire: str = "") -> Conge:
         validateur=acteur,
         decision=DecisionConge.APPROUVE,
         commentaire=commentaire,
+        auto_validation=_decide_pour_lui_meme(acteur, conge),
     )
     conge.statut = StatutConge.APPROUVE
     conge.save(update_fields=["statut", "updated_at"])
@@ -755,6 +762,7 @@ def refuser(conge: Conge, acteur, *, commentaire: str = "") -> Conge:
         validateur=acteur,
         decision=DecisionConge.REFUSE,
         commentaire=commentaire,
+        auto_validation=_decide_pour_lui_meme(acteur, conge),
     )
     conge.statut = StatutConge.REFUSE
     conge.motif_decision = commentaire

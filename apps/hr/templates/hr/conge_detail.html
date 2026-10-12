@@ -54,6 +54,7 @@
               <span>
                 <strong>{{ v.get_niveau_display }}</strong> : {% if v.decision == "APPROUVE" %}validé{% else %}refusé{% endif %}
                 par {{ v.validateur|default:"un compte supprimé" }} le {{ v.date_decision|date:"d/m/Y à H:i" }}
+                {% if v.auto_validation %}<span class="ml-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900">auto-validation</span>{% endif %}
                 {% if v.commentaire %}<br><span class="text-slate-700">« {{ v.commentaire }} »</span>{% endif %}
               </span>
             </li>
