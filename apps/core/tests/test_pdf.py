@@ -7,11 +7,18 @@ import pytest
 from django.urls import URLPattern, URLResolver, get_resolver, reverse
 
 from apps.accounts.tests.factories import UserFactory
-from apps.billing.tests.helpers import emise
+from apps.accounts.models import Role
+from apps.billing.tests.helpers import a_valider, emise, proforma_brouillon, proforma_envoyee
 from apps.core import pdf
 from apps.core.formats import nombre
 from apps.core.views import ImpressionListeMixin
+from apps.customers.tests.factories import ClientFactory
+from apps.drivers.tests.factories import ChauffeurFactory
+from apps.fleet.tests.factories import VehiculeFactory
 from apps.hr.tests.factories import PersonnelFactory
+from apps.missions import terrain as missions_terrain
+from apps.missions.models import StatutMission, TypeFraisMission
+from apps.missions.tests.factories import MissionFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -161,3 +168,69 @@ def test_plusieurs_feuilles_deviennent_des_sections():
 
     assert [b.titre for b in blocs if isinstance(b, pdf.Section)] == ["Actif", "Passif"]
     assert any(isinstance(b, pdf.Texte) and b.texte == "Aucune ligne." for b in blocs)
+
+
+# --- documents : facture, devis, rapport de mission, tableau de bord ---
+
+
+def _telecharger(client, url):
+    reponse = client.get(url, {"format": "pdf"})
+    assert reponse.status_code == 200 and reponse["Content-Type"] == "application/pdf", url
+    assert reponse.content.startswith(b"%PDF")
+    page = client.get(url).content.decode()
+    assert "Télécharger en PDF" in page and "format=pdf" in page
+    return reponse
+
+
+@pytest.mark.parametrize("fabrique", [emise, a_valider])
+def test_une_facture_se_telecharge_en_pdf(client, fabrique):
+    facture = fabrique(prix="1000000")
+    client.force_login(UserFactory(is_superuser=True))
+
+    reponse = _telecharger(client, reverse("billing:imprimer", args=[facture.pk]))
+
+    attendu = "facture-" if facture.est_emise else "projet-de-facture-"
+    assert f'filename="{attendu}' in reponse["Content-Disposition"]
+
+
+def test_une_facture_exoneree_se_telecharge_en_pdf(client):
+    client_exonere = ClientFactory(taux_tva=Decimal("0"), motif_exoneration="EXPORT")
+    facture = emise(client=client_exonere)
+    client.force_login(UserFactory(is_superuser=True))
+
+    _telecharger(client, reverse("billing:imprimer", args=[facture.pk]))
+
+
+@pytest.mark.parametrize("fabrique", [proforma_brouillon, proforma_envoyee])
+def test_un_devis_se_telecharge_en_pdf(client, fabrique):
+    devis = fabrique()
+    client.force_login(UserFactory(is_superuser=True))
+
+    _telecharger(client, reverse("billing:proforma_imprimer", args=[devis.pk]))
+
+
+def test_le_rapport_de_frais_d_une_mission_se_telecharge_en_pdf(client):
+    mission = MissionFactory(statut=StatutMission.AFFECTEE, vehicule=VehiculeFactory(), chauffeur=ChauffeurFactory())
+    missions_terrain.planifier_frais(
+        mission, UserFactory(role=Role.PARCAUTO), type_frais=TypeFraisMission.AVANCE_ROUTE, montant=Decimal("50000")
+    )
+    client.force_login(UserFactory(is_superuser=True))
+
+    _telecharger(client, reverse("missions:frais_imprimer", args=[mission.pk]))
+
+
+@pytest.mark.parametrize("role", [Role.DIRECTION, Role.RH, Role.FINANCES, Role.CHARGE_CLIENTELE, Role.PARCAUTO])
+def test_le_tableau_de_bord_se_telecharge_en_pdf_pour_chaque_role(client, role):
+    emise(prix="1000000")
+    client.force_login(UserFactory(role=role))
+
+    _telecharger(client, reverse("home_imprimer"))
+
+
+def test_le_tableau_de_bord_de_l_admin_se_telecharge_en_pdf(client):
+    emise(prix="1000000")
+    client.force_login(UserFactory(is_superuser=True))
+
+    reponse = _telecharger(client, reverse("home_imprimer"))
+
+    assert 'filename="tableau-de-bord-' in reponse["Content-Disposition"]

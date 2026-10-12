@@ -170,7 +170,9 @@ def generer_pdf(
                     entetes=["", ""], lignes=[list(p) for p in bloc.paires], alignes_a_droite={1}, largeurs=[2, 1],
                     sans_entete=True,
                 )
-                histoire.append(_tableau(rubriques, largeur_utile * 0.6))
+                table_rubriques = _tableau(rubriques, largeur_utile * 0.6)
+                table_rubriques.hAlign = "RIGHT"  # comme les totaux d'une facture
+                histoire.append(table_rubriques)
             histoire.append(Spacer(1, 4 * mm))
         elif isinstance(bloc, Texte):
             histoire.append(Paragraph(_texte(bloc.texte), STYLE_SOUS_TITRE if bloc.discret else STYLE_TEXTE))
