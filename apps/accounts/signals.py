@@ -2,7 +2,8 @@
 
 ``mfa_evenement`` : émis à chaque étape de la double authentification (activation, code vérifié ou
 refusé, codes régénérés, réinitialisation). ``mot_de_passe_reinitialise`` : émis quand un compte
-choisit un nouveau mot de passe via « mot de passe oublié » (``views.ReinitialiserMotDePasseConfirmerView``).
+choisit un nouveau mot de passe via « mot de passe oublié » (``views.ReinitialiserMotDePasseConfirmerView``) ;
+``mot_de_passe_change`` : quand un compte connecté change le sien (``views.ChangerMotDePasseView``).
 L'app ``audit`` s'y abonne pour inscrire ces deux au journal : ``accounts`` n'importe pas ``audit``
 (sens des dépendances, architecture.md:134).
 
@@ -20,6 +21,9 @@ mfa_evenement = Signal()
 
 # providing_args : request, utilisateur
 mot_de_passe_reinitialise = Signal()
+
+# providing_args : request, utilisateur
+mot_de_passe_change = Signal()
 
 
 @receiver(user_login_failed)

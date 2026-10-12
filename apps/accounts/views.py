@@ -1,8 +1,10 @@
 from django.conf import settings
+from django.contrib import messages
 from django.contrib.auth.forms import AuthenticationForm
 from django.contrib.auth.views import (
     LoginView,
     LogoutView,
+    PasswordChangeView,
     PasswordResetCompleteView,
     PasswordResetConfirmView,
     PasswordResetDoneView,
@@ -12,7 +14,7 @@ from django.urls import reverse_lazy
 
 from . import throttle
 from .models import Role
-from .signals import mot_de_passe_reinitialise
+from .signals import mot_de_passe_change, mot_de_passe_reinitialise
 
 
 class ConnexionView(LoginView):
@@ -81,3 +83,20 @@ class ReinitialiserMotDePasseConfirmerView(PasswordResetConfirmView):
 
 class ReinitialiserMotDePasseTermineeView(PasswordResetCompleteView):
     template_name = "registration/password_reset_complete.html"
+
+
+# --- changer son mot de passe une fois connecté (cahier-des-charges.md:273, audit TECH-87) ---
+
+
+class ChangerMotDePasseView(PasswordChangeView):
+    """Ancien mot de passe exigé ; le nouveau suit les mêmes règles qu'à l'inscription (AUTH_PASSWORD_VALIDATORS).
+    Django garde la session ouverte (le compte n'est pas déconnecté) ; l'événement est tracé au journal."""
+
+    template_name = "registration/password_change_form.html"
+    success_url = reverse_lazy("home")
+
+    def form_valid(self, form):
+        reponse = super().form_valid(form)
+        mot_de_passe_change.send(sender=self.__class__, request=self.request, utilisateur=self.request.user)
+        messages.success(self.request, "Votre mot de passe a été changé.")
+        return reponse

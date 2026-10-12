@@ -72,6 +72,11 @@
               <p class="text-sm font-medium text-slate-900">{{ user.get_full_name|default:user.username }}</p>
               <p class="text-xs text-slate-600">{{ user.get_role_display|default:"Administrateur" }}</p>
             </div>
+            <a href="{% url 'accounts:password_change' %}" title="Changer mon mot de passe"
+               class="rounded-lg p-2 text-slate-600 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+              <i class="fa-solid fa-key" aria-hidden="true"></i>
+              <span class="sr-only">Changer mon mot de passe</span>
+            </a>
             {% if mfa_requise %}
               <a href="{% url 'accounts:mfa_codes' %}" title="Codes de secours de la double authentification"
                  class="rounded-lg p-2 text-slate-600 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">

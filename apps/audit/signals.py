@@ -13,7 +13,7 @@ from django.contrib.auth.signals import (
 )
 from django.dispatch import receiver
 
-from apps.accounts.signals import mfa_evenement, mot_de_passe_reinitialise
+from apps.accounts.signals import mfa_evenement, mot_de_passe_change, mot_de_passe_reinitialise
 
 from . import services
 from .models import ActionChoices, StatutChoices
@@ -59,5 +59,19 @@ def on_mot_de_passe_reinitialise(sender, request, utilisateur, **kwargs):
         entite_id=utilisateur.pk,
         utilisateur=utilisateur,
         nouvelle_valeur={"evenement": "mot_de_passe_reinitialise"},
+        request=request,
+    )
+
+
+@receiver(mot_de_passe_change)
+def on_mot_de_passe_change(sender, request, utilisateur, **kwargs):
+    """Mot de passe changé par le compte connecté (audit TECH-87) : tracé, sans jamais inscrire le mot de passe."""
+    services.log_action(
+        action=ActionChoices.UPDATE,
+        module="AUTH",
+        entite="User",
+        entite_id=utilisateur.pk,
+        utilisateur=utilisateur,
+        nouvelle_valeur={"evenement": "mot_de_passe_change"},
         request=request,
     )
