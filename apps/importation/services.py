@@ -178,6 +178,15 @@ def _index_personnel() -> dict[tuple[str, str], list[Personnel]]:
     return index
 
 
+def _index_personnel_supprime() -> set[tuple[str, str]]:
+    """Fiches du personnel supprimées : une ligne qui y correspond est une erreur, ni recréée ni ignorée (audit AV-15,
+    décision du 12/10/2026)."""
+    return {_cle_nom(p.nom, p.prenom) for p in Personnel.all_objects.filter(is_deleted=True)}
+
+
+RESTAURER = "restaurez la fiche (administration) ou retirez la ligne."
+
+
 def _personne(index, nom: str, prenom: str) -> Personnel:
     trouvees = index.get(_cle_nom(nom, prenom), [])
     if not trouvees:
@@ -195,6 +204,8 @@ def _personnel(ligne: list, ctx: dict) -> str:
     nom, prenom = _obligatoire(nom, "Le nom"), _obligatoire(prenom, "Le prénom")
     if ctx["index"].get(_cle_nom(nom, prenom)):
         return "present"
+    if _cle_nom(nom, prenom) in ctx["supprimes"]:
+        raise _Ligne(f"{nom} {prenom} a été supprimé(e) de l'ERP : {RESTAURER}")
     poste = hr_services.poste_importe(poste_brut)
     if poste is None:
         raise _Ligne(f"poste « {poste_brut} » inconnu. Postes acceptés : {', '.join(POSTES_COURANTS)}.")
@@ -261,7 +272,10 @@ def _copilote(ligne: list, ctx: dict) -> str:
 def _client(ligne: list, ctx: dict) -> str:
     raison, ncc, contact, telephone, email, adresse, taux_brut, motif_brut, delai_brut = ligne[:9]
     raison, ncc = _obligatoire(raison, "La raison sociale"), _obligatoire(ncc, "Le NCC / NIF")
-    if clients_services.client_par_ncc(ncc) is not None:  # même comparaison qu'à la saisie (audit M4-02)
+    existant = clients_services.client_par_ncc(ncc)  # même comparaison qu'à la saisie (audit M4-02)
+    if existant is not None:
+        if existant.is_deleted:  # audit AV-15 : ni compté « présent » ni recréé
+            raise _Ligne(f"le client au NCC / NIF « {ncc} » a été supprimé de l'ERP : {RESTAURER}")
         return "present"
     motifs = {normaliser(str(libelle)): code for code, libelle in MotifExoneration.choices}
     motifs.update({normaliser(code): code for code, _ in MotifExoneration.choices})
@@ -283,7 +297,10 @@ def _vehicule(ligne: list, ctx: dict) -> str:
     immat, marque, mod, annee, vin, km, capacite, reservoir, statut_brut, habituel = ligne[:10]
     immat = _obligatoire(immat, "L'immatriculation")
     # Même comparaison qu'à la saisie (sans séparateur) : « AB-123-CD » retrouve « AB 123 CD » (audit M2-02).
-    if fleet_services.vehicule_par_immatriculation(immat) is not None:
+    existant = fleet_services.vehicule_par_immatriculation(immat)
+    if existant is not None:
+        if existant.is_deleted:  # audit AV-15 : ni compté « présent » ni recréé
+            raise _Ligne(f"le camion {immat} a été supprimé de l'ERP : {RESTAURER}")
         return "present"
     statuts = {
         normaliser(str(StatutVehicule(code).label)): code
@@ -399,7 +416,7 @@ def importer_classeur(fichier, acteur, *, simulation: bool = False) -> Rapport:
 
     resultats = [ResultatFeuille(cle=cle, titre=modele.TITRES[cle], presente=cle in feuilles) for cle in modele.ORDRE]
     with transaction.atomic():
-        ctx = {"index": _index_personnel()}
+        ctx = {"index": _index_personnel(), "supprimes": _index_personnel_supprime()}
         for resultat in resultats:
             if not resultat.presente:
                 continue

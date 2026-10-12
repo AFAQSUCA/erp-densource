@@ -270,6 +270,8 @@ def importer_personnel(fichier) -> ResultatImportPersonnel:
     a_creer: list[dict] = []
     resultat = ResultatImportPersonnel()
     connus = {_cle_nom(p.nom, p.prenom) for p in Personnel.objects.all()}
+    # Fiche supprimée : erreur de ligne, ni recréée ni ignorée (audit AV-15, décision du 12/10/2026).
+    supprimes = {_cle_nom(p.nom, p.prenom) for p in Personnel.all_objects.filter(is_deleted=True)}
     for numero, ligne in enumerate(feuille.iter_rows(min_row=2, values_only=True), start=2):
         if not ligne or all(cellule in (None, "") for cellule in ligne):
             continue  # ligne vide (fin de tableau…) : ignorée, ce n'est pas une erreur
@@ -283,6 +285,12 @@ def importer_personnel(fichier) -> ResultatImportPersonnel:
         if not prenom:
             erreurs.append(f"Ligne {numero} : le prénom est obligatoire.")
         if nom and prenom:
+            if _cle_nom(nom, prenom) in supprimes and _cle_nom(nom, prenom) not in connus:
+                erreurs.append(
+                    f"Ligne {numero} : {nom} {prenom} a été supprimé(e) de l'ERP : restaurez la fiche "
+                    "(administration) ou retirez la ligne."
+                )
+                continue
             if _cle_nom(nom, prenom) in connus:
                 resultat.deja_presents.append(f"{nom} {prenom}")
                 continue

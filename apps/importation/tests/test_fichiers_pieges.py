@@ -82,3 +82,52 @@ def test_une_dimension_fausse_ne_fait_perdre_aucune_ligne():
 
     assert rapport.enregistre and rapport.total_crees == 2
     assert Client.objects.count() == 2
+
+
+# --- fiche supprimée dans l'ERP (audit AV-15, décision du 12/10/2026) ---
+
+
+def _supprimes():
+    from apps.fleet.models import Vehicule
+    from apps.hr.models import Personnel
+
+    assert _importer(classeur(personnel=[PERSONNEL], clients=[CLIENT], vehicules=[VEHICULE])).enregistre
+    for modele in (Personnel, Client, Vehicule):
+        modele.objects.get().delete()
+
+
+@pytest.mark.parametrize(
+    "feuille, ligne, attendu",
+    [
+        ("personnel", PERSONNEL, "Diallo Fatou a été supprimé(e) de l'ERP"),
+        ("clients", CLIENT, "le client au NCC / NIF « CI-NCC-9876543B » a été supprimé de l'ERP"),
+        ("vehicules", VEHICULE, "le camion CI-9999-ZZ a été supprimé de l'ERP"),
+    ],
+)
+def test_une_ligne_qui_correspond_a_une_fiche_supprimee_est_refusee(feuille, ligne, attendu):
+    _supprimes()
+
+    rapport = _importer(classeur(**{feuille: [ligne]}))
+
+    assert not rapport.enregistre
+    assert any(attendu in e and "restaurez la fiche" in e for e in rapport.erreurs), rapport.erreurs
+
+
+def test_l_import_rh_refuse_aussi_un_employe_supprime():
+    from openpyxl import Workbook
+
+    from apps.hr.models import Personnel
+
+    _supprimes()
+    wb = Workbook()
+    wb.active.append(hr_services.COLONNES_IMPORT)
+    wb.active.append(PERSONNEL)
+    fichier = BytesIO()
+    wb.save(fichier)
+    fichier.seek(0)
+
+    with pytest.raises(ImportPersonnelError) as exc:
+        hr_services.importer_personnel(fichier)
+
+    assert any("a été supprimé(e) de l'ERP" in e for e in exc.value.erreurs)
+    assert not Personnel.objects.exists()
