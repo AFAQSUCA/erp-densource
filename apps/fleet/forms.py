@@ -38,7 +38,13 @@ class VehiculeForm(StyleTailwindMixin, forms.Form):
         annee_max = date.today().year + 1
         self.fields["annee"].validators.append(MaxValueValidator(annee_max))
         self.fields["annee"].widget.attrs["max"] = annee_max
-        self.fields["chauffeur_habituel"].queryset = drivers_services.chauffeurs_actifs()
+        chauffeurs = drivers_services.chauffeurs_actifs()
+        actuel = self.initial.get("chauffeur_habituel")
+        if actuel is not None:
+            # Le chauffeur habituel actuel reste proposé même devenu inactif depuis : sinon enregistrer la fiche le
+            # remplaçait en silence par « Aucun » (audit M2-10).
+            chauffeurs = chauffeurs | chauffeurs.model._default_manager.filter(pk=getattr(actuel, "pk", actuel))
+        self.fields["chauffeur_habituel"].queryset = chauffeurs
         self.fields["chauffeur_habituel"].label_from_instance = lambda c: (
             f"{c.personnel.prenom} {c.personnel.nom} ({c.personnel.matricule})"
         )

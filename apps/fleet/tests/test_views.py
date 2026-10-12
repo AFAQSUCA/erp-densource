@@ -10,6 +10,7 @@ from django.utils import timezone
 
 from apps.accounts.models import Role
 from apps.accounts.tests.factories import UserFactory
+from apps.drivers.models import StatutChauffeur
 from apps.drivers.tests.factories import ChauffeurFactory
 from apps.fleet.models import DocumentReglementaire, StatutVehicule, TypeDocument, Vehicule
 from apps.parametres import services as parametres_services
@@ -460,3 +461,29 @@ def test_la_liste_signale_un_document_manquant_au_lieu_de_a_jour(client):
     page = client.get(reverse("fleet:liste")).content.decode()
 
     assert page.count("Document manquant") == 1 and page.count("À jour") == 1
+
+
+def test_un_chauffeur_habituel_devenu_inactif_est_conserve_a_la_modification(client):
+    # Audit M2-10 : il restait hors de la liste et l'enregistrement le remplaçait par « Aucun ».
+    _connecte(client, Role.DIRECTION)
+    ancien = ChauffeurFactory(statut=StatutChauffeur.INACTIF)
+    camion = VehiculeFactory(kilometrage=1000, chauffeur_habituel=ancien)
+
+    page = client.get(reverse("fleet:modifier", args=[camion.pk]))
+    client.post(
+        reverse("fleet:modifier", args=[camion.pk]),
+        _donnees_formulaire(kilometrage="1500", chauffeur_habituel=str(ancien.pk)),
+    )
+
+    assert ancien in page.context["form"].fields["chauffeur_habituel"].queryset
+    camion.refresh_from_db()
+    assert camion.chauffeur_habituel == ancien and camion.kilometrage == 1500
+
+
+def test_un_chauffeur_inactif_n_est_pas_propose_pour_un_nouveau_camion(client):
+    _connecte(client, Role.DIRECTION)
+    inactif = ChauffeurFactory(statut=StatutChauffeur.INACTIF)
+
+    page = client.get(reverse("fleet:creer"))
+
+    assert inactif not in page.context["form"].fields["chauffeur_habituel"].queryset
