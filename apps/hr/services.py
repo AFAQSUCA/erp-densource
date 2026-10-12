@@ -22,7 +22,7 @@ from apps.core.search import filtrer_par_texte
 from apps.core.services import prochain_numero
 from apps.parametres import services as parametres_services
 
-from . import signals
+from . import signals, sorties
 from .exceptions import (
     ActionNonAutorisee,
     CongeError,
@@ -538,9 +538,9 @@ def echeance_en_attente(conge: Conge, *, maintenant: datetime | None = None):
 
 
 def effectif_par_departement() -> list[dict]:
-    """Effectif par département (tous les départements, y compris à 0) et total."""
+    """Effectif par département (tous les départements, y compris à 0) et total, sans le personnel sorti."""
     comptes = dict(
-        Personnel.objects.values_list("departement").annotate(n=Count("pk")).order_by()
+        sorties.presents(Personnel.objects.all()).values_list("departement").annotate(n=Count("pk")).order_by()
     )
     return [
         {"code": code, "libelle": libelle, "nombre": comptes.get(code, 0)}

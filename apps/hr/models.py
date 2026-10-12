@@ -318,3 +318,57 @@ class ReportConge(BaseModel):
 
     def __str__(self):
         return f"Report {self.conge} : {self.jours_restants} j à partir du {self.nouvelle_date_fin}"
+
+
+# --- sortie du personnel (cahier-des-charges.md:50 « licenciement » ; avenant-sortie-personnel.md) ---
+
+
+class MotifSortie(models.TextChoices):
+    DEMISSION = "DEMISSION", _("Démission")
+    LICENCIEMENT = "LICENCIEMENT", _("Licenciement")
+    FIN_CONTRAT = "FIN_CONTRAT", _("Fin de contrat (CDD, stage)")
+    RETRAITE = "RETRAITE", _("Départ à la retraite")
+    DECES = "DECES", _("Décès")
+    AUTRE = "AUTRE", _("Autre")
+
+
+class SortiePersonnel(BaseModel):
+    """Départ d'un employé, enregistré par la RH (éventuellement à l'avance : préavis).
+
+    Ses effets (compte désactivé, fiches chauffeur et copilote inactives, congés à venir annulés, équipe
+    rattachée au supérieur, missions affectées libérées) s'appliquent à ``date_sortie`` : ``appliquee_le``
+    les date. Une sortie annulée (``annulee_le``) reste dans l'historique ; il n'y a qu'une sortie non
+    annulée par employé.
+    """
+
+    employe = models.ForeignKey(
+        Personnel, verbose_name=_("employé"), on_delete=models.PROTECT, related_name="sorties"
+    )
+    date_sortie = models.DateField(_("date de sortie"), help_text=_("Dernier jour dans l'entreprise."))
+    motif = models.CharField(_("motif"), max_length=20, choices=MotifSortie.choices)
+    commentaire = models.TextField(_("commentaire"), blank=True)
+    enregistree_par = models.ForeignKey(
+        settings.AUTH_USER_MODEL, verbose_name=_("enregistrée par"), null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="+",
+    )
+    appliquee_le = models.DateTimeField(_("effets appliqués le"), null=True, blank=True)
+    annulee_le = models.DateTimeField(_("annulée le"), null=True, blank=True)
+    annulee_par = models.ForeignKey(
+        settings.AUTH_USER_MODEL, verbose_name=_("annulée par"), null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="+",
+    )
+    motif_annulation = models.TextField(_("motif de l'annulation"), blank=True)
+
+    class Meta:
+        verbose_name = _("sortie du personnel")
+        verbose_name_plural = _("sorties du personnel")
+        ordering = ["-date_sortie", "-pk"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["employe"], condition=Q(annulee_le__isnull=True, is_deleted=False),
+                name="une_sortie_active_par_employe",
+            ),
+        ]
+
+    def __str__(self):
+        return f"Sortie de {self.employe} le {self.date_sortie:%d/%m/%Y} ({self.get_motif_display()})"

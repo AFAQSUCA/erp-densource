@@ -25,6 +25,15 @@ report_decide = Signal()
 
 DECISION_APPROUVE, DECISION_REFUSE, DECISION_ANNULE = "APPROUVE", "REFUSE", "ANNULE"
 
+# --- sortie du personnel (hr.sorties) : émis en ``send()`` brut, jamais avec ``emettre`` ---
+# Juste avant d'appliquer une sortie : un récepteur la refuse en levant ``hr.exceptions.SortieImpossible``
+# (``missions`` : mission en cours). Argument : ``sortie``.
+sortie_a_verifier = Signal()
+# Effets de la sortie dans les autres apps (``drivers`` : fiches inactives ; ``missions`` : missions affectées
+# libérées). Un échec annule toute la sortie plutôt que d'en laisser une moitié. Chaque récepteur peut
+# renvoyer un dict de bilan, affiché à la RH. Arguments : ``sortie``, ``acteur`` (``None`` : tâche du jour).
+sortie_appliquee = Signal()
+
 
 def emettre(signal: Signal, **arguments) -> None:
     """Émet un signal en journalisant (sans propager) les erreurs des récepteurs."""
