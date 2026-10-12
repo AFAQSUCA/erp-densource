@@ -22,7 +22,7 @@ import logging
 from datetime import date
 
 from django.db import transaction
-from django.db.models import Exists, OuterRef, QuerySet
+from django.db.models import Exists, OuterRef, QuerySet, Subquery
 from django.utils import timezone
 
 from . import permissions, signals
@@ -47,6 +47,64 @@ def presents(personnel: QuerySet[Personnel]) -> QuerySet[Personnel]:
 
 def sortis(personnel: QuerySet[Personnel]) -> QuerySet[Personnel]:
     return personnel.filter(Exists(_sorties_appliquees()))
+
+
+PRESENCE_PRESENTS, PRESENCE_SORTIS, PRESENCE_TOUS = "presents", "sortis", "tous"
+PRESENCES = (
+    (PRESENCE_PRESENTS, "Présents"),
+    (PRESENCE_SORTIS, "Sortis"),
+    (PRESENCE_TOUS, "Tous"),
+)
+
+
+def filtrer_presence(personnel: QuerySet[Personnel], presence: str) -> QuerySet[Personnel]:
+    """Filtre de la liste du personnel : présents par défaut (une valeur inconnue vaut « présents »)."""
+    if presence == PRESENCE_TOUS:
+        return personnel
+    if presence == PRESENCE_SORTIS:
+        return sortis(personnel)
+    return presents(personnel)
+
+
+def annoter_sortie(personnel: QuerySet[Personnel]) -> QuerySet[Personnel]:
+    """Ajoute ``date_sortie`` (sortie non annulée, appliquée ou à venir) et ``sortie_appliquee`` à chaque fiche,
+    pour les badges de la liste, sans une requête par ligne."""
+    actives = SortiePersonnel.objects.filter(employe=OuterRef("pk"), annulee_le__isnull=True)
+    return personnel.annotate(
+        date_sortie=Subquery(actives.values("date_sortie")[:1]),
+        sortie_appliquee=Exists(actives.filter(appliquee_le__isnull=False)),
+    )
+
+
+def resume_bilan(sortie: SortiePersonnel, bilan: dict) -> str:
+    """Phrase pour la RH : ce que la sortie vient de changer, ou sa date d'effet si elle est à venir."""
+    nom = f"{sortie.employe.prenom} {sortie.employe.nom}"
+    if sortie.appliquee_le is None:
+        return (
+            f"Sortie de {nom} enregistrée pour le {sortie.date_sortie:%d/%m/%Y} : jusque-là rien ne change, "
+            "les effets s'appliqueront ce jour-là."
+        )
+    effets = []
+    if bilan.get("compte_desactive"):
+        effets.append(f"compte {bilan['compte_desactive']} désactivé")
+    if bilan.get("compte_superutilisateur"):
+        effets.append(f"compte superutilisateur {bilan['compte_superutilisateur']} à désactiver en ligne de commande")
+    if bilan.get("conges_annules"):
+        effets.append(f"{bilan['conges_annules']} congé(s) à venir annulé(s)")
+    if bilan.get("subordonnes"):
+        superieur = bilan.get("nouveau_superieur")
+        cible = f"rattachée(s) à {superieur.prenom} {superieur.nom}" if superieur else "désormais sans supérieur"
+        effets.append(f"{bilan['subordonnes']} personne(s) de son équipe {cible}")
+    if bilan.get("fiche_chauffeur_inactive"):
+        effets.append("fiche chauffeur inactive")
+    if bilan.get("fiche_copilote_inactive"):
+        effets.append("fiche copilote inactive")
+    if bilan.get("missions_desaffectees"):
+        effets.append(f"mission(s) {', '.join(bilan['missions_desaffectees'])} à réaffecter (Parc Auto prévenu)")
+    if bilan.get("missions_sans_copilote"):
+        effets.append(f"retiré(e) de la mission {', '.join(bilan['missions_sans_copilote'])}")
+    detail = f" : {' ; '.join(effets)}" if effets else ""
+    return f"Sortie de {nom} appliquée{detail}."
 
 
 def sortie_active(employe: Personnel) -> SortiePersonnel | None:

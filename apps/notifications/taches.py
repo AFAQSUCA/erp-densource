@@ -21,6 +21,7 @@ from apps.drivers import services as drivers_services
 from apps.drivers.models import StatutChauffeur
 from apps.fleet import services as fleet_services
 from apps.hr import services as hr_services
+from apps.hr import sorties as hr_sorties
 from apps.hr.models import Conge, StatutConge
 from apps.parametres import services as parametres_services
 
@@ -164,6 +165,26 @@ def alerter_factures_echues(*, aujourd_hui: date | None = None) -> int:
     return crees
 
 
+def appliquer_sorties_du_jour(*, aujourd_hui: date | None = None) -> int:
+    """Sorties du personnel arrivées à leur date (hr.sorties). Une sortie retenue par une mission en cours est
+    réessayée chaque jour ; la RH en est prévenue une fois."""
+    resultat = hr_sorties.appliquer_sorties_echues(aujourd_hui=aujourd_hui)
+    if resultat["reportees"]:
+        destinataires = list(utilisateurs_du_role(Role.RH))
+        for sortie, raison in resultat["reportees"]:
+            employe = sortie.employe
+            notifier(
+                destinataires,
+                categorie=CategorieNotification.PERSONNEL,
+                niveau=NiveauNotification.ATTENTION,
+                titre=f"Sortie de {employe.prenom} {employe.nom} en attente",
+                message=raison,
+                url=reverse("hr:personnel_detail", args=[employe.pk]),
+                cle=f"sortie-en-attente:{sortie.pk}",
+            )
+    return resultat["appliquees"]
+
+
 def executer_taches_quotidiennes(*, aujourd_hui: date | None = None) -> dict[str, int]:
     """Lance toutes les tâches du jour et retourne leurs compteurs."""
     aujourd_hui = aujourd_hui or timezone.localdate()
@@ -173,6 +194,8 @@ def executer_taches_quotidiennes(*, aujourd_hui: date | None = None) -> dict[str
         "validations_en_retard": relancer_validations_en_retard(),
         "factures_echues": alerter_factures_echues(aujourd_hui=aujourd_hui),
         "proformas_expirees": billing_services.expirer_proformas(aujourd_hui=aujourd_hui),
+        # Avant la synchronisation des congés : les congés à venir d'un partant sont annulés, pas démarrés.
+        "sorties_appliquees": appliquer_sorties_du_jour(aujourd_hui=aujourd_hui),
     }
     conges = hr_services.synchroniser_statuts_conges(aujourd_hui=aujourd_hui)
     resultat["conges_demarres"] = conges["demarres"]

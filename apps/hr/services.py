@@ -62,9 +62,12 @@ def personnel_queryset() -> QuerySet[Personnel]:
     return Personnel.objects.select_related("superieur", "utilisateur")
 
 
-def rechercher_personnel(*, departement: str = "", recherche: str = "") -> QuerySet[Personnel]:
-    """Personnel filtré par département et par texte (nom, prénom, matricule, poste)."""
-    resultat = personnel_queryset()
+def rechercher_personnel(
+    *, departement: str = "", recherche: str = "", presence: str = sorties.PRESENCE_PRESENTS
+) -> QuerySet[Personnel]:
+    """Personnel filtré par présence (présents par défaut, sortis, tous), département et texte (nom, prénom,
+    matricule, poste), annoté de sa sortie éventuelle."""
+    resultat = sorties.annoter_sortie(sorties.filtrer_presence(personnel_queryset(), presence))
     if departement:
         resultat = resultat.filter(departement=departement)
     resultat = filtrer_par_texte(resultat, recherche, "nom", "prenom", "matricule", "poste")

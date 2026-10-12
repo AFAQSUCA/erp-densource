@@ -16,6 +16,7 @@ from apps.hr import sorties
 from apps.hr.exceptions import SortieImpossible
 from apps.hr.models import MotifSortie, SortiePersonnel
 from apps.missions.models import Mission, StatutMission
+from apps.notifications import taches
 from apps.notifications.models import Notification
 
 from .factories import MissionFactory
@@ -131,3 +132,28 @@ def test_un_chauffeur_sorti_n_est_plus_propose():
 
     assert chauffeur not in drivers_services.chauffeurs_actifs()
     assert chauffeur not in drivers_services.chauffeurs_disponibles()
+
+
+def test_la_tache_du_jour_previent_la_rh_une_seule_fois_d_une_sortie_retenue():
+    rh = UserFactory(role=Role.RH)
+    chauffeur = ChauffeurFactory(personnel__prenom="Issa", personnel__nom="Bamba")
+    _mission(StatutMission.EN_COURS_DEPART, chauffeur)
+    _sortir(chauffeur.personnel, le=AUJOURD_HUI + timedelta(days=1))
+
+    for jour in (1, 2):
+        resultat = taches.executer_taches_quotidiennes(aujourd_hui=AUJOURD_HUI + timedelta(days=jour))
+
+    assert resultat["sorties_appliquees"] == 0
+    (notification,) = Notification.objects.filter(destinataire=rh, titre="Sortie de Issa Bamba en attente")
+    assert "sur la route" in notification.message
+    assert notification.url == reverse("hr:personnel_detail", args=[chauffeur.personnel_id])
+
+
+def test_la_tache_du_jour_applique_une_sortie_echue():
+    chauffeur = ChauffeurFactory()
+    _sortir(chauffeur.personnel, le=AUJOURD_HUI + timedelta(days=1))
+
+    resultat = taches.executer_taches_quotidiennes(aujourd_hui=AUJOURD_HUI + timedelta(days=1))
+
+    assert resultat["sorties_appliquees"] == 1
+    assert Chauffeur.objects.get(pk=chauffeur.pk).statut == StatutChauffeur.INACTIF

@@ -19,18 +19,20 @@ from apps.core.formats import nombre
 from apps.core.views import ImpressionListeMixin, PaginationTolerante
 from apps.parametres import services as parametres_services
 
-from . import documents, permissions, sections, services
-from .exceptions import CongeError, ImportPersonnelError, PersonnelError
+from . import documents, permissions, sections, services, sorties
+from .exceptions import CongeError, ImportPersonnelError, PersonnelError, SortieImpossible
 from .forms import (
     AttributionForm,
     CongeForm,
     DecisionForm,
     DecisionReportForm,
     ImportPersonnelForm,
+    AnnulationSortieForm,
     PersonnelForm,
     ReportForm,
+    SortieForm,
 )
-from .models import AttributionConge, Departement, ReportConge, StatutConge
+from .models import AttributionConge, Departement, ReportConge, SortiePersonnel, StatutConge
 
 VUE_MES, VUE_A_VALIDER, VUE_TOUS = "mes", "a_valider", "tous"
 
@@ -373,11 +375,14 @@ class PersonnelListView(PaginationTolerante, RoleRequiredMixin, ListView):
         return services.rechercher_personnel(
             departement=self.request.GET.get("departement", ""),
             recherche=self.request.GET.get("q", ""),
+            presence=self.request.GET.get("presence", sorties.PRESENCE_PRESENTS),
         )
 
     def get_context_data(self, **kwargs):
         contexte = super().get_context_data(**kwargs)
         contexte.update(
+            presences=sorties.PRESENCES,
+            presence_choisie=self.request.GET.get("presence", sorties.PRESENCE_PRESENTS),
             departements=Departement.choices,
             departement_choisi=self.request.GET.get("departement", ""),
             recherche=self.request.GET.get("q", ""),
@@ -399,7 +404,8 @@ class PersonnelImprimerView(ImpressionListeMixin, PersonnelListView):
     )
 
     def get_sous_titre_impression(self):
-        morceaux = []
+        presence = dict(sorties.PRESENCES).get(self.request.GET.get("presence", ""), "Présents")
+        morceaux = [presence.lower()]
         if self.request.GET.get("departement", "") in Departement.values:
             morceaux.append(f"département : {Departement(self.request.GET['departement']).label}")
         if self.request.GET.get("q", ""):
@@ -429,10 +435,25 @@ class PersonnelDetailView(RoleRequiredMixin, DetailView):
             ),
             subordonnes=employe.subordonnes.order_by("nom", "prenom"),
             peut_modifier=utilisateur.role_effectif in permissions.PERSONNEL_MODIFICATION,
+            **self._contexte_sortie(employe, utilisateur),
             peut_accorder=peut_accorder,
             form_attribution=AttributionForm() if peut_accorder else None,
         )
         return contexte
+
+
+    @staticmethod
+    def _contexte_sortie(employe, utilisateur) -> dict:
+        sortie = sorties.sortie_active(employe)
+        peut_gerer = sorties.peut_gerer(utilisateur, employe)
+        return {
+            "sortie": sortie,
+            "sortie_en_attente": sortie is not None and sortie.appliquee_le is None
+            and sortie.date_sortie <= timezone.localdate(),
+            "sorties_annulees": [s for s in sorties.historique(employe) if s.annulee_le is not None],
+            "form_sortie": SortieForm() if peut_gerer and sortie is None else None,
+            "form_annulation_sortie": AnnulationSortieForm() if peut_gerer and sortie is not None else None,
+        }
 
 
 class PersonnelCreateView(RoleRequiredMixin, FormView):
@@ -541,6 +562,51 @@ class PersonnelUpdateView(RoleRequiredMixin, FormView):
             return self.form_invalid(form)
         messages.success(self.request, f"Fiche de {self.employe.prenom} {self.employe.nom} mise à jour.")
         return redirect("hr:personnel_detail", pk=self.employe.pk)
+
+
+class SortieView(RoleRequiredMixin, View):
+    """Enregistre la sortie d'un employé (POST) ; les règles sont dans ``hr.sorties``."""
+
+    roles = permissions.PERSONNEL_MODIFICATION
+    http_method_names = ["post"]
+
+    def post(self, request, pk):
+        employe = get_object_or_404(services.personnel_queryset(), pk=pk)
+        form = SortieForm(request.POST)
+        if not form.is_valid():
+            _erreurs_en_messages(request, form)
+            return redirect("hr:personnel_detail", pk=employe.pk)
+        try:
+            sortie, bilan = sorties.enregistrer_sortie(employe, request.user, **form.cleaned_data)
+        except SortieImpossible as erreur:
+            messages.error(request, str(erreur))
+        else:
+            messages.success(request, sorties.resume_bilan(sortie, bilan))
+        return redirect("hr:personnel_detail", pk=employe.pk)
+
+
+class AnnulationSortieView(RoleRequiredMixin, View):
+    """Annule une sortie (POST), motif obligatoire."""
+
+    roles = permissions.PERSONNEL_MODIFICATION
+    http_method_names = ["post"]
+
+    def post(self, request, pk):
+        sortie = get_object_or_404(SortiePersonnel.objects.select_related("employe"), pk=pk)
+        form = AnnulationSortieForm(request.POST)
+        if not form.is_valid():
+            _erreurs_en_messages(request, form)
+            return redirect("hr:personnel_detail", pk=sortie.employe_id)
+        try:
+            sorties.annuler_sortie(sortie, request.user, motif=form.cleaned_data["motif"])
+        except SortieImpossible as erreur:
+            messages.error(request, str(erreur))
+        else:
+            reactiver = (
+                " Son compte et ses fiches chauffeur ou copilote se réactivent à la main." if sortie.appliquee_le else ""
+            )
+            messages.success(request, f"Sortie annulée : l'employé fait de nouveau partie du personnel.{reactiver}")
+        return redirect("hr:personnel_detail", pk=sortie.employe_id)
 
 
 class AttributionView(RoleRequiredMixin, View):

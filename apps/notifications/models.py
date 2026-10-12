@@ -17,6 +17,7 @@ class CategorieNotification(models.TextChoices):
     FRAIS_MISSION = "FRAIS_MISSION", _("Frais de mission")
     DEMANDE_DEPENSE = "DEMANDE_DEPENSE", _("Demande de dépense")
     INCIDENT = "INCIDENT", _("Incident")
+    PERSONNEL = "PERSONNEL", _("Personnel")
 
 
 class NiveauNotification(models.TextChoices):

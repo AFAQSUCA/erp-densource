@@ -20,6 +20,13 @@
     {% endif %}
   </div>
   <p class="mt-1 text-sm text-slate-600">Matricule {{ employe.matricule }} · {{ employe.poste }}</p>
+  {% if sortie %}
+    <p class="mt-3 inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm font-semibold {% if sortie.appliquee_le %}bg-slate-200 text-slate-800{% else %}bg-amber-100 text-amber-900{% endif %}">
+      <i class="fa-solid fa-door-open" aria-hidden="true"></i>
+      {% if sortie.appliquee_le %}Sorti(e) le {{ sortie.date_sortie|date:"d/m/Y" }}{% else %}Départ prévu le {{ sortie.date_sortie|date:"d/m/Y" }}{% endif %}
+      · {{ sortie.get_motif_display }}
+    </p>
+  {% endif %}
 
   <div class="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-3">
     <div class="space-y-6 xl:col-span-1">
@@ -35,6 +42,55 @@
           <div><dt class="text-slate-600">Compte utilisateur</dt><dd class="mt-0.5 font-medium text-slate-900">{% if employe.utilisateur %}{{ employe.utilisateur.username }} ({{ employe.utilisateur.get_role_display }}){% else %}<span class="text-amber-900">Aucun : pas d'accès aux congés</span>{% endif %}</dd></div>
         </dl>
       </section>
+
+      {% if sortie or form_sortie or sorties_annulees %}
+        <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-sortie">
+          <h2 id="titre-sortie" class="text-base font-semibold text-slate-900">Sortie</h2>
+          {% if sortie %}
+            <dl class="mt-4 space-y-3 text-sm">
+              <div><dt class="text-slate-600">{% if sortie.appliquee_le %}Sorti(e) le{% else %}Départ prévu le{% endif %}</dt><dd class="mt-0.5 font-medium text-slate-900">{{ sortie.date_sortie|date:"d/m/Y" }}</dd></div>
+              <div><dt class="text-slate-600">Motif</dt><dd class="mt-0.5 font-medium text-slate-900">{{ sortie.get_motif_display }}{% if sortie.commentaire %} · <span class="font-normal text-slate-700">{{ sortie.commentaire }}</span>{% endif %}</dd></div>
+              <div><dt class="text-slate-600">Enregistrée</dt><dd class="mt-0.5 text-slate-800">le {{ sortie.created_at|date:"d/m/Y" }} par {{ sortie.enregistree_par|default:"un compte supprimé" }}</dd></div>
+            </dl>
+            {% if sortie_en_attente %}
+              <p role="status" class="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">La date est passée mais les effets ne sont pas encore appliqués : une mission est en cours. Ils s'appliqueront le lendemain de la livraison.</p>
+            {% elif not sortie.appliquee_le %}
+              <p class="mt-3 text-xs text-slate-600">Jusqu'à cette date, rien ne change. Le jour venu : compte désactivé, fiches chauffeur et copilote inactives, congés à venir annulés, équipe rattachée au supérieur, missions affectées à réaffecter.</p>
+            {% endif %}
+            {% if form_annulation_sortie %}
+              <details class="mt-4 border-t border-slate-100 pt-3">
+                <summary class="cursor-pointer text-sm font-semibold text-slate-800">Annuler la sortie</summary>
+                <form method="post" action="{% url 'hr:personnel_sortie_annuler' sortie.pk %}" class="mt-3 space-y-3">
+                  {% csrf_token %}
+                  {% include "components/_champ.html" with champ=form_annulation_sortie.motif %}
+                  {% if sortie.appliquee_le %}<p class="text-xs text-slate-600">Le compte et les fiches chauffeur ou copilote ne se réactivent pas automatiquement.</p>{% endif %}
+                  <button type="submit" class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">Annuler la sortie</button>
+                </form>
+              </details>
+            {% endif %}
+          {% elif form_sortie %}
+            <details class="mt-3">
+              <summary class="cursor-pointer text-sm font-semibold text-slate-800">Enregistrer une sortie (démission, licenciement…)</summary>
+              <form method="post" action="{% url 'hr:personnel_sortie' employe.pk %}" class="mt-3 space-y-3">
+                {% csrf_token %}
+                {% include "components/_champ.html" with champ=form_sortie.date_sortie %}
+                {% include "components/_champ.html" with champ=form_sortie.motif %}
+                {% include "components/_champ.html" with champ=form_sortie.commentaire %}
+                <p class="text-xs text-slate-600">Date à venir possible (préavis) : rien ne change avant. Ce jour-là : compte désactivé, fiches chauffeur et copilote inactives, congés à venir annulés, équipe rattachée à son supérieur, missions affectées à réaffecter. Refusée tant qu'il est sur la route.</p>
+                <button type="submit" class="rounded-lg bg-red-700 px-4 py-2 text-sm font-semibold text-white hover:bg-red-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-700 focus-visible:ring-offset-2">Enregistrer la sortie</button>
+              </form>
+            </details>
+          {% endif %}
+          {% if sorties_annulees %}
+            <h3 class="mt-4 text-sm font-semibold text-slate-900">Sorties annulées</h3>
+            <ul class="mt-2 space-y-2 text-sm">
+              {% for s in sorties_annulees %}
+                <li class="text-slate-700">{{ s.get_motif_display }} au {{ s.date_sortie|date:"d/m/Y" }}, annulée le {{ s.annulee_le|date:"d/m/Y" }} par {{ s.annulee_par|default:"un compte supprimé" }} : {{ s.motif_annulation }}</li>
+              {% endfor %}
+            </ul>
+          {% endif %}
+        </section>
+      {% endif %}
 
       {% if subordonnes %}
         <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-equipe">
