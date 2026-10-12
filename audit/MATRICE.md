@@ -14,7 +14,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 
 ## Bilan
 
-**440 exigences : 386 ✅, 33 🟡, 8 ❌, 10 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **92,1 %**.
+**440 exigences : 387 ✅, 33 🟡, 7 ❌, 10 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **92,3 %**.
 
 | Bloc | Lignes | ✅ | 🟡 | ❌ | ❓ | ⚪ |
 |---|---|---|---|---|---|---|
@@ -30,7 +30,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M10 Finances | 13 | 13 | 0 | 0 | 0 | 0 |
 | M11 RH | 30 | 30 | 0 | 0 | 0 | 0 |
 | M12 Tableaux de bord | 28 | 26 | 0 | 0 | 0 | 2 |
-| Technique | 87 | 62 | 14 | 2 | 8 | 1 |
+| Technique | 87 | 63 | 14 | 1 | 8 | 1 |
 | Recette | 7 | 7 | 0 | 0 | 0 | 0 |
 | Avenants | 17 | 3 | 9 | 5 | 0 | 0 |
 | Écarts d'audit | 22 | 9 | 10 | 1 | 2 | 0 |
@@ -505,7 +505,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | TECH-84 | checklist Technique | Dépendances reproductibles | 🟡 | `requirements/*.txt` en `>=`, sans fichier de verrouillage | Fichier de verrouillage | À faire |
 | TECH-85 | checklist Technique | Migrations à jour | ✅ | `manage.py makemigrations --check` : aucun changement | — | Fait |
 | TECH-86 | checklist Technique | Suite de tests verte | ✅ | 3 173 tests réussis, 0 échec ; suite rejouée avec l'horloge avancée d'un et de deux ans sans autre échec (seul un artefact du décalage) ; voir AUD-01 | Fait (`1c87fbb`) | Fait |
-| TECH-87 | §4 l.273 | Changement de mot de passe une fois connecté | ❌ | NON TROUVÉ (aucune route `password_change`) | Écran « Changer mon mot de passe » | À faire |
+| TECH-87 | §4 l.273 | Changement de mot de passe une fois connecté | ✅ | `apps/accounts/views.py:91` (`/mon-mot-de-passe/`, lien clé dans `templates/base.html`) : ancien mot de passe exigé, validateurs, session gardée, événement tracé (`apps/audit/signals.py`) ; tests `apps/accounts/tests/test_changer_mot_de_passe.py` (6 tests) ; vérifié dans le navigateur | Fait (`358b5c9`) | Fait |
 
 ## Recette (CDC §6, lignes 330-343)
 
