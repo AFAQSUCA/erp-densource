@@ -3,7 +3,7 @@ from django.db import models
 from django.db.models import Q
 from django.utils.translation import gettext_lazy as _
 
-from apps.core.models import BaseModel
+from apps.core.models import ActiveManager, BaseModel
 
 from .exceptions import EcritureVerrouillee
 
@@ -62,6 +62,24 @@ class StatutEcriture(models.TextChoices):
     VALIDEE = "VALIDEE", _("Validée")
 
 
+class EcritureQuerySet(models.QuerySet):
+    """Modifications et suppressions **en masse** : mêmes verrous que ``save()`` / ``delete()`` (audit AV-06).
+    Sans cela, ``EcritureComptable.objects.filter(...).update(...)`` modifiait une écriture validée. En base
+    PostgreSQL, un déclencheur (migration 0005) refuse aussi tout accès qui contournerait Django."""
+
+    def _exiger_aucune_validee(self, action: str) -> None:
+        if self.filter(statut=StatutEcriture.VALIDEE).exists():
+            raise EcritureVerrouillee(f"Une écriture validée ne se {action} pas, même en masse : contre-passez-la.")
+
+    def update(self, **kwargs):
+        self._exiger_aucune_validee("modifie")
+        return super().update(**kwargs)
+
+    def delete(self):
+        self._exiger_aucune_validee("supprime")
+        return super().delete()
+
+
 class EcritureComptable(BaseModel):
     """En-tête d'une écriture comptable — cahier-des-charges.md:340 (« écriture comptable
     équilibrée »). Une fois ``VALIDEE``, elle ne se modifie ni ne se supprime : seule une
@@ -114,6 +132,9 @@ class EcritureComptable(BaseModel):
             ),
         ]
 
+    objects = ActiveManager.from_queryset(EcritureQuerySet)()
+    all_objects = models.Manager.from_queryset(EcritureQuerySet)()
+
     def __str__(self):
         return self.numero or f"{self.journal} — {self.libelle}"
 
@@ -136,6 +157,19 @@ class EcritureComptable(BaseModel):
         super().delete(*args, **kwargs)
 
 
+class LigneQuerySet(models.QuerySet):
+    """Lignes append-only, même en masse (audit AV-06) : jamais modifiées ; supprimées seulement dans un
+    brouillon."""
+
+    def update(self, **kwargs):
+        raise EcritureVerrouillee("Une ligne d'écriture ne se modifie pas : contre-passez plutôt.")
+
+    def delete(self):
+        if self.filter(ecriture__statut=StatutEcriture.VALIDEE).exists():
+            raise EcritureVerrouillee("Une ligne d'une écriture validée ne se supprime pas : contre-passez plutôt.")
+        return super().delete()
+
+
 class LigneEcriture(models.Model):
     """Ligne débit ou crédit d'une écriture — append-only, comme ``inventory.MouvementStock``."""
 
@@ -152,6 +186,8 @@ class LigneEcriture(models.Model):
     # suivi par tiers (compte 411 par client) sans dépendre de ``customers`` au niveau du modèle.
     tiers_type = models.CharField(_("type de tiers"), max_length=20, blank=True)
     tiers_id = models.PositiveIntegerField(_("ID tiers"), null=True, blank=True)
+
+    objects = LigneQuerySet.as_manager()
 
     class Meta:
         verbose_name = _("ligne d'écriture")

@@ -27,7 +27,7 @@ from apps.billing.tests.helpers import emise, finances
 from apps.finance import services as finance_services
 from apps.finance.models import LigneReleve, MouvementManuel, NatureMouvement, SensMouvement
 
-from .factories import CompteFactory
+from .factories import CompteFactory, forcer_delete, forcer_update
 
 pytestmark = pytest.mark.django_db
 
@@ -195,7 +195,7 @@ def test_annuler_un_reglement_est_tout_ou_rien_si_la_contre_passation_est_imposs
 
 def test_annuler_un_reglement_jamais_comptabilise_n_echoue_pas():
     reglement = _reglement()
-    EcritureComptable.objects.filter(origine="REGLEMENT", origine_id=reglement.pk).update(origine="ANCIEN")
+    forcer_update(EcritureComptable.objects.filter(origine="REGLEMENT", origine_id=reglement.pk), origine="ANCIEN")
 
     billing_services.annuler_reglement(reglement, finances(), motif="Erreur")
 
@@ -273,7 +273,7 @@ def test_depointer_mouvement_renvoie_le_nombre_de_lignes_defaites():
 
 def _annulation_ancienne(*objets):
     """Simule des annulations faites avant ce lot : les objets disparaissent sans contre-passation."""
-    EcritureComptable.objects.filter(origine="CONTRE_PASSATION").delete()
+    forcer_delete(EcritureComptable.objects.filter(origine="CONTRE_PASSATION"))
     for objet in objets:
         type(objet).objects.filter(pk=objet.pk).update(is_deleted=True, deleted_at=timezone.now())
 
@@ -307,7 +307,7 @@ def test_la_reprise_ignore_ce_qui_n_a_jamais_ete_comptabilise_et_signale_l_impos
     from django.core.management import call_command
 
     jamais, bloque = _reglement("1000"), _reglement("2000")
-    EcritureComptable.objects.filter(origine="REGLEMENT", origine_id=jamais.pk).update(origine="ANCIEN")
+    forcer_update(EcritureComptable.objects.filter(origine="REGLEMENT", origine_id=jamais.pk), origine="ANCIEN")
     _annulation_ancienne(jamais, bloque)
     Compte.objects.filter(numero="521000").update(actif=False)
     sortie, erreurs = StringIO(), StringIO()
