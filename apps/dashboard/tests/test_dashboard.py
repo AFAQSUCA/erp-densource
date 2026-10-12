@@ -240,6 +240,31 @@ def test_un_chauffeur_inactif_n_apparait_pas_dans_les_alertes():
     assert "chauffeurs" not in _groupes(Role.RH)
 
 
+def test_un_chauffeur_a_la_fiche_permis_incomplete_est_signale():
+    """Audit M12-10 : une date de permis (ou un n°, une catégorie, une visite) non renseignée bloque l'affectation ;
+    elle doit apparaître dans les alertes, pas seulement les dates qui expirent."""
+    chauffeur = ChauffeurFactory(date_expiration_permis=None, categories_permis=["B"])
+    ChauffeurFactory(statut="INACTIF", numero_permis="")  # parti : pas d'alerte
+
+    groupe = _groupes(Role.RH)["chauffeurs"]
+
+    assert groupe["nombre"] == 1
+    ligne = groupe["lignes"][0]
+    assert ligne["libelle"] == f"Fiche permis · {chauffeur.personnel.prenom} {chauffeur.personnel.nom}"
+    assert ligne["etat"] == "MANQUANT"
+    assert "date d'expiration du permis non renseignée" in ligne["detail"]
+    assert "ni catégorie C ni catégorie E" in ligne["detail"]
+
+
+def test_les_echeances_datees_passent_avant_les_fiches_incompletes():
+    ChauffeurFactory(numero_permis="")
+    ChauffeurFactory(date_expiration_permis=AUJOURD_HUI + timedelta(days=5))
+
+    lignes = _groupes(Role.RH)["chauffeurs"]["lignes"]
+
+    assert [ligne["etat"] for ligne in lignes] == ["A_RENOUVELER", "MANQUANT"]
+
+
 def test_alerte_stock_rupture_urgente_et_stock_bas_attention():
     ArticleFactory(designation="Filtre", reference="F-1", quantite=3, seuil_minimal=5)
     assert _groupes(Role.PARCAUTO)["stock"]["niveau"] == "ATTENTION"

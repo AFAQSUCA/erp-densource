@@ -14,7 +14,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 
 ## Bilan
 
-**440 exigences : 382 ✅, 35 🟡, 10 ❌, 10 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **91,4 %**.
+**440 exigences : 384 ✅, 33 🟡, 10 ❌, 10 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **91,6 %**.
 
 | Bloc | Lignes | ✅ | 🟡 | ❌ | ❓ | ⚪ |
 |---|---|---|---|---|---|---|
@@ -29,13 +29,13 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M9 Facturation | 27 | 27 | 0 | 0 | 0 | 0 |
 | M10 Finances | 13 | 13 | 0 | 0 | 0 | 0 |
 | M11 RH | 30 | 30 | 0 | 0 | 0 | 0 |
-| M12 Tableaux de bord | 28 | 25 | 1 | 0 | 0 | 2 |
+| M12 Tableaux de bord | 28 | 26 | 0 | 0 | 0 | 2 |
 | Technique | 87 | 61 | 14 | 3 | 8 | 1 |
 | Recette | 7 | 7 | 0 | 0 | 0 | 0 |
 | Avenants | 17 | 3 | 9 | 5 | 0 | 0 |
-| Écarts d'audit | 22 | 7 | 11 | 2 | 2 | 0 |
+| Écarts d'audit | 22 | 8 | 10 | 2 | 2 | 0 |
 
-**Reprise à M12-10** (première ligne non terminée, dans l'ordre des ID).
+**Reprise à TECH-18** (première ligne non terminée, dans l'ordre des ID).
 
 ## Contradictions entre sources (règle 1)
 
@@ -395,7 +395,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M12-07 | M12 l.229 | Camions au garage | ✅ | `apps/dashboard/services.py:90` | — | Fait |
 | M12-08 | M12 l.230 | Conso moyenne globale | ✅ | `apps/dashboard/services.py:90` | — | Fait |
 | M12-09 | M12 l.231 | Alerte : assurances expirantes | ✅ | `apps/dashboard/services.py:284` ; documents manquants et camions réformés traités (voir M2-22) | Fait (`cbb3d51`) | Fait |
-| M12-10 | M12 l.231 | Alerte : permis expirants | 🟡 | `apps/dashboard/services.py:305` ; date de permis manquante jamais signalée | Signaler « non renseigné » | À faire |
+| M12-10 | M12 l.231 | Alerte : permis expirants | ✅ | `apps/dashboard/services.py:341` : en plus des dates qui expirent, fiche permis incomplète (n°, date, catégorie C/E, visite médicale) signalée « non renseigné(e) » ; règle commune `apps/drivers/services.py:242,257` (aussi pour « Voir tout ») ; tests `apps/dashboard/tests/test_dashboard.py:243`, `apps/drivers/tests/test_services.py` ; vérifié dans le navigateur | Fait (`501f90e`) | Fait |
 | M12-11 | M12 l.231 | Alerte : pièces sous seuil | ✅ | `apps/dashboard/services.py:336` | — | Fait |
 | M12-12 | M12 l.232 | Alerte : factures impayées échues | ✅ | `apps/dashboard/services.py:387` | — | Fait |
 | M12-13 | M12 l.234 | RH : effectif | ✅ | `apps/dashboard/services.py:148`, sans le personnel sorti `apps/hr/services.py:543` (test `apps/hr/tests/test_sorties.py`) | — | Fait |
@@ -551,7 +551,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | AUD-04 | TECH-57 | Suppression physique via l'admin Django | 🟡 | `apps/fuel/admin.py`, `apps/missions/admin.py`, `apps/garage/admin.py`, `apps/accounting/admin.py:29` (comptes) | Interdire | À faire |
 | AUD-05 | M9-16 | Centimes acceptés (règlements, dépenses, mouvements) | ✅ | Refusés, jamais arrondis : `apps/core/montants.py` (`exiger_montant_entier`), appelé par billing, finance, missions, garage, inventory, fuel, accounting ; décision du 12/10/2026 (`avenant-montants-fcfa.md`) ; tests `apps/core/tests/test_montants.py` (13 tests) | Fait (`d621d1e`) | Fait |
 | AUD-06 | M9-16 | Double soumission non protégée (règlement, dépense, mouvement, imprévu) | ✅ | Navigateur : un formulaire POST envoyé une fois (`static/js/app.js:27`) ; serveur : enregistrement identique de moins d'une minute refusé (`apps/core/doublons.py`, `apps/billing/services.py:469,661`, `apps/finance/services.py:85`, `apps/missions/terrain.py:98,128`) ; tests `apps/core/tests/test_doublons.py` (6 tests) | Fait (`762f616`) | Fait |
-| AUD-07 | M11-11 | Même compte en N1 et N2 | 🟡 | `apps/hr/services.py:336` | Voir M11-11 | À faire |
+| AUD-07 | M11-11 | Même compte en N1 et N2 | ✅ | `apps/hr/services.py:511,522` ; voir M11-11 ; tests `apps/hr/tests/test_separation_n1_n2.py` | Fait (`a1a8ddf`, `ab285ae`) | Fait |
 | AUD-08 | TECH-46 | `TRUSTED_PROXY_COUNT` absent de `docker-compose.yml` | ✅ | `docker-compose.yml` (`web`, `realtime` : `${TRUSTED_PROXY_COUNT:-1}`) ; guide § variables mis à jour | Fait | Fait |
 | AUD-09 | M1-11 | L'ADMIN peut créer un compte DIRECTION et valider à sa place | ❓ | `apps/accounts/services.py:76-121` | Règle des deux personnes ? | Décision |
 | AUD-10 | M5-04 | Chauffeur sans permis / visite / catégorie C-E affectable | ✅ | Bloquant (décision du 12/10/2026) : voir M5-04 | Fait (`65c73ed`) | Fait |
