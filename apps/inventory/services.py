@@ -14,6 +14,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from django.db import transaction
 from django.db.models import F, QuerySet
 
+from apps.core.montants import exiger_montant_entier
 from apps.core.search import filtrer_par_texte
 from apps.garage.models import OrdreReparation, StatutOr
 
@@ -146,6 +147,7 @@ def enregistrer_entree(
     prix = Decimal(prix_unitaire)
     if prix <= 0:
         raise PrixInvalide("Le prix d'achat doit être strictement positif.")
+    exiger_montant_entier(prix, libelle="Le prix d'achat", erreur=PrixInvalide)
 
     _verrouiller(article)
     valeur = Decimal(article.quantite) * article.pump + Decimal(quantite) * prix

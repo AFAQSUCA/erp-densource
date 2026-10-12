@@ -17,6 +17,8 @@ from django.db import transaction
 from django.db.models import QuerySet
 from django.utils import timezone
 
+from apps.core.montants import exiger_montant_entier
+
 from apps.drivers.models import Chauffeur
 
 from . import permissions, signals
@@ -89,6 +91,7 @@ def declarer_imprevu(
     montant = Decimal(montant)
     if montant <= 0:
         raise FraisInvalide("Le montant doit être strictement positif.")
+    exiger_montant_entier(montant, erreur=FraisInvalide)
     if not justificatif:
         raise FraisInvalide("Une preuve (photo, facture) est obligatoire pour un imprévu.")
     frais = FraisMission.objects.create(
@@ -114,6 +117,7 @@ def planifier_frais(
     montant = Decimal(montant)
     if montant <= 0:
         raise FraisInvalide("Le montant doit être strictement positif.")
+    exiger_montant_entier(montant, erreur=FraisInvalide)
     return FraisMission.objects.create(
         mission=mission,
         type_frais=type_frais,

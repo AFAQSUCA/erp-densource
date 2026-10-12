@@ -18,6 +18,7 @@ from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from apps.audit import services as audit_services
+from apps.core.montants import exiger_montant_entier
 from apps.core.search import filtrer_par_texte
 from apps.core.services import prochain_numero, total_par_mois
 from apps.customers.models import Client
@@ -292,6 +293,7 @@ def ajouter_ligne(
         raise MontantInvalide("La quantité doit être strictement positive.")
     if prix_unitaire_ht < 0:
         raise MontantInvalide("Le prix unitaire ne peut pas être négatif.")
+    exiger_montant_entier(prix_unitaire_ht, libelle="Le prix unitaire", erreur=MontantInvalide)
     ligne = LigneFacture.objects.create(
         facture=facture,
         designation=designation,
@@ -453,6 +455,7 @@ def enregistrer_reglement(
     montant = Decimal(montant)
     if montant <= 0:
         raise ReglementInvalide("Le montant du règlement doit être strictement positif.")
+    exiger_montant_entier(montant, libelle="Le montant du règlement", erreur=ReglementInvalide)
     reste = reste_a_recouvrer(facture)
     if montant > reste:
         raise ReglementInvalide(
@@ -641,9 +644,11 @@ def enregistrer_depense(
     montant = Decimal(montant)
     if montant <= 0:
         raise MontantInvalide("Le montant de la dépense doit être strictement positif.")
+    exiger_montant_entier(montant, libelle="Le montant de la dépense", erreur=MontantInvalide)
     montant_tva = Decimal(montant_tva)
     if montant_tva < 0:
         raise MontantInvalide("La TVA déductible ne peut pas être négative.")
+    exiger_montant_entier(montant_tva, libelle="La TVA déductible", erreur=MontantInvalide)
     if montant_tva >= montant:
         raise MontantInvalide("La TVA déductible doit être strictement inférieure au montant TTC.")
     if date_depense > timezone.localdate():
@@ -717,6 +722,7 @@ def creer_proforma(
         raise MontantInvalide("Le poids doit être strictement positif.")
     if prix_convenu < 0:
         raise MontantInvalide("Le prix convenu ne peut pas être négatif.")
+    exiger_montant_entier(prix_convenu, libelle="Le prix convenu", erreur=MontantInvalide)
     proforma = Proforma.objects.create(
         client=client,
         lieu_chargement=lieu_chargement,
@@ -755,6 +761,7 @@ def modifier_proforma(
         raise MontantInvalide("Le poids doit être strictement positif.")
     if prix_convenu < 0:
         raise MontantInvalide("Le prix convenu ne peut pas être négatif.")
+    exiger_montant_entier(prix_convenu, libelle="Le prix convenu", erreur=MontantInvalide)
     if not ZERO <= taux <= Decimal(100):
         raise MontantInvalide("Le taux de TVA doit être compris entre 0 et 100 %.")
     if taux == 0 and not motif_exoneration:

@@ -159,9 +159,9 @@ def test_categories_articles_sans_doublon_ni_valeur_vide_et_triees():
 
 def test_valeur_totale_du_stock_au_pump_en_decimal_exact():
     _approvisionne(10, "1000")
-    _approvisionne(4, "2500.50")
+    _approvisionne(4, "2501")  # PUMP non entier (20 004 / 14), valeur totale exacte
 
-    assert services.valeur_totale_stock() == Decimal("20002.00")
+    assert services.valeur_totale_stock() == Decimal("20004.00")
 
 
 def test_valeur_totale_du_stock_vide_est_nulle():

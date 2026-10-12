@@ -14,6 +14,7 @@ from django.db import transaction
 from django.db.models import QuerySet
 from django.utils import timezone
 
+from apps.core.montants import exiger_montant_entier
 from apps.core.search import filtrer_par_texte
 from apps.core.services import prochain_numero
 from apps.fleet import services as fleet_services
@@ -79,6 +80,7 @@ def cloturer_or(
     """
     if cout_main_oeuvre < 0:
         raise CoutInvalide("Le coût de la main-d'œuvre ne peut pas être négatif.")
+    exiger_montant_entier(cout_main_oeuvre, libelle="Le coût de la main-d'œuvre", erreur=CoutInvalide)
     _verrouiller(ordre)
     if ordre.statut != StatutOr.OUVERT:
         raise TransitionOrInterdite(f"L'OR {ordre.numero} est déjà clôturé.")
