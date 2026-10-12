@@ -12,16 +12,16 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 **Statut** : `Fait` (preuve + test) · `À faire` · `Décision` (règle métier à trancher par l'entreprise) ·
 `Hors code` (vérification manuelle) · `—` (non applicable).
 
-## Bilan initial
+## Bilan
 
-**438 exigences : 333 ✅, 75 🟡, 14 ❌, 13 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **85,2 %**.
+**439 exigences : 334 ✅, 75 🟡, 14 ❌, 13 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **85,2 %**.
 
 | Bloc | Lignes | ✅ | 🟡 | ❌ | ❓ | ⚪ |
 |---|---|---|---|---|---|---|
 | M1 Sécurité & audit | 77 | 63 | 11 | 2 | 1 | 0 |
 | M2 Flotte | 26 | 18 | 7 | 1 | 0 | 0 |
 | M3 Chauffeurs | 18 | 17 | 1 | 0 | 0 | 0 |
-| M4 Clients | 15 | 13 | 2 | 0 | 0 | 0 |
+| M4 Clients | 15 | 14 | 1 | 0 | 0 | 0 |
 | M5 Missions | 31 | 30 | 1 | 0 | 0 | 0 |
 | M6 Carburant | 17 | 16 | 1 | 0 | 0 | 0 |
 | M7 Garage | 13 | 12 | 1 | 0 | 0 | 0 |
@@ -33,9 +33,9 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | Technique | 87 | 58 | 17 | 3 | 8 | 1 |
 | Recette | 7 | 7 | 0 | 0 | 0 | 0 |
 | Avenants | 17 | 0 | 11 | 6 | 0 | 0 |
-| Écarts d'audit | 20 | 0 | 14 | 2 | 4 | 0 |
+| Écarts d'audit | 21 | 0 | 15 | 2 | 4 | 0 |
 
-**Reprise à M1-09** (première ligne non terminée, dans l'ordre des ID).
+**Reprise à AV-04 (point critique demandé en priorité), puis M1-09** (première ligne non terminée, dans l'ordre des ID).
 
 ## Contradictions entre sources (règle 1)
 
@@ -196,7 +196,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M4-06 | M4 l.120 | Adresse / siège | ✅ | `apps/customers/models.py:33` | — | Fait |
 | M4-07 | M4 l.120 | Chargé clientèle attitré | ✅ | `apps/customers/models.py:34` | — | Fait |
 | M4-08 | M4 l.120 | Taux de TVA par défaut 18 % | ✅ | `apps/customers/models.py:12` | — | Fait |
-| M4-09 | M4 l.121 | Taux 0 % si exonéré | 🟡 | **Critique** : l'écran de modification remet 18 % (`apps/customers/templates/customers/client_form.html:50`, filtre `default` sur `0.00`) | Corriger le gabarit + test | À faire |
+| M4-09 | M4 l.121 | Taux 0 % si exonéré | ✅ | `apps/customers/templates/customers/client_form.html:51` (valeur non localisée, 0,00 conservé) ; tests `apps/customers/tests/test_views.py:286,298` ; vérifié dans le navigateur | Corrigé (`e443e67`) | Fait |
 | M4-10 | M4 l.121 | Motif obligatoire si 0 % | ✅ | `apps/customers/models.py:46` + contrainte, service, formulaire | — | Fait |
 | M4-11 | M4 l.122 | Interactions : appels | ✅ | `apps/customers/models.py:89` | — | Fait |
 | M4-12 | M4 l.122 | Interactions : mails | ✅ | `apps/customers/models.py:89` | — | Fait |
@@ -565,3 +565,4 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | AUD-18 | TECH-55 | Mot de passe de la base dans les arguments de `pg_dump` | 🟡 | `ops/sauvegarde.sh:48` | `PGPASSFILE` | À faire |
 | AUD-19 | TECH-43 | Tables de sessions et de jetons jamais purgées | 🟡 | Aucune planification de `clearsessions` / `flushexpiredtokens` | Tâche planifiée | À faire |
 | AUD-20 | architecture | `architecture.md` ne reflète plus les dépendances réelles | 🟡 | `apps/notifications` importe 12 apps | Mettre à jour le schéma | À faire |
+| AUD-21 | M9-10 | Modification d'un devis : TVA écrite « 18,00 » (format français), refusée par le champ numérique qui reste vide | 🟡 | `apps/billing/templates/billing/proforma_modifier.html:21,41` | `unlocalize`, comme M4-09 | À faire |
