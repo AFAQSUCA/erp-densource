@@ -695,6 +695,8 @@ def ajouter_ligne_manuelle(
     """Ajoute une ligne à un brouillon d'écriture manuelle."""
     _exiger_role(acteur, permissions.SAISIE_OD, "saisir une écriture")
     _exiger_brouillon(ecriture, "ajouter une ligne")
+    if sens not in SensEcriture.values:  # audit AV-09
+        raise EcritureNonEquilibree("Le sens d'une ligne est débit ou crédit.")
     montant = Decimal(montant)
     if montant <= 0:
         raise EcritureNonEquilibree("Le montant doit être strictement positif.")
@@ -730,9 +732,11 @@ def valider_ecriture_manuelle(ecriture: EcritureComptable, acteur) -> EcritureCo
     _exiger_role(acteur, permissions.VALIDATION_OD, "valider une écriture", strict=True)
     _exiger_brouillon(ecriture, "valider l'écriture")
     _exiger_exercice_ouvert(ecriture.date_ecriture)
-    lignes = list(ecriture.lignes.all())
+    lignes = list(ecriture.lignes.select_related("compte"))
     if len(lignes) < 2:
         raise EcritureNonEquilibree("Une écriture comptable a au moins 2 lignes.")
+    # Un compte a pu être désactivé entre la saisie du brouillon et sa validation (audit AV-09).
+    _comptes_actifs({ligne.compte.numero for ligne in lignes})
     total_debit = sum((l.montant for l in lignes if l.sens == SensEcriture.DEBIT), Decimal("0"))
     total_credit = sum((l.montant for l in lignes if l.sens == SensEcriture.CREDIT), Decimal("0"))
     if total_debit != total_credit:
