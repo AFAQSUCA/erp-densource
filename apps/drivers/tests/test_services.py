@@ -159,3 +159,16 @@ def test_un_delai_d_alerte_raccourci_dans_les_parametres_ecarte_un_permis_encore
 
     assert chauffeur not in services.chauffeurs_a_renouveler(aujourd_hui=date(2026, 9, 20))
     assert services.etat_echeances(chauffeur, aujourd_hui=date(2026, 9, 20))[0]["etat"] == "VALIDE"
+
+
+def test_la_liste_en_alerte_inclut_les_fiches_permis_incompletes():
+    """Audit M12-10 : le lien « voir tout » de l'alerte du tableau de bord montre aussi ces chauffeurs."""
+    from apps.drivers.tests.factories import ChauffeurFactory
+
+    incomplet = ChauffeurFactory(date_expiration_visite_medicale=None)
+    complet = ChauffeurFactory()
+    parti = ChauffeurFactory(statut="INACTIF", numero_permis="")
+
+    trouves = set(services.rechercher_chauffeurs(a_renouveler=True))
+
+    assert incomplet in trouves and complet not in trouves and parti not in trouves

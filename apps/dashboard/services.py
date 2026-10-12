@@ -338,6 +338,15 @@ def _alertes_chauffeurs(aujourd_hui):
                     }
                 )
     lignes.sort(key=lambda ligne: ligne["echeance"])
+    for chauffeur, manquants in drivers_services.chauffeurs_a_la_fiche_incomplete():  # audit M12-10
+        lignes.append(
+            {
+                "libelle": f"Fiche permis · {chauffeur.personnel.prenom} {chauffeur.personnel.nom}",
+                "detail": " ; ".join(manquants),
+                "etat": "MANQUANT",
+                "url": reverse("drivers:detail", args=[chauffeur.pk]),
+            }
+        )
     niveau = "URGENT" if any(ligne["etat"] == "EXPIRE" for ligne in lignes) else "ATTENTION"
     return _alerte(
         "chauffeurs", "Permis et visites médicales à renouveler", "fa-id-card", lignes,

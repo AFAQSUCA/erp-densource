@@ -230,9 +230,41 @@ def rechercher_chauffeurs(
         "personnel__prenom",
         "numero_permis",
     )
-    if a_renouveler:
-        chauffeurs = chauffeurs.filter(pk__in=chauffeurs_avec_echeance_proche())
+    if a_renouveler:  # échéance proche ou fiche permis incomplète : tout ce qui demande une action (audit M12-10)
+        incomplets = {chauffeur.pk for chauffeur, _manquants in chauffeurs_a_la_fiche_incomplete()}
+        chauffeurs = chauffeurs.filter(pk__in=chauffeurs_avec_echeance_proche() | incomplets)
     return chauffeurs.order_by("personnel__nom", "personnel__prenom")
+
+
+CATEGORIES_POIDS_LOURD = {"C", "E"}  # porteur (C) ou ensemble articulé (E) : cahier-des-charges.md:110
+
+
+def documents_manquants_du_chauffeur(chauffeur: Chauffeur) -> list[str]:
+    """Ce qui manque à la fiche pour conduire un poids lourd : n° et date du permis, catégorie C ou E, date de
+    la visite médicale (décision du 12/10/2026, audit M5-04 : bloquant à l'affectation)."""
+    manquants = []
+    if not (chauffeur.numero_permis or "").strip():
+        manquants.append("n° de permis non renseigné")
+    if not CATEGORIES_POIDS_LOURD & set(chauffeur.categories_permis or []):
+        manquants.append("ni catégorie C ni catégorie E au permis")
+    if chauffeur.date_expiration_permis is None:
+        manquants.append("date d'expiration du permis non renseignée")
+    if chauffeur.date_expiration_visite_medicale is None:
+        manquants.append("visite médicale non renseignée")
+    return manquants
+
+
+def chauffeurs_a_la_fiche_incomplete() -> list[tuple[Chauffeur, list[str]]]:
+    """Chauffeurs en activité (pas « Inactif ») dont la fiche permis est incomplète, avec ce qui manque, par nom.
+    Une date non renseignée ne déclenchait aucune alerte, alors qu'elle bloque l'affectation (audit M12-10)."""
+    resultat = []
+    for chauffeur in chauffeurs_queryset().exclude(statut=StatutChauffeur.INACTIF).order_by(
+        "personnel__nom", "personnel__prenom"
+    ):
+        manquants = documents_manquants_du_chauffeur(chauffeur)
+        if manquants:
+            resultat.append((chauffeur, manquants))
+    return resultat
 
 
 def chauffeurs_avec_echeance_proche(

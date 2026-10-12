@@ -441,22 +441,10 @@ def documents_expires_du_chauffeur(chauffeur: Chauffeur, *, aujourd_hui: date | 
     return expires
 
 
-CATEGORIES_POIDS_LOURD = {"C", "E"}  # porteur (C) ou ensemble articulé (E) : cahier-des-charges.md:110
-
-
-def documents_manquants_du_chauffeur(chauffeur: Chauffeur) -> list[str]:
-    """Ce qui manque à la fiche pour conduire un poids lourd : n° et date du permis, catégorie C ou E, date de
-    la visite médicale (décision du 12/10/2026, audit M5-04 : bloquant à l'affectation)."""
-    manquants = []
-    if not (chauffeur.numero_permis or "").strip():
-        manquants.append("n° de permis non renseigné")
-    if not CATEGORIES_POIDS_LOURD & set(chauffeur.categories_permis or []):
-        manquants.append("ni catégorie C ni catégorie E au permis")
-    if chauffeur.date_expiration_permis is None:
-        manquants.append("date d'expiration du permis non renseignée")
-    if chauffeur.date_expiration_visite_medicale is None:
-        manquants.append("visite médicale non renseignée")
-    return manquants
+# La règle appartient aux chauffeurs (``drivers``) : le tableau de bord et la liste des chauffeurs l'appliquent
+# aussi (audit M12-10). Noms gardés ici pour les appelants existants.
+CATEGORIES_POIDS_LOURD = drivers_services.CATEGORIES_POIDS_LOURD
+documents_manquants_du_chauffeur = drivers_services.documents_manquants_du_chauffeur
 
 
 def _exiger_documents_valides(chauffeur: Chauffeur, erreur: type[MissionError]) -> None:
