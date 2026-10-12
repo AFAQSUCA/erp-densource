@@ -14,7 +14,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 
 ## Bilan
 
-**440 exigences : 393 ✅, 28 🟡, 6 ❌, 10 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **93,1 %**.
+**441 exigences : 394 ✅, 28 🟡, 6 ❌, 10 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **93,2 %**.
 
 | Bloc | Lignes | ✅ | 🟡 | ❌ | ❓ | ⚪ |
 |---|---|---|---|---|---|---|
@@ -33,7 +33,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | Technique | 87 | 63 | 14 | 1 | 8 | 1 |
 | Recette | 7 | 7 | 0 | 0 | 0 | 0 |
 | Avenants | 17 | 8 | 5 | 4 | 0 | 0 |
-| Écarts d'audit | 22 | 10 | 9 | 1 | 2 | 0 |
+| Écarts d'audit | 23 | 11 | 9 | 1 | 2 | 0 |
 
 **Reprise à TECH-18** (première ligne non terminée, dans l'ordre des ID).
 
@@ -567,3 +567,4 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | AUD-20 | architecture | `architecture.md` ne reflète plus les dépendances réelles | 🟡 | `apps/notifications` importe 12 apps | Mettre à jour le schéma | À faire |
 | AUD-21 | M9-10 | Modification d'un devis : TVA écrite « 18,00 » (format français), refusée par le champ numérique qui reste vide | ✅ | `apps/billing/templates/billing/proforma_modifier.html:22,42` (`unlocalize`) ; test `apps/billing/tests/test_proforma_views.py:257` | Fait (`7942790`) | Fait |
 | AUD-22 | AV-06 | Pièce d'une écriture limitée à 30 caractères, référence d'une dépense ou d'un mouvement à 100 : erreur 500 sur PostgreSQL au-delà de 30 | ✅ | `apps/accounting/models.py:95` (100 caractères, migration `0004_piece_reference_100`) ; tests `apps/accounting/tests/test_longueur_piece.py` (alignement des longueurs) | Fait (`3e1454a`) | Fait |
+| AUD-23 | M11 (sortie du personnel) + TECH-86 | Sortie du personnel : erreur 500 sur PostgreSQL (verrou sur une jointure facultative), invisible sur SQLite | ✅ | `apps/hr/sorties.py:178,248` (`select_for_update(of=("self",))`) ; garde-fou `apps/core/tests/test_compatibilite_postgresql.py` ; suite complète rejouée sur PostgreSQL 16 : 3 232 tests réussis, 0 échec | Fait (`a80ee99`) | Fait |
