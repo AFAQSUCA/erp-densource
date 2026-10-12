@@ -194,6 +194,9 @@ class ValidationConge(BaseModel):
     decision = models.CharField(_("décision"), max_length=10, choices=DecisionConge.choices)
     commentaire = models.TextField(_("commentaire"), blank=True)
     date_decision = models.DateTimeField(_("date de décision"), default=timezone.now)
+    # Le validateur a décidé de son propre congé (le directeur, sans supérieur, valide son N1) : permis, mais
+    # jamais passé sous silence — visible sur la fiche et au journal d'audit (audit M1-72).
+    auto_validation = models.BooleanField(_("auto-validation"), default=False)
 
     class Meta:
         verbose_name = _("validation de congé")

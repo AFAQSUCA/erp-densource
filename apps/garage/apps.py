@@ -12,9 +12,10 @@ class GarageConfig(AppConfig):
         from apps.fleet.sections import DETAIL_VEHICULE
 
         from . import permissions, sections
-        from .models import Incident, OrdreReparation
+        from .models import ChecklistVehicule, Incident, OrdreReparation
 
         audit_model(OrdreReparation, module="PARC_AUTO")
+        audit_model(ChecklistVehicule, module="PARC_AUTO")  # audit M1-67 : état du véhicule avant départ
         audit_model(Incident, module="PARC_AUTO")
         enregistrer(
             EntreeMenu(

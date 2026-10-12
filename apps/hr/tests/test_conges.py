@@ -444,6 +444,19 @@ def test_le_directeur_valide_lui_meme_son_n1_puis_la_rh_valide_en_n2():
     conge.refresh_from_db()
     assert conge.statut == StatutConge.APPROUVE
     assert conge.validations.get(niveau=1).validateur == compte
+    # Audit M1-72 : l'auto-validation est marquée, sur la décision et au journal ; pas la décision de la RH.
+    assert conge.validations.get(niveau=1).auto_validation is True
+    assert conge.validations.get(niveau=2).auto_validation is False
+    n1 = conge.validations.get(niveau=1)
+    assert AuditLog.objects.get(entite="ValidationConge", entite_id=n1.pk).nouvelle_valeur["auto_validation"] is True
+
+
+def test_une_validation_par_le_superieur_n_est_pas_une_auto_validation():
+    conge, superieur = _demande()
+
+    services.valider_n1(conge, superieur, maintenant=MAINTENANT)
+
+    assert conge.validations.get().auto_validation is False
 
 
 def test_le_directeur_ne_peut_pas_sauter_la_validation_n2_de_la_rh():

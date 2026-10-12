@@ -112,6 +112,11 @@ class JournalExporterCsvView(RoleRequiredMixin, ListView):
         reponse.write("﻿")  # BOM : Excel ouvre l'UTF-8 sans le déformer
         redacteur = csv.writer(reponse, delimiter=";")
         redacteur.writerow([libelle for libelle, _ in COLONNES_CSV])
-        for entree in self.get_queryset():
-            redacteur.writerow([ImpressionListeMixin._valeur(entree, cle) for _, cle in COLONNES_CSV])
+        # Lecture par lots : le journal grossit sans fin (conservation 5 ans), il ne doit pas tenir en mémoire.
+        # Chaque cellule est neutralisée, pas seulement celles fournies par le navigateur : un nom d'utilisateur,
+        # une entité ou un module saisis librement peuvent aussi commencer par « = » (audit M1-76).
+        for entree in self.get_queryset().iterator(chunk_size=2000):
+            redacteur.writerow(
+                [_texte_sur(str(ImpressionListeMixin._valeur(entree, cle))) for _, cle in COLONNES_CSV]
+            )
         return reponse

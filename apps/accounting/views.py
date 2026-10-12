@@ -11,14 +11,15 @@ import calendar
 from django.contrib import messages
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect
+from django.urls import reverse
 from django.utils import timezone
 from django.views import View
 from django.views.generic import DetailView, FormView, ListView, TemplateView
 
 from apps.accounts.mixins import RoleRequiredMixin
-from apps.core.rapports import contexte_rapport
+from apps.core.rapports import contexte_rapport, url_pdf
 from apps.core.views import PaginationTolerante
-from apps.core.xlsx import reponse_classeur
+from apps.core.xlsx import reponse_rapport
 
 from . import permissions, services
 from .exceptions import AccountingError, CompteDejaExistant
@@ -312,6 +313,8 @@ class GrandLivreImprimerView(RoleRequiredMixin, TemplateView):
                 fin_texte = f"{fin:%d/%m/%Y}" if fin else "aujourd'hui"
                 morceaux.append(f"du {debut_texte} au {fin_texte}")
         rapport = contexte_rapport(self.request, titre="Grand livre", sous_titre=" · ".join(morceaux))
+        if compte is not None:  # sans compte choisi, il n'y a rien à mettre en PDF
+            rapport["url_pdf"] = url_pdf(self.request, reverse("accounting:grand_livre_xlsx"))
         contexte.update(rapport, compte=compte, lignes=lignes)
         return contexte
 
@@ -357,6 +360,7 @@ class BalanceImprimerView(RoleRequiredMixin, TemplateView):
             "credit": sum((l["total_credit"] for l in lignes), start=0),
         }
         rapport = contexte_rapport(self.request, titre="Balance générale", sous_titre=sous_titre)
+        rapport["url_pdf"] = url_pdf(self.request, reverse("accounting:balance_xlsx"))
         contexte.update(rapport, lignes=lignes, totaux=totaux)
         return contexte
 
@@ -400,6 +404,7 @@ class DeclarationTvaImprimerView(RoleRequiredMixin, TemplateView):
         debut, fin = _periode_declaration_tva(form)
         sous_titre = f"du {debut:%d/%m/%Y} au {fin:%d/%m/%Y}"
         rapport = contexte_rapport(self.request, titre="Déclaration TVA", sous_titre=sous_titre)
+        rapport["url_pdf"] = url_pdf(self.request, reverse("accounting:declaration_tva_xlsx"))
         contexte.update(rapport, rapport_tva=services.declaration_tva(debut=debut, fin=fin))
         return contexte
 
@@ -430,7 +435,9 @@ class GrandLivreXlsxView(RoleRequiredMixin, View):
                 for l in lignes
             ],
         }
-        return reponse_classeur(f"grand_livre_{compte.numero}", [feuille])
+        return reponse_rapport(
+            request, f"grand_livre_{compte.numero}", [feuille], titre="Grand livre", sous_titre=feuille["sous_titre"]
+        )
 
 
 class BalanceXlsxView(RoleRequiredMixin, View):
@@ -462,7 +469,7 @@ class BalanceXlsxView(RoleRequiredMixin, View):
                 sum((l["solde_debiteur"] for l in lignes), 0), sum((l["solde_crediteur"] for l in lignes), 0),
             ],
         }
-        return reponse_classeur("balance", [feuille])
+        return reponse_rapport(request, "balance", [feuille], titre="Balance générale", sous_titre=periode)
 
 
 class _RapportExerciceXlsxView(RoleRequiredMixin, View):
@@ -487,7 +494,8 @@ class BilanXlsxView(_RapportExerciceXlsxView):
         actif = [[l["compte__numero"], l["compte__libelle"], l["montant"]] for l in rapport["actif"]]
         sous_titre = f"Exercice {exercice.annee}, au {exercice.date_fin:%d/%m/%Y}"
         entetes = ["Compte", "Libellé", "Montant"]
-        return reponse_classeur(
+        return reponse_rapport(
+            request,
             f"bilan_{exercice.annee}",
             [
                 {"titre": "Actif", "sous_titre": sous_titre, "entetes": entetes, "lignes": actif,
@@ -495,6 +503,8 @@ class BilanXlsxView(_RapportExerciceXlsxView):
                 {"titre": "Passif", "sous_titre": sous_titre, "entetes": entetes, "lignes": passif,
                  "pied": ["", "Total passif", rapport["total_passif_avec_resultat"]]},
             ],
+            titre="Bilan",
+            sous_titre=sous_titre,
         )
 
 
@@ -504,7 +514,8 @@ class CompteDeResultatXlsxView(_RapportExerciceXlsxView):
         rapport = services.compte_de_resultat(exercice)
         sous_titre = f"Exercice {exercice.annee}"
         entetes = ["Compte", "Libellé", "Montant"]
-        return reponse_classeur(
+        return reponse_rapport(
+            request,
             f"compte_de_resultat_{exercice.annee}",
             [
                 {"titre": "Produits", "sous_titre": sous_titre, "entetes": entetes,
@@ -516,6 +527,8 @@ class CompteDeResultatXlsxView(_RapportExerciceXlsxView):
                 {"titre": "Résultat", "sous_titre": sous_titre, "entetes": ["Libellé", "Montant"],
                  "lignes": [["Résultat net (bénéfice si positif)", rapport["resultat_net"]]]},
             ],
+            titre="Compte de résultat",
+            sous_titre=sous_titre,
         )
 
 
@@ -535,7 +548,9 @@ class DeclarationTvaXlsxView(RoleRequiredMixin, View):
                 ["TVA nette à payer (négatif : crédit de TVA)", rapport["tva_nette"]],
             ],
         }
-        return reponse_classeur("declaration_tva", [feuille])
+        return reponse_rapport(
+            request, "declaration_tva", [feuille], titre="Déclaration TVA", sous_titre=feuille["sous_titre"]
+        )
 
 
 class _RapportExerciceView(RoleRequiredMixin, TemplateView):
@@ -576,6 +591,7 @@ class BilanImprimerView(_RapportExerciceView):
         exercice, _ = self.get_exercice()
         sous_titre = f"Exercice {exercice.annee}, au {exercice.date_fin:%d/%m/%Y}" if exercice else ""
         rapport = contexte_rapport(self.request, titre="Bilan", sous_titre=sous_titre)
+        rapport["url_pdf"] = url_pdf(self.request, reverse("accounting:bilan_xlsx"))
         contexte.update(
             rapport,
             exercice=exercice,
@@ -609,6 +625,7 @@ class CompteDeResultatImprimerView(_RapportExerciceView):
             if exercice else ""
         )
         rapport = contexte_rapport(self.request, titre="Compte de résultat", sous_titre=sous_titre)
+        rapport["url_pdf"] = url_pdf(self.request, reverse("accounting:compte_resultat_xlsx"))
         contexte.update(
             rapport,
             exercice=exercice,

@@ -45,8 +45,10 @@ def log_action(
 
     return AuditLog.objects.create(
         utilisateur=utilisateur,
-        utilisateur_nom=getattr(utilisateur, "get_full_name", lambda: "")() or "",
-        role=getattr(utilisateur, "role", ""),
+        # Nom complet, à défaut l'identifiant de connexion ; rôle effectif (un superutilisateur agit en ADMIN) :
+        # jamais une entrée sans auteur lisible (audit M1-53, M1-54).
+        utilisateur_nom=getattr(utilisateur, "get_full_name", lambda: "")() or getattr(utilisateur, "username", "") or "",
+        role=getattr(utilisateur, "role_effectif", None) or getattr(utilisateur, "role", "") or "",
         action=action,
         module=module,
         entite=entite,

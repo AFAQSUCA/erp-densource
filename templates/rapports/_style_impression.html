@@ -16,7 +16,8 @@
   .cartouche > div { min-width: 9rem; }
   .cartouche dt { color: #555; font-size: .78rem; }
   .cartouche dd { margin: 0; font-size: 1.15rem; font-weight: bold; color: var(--marque); }
-  .actions { margin-bottom: 1rem; }
+  .actions { margin-bottom: 1rem; display: flex; gap: .5rem; flex-wrap: wrap; }
+  .actions .bouton-pdf { display: inline-flex; align-items: center; gap: .5rem; border: 1px solid var(--marque); background: #fff; color: var(--marque); border-radius: .5rem; padding: .5rem 1rem; font-weight: 600; text-decoration: none; }
   .actions button { display: inline-flex; align-items: center; gap: .5rem; border: 1px solid var(--marque); background: var(--marque); color: #fff; border-radius: .5rem; padding: .5rem 1rem; font: inherit; font-weight: 600; cursor: pointer; }
   .rapport-pied { margin-top: 2rem; padding-top: .5rem; border-top: 1px solid #ddd; color: #777; font-size: .78rem; }
   @media print {

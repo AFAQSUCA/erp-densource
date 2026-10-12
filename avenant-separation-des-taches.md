@@ -302,6 +302,10 @@ rôle :
    `ORDRE_EXECUTION`) et les notifications adressées à la FINANCES
    (`notifications.receivers`/`taches` : chaque `utilisateurs_du_role(Role.FINANCES)` devient
    `utilisateurs_du_role(Role.FINANCES, Role.RH)`).
+   *Correction du 12/10/2026 (audit M1-27, règle confirmée par l'entreprise)* : les frais de mission avaient
+   été oubliés — la RH en recevait les notifications mais obtenait un refus en les ouvrant. `Role.RH` est
+   ajouté à `missions.FRAIS_CONSULTATION` et `missions.FRAIS_VALIDATION_FINANCES` (consulter, confirmer,
+   rejeter comme la FINANCES ; la première validation d'un imprévu reste au seul Parc Auto).
 3. **C'est le Parc Auto qui affecte les missions**, une fois créées par le chargé clientèle —
    `Role.PARCAUTO` ajouté à `missions.AFFECTATION` (et nécessairement à `missions.CONSULTATION`,
    pour voir les missions à affecter). Point de vigilance : `VOIR_CODES` (codes secrets

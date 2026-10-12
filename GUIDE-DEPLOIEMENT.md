@@ -89,7 +89,7 @@ cp .env.example .env
 | `DOMAINE` | le même domaine, ex. `erp.densourcegroup.ci` — Nginx et le certificat HTTPS en dépendent (défaut : `densource.tech`) |
 | `CSRF_TRUSTED_ORIGINS` | `https://` + le même domaine |
 | `POSTGRES_PASSWORD` | un mot de passe long, différent de celui de `.env.example` — **obligatoire** : `docker compose` refuse de démarrer sans lui (aucun mot de passe par défaut) |
-| `TRUSTED_PROXY_COUNT` | `1` (Nginx est l'unique proxy devant l'application) |
+| `TRUSTED_PROXY_COUNT` | inutile avec `docker-compose.yml`, qui le fixe à `1` (Nginx est l'unique proxy devant l'application) ; à changer seulement si un autre proxy (CDN, répartiteur) est ajouté devant Nginx |
 | `SAUVEGARDE_PASSPHRASE` | une phrase de passe longue, **à conserver ailleurs que sur ce serveur** (étape 9) — **obligatoire** : `docker compose` refuse de démarrer sans elle |
 
 `DATABASE_URL` et `REDIS_URL` n'ont **pas** à être renseignées dans `.env` pour ces quatre services :

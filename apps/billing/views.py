@@ -13,7 +13,8 @@ from django.views.generic import DetailView, FormView, ListView
 from apps.accounts.mixins import RoleRequiredMixin
 from apps.core.formats import nombre
 from apps.core.rapports import contexte_rapport
-from apps.core.views import ImpressionListeMixin, PaginationTolerante
+from apps.core import pdf
+from apps.core.views import ImpressionListeMixin, PaginationTolerante, TelechargementPdfMixin, fcfa
 from apps.core.xlsx import ExportXlsxMixin
 from apps.missions import permissions as missions_permissions
 from apps.missions.exceptions import MissionError
@@ -200,8 +201,8 @@ class FactureDetailView(RoleRequiredMixin, DetailView):
         return contexte
 
 
-class FacturePrintView(RoleRequiredMixin, DetailView):
-    """Version imprimable (Ctrl+P → « Enregistrer au format PDF »)."""
+class FacturePrintView(TelechargementPdfMixin, RoleRequiredMixin, DetailView):
+    """Version imprimable, et vrai PDF à envoyer au client (``?format=pdf``)."""
 
     roles = permissions.CONSULTATION
     template_name = "billing/facture_print.html"
@@ -219,6 +220,53 @@ class FacturePrintView(RoleRequiredMixin, DetailView):
             reglements=self.object.reglements.all(),
         )
         return contexte
+
+    def blocs_pdf(self, contexte):
+        facture = self.object
+        blocs = []
+        if facture.date_emission:
+            blocs.append(pdf.Texte(
+                f"Émise le {facture.date_emission:%d/%m/%Y} — Échéance : {facture.date_echeance:%d/%m/%Y}"
+            ))
+        if not facture.est_emise:
+            blocs.append(pdf.Texte("NON VALIDÉE : projet de facture, sans valeur avant sa validation."))
+        blocs += _blocs_client(facture.client)
+        if facture.mission_id:
+            blocs.append(pdf.Texte(f"Mission {facture.mission.numero}", discret=True))
+        blocs.append(pdf.Tableau(
+            entetes=["Désignation", "Qté", "Prix unit. HT", "Montant HT"],
+            lignes=[
+                [l.designation, pdf.cellule(l.quantite), pdf.cellule(l.prix_unitaire_ht), pdf.cellule(l.montant_ht)]
+                for l in contexte["lignes"]
+            ],
+            alignes_a_droite={1, 2, 3}, largeurs=[5, 1, 2, 2],
+        ))
+        totaux = _totaux_tva(facture)
+        if facture.est_emise:
+            totaux += [("Déjà réglé", fcfa(facture.montant_regle)), ("Reste à payer", fcfa(facture.reste))]
+        blocs.append(pdf.Rubriques(totaux))
+        if contexte["reglements"]:
+            blocs.append(pdf.Texte("Règlements reçus : " + " ; ".join(
+                f"{r.date_reglement:%d/%m/%Y} — {fcfa(r.montant)} ({r.get_mode_display()})" for r in contexte["reglements"]
+            ), discret=True))
+        return blocs
+
+
+def _blocs_client(client) -> list:
+    return [pdf.Texte(f"{client.raison_sociale}\n{client.adresse}\nNCC / NIF {client.ncc_nif}")]
+
+
+def _totaux_tva(document) -> list[tuple[str, str]]:
+    """HT, TVA (taux ou exonération et motif), TTC d'une facture ou d'un devis."""
+    if document.taux_tva == 0:
+        libelle_tva = f"TVA (exonérée : {document.get_motif_exoneration_display()})"
+    else:
+        libelle_tva = f"TVA ({pdf.cellule(document.taux_tva)} %)"
+    return [
+        ("Total HT", fcfa(document.montant_ht)),
+        (libelle_tva, fcfa(document.montant_tva)),
+        ("Total TTC", fcfa(document.montant_ttc)),
+    ]
 
 
 class _ActionFacture(RoleRequiredMixin, View):
@@ -611,8 +659,8 @@ class ProformaDetailView(RoleRequiredMixin, DetailView):
         return contexte
 
 
-class ProformaPrintView(RoleRequiredMixin, DetailView):
-    """Version imprimable du devis à remettre au client (Ctrl+P → « Enregistrer au format PDF »)."""
+class ProformaPrintView(TelechargementPdfMixin, RoleRequiredMixin, DetailView):
+    """Version imprimable du devis à remettre au client, et vrai PDF (``?format=pdf``)."""
 
     roles = permissions.PROFORMA_CONSULTATION
     template_name = "billing/proforma_print.html"
@@ -626,6 +674,30 @@ class ProformaPrintView(RoleRequiredMixin, DetailView):
         titre = f"DEVIS {self.object.numero}" if self.object.numero else "PROJET DE DEVIS"
         contexte.update(contexte_rapport(self.request, titre=titre))
         return contexte
+
+    def blocs_pdf(self, contexte):
+        devis = self.object
+        blocs = []
+        if devis.date_envoi:
+            blocs.append(pdf.Texte(
+                f"Envoyé le {devis.date_envoi:%d/%m/%Y} — Valable jusqu'au {devis.date_validite:%d/%m/%Y}"
+            ))
+        if not devis.numero:
+            blocs.append(pdf.Texte("NON VALIDÉ : projet de devis, sans engagement avant sa validation."))
+        blocs += _blocs_client(devis.client)
+        blocs.append(pdf.Tableau(
+            entetes=["Désignation", "Poids", "Montant HT"],
+            lignes=[[
+                f"Transport : {devis.lieu_chargement} → {devis.lieu_livraison} ({devis.nature_marchandise})",
+                f"{pdf.cellule(devis.poids_t)} t", pdf.cellule(devis.montant_ht),
+            ]],
+            alignes_a_droite={1, 2}, largeurs=[6, 1, 2],
+        ))
+        blocs.append(pdf.Rubriques(_totaux_tva(devis)))
+        if devis.date_depart_souhaitee:
+            blocs.append(pdf.Texte(f"Départ souhaité : {devis.date_depart_souhaitee:%d/%m/%Y}", discret=True))
+        blocs.append(pdf.Texte("Ce devis est valable 30 jours à compter de son envoi.", discret=True))
+        return blocs
 
 
 class _ActionProforma(RoleRequiredMixin, View):

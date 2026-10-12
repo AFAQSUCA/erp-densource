@@ -54,6 +54,9 @@ services:
       DJANGO_SETTINGS_MODULE: config.settings.prod
       DATABASE_URL: postgres://erp_densource:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD doit être défini dans .env}@db:5432/erp_densource
       REDIS_URL: redis://redis:6379/0
+      # Toujours derrière un seul Nginx (service `nginx`) : la vraie adresse du client est lue dans
+      # X-Forwarded-For (journal d'audit, anti force brute). Sans cela, toutes les requêtes semblaient venir de Nginx.
+      TRUSTED_PROXY_COUNT: ${TRUSTED_PROXY_COUNT:-1}
     volumes:
       - static_data:/app/staticfiles
       - media_data:/app/media
@@ -85,6 +88,7 @@ services:
       DJANGO_SETTINGS_MODULE: config.settings.prod
       DATABASE_URL: postgres://erp_densource:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD doit être défini dans .env}@db:5432/erp_densource
       REDIS_URL: redis://redis:6379/0
+      TRUSTED_PROXY_COUNT: ${TRUSTED_PROXY_COUNT:-1}  # derrière Nginx, comme `web`
     command: ["daphne", "-b", "0.0.0.0", "-p", "8001", "config.asgi:application"]
     depends_on:
       web:

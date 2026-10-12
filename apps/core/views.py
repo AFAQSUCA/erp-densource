@@ -1,6 +1,7 @@
 """Aides communes aux vues."""
 
-from .rapports import contexte_rapport
+from . import pdf
+from .rapports import contexte_rapport, url_pdf
 
 
 class PaginationTolerante:
@@ -26,6 +27,36 @@ class PaginationTolerante:
         numero = min(max(numero, 1), paginator.num_pages)
         page = paginator.page(numero)
         return paginator, page, page.object_list, page.has_other_pages()
+
+
+class TelechargementPdfMixin:
+    """Ajoute à une page de document imprimable (facture, devis, rapport de mission, tableau de bord) sa version
+    PDF générée par le serveur : ``?format=pdf`` (avenant-export-pdf.md). La sous-classe décrit le document dans
+    ``blocs_pdf(contexte)`` (blocs de :mod:`apps.core.pdf`) ; titre, sous-titre et en-tête viennent du contexte
+    du rapport (``contexte_rapport``), comme la page HTML. À placer avant la vue dans les classes parentes."""
+
+    def blocs_pdf(self, contexte: dict) -> list:
+        raise NotImplementedError
+
+    def get(self, request, *args, **kwargs):
+        if request.GET.get("format") != "pdf":
+            return super().get(request, *args, **kwargs)
+        if hasattr(self, "get_object"):
+            self.object = self.get_object()
+        contexte = self.get_context_data(**kwargs)
+        contenu = pdf.generer_pdf(
+            titre=contexte["titre"], sous_titre=contexte.get("sous_titre", ""), blocs=self.blocs_pdf(contexte),
+            entreprise=contexte["entreprise"], genere_par=contexte["genere_par"], genere_le=contexte["genere_le"],
+        )
+        return pdf.reponse_pdf(contenu, contexte["titre"])
+
+    def get_context_data(self, **kwargs):
+        return {**super().get_context_data(**kwargs), "url_pdf": url_pdf(self.request)}
+
+
+def fcfa(montant) -> str:
+    """Montant pour un document PDF : « 1 250 000 FCFA »."""
+    return f"{pdf.cellule(montant)} FCFA"
 
 
 class ImpressionListeMixin:
@@ -64,6 +95,23 @@ class ImpressionListeMixin:
                 valeur = valeur()
         return valeur if valeur not in (None, "") else "—"
 
+    def get(self, request, *args, **kwargs):
+        """``?format=pdf`` : le même rapport en vrai PDF, généré par le serveur (avenant-export-pdf.md)."""
+        if request.GET.get("format") != "pdf":
+            return super().get(request, *args, **kwargs)
+        self.object_list = self.get_queryset()
+        contexte = self.get_context_data()
+        nombre = contexte["nombre"]
+        resume = f"{nombre} ligne{'s' if nombre > 1 else ''}"
+        if contexte["tronque"]:
+            resume += f" — limité aux {nombre} premières ; affinez la recherche pour voir le reste"
+        contenu = pdf.generer_pdf(
+            titre=contexte["titre"], sous_titre=contexte["sous_titre"], entreprise=contexte["entreprise"],
+            genere_par=contexte["genere_par"], genere_le=contexte["genere_le"],
+            blocs=[pdf.Texte(resume, discret=True), pdf.Tableau(entetes=contexte["entetes"], lignes=contexte["lignes"])],
+        )
+        return pdf.reponse_pdf(contenu, contexte["titre"])
+
     def get_context_data(self, **kwargs):
         objets = list(self.get_queryset()[: self.limite_impression + 1])
         tronque = len(objets) > self.limite_impression
@@ -76,5 +124,6 @@ class ImpressionListeMixin:
             lignes=[[self._valeur(o, cle) for _, cle in self.colonnes] for o in objets],
             nombre=len(objets),
             tronque=tronque,
+            url_pdf=url_pdf(self.request),
         )
         return contexte

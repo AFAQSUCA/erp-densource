@@ -11,9 +11,10 @@ class CustomersConfig(AppConfig):
         from apps.audit.registry import audit_model
 
         from . import permissions
-        from .models import Client
+        from .models import Client, Interaction
 
         audit_model(Client, module="CLIENTELE")
+        audit_model(Interaction, module="CLIENTELE")  # audit M1-67 : réclamations, notes d'échange
         enregistrer(
             EntreeMenu(
                 "Clients", "customers:liste", "fa-handshake", permissions.CONSULTATION, ordre=15

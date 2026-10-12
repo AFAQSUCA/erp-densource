@@ -17,7 +17,8 @@ from django.views.generic import DetailView, FormView, ListView
 from apps.accounts.mixins import RoleRequiredMixin
 from apps.core.formats import nombre
 from apps.core.rapports import contexte_rapport
-from apps.core.views import ImpressionListeMixin, PaginationTolerante
+from apps.core import pdf
+from apps.core.views import ImpressionListeMixin, PaginationTolerante, TelechargementPdfMixin, fcfa
 
 from . import documents, permissions, services
 from . import terrain as frais_terrain
@@ -405,8 +406,8 @@ class FraisMissionDetailView(RoleRequiredMixin, DetailView):
         return contexte
 
 
-class FraisMissionPrintView(RoleRequiredMixin, DetailView):
-    """Rapport de mission imprimable : toutes les lignes et leurs totaux."""
+class FraisMissionPrintView(TelechargementPdfMixin, RoleRequiredMixin, DetailView):
+    """Rapport de mission imprimable (et en PDF, ``?format=pdf``) : toutes les lignes et leurs totaux."""
 
     roles = permissions.FRAIS_CONSULTATION
     template_name = "missions/frais_print.html"
@@ -420,6 +421,35 @@ class FraisMissionPrintView(RoleRequiredMixin, DetailView):
         contexte.update(contexte_rapport(self.request, titre=f"Rapport de mission {self.object.numero}"))
         contexte.update(lignes=frais_terrain.frais_queryset(self.object), totaux=frais_terrain.totaux(self.object))
         return contexte
+
+    def blocs_pdf(self, contexte):
+        mission = self.object
+
+        def detail(frais):
+            if frais.type_frais == "IMPREVU" and frais.chauffeur_id:
+                auteur = f"{frais.chauffeur.personnel.prenom} {frais.chauffeur.personnel.nom}"
+            else:
+                auteur = str(frais.saisi_par or "—")
+            return f"{auteur} · {frais.description}" if frais.description else auteur
+
+        totaux = contexte["totaux"]
+        return [
+            pdf.Texte(f"{mission.client.raison_sociale}\n{mission.lieu_chargement} → {mission.lieu_livraison} "
+                      f"({mission.nature_marchandise})"),
+            pdf.Tableau(
+                entetes=["Type", "Détail", "Statut", "Montant"],
+                lignes=[
+                    [f.get_type_frais_display(), detail(f), f.get_statut_display(), pdf.cellule(f.montant)]
+                    for f in contexte["lignes"]
+                ],
+                alignes_a_droite={3}, largeurs=[2, 5, 2, 2],
+            ),
+            pdf.Rubriques([
+                ("Sorties confirmées", fcfa(totaux["sorties"])),
+                ("Encaissé confirmé", fcfa(totaux["encaisse"])),
+                ("Solde", fcfa(totaux["solde"])),
+            ]),
+        ]
 
 
 class FraisPlanifierView(RoleRequiredMixin, View):
