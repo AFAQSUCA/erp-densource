@@ -14,11 +14,11 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 
 ## Bilan
 
-**440 exigences : 352 ✅, 62 🟡, 11 ❌, 12 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **87,6 %**.
+**440 exigences : 353 ✅, 61 🟡, 11 ❌, 12 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **87,8 %**.
 
 | Bloc | Lignes | ✅ | 🟡 | ❌ | ❓ | ⚪ |
 |---|---|---|---|---|---|---|
-| M1 Sécurité & audit | 77 | 74 | 3 | 0 | 0 | 0 |
+| M1 Sécurité & audit | 77 | 75 | 2 | 0 | 0 | 0 |
 | M2 Flotte | 26 | 18 | 7 | 1 | 0 | 0 |
 | M3 Chauffeurs | 18 | 17 | 1 | 0 | 0 | 0 |
 | M4 Clients | 15 | 14 | 1 | 0 | 0 | 0 |
@@ -35,7 +35,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | Avenants | 17 | 2 | 10 | 5 | 0 | 0 |
 | Écarts d'audit | 22 | 2 | 14 | 2 | 4 | 0 |
 
-**Reprise à M1-72** (première ligne non terminée, dans l'ordre des ID).
+**Reprise à M1-76** (première ligne non terminée, dans l'ordre des ID).
 
 ## Contradictions entre sources (règle 1)
 
@@ -123,7 +123,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M1-69 | M1 l.79 | Tracer les suppressions | ✅ | `apps/audit/registry.py:150` (+ suppression logique) | — | Fait |
 | M1-70 | M1 l.79 | Tracer les connexions | ✅ | `apps/audit/signals.py:10` | — | Fait |
 | M1-71 | M1 l.79 | Tracer les déconnexions | ✅ | `apps/audit/signals.py:11` | — | Fait |
-| M1-72 | M1 l.79 | Tracer les validations | 🟡 | `apps/audit/registry.py:113` ; auto-validation N1 du directeur non marquée (`apps/hr/apps.py:17`) | `auto_validation` sur `Conge` | À faire |
+| M1-72 | M1 l.79 | Tracer les validations | ✅ | `apps/audit/registry.py:113` ; décisions de congé tracées et auto-validation marquée (`ValidationConge.auto_validation`, `apps/hr/services.py` `_decide_pour_lui_meme`), repère « auto-validation » sur la fiche ; tests `apps/hr/tests/test_conges.py` | Fait | Fait |
 | M1-73 | M1 l.80 | Conservation ≥ 5 ans | ✅ | Aucune purge applicative ; suppression bloquée (`apps/core/immuable.py`) | — | Fait |
 | M1-74 | M1 l.81 | Consultation par l'ADMIN | ✅ | `apps/audit/permissions.py:10` | — | Fait |
 | M1-75 | M1 l.81 | Lecture seule pour la DIRECTION | ✅ | `apps/audit/views.py` (aucune écriture) | — | Fait |
