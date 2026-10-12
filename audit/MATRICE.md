@@ -14,11 +14,11 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 
 ## Bilan
 
-**440 exigences : 338 ✅, 74 🟡, 12 ❌, 13 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **85,8 %**.
+**440 exigences : 341 ✅, 71 🟡, 12 ❌, 13 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **86,2 %**.
 
 | Bloc | Lignes | ✅ | 🟡 | ❌ | ❓ | ⚪ |
 |---|---|---|---|---|---|---|
-| M1 Sécurité & audit | 77 | 65 | 10 | 1 | 1 | 0 |
+| M1 Sécurité & audit | 77 | 66 | 9 | 1 | 1 | 0 |
 | M2 Flotte | 26 | 18 | 7 | 1 | 0 | 0 |
 | M3 Chauffeurs | 18 | 17 | 1 | 0 | 0 | 0 |
 | M4 Clients | 15 | 14 | 1 | 0 | 0 | 0 |
@@ -30,12 +30,12 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M10 Finances | 13 | 12 | 1 | 0 | 0 | 0 |
 | M11 RH | 30 | 27 | 3 | 0 | 0 | 0 |
 | M12 Tableaux de bord | 28 | 24 | 2 | 0 | 0 | 2 |
-| Technique | 87 | 58 | 17 | 3 | 8 | 1 |
+| Technique | 87 | 59 | 16 | 3 | 8 | 1 |
 | Recette | 7 | 7 | 0 | 0 | 0 | 0 |
 | Avenants | 17 | 1 | 11 | 5 | 0 | 0 |
-| Écarts d'audit | 22 | 0 | 16 | 2 | 4 | 0 |
+| Écarts d'audit | 22 | 1 | 15 | 2 | 4 | 0 |
 
-**Reprise à M1-14** (première ligne non terminée, dans l'ordre des ID).
+**Reprise à M1-22** (première ligne non terminée, dans l'ordre des ID).
 
 ## Contradictions entre sources (règle 1)
 
@@ -65,7 +65,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M1-11 | M1 l.48 | ADMIN : création d'utilisateurs | ✅ | `apps/accounts/services.py:76`, écran `apps/accounts/views_utilisateurs.py:17` | Voir AUD-09 (élévation de privilège) | Fait |
 | M1-12 | M1 l.48 | ADMIN : suppression d'utilisateurs (désactivation, C6) | ✅ | `apps/accounts/services.py:125` | — | Fait |
 | M1-13 | M1 l.48 | ADMIN : journal d'audit complet | ✅ | `apps/audit/permissions.py:10` | — | Fait |
-| M1-14 | M1 l.48 | ADMIN : sauvegardes | 🟡 | `ops/sauvegarde.sh:48` (base seule, aucun cron livré, médias non sauvegardés) | Sauvegarder aussi les médias ; cron livré | À faire |
+| M1-14 | M1 l.48 | ADMIN : sauvegardes | ✅ | Base + fichiers déposés `ops/sauvegarde.sh`, service planifié `docker-compose.yml:145` (`ops/planificateur-sauvegarde.sh`), écran ADMIN et bouton `apps/sauvegardes/services.py:106,147`, alerte `:174` (décision du 12/10/2026, `avenant-sauvegardes.md`) ; tests `apps/sauvegardes/tests/` (43 tests, services 100 %) ; joué réellement sous Docker (demande, sauvegarde, restauration base et fichiers, échec consigné) | Fait (`b042d06` … `9aa63bd`) | Fait |
 | M1-15 | M1 l.49 | DIRECTION : vue exécutive (CA, marge, dispo flotte, alertes) | ✅ | `apps/dashboard/services.py:474` | — | Fait |
 | M1-16 | M1 l.49 | DIRECTION : création, affectation, suivi des missions | ✅ | `apps/missions/permissions.py:22,24,29` | — | Fait |
 | M1-17 | M1 l.49 | DIRECTION : gestion flotte | ✅ | `apps/fleet/permissions.py:12` | — | Fait |
@@ -474,7 +474,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | TECH-53 | §4 l.280 | CSP | ✅ | `apps/core/middleware.py` | — | Fait |
 | TECH-54 | §4 l.281 | CORS restreint | ✅ | `config/settings/base.py:217` | — | Fait |
 | TECH-55 | §4 l.282 | Sauvegardes chiffrées | ✅ | `ops/sauvegarde.sh` (GPG AES256) | — | Fait |
-| TECH-56 | §4 l.282 | Sauvegardes testées | 🟡 | Procédure écrite ; médias non sauvegardés, aucun cron | Voir M1-14 | À faire |
+| TECH-56 | §4 l.282 | Sauvegardes testées | ✅ | Restauration base et fichiers jouée le 12/10/2026 (GUIDE-DEPLOIEMENT.md § 9 et § vérifications) ; procédure mensuelle depuis le service ; rappel sur l'écran « Sauvegardes » | Essai mensuel à faire en production | Fait |
 | TECH-57 | §4 l.283 | Soft delete sur données sensibles | 🟡 | `apps/core/models.py` ; l'action groupée de l'admin Django supprime physiquement pleins, missions, OR, articles | `has_delete_permission = False` | À faire |
 | TECH-58 | §4 l.284 | Journal d'audit append-only | ✅ | Voir M1-65 | — | Fait |
 | TECH-59 | §4 l.285 | Session 15 min mobile | ✅ | `config/settings/base.py:221` | — | Fait |
@@ -562,7 +562,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | AUD-15 | M5-11 | Pages contenant les codes sans `Cache-Control: no-store` | 🟡 | `apps/missions/views.py` (fiche mission) | `no-store` | À faire |
 | AUD-16 | M11-13 | DIRECTION jamais prévenue des validations de congé en retard | 🟡 | `apps/notifications/taches.py:96-127` | Notifier la DIRECTION | À faire |
 | AUD-17 | TECH-46 | Identifiant mal saisi journalisé en clair à l'échec de connexion | 🟡 | `apps/audit/services.py:90` | Tronquer / masquer | À faire |
-| AUD-18 | TECH-55 | Mot de passe de la base dans les arguments de `pg_dump` | 🟡 | `ops/sauvegarde.sh:48` | `PGPASSFILE` | À faire |
+| AUD-18 | TECH-55 | Mot de passe de la base dans les arguments de `pg_dump` | ✅ | `ops/fonctions-sauvegarde.sh:30` (URL sans mot de passe, `.pgpass` temporaire 600) ; tests `apps/sauvegardes/tests/test_scripts.py` | Fait (`b042d06`) | Fait |
 | AUD-19 | TECH-43 | Tables de sessions et de jetons jamais purgées | 🟡 | Aucune planification de `clearsessions` / `flushexpiredtokens` | Tâche planifiée | À faire |
 | AUD-20 | architecture | `architecture.md` ne reflète plus les dépendances réelles | 🟡 | `apps/notifications` importe 12 apps | Mettre à jour le schéma | À faire |
 | AUD-21 | M9-10 | Modification d'un devis : TVA écrite « 18,00 » (format français), refusée par le champ numérique qui reste vide | 🟡 | `apps/billing/templates/billing/proforma_modifier.html:21,41` | `unlocalize`, comme M4-09 | À faire |
