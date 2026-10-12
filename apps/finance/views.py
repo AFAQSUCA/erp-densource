@@ -5,6 +5,7 @@ from decimal import Decimal
 from django.contrib import messages
 from django.core.paginator import Paginator
 from django.shortcuts import get_object_or_404, redirect
+from django.urls import reverse
 from django.utils import timezone
 from django.views import View
 from django.views.generic import DetailView, FormView, ListView, TemplateView
@@ -15,9 +16,9 @@ from apps.billing.exceptions import BillingError
 from apps.billing.forms import ReglementForm
 from apps.billing.models import STATUTS_A_RECOUVRER, CompteTresorerie
 from apps.core.formats import nombre
-from apps.core.rapports import contexte_rapport
+from apps.core.rapports import contexte_rapport, url_pdf
 from apps.core.views import PaginationTolerante
-from apps.core.xlsx import reponse_classeur
+from apps.core.xlsx import reponse_rapport
 
 from . import demandes as demandes_services
 from . import permissions, services
@@ -109,6 +110,7 @@ class TresorerieImprimerView(RoleRequiredMixin, TemplateView):
             morceaux.append("entrées seulement" if criteres["sens"] == "ENTREE" else "sorties seulement")
         soldes = services.soldes_par_compte()
         contexte = contexte_rapport(self.request, titre="Trésorerie", sous_titre=" · ".join(morceaux))
+        contexte["url_pdf"] = url_pdf(self.request, reverse("finance:xlsx"))
         contexte.update(
             solde_total=soldes["total"],
             soldes_par_compte=[{"libelle": libelle, "montant": soldes[code]} for code, libelle in CompteTresorerie.choices],
@@ -149,7 +151,7 @@ class TresorerieExporterXlsxView(RoleRequiredMixin, View):
             "lignes": lignes,
             "pied": ["", "", "", "", "Total", sum((l[5] for l in lignes), Decimal("0"))],
         }
-        return reponse_classeur("tresorerie", [feuille])
+        return reponse_rapport(request, "tresorerie", [feuille], titre="Trésorerie", sous_titre=feuille["sous_titre"])
 
 
 class MouvementCreateView(RoleRequiredMixin, View):

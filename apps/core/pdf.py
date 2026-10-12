@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import io
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 from xml.sax.saxutils import escape
 
 from django.contrib.staticfiles import finders
@@ -23,6 +24,8 @@ from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.platypus import LongTable, Paragraph, SimpleDocTemplate, Spacer, TableStyle
+
+from .formats import nombre
 
 MARQUE = colors.HexColor("#8B0319")
 ACCENT = colors.HexColor("#F28A14")
@@ -174,6 +177,47 @@ def generer_pdf(
             histoire.append(Spacer(1, 2 * mm))
     document.build(histoire, onFirstPage=decor, onLaterPages=decor)
     return tampon.getvalue()
+
+
+def cellule(valeur) -> str:
+    """Valeur brute d'une feuille de rapport (celle de l'export Excel) mise en forme pour le PDF : montants avec
+    séparateur de milliers (décimales seulement s'il y en a), dates JJ/MM/AAAA, vide pour ``None``."""
+    if valeur is None:
+        return ""
+    if isinstance(valeur, bool):
+        return "Oui" if valeur else "Non"
+    if isinstance(valeur, (int, float, Decimal)):
+        decimale = Decimal(str(valeur))
+        return nombre(decimale, 0 if decimale == decimale.to_integral_value() else 2)
+    if isinstance(valeur, datetime):
+        return f"{timezone.localtime(valeur):%d/%m/%Y %H:%M}" if timezone.is_aware(valeur) else f"{valeur:%d/%m/%Y %H:%M}"
+    if isinstance(valeur, date):
+        return f"{valeur:%d/%m/%Y}"
+    return str(valeur)
+
+
+def blocs_depuis_feuilles(feuilles: list[dict]) -> list:
+    """Feuilles d'un export Excel (``apps.core.xlsx.classeur``) → blocs PDF : mêmes chiffres dans les deux formats.
+    Un titre de section par feuille quand il y en a plusieurs (ex. actif et passif du bilan)."""
+    blocs = []
+    for feuille in feuilles:
+        if len(feuilles) > 1:
+            blocs.append(Section(feuille["titre"]))
+        lignes = feuille["lignes"]
+        chiffres = {
+            i for i in range(len(feuille["entetes"]))
+            if any(isinstance(l[i], (int, float, Decimal)) and not isinstance(l[i], bool) for l in lignes if len(l) > i)
+            or (feuille.get("pied") and isinstance(feuille["pied"][i], (int, float, Decimal)))
+        }
+        blocs.append(Tableau(
+            entetes=feuille["entetes"],
+            lignes=[[cellule(v) for v in ligne] for ligne in lignes],
+            alignes_a_droite=chiffres,
+            total=[cellule(v) for v in feuille["pied"]] if feuille.get("pied") else None,
+        ))
+        if not lignes:
+            blocs.append(Texte("Aucune ligne.", discret=True))
+    return blocs
 
 
 def reponse_pdf(contenu: bytes, titre: str) -> HttpResponse:

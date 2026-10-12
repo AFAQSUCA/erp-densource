@@ -23,11 +23,12 @@ def contexte_entreprise() -> dict:
     }
 
 
-def url_pdf(request) -> str:
-    """Adresse du même rapport en PDF (mêmes filtres, ``format=pdf``) : bouton « Télécharger en PDF »."""
+def url_pdf(request, chemin: str | None = None) -> str:
+    """Adresse du même rapport en PDF (mêmes filtres, ``format=pdf``) : bouton « Télécharger en PDF ». ``chemin`` :
+    une autre vue que la page courante (ex. l'export Excel d'un rapport comptable, qui sait aussi rendre le PDF)."""
     parametres = request.GET.copy()
     parametres["format"] = "pdf"
-    return f"{request.path}?{parametres.urlencode()}"
+    return f"{chemin or request.path}?{parametres.urlencode()}"
 
 
 def contexte_rapport(request, *, titre: str, sous_titre: str = "") -> dict:
