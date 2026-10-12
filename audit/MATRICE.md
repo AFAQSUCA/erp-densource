@@ -14,16 +14,16 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 
 ## Bilan
 
-**440 exigences : 367 ✅, 48 🟡, 10 ❌, 12 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **89,5 %**.
+**440 exigences : 369 ✅, 46 🟡, 10 ❌, 12 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **89,7 %**.
 
 | Bloc | Lignes | ✅ | 🟡 | ❌ | ❓ | ⚪ |
 |---|---|---|---|---|---|---|
 | M1 Sécurité & audit | 77 | 77 | 0 | 0 | 0 | 0 |
 | M2 Flotte | 26 | 26 | 0 | 0 | 0 | 0 |
 | M3 Chauffeurs | 18 | 18 | 0 | 0 | 0 | 0 |
-| M4 Clients | 15 | 14 | 1 | 0 | 0 | 0 |
+| M4 Clients | 15 | 15 | 0 | 0 | 0 | 0 |
 | M5 Missions | 31 | 30 | 1 | 0 | 0 | 0 |
-| M6 Carburant | 17 | 16 | 1 | 0 | 0 | 0 |
+| M6 Carburant | 17 | 17 | 0 | 0 | 0 | 0 |
 | M7 Garage | 13 | 13 | 0 | 0 | 0 | 0 |
 | M8 Stocks | 12 | 12 | 0 | 0 | 0 | 0 |
 | M9 Facturation | 27 | 25 | 2 | 0 | 0 | 0 |
@@ -35,7 +35,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | Avenants | 17 | 2 | 10 | 5 | 0 | 0 |
 | Écarts d'audit | 22 | 2 | 14 | 2 | 4 | 0 |
 
-**Reprise à M4-02** (première ligne non terminée, dans l'ordre des ID).
+**Reprise à M5-04** (première ligne non terminée, dans l'ordre des ID).
 
 ## Contradictions entre sources (règle 1)
 
@@ -189,7 +189,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | ID | Source | Exigence | Verdict | Preuve | Action | Statut |
 |---|---|---|---|---|---|---|
 | M4-01 | M4 l.119 | Raison sociale | ✅ | `apps/customers/models.py:28` | — | Fait |
-| M4-02 | M4 l.119 | NCC/NIF | 🟡 | `apps/customers/models.py:29` ; unicité sensible à la casse et aux espaces (`ci-123` ≠ `CI-123`) | Normaliser | À faire |
+| M4-02 | M4 l.119 | NCC/NIF | ✅ | Comparaison sans séparateur ni casse `apps/customers/services.py` (`cle_ncc`, `client_par_ncc`), saisie et import Excel ; NCC enregistré en majuscules ; tests `apps/customers/tests/test_services.py` | Fait (`ba562d8`) | Fait |
 | M4-03 | M4 l.119 | Contact principal | ✅ | `apps/customers/models.py:30` | — | Fait |
 | M4-04 | M4 l.119 | Téléphone | ✅ | `apps/customers/models.py:31` | — | Fait |
 | M4-05 | M4 l.120 | Email | ✅ | `apps/customers/models.py:32` | — | Fait |
@@ -250,7 +250,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M6-04 | M6 l.149 | Plein : station | ✅ | `apps/fuel/models.py:37` | — | Fait |
 | M6-05 | M6 l.149 | Plein : quantité (L) | ✅ | `apps/fuel/models.py:38` | — | Fait |
 | M6-06 | M6 l.150 | Plein : prix unitaire (FCFA) | ✅ | `apps/fuel/models.py:41` | — | Fait |
-| M6-07 | M6 l.150 | Plein : km compteur | 🟡 | `apps/fuel/models.py:44` ; aucun plancher : un premier plein trop bas bloque ensuite le camion | Plancher = compteur du camion | À faire |
+| M6-07 | M6 l.150 | Plein : km compteur | ✅ | Plancher du premier plein = compteur du camion `apps/fuel/services.py` (`enregistrer_plein`) ; tests `apps/fuel/tests/test_services.py` (`…premier_plein_sous_le_compteur…`) | Fait | Fait |
 | M6-08 | M6 l.150 | Plein : n° ticket / reçu | ✅ | `apps/fuel/models.py:45` | — | Fait |
 | M6-09 | M6 l.151 | Formule L/100 km | ✅ | `apps/fuel/services.py:46` | — | Fait |
 | M6-10 | M6 l.153 | Alerte jaune si écart > +20 % | ✅ | `apps/fuel/services.py:37` | — | Fait |
