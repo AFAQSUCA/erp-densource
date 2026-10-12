@@ -490,14 +490,19 @@ class PersonnelImportView(RoleRequiredMixin, FormView):
 
     def form_valid(self, form):
         try:
-            crees = services.importer_personnel(form.cleaned_data["fichier"])
+            resultat = services.importer_personnel(form.cleaned_data["fichier"])
         except ImportPersonnelError as erreur:
             return self.render_to_response(self.get_context_data(form=form, erreurs=erreur.erreurs))
-        messages.success(
-            self.request,
-            f"{len(crees)} employé(s) importé(s) : "
-            + ", ".join(f"{p.prenom} {p.nom} ({p.matricule})" for p in crees) + ".",
-        )
+        message = f"{len(resultat.crees)} employé(s) importé(s)"
+        if resultat.crees:
+            message += " : " + ", ".join(f"{p.prenom} {p.nom} ({p.matricule})" for p in resultat.crees)
+        message += "."
+        if resultat.deja_presents:
+            message += (
+                f" {len(resultat.deja_presents)} déjà présent(s), non recréé(s) : "
+                + ", ".join(resultat.deja_presents) + "."
+            )
+        messages.success(self.request, message)
         return redirect("hr:personnel_liste")
 
 

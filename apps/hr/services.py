@@ -9,6 +9,7 @@ Statuts : DEMANDE → VALIDATION_N1 → APPROUVE → EN_COURS → TERMINE
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
@@ -18,7 +19,7 @@ from django.db.models import Count, F, Q, QuerySet, Sum
 from django.utils import timezone
 
 from apps.accounts.models import Role, User
-from apps.core.search import filtrer_par_texte
+from apps.core.search import filtrer_par_texte, normaliser
 from apps.core.services import prochain_numero
 from apps.parametres import services as parametres_services
 
@@ -219,16 +220,33 @@ departement_importe = _departement_importe
 date_importee = _date_importee
 
 
+@dataclass
+class ResultatImportPersonnel:
+    crees: list[Personnel] = field(default_factory=list)
+    deja_presents: list[str] = field(default_factory=list)  # « Nom Prénom » tels qu'écrits dans le fichier
+
+
+def _cle_nom(nom: str, prenom: str) -> tuple[str, str]:
+    """Même clé que l'import général (``apps.importation``) : sans accents, sans majuscules, espaces réduits."""
+    return " ".join(normaliser(nom).split()), " ".join(normaliser(prenom).split())
+
+
 @transaction.atomic
-def importer_personnel(fichier) -> list[Personnel]:
+def importer_personnel(fichier) -> ResultatImportPersonnel:
     """Recrutement en masse depuis un classeur Excel (colonnes : voir ``COLONNES_IMPORT``).
 
     Tout ou rien (aucune saisie individuelle du poste ou du département à corriger dans
     l'urgence après coup) : la moindre ligne invalide fait échouer tout l'import
     (``ImportPersonnelError``, un message par ligne fautive) — aucune fiche n'est créée tant
     que le fichier entier n'est pas correct.
+
+    Réimporter le même fichier ne crée pas de doublon : un employé déjà présent (même nom et prénom, comme
+    l'import général) est listé dans ``deja_presents`` et laissé tel quel (audit M11-08, AV-17).
     """
-    classeur = openpyxl.load_workbook(fichier, data_only=True)
+    try:
+        classeur = openpyxl.load_workbook(fichier, data_only=True)
+    except Exception as erreur:  # fichier corrompu, renommé en .xlsx, archive illisible...
+        raise ImportPersonnelError(["Ce fichier n'est pas un classeur Excel (.xlsx) lisible."]) from erreur
     feuille = classeur.active
 
     en_tete = next(feuille.iter_rows(min_row=1, max_row=1, values_only=True), None)
@@ -241,6 +259,8 @@ def importer_personnel(fichier) -> list[Personnel]:
 
     erreurs: list[str] = []
     a_creer: list[dict] = []
+    resultat = ResultatImportPersonnel()
+    connus = {_cle_nom(p.nom, p.prenom) for p in Personnel.objects.all()}
     for numero, ligne in enumerate(feuille.iter_rows(min_row=2, values_only=True), start=2):
         if not ligne or all(cellule in (None, "") for cellule in ligne):
             continue  # ligne vide (fin de tableau…) : ignorée, ce n'est pas une erreur
@@ -253,6 +273,11 @@ def importer_personnel(fichier) -> list[Personnel]:
             erreurs.append(f"Ligne {numero} : le nom est obligatoire.")
         if not prenom:
             erreurs.append(f"Ligne {numero} : le prénom est obligatoire.")
+        if nom and prenom:
+            if _cle_nom(nom, prenom) in connus:
+                resultat.deja_presents.append(f"{nom} {prenom}")
+                continue
+            connus.add(_cle_nom(nom, prenom))
 
         poste = _poste_importe(poste_brut)
         if poste is None:
@@ -295,7 +320,8 @@ def importer_personnel(fichier) -> list[Personnel]:
     if erreurs:
         raise ImportPersonnelError(erreurs)
 
-    return [recruter(**champs) for champs in a_creer]
+    resultat.crees = [recruter(**champs) for champs in a_creer]
+    return resultat
 
 
 # --- droits des validateurs ---

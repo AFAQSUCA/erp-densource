@@ -20,6 +20,7 @@
     <p class="mt-2 text-sm text-slate-600">
       Colonnes attendues, dans cet ordre : <strong>{{ colonnes|join:", " }}</strong>.
       Poste et Département doivent correspondre à une valeur existante dans l'application.
+      Un employé déjà enregistré (même nom et prénom) n'est pas recréé : le même fichier peut être déposé deux fois.
     </p>
     <a href="{% url 'hr:personnel_import_modele' %}"
        class="mt-3 inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50">
