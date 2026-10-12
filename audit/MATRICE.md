@@ -14,7 +14,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 
 ## Bilan
 
-**440 exigences : 382 ✅, 35 🟡, 10 ❌, 10 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **91,4 %**.
+**440 exigences : 383 ✅, 34 🟡, 10 ❌, 10 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **91,5 %**.
 
 | Bloc | Lignes | ✅ | 🟡 | ❌ | ❓ | ⚪ |
 |---|---|---|---|---|---|---|
@@ -29,13 +29,13 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M9 Facturation | 27 | 27 | 0 | 0 | 0 | 0 |
 | M10 Finances | 13 | 13 | 0 | 0 | 0 | 0 |
 | M11 RH | 30 | 30 | 0 | 0 | 0 | 0 |
-| M12 Tableaux de bord | 28 | 25 | 1 | 0 | 0 | 2 |
+| M12 Tableaux de bord | 28 | 26 | 0 | 0 | 0 | 2 |
 | Technique | 87 | 61 | 14 | 3 | 8 | 1 |
 | Recette | 7 | 7 | 0 | 0 | 0 | 0 |
 | Avenants | 17 | 3 | 9 | 5 | 0 | 0 |
 | Écarts d'audit | 22 | 7 | 11 | 2 | 2 | 0 |
 
-**Reprise à M12-10** (première ligne non terminée, dans l'ordre des ID).
+**Reprise à TECH-18** (première ligne non terminée, dans l'ordre des ID).
 
 ## Contradictions entre sources (règle 1)
 
@@ -395,7 +395,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M12-07 | M12 l.229 | Camions au garage | ✅ | `apps/dashboard/services.py:90` | — | Fait |
 | M12-08 | M12 l.230 | Conso moyenne globale | ✅ | `apps/dashboard/services.py:90` | — | Fait |
 | M12-09 | M12 l.231 | Alerte : assurances expirantes | ✅ | `apps/dashboard/services.py:284` ; documents manquants et camions réformés traités (voir M2-22) | Fait (`cbb3d51`) | Fait |
-| M12-10 | M12 l.231 | Alerte : permis expirants | 🟡 | `apps/dashboard/services.py:305` ; date de permis manquante jamais signalée | Signaler « non renseigné » | À faire |
+| M12-10 | M12 l.231 | Alerte : permis expirants | ✅ | `apps/dashboard/services.py:341` : en plus des dates qui expirent, fiche permis incomplète (n°, date, catégorie C/E, visite médicale) signalée « non renseigné(e) » ; règle commune `apps/drivers/services.py:242,257` (aussi pour « Voir tout ») ; tests `apps/dashboard/tests/test_dashboard.py:243`, `apps/drivers/tests/test_services.py` ; vérifié dans le navigateur | Fait (`501f90e`) | Fait |
 | M12-11 | M12 l.231 | Alerte : pièces sous seuil | ✅ | `apps/dashboard/services.py:336` | — | Fait |
 | M12-12 | M12 l.232 | Alerte : factures impayées échues | ✅ | `apps/dashboard/services.py:387` | — | Fait |
 | M12-13 | M12 l.234 | RH : effectif | ✅ | `apps/dashboard/services.py:148`, sans le personnel sorti `apps/hr/services.py:543` (test `apps/hr/tests/test_sorties.py`) | — | Fait |
