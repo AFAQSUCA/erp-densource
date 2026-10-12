@@ -14,11 +14,11 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 
 ## Bilan
 
-**440 exigences : 344 ✅, 69 🟡, 11 ❌, 13 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **86,6 %**.
+**440 exigences : 345 ✅, 69 🟡, 11 ❌, 12 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **86,8 %**.
 
 | Bloc | Lignes | ✅ | 🟡 | ❌ | ❓ | ⚪ |
 |---|---|---|---|---|---|---|
-| M1 Sécurité & audit | 77 | 68 | 8 | 0 | 1 | 0 |
+| M1 Sécurité & audit | 77 | 69 | 8 | 0 | 0 | 0 |
 | M2 Flotte | 26 | 18 | 7 | 1 | 0 | 0 |
 | M3 Chauffeurs | 18 | 17 | 1 | 0 | 0 | 0 |
 | M4 Clients | 15 | 14 | 1 | 0 | 0 | 0 |
@@ -35,13 +35,13 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | Avenants | 17 | 2 | 10 | 5 | 0 | 0 |
 | Écarts d'audit | 22 | 1 | 15 | 2 | 4 | 0 |
 
-**Reprise à M1-37** (première ligne non terminée, dans l'ordre des ID).
+**Reprise à M1-53** (première ligne non terminée, dans l'ordre des ID).
 
 ## Contradictions entre sources (règle 1)
 
 | # | Sujet | CDC | Autre source | État |
 |---|---|---|---|---|
-| C1 | Qui valide une facture | §3 M1, ligne 53 : FINANCES « Validation factures » | Code et `architecture.md:446` : la DIRECTION valide, la FINANCES prépare (`apps/billing/permissions.py:18`) | **Décision requise** (M1-37) |
+| C1 | Qui valide une facture | §3 M1, ligne 53 : FINANCES « Validation factures » | Code et `architecture.md:446` : la DIRECTION valide, la FINANCES prépare (`apps/billing/permissions.py:18`) | Tranché le 12/10/2026 : DIRECTION valide (`avenant-validation-factures.md`) |
 | C2 | Largeur de la DIRECTION | §3 M1, ligne 49 : « lecture seule sur RH/Clientèle/Parc Auto » | Avenant R8 §1 : la DIRECTION a la même largeur que l'ADMIN pour la saisie | Tranché par l'avenant R8 |
 | C3 | Accès financier de la RH | §3 M1, ligne 50 : « Pas d'accès financier » | Avenant R8 §2 : « la RH fait tout ce que fait la FINANCES » | Tranché par l'avenant R8 |
 | C4 | Droit annuel de congé | §3 M11, ligne 219 : 12 jours ouvrables | Avenant R7 : 26 jours ouvrés, hors samedi | Tranché par l'avenant R7 |
@@ -88,7 +88,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M1-34 | M1 l.51 | CHARGE_CLIENTELE : pas d'accès parc auto | ✅ | `apps/fleet/permissions.py:11` | — | Fait |
 | M1-35 | M1 l.52 | PARCAUTO : gestion technique des véhicules | ✅ | `apps/fleet/permissions.py:12` | — | Fait |
 | M1-36 | M1 l.52 | PARCAUTO : renouvellement des pièces administratives | ✅ | `apps/fleet/services.py:314` | — | Fait |
-| M1-37 | M1 l.53 | FINANCES : validation des factures | ❓ | `apps/billing/permissions.py:18` (DIRECTION seule) | Contradiction C1 | Décision |
+| M1-37 | M1 l.53 | FINANCES : validation des factures (modifiée : préparation, validation DIRECTION) | ✅ | Contradiction C1 tranchée le 12/10/2026 : `avenant-validation-factures.md` ; `apps/billing/permissions.py:18`, `apps/billing/services.py:380` ; test `apps/billing/tests/test_services.py:244` | Avenant écrit | Fait |
 | M1-38 | M1 l.52 | PARCAUTO : mouvements de stock | ✅ | `apps/inventory/permissions.py:13` | — | Fait |
 | M1-39 | M1 l.52 | PARCAUTO : inventaires | ✅ | `apps/inventory/services.py:193` | — | Fait |
 | M1-40 | M1 l.52 | PARCAUTO : ordres de réparation | ✅ | `apps/garage/permissions.py:14` | — | Fait |
