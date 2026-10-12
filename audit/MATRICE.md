@@ -14,11 +14,11 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 
 ## Bilan
 
-**440 exigences : 349 ✅, 65 🟡, 11 ❌, 12 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **87,3 %**.
+**440 exigences : 352 ✅, 62 🟡, 11 ❌, 12 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **87,6 %**.
 
 | Bloc | Lignes | ✅ | 🟡 | ❌ | ❓ | ⚪ |
 |---|---|---|---|---|---|---|
-| M1 Sécurité & audit | 77 | 72 | 5 | 0 | 0 | 0 |
+| M1 Sécurité & audit | 77 | 74 | 3 | 0 | 0 | 0 |
 | M2 Flotte | 26 | 18 | 7 | 1 | 0 | 0 |
 | M3 Chauffeurs | 18 | 17 | 1 | 0 | 0 | 0 |
 | M4 Clients | 15 | 14 | 1 | 0 | 0 | 0 |
@@ -30,12 +30,12 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M10 Finances | 13 | 12 | 1 | 0 | 0 | 0 |
 | M11 RH | 30 | 27 | 3 | 0 | 0 | 0 |
 | M12 Tableaux de bord | 28 | 24 | 2 | 0 | 0 | 2 |
-| Technique | 87 | 59 | 16 | 3 | 8 | 1 |
+| Technique | 87 | 60 | 15 | 3 | 8 | 1 |
 | Recette | 7 | 7 | 0 | 0 | 0 | 0 |
 | Avenants | 17 | 2 | 10 | 5 | 0 | 0 |
 | Écarts d'audit | 22 | 2 | 14 | 2 | 4 | 0 |
 
-**Reprise à M1-67** (première ligne non terminée, dans l'ordre des ID).
+**Reprise à M1-72** (première ligne non terminée, dans l'ordre des ID).
 
 ## Contradictions entre sources (règle 1)
 
@@ -118,8 +118,8 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M1-64 | M1 l.76 | Enregistrement automatique (signaux/middleware) | ✅ | `apps/audit/registry.py:61` | — | Fait |
 | M1-65 | M1 l.77 | Append-only : aucune modification | ✅ | `apps/audit/models.py:58,73`, trigger `apps/audit/migrations/0002_trigger_append_only.py:3` | — | Fait |
 | M1-66 | M1 l.77 | Append-only : aucune suppression | ✅ | `apps/core/immuable.py`, trigger (idem) | — | Fait |
-| M1-67 | M1 l.78 | Tracer les créations sensibles | 🟡 | Non audités : `inventory.Article`, `fuel.Plein`, `billing.LigneFacture`, `hr.ReportConge`, `hr.ValidationConge`, `hr.JourFerie`, `customers.Interaction`, `fuel.ChecklistVehicule` | `audit_model` sur ces modèles | À faire |
-| M1-68 | M1 l.78 | Tracer les modifications critiques | 🟡 | Idem M1-67 (ex. seuil d'un article modifié sans trace) | Idem | À faire |
+| M1-67 | M1 l.78 | Tracer les créations sensibles | ✅ | `audit_model` ajouté pour `inventory.Article`, `fuel.Plein`, `billing.LigneFacture`, `hr.ReportConge`, `hr.ValidationConge`, `hr.JourFerie`, `customers.Interaction`, `garage.ChecklistVehicule` (`apps/*/apps.py`) ; test garde-fou `apps/audit/tests/test_couverture.py` (22 modèles sensibles) | Fait | Fait |
+| M1-68 | M1 l.78 | Tracer les modifications critiques | ✅ | Idem M1-67 ; seuil d'un article modifié : ancienne et nouvelle valeur au journal (`apps/audit/tests/test_couverture.py`) | Fait | Fait |
 | M1-69 | M1 l.79 | Tracer les suppressions | ✅ | `apps/audit/registry.py:150` (+ suppression logique) | — | Fait |
 | M1-70 | M1 l.79 | Tracer les connexions | ✅ | `apps/audit/signals.py:10` | — | Fait |
 | M1-71 | M1 l.79 | Tracer les déconnexions | ✅ | `apps/audit/signals.py:11` | — | Fait |
@@ -447,7 +447,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | TECH-26 | §4 l.262 | views → serializers → services → models | 🟡 | 8 lectures ORM directes dans des vues (`apps/accounting/views.py:36`, `apps/finance/views.py:300`, `apps/hr/views.py:314`…) | Passer par des services | À faire |
 | TECH-27 | §4 l.263 | Logique métier dans services.py | ✅ | Aucun calcul métier dans les vues | — | Fait |
 | TECH-28 | §4 l.264 | Signaux avec parcimonie | ✅ | `apps/*/signals.py` | — | Fait |
-| TECH-29 | §4 l.264 | post_save audit sur modèles sensibles | 🟡 | Voir M1-67 | Idem | À faire |
+| TECH-29 | §4 l.264 | post_save audit sur modèles sensibles | ✅ | Voir M1-67 (`apps/audit/tests/test_couverture.py`) | Fait | Fait |
 | TECH-30 | §4 l.265 | Transactions atomiques : missions | ✅ | `apps/missions/services.py` (`@transaction.atomic`) | — | Fait |
 | TECH-31 | §4 l.265 | Transactions atomiques : factures | ✅ | `apps/billing/services.py` | — | Fait |
 | TECH-32 | §4 l.265 | Transactions atomiques : OR | ✅ | `apps/garage/services.py` | `corriger_kilometrage` et `expirer_proformas` non atomiques | Fait |
