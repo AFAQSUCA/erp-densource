@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import date, timedelta
 
 from decimal import Decimal
@@ -199,26 +200,54 @@ def _normaliser(immatriculation: str, vin: str) -> tuple[str, str]:
     return " ".join(immatriculation.upper().split()), vin.strip().upper()
 
 
+def cle_immatriculation(immatriculation: str) -> str:
+    """Immatriculation sans séparateur, en majuscules : « AB-123-CD », « AB 123 CD » et « ab123cd » sont le même
+    camion (audit M2-02)."""
+    return re.sub(r"[^0-9A-Z]", "", immatriculation.upper())
+
+
+def vehicule_par_immatriculation(immatriculation: str, *, sauf: Vehicule | None = None) -> Vehicule | None:
+    """Le camion (supprimé logiquement compris) qui porte déjà cette immatriculation, quelle que soit son écriture."""
+    cle = cle_immatriculation(immatriculation)
+    candidats = Vehicule.all_objects.exclude(pk=sauf.pk if sauf else None).only("pk", "immatriculation")
+    return next((v for v in candidats if cle_immatriculation(v.immatriculation) == cle), None)
+
+
+ANNEE_MIN = 1950
+VIN_LONGUEUR_MAX = 17  # longueur d'un VIN normalisé, et de la colonne en base
+
+
 def _verifier_fiche(
     *,
     immatriculation: str,
     vin: str,
+    annee: int,
     capacite_charge_t: Decimal,
     reservoir_l: int,
     exclure: Vehicule | None = None,
 ) -> None:
     if not immatriculation:
         raise VehiculeInvalide("L'immatriculation est obligatoire.")
+    if len(immatriculation) > Vehicule._meta.get_field("immatriculation").max_length:
+        raise VehiculeInvalide("L'immatriculation est trop longue.")
     if not vin:
         raise VehiculeInvalide("Le n° de châssis (VIN) est obligatoire.")
+    if len(vin) > VIN_LONGUEUR_MAX:
+        raise VehiculeInvalide(f"Le n° de châssis (VIN) compte au plus {VIN_LONGUEUR_MAX} caractères.")
+    annee_max = timezone.localdate().year + 1
+    if not ANNEE_MIN <= annee <= annee_max:
+        raise VehiculeInvalide(f"L'année doit être comprise entre {ANNEE_MIN} et {annee_max}.")
     if capacite_charge_t <= 0:
         raise VehiculeInvalide("La capacité de charge doit être strictement positive.")
     if reservoir_l <= 0:
         raise VehiculeInvalide("La capacité du réservoir doit être strictement positive.")
     # all_objects : l'unicité en base compte aussi les camions supprimés logiquement.
     autres = Vehicule.all_objects.exclude(pk=exclure.pk if exclure else None)
-    if autres.filter(immatriculation=immatriculation).exists():
-        raise DoublonVehicule(f"L'immatriculation {immatriculation} est déjà utilisée.")
+    existant = vehicule_par_immatriculation(immatriculation, sauf=exclure)
+    if existant is not None:
+        raise DoublonVehicule(
+            f"L'immatriculation {immatriculation} est déjà utilisée (camion {existant.immatriculation})."
+        )
     if autres.filter(vin=vin).exists():
         raise DoublonVehicule(f"Le n° de châssis {vin} est déjà utilisé.")
 
@@ -242,6 +271,7 @@ def creer_vehicule(
     _verifier_fiche(
         immatriculation=immatriculation,
         vin=vin,
+        annee=annee,
         capacite_charge_t=capacite_charge_t,
         reservoir_l=reservoir_l,
     )
@@ -281,6 +311,7 @@ def modifier_vehicule(
     _verifier_fiche(
         immatriculation=immatriculation,
         vin=vin,
+        annee=annee,
         capacite_charge_t=capacite_charge_t,
         reservoir_l=reservoir_l,
         exclure=vehicule,
@@ -288,6 +319,14 @@ def modifier_vehicule(
     if kilometrage < vehicule.kilometrage:
         raise KilometrageInvalide(
             f"Le compteur ({vehicule.kilometrage} km) ne peut pas diminuer."
+        )
+    # Une faute de frappe (un chiffre en trop) figerait le compteur : au-delà de l'écart maximal des paramètres,
+    # la hausse passe par la correction du compteur de l'ADMIN, tracée (audit M2-07).
+    ecart_max = parametres_services.parametres().ecart_km_max
+    if not distance_plausible(vehicule.kilometrage, kilometrage, ecart_max=ecart_max):
+        raise KilometrageInvalide(
+            f"Le compteur passerait de {vehicule.kilometrage} à {kilometrage} km (plus de {ecart_max} km) : "
+            "vérifiez la saisie, ou faites corriger le compteur par l'administrateur."
         )
     vehicule.immatriculation = immatriculation
     vehicule.marque = marque.strip()

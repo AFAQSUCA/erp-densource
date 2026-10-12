@@ -4,6 +4,7 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
+from django.utils import timezone
 
 from apps.audit.models import AuditLog
 from apps.drivers.tests.factories import ChauffeurFactory
@@ -64,7 +65,7 @@ def test_deux_saisies_qui_ne_different_que_par_la_casse_sont_un_doublon():
     services.creer_vehicule(**_donnees())
 
     with pytest.raises(DoublonVehicule, match="immatriculation"):
-        services.creer_vehicule(**_donnees(immatriculation="1234 ab 01", vin="AUTRE0000000000001"))
+        services.creer_vehicule(**_donnees(immatriculation="1234 ab 01", vin="AUTRE000000000000"))
 
 
 def test_un_vin_deja_utilise_est_refuse():
@@ -79,7 +80,7 @@ def test_l_immatriculation_d_un_camion_supprime_logiquement_reste_reservee():
     ancien.delete()
 
     with pytest.raises(DoublonVehicule):
-        services.creer_vehicule(**_donnees(vin="AUTRE0000000000001"))
+        services.creer_vehicule(**_donnees(vin="AUTRE000000000000"))
 
 
 @pytest.mark.parametrize(
@@ -137,7 +138,7 @@ def test_modifier_vehicule_refuse_l_immatriculation_d_un_autre_camion():
     autre = VehiculeFactory(kilometrage=0)
 
     with pytest.raises(DoublonVehicule):
-        services.modifier_vehicule(autre, **_donnees(vin="AUTRE0000000000001", kilometrage=0))
+        services.modifier_vehicule(autre, **_donnees(vin="AUTRE000000000000", kilometrage=0))
 
 
 def test_le_compteur_ne_peut_pas_reculer_lors_d_une_modification():
@@ -373,3 +374,56 @@ def test_un_camion_supprime_n_est_plus_surveille():
 
     assert not services.documents_a_renouveler(aujourd_hui=date(2026, 10, 12)).exists()
     assert services.documents_manquants() == []
+
+
+# --- contrôles de la fiche (audit M2-02, M2-05, M2-06, M2-07) ---
+
+
+@pytest.mark.parametrize("autre_ecriture", ["1234-AB-01", "1234AB01", " 1234 - ab - 01 "])
+def test_une_meme_immatriculation_ecrite_autrement_est_un_doublon(autre_ecriture):
+    services.creer_vehicule(**_donnees())
+
+    with pytest.raises(DoublonVehicule, match=r"déjà utilisée \(camion 1234 AB 01\)"):
+        services.creer_vehicule(**_donnees(immatriculation=autre_ecriture, vin="AUTRE000000000001"))
+
+
+def test_modifier_son_immatriculation_en_changeant_seulement_les_separateurs_est_permis():
+    camion = services.creer_vehicule(**_donnees())
+
+    services.modifier_vehicule(camion, **_donnees(immatriculation="1234-AB-01"))
+
+    camion.refresh_from_db()
+    assert camion.immatriculation == "1234-AB-01"
+
+
+@pytest.mark.parametrize("annee", [5, 1949, 2999])
+def test_une_annee_invraisemblable_est_refusee(annee):
+    with pytest.raises(VehiculeInvalide, match="L'année doit être comprise entre 1950"):
+        services.creer_vehicule(**_donnees(annee=annee))
+
+
+def test_l_annee_prochaine_est_acceptee():
+    camion = services.creer_vehicule(**_donnees(annee=timezone.localdate().year + 1))
+
+    assert camion.annee == timezone.localdate().year + 1
+
+
+def test_un_vin_trop_long_est_refuse_au_lieu_de_faire_planter_la_base():
+    with pytest.raises(VehiculeInvalide, match="au plus 17 caractères"):
+        services.creer_vehicule(**_donnees(vin="W" * 18))
+
+
+def test_une_immatriculation_trop_longue_est_refusee():
+    with pytest.raises(VehiculeInvalide, match="trop longue"):
+        services.creer_vehicule(**_donnees(immatriculation="A" * 21))
+
+
+def test_une_hausse_de_compteur_invraisemblable_sur_la_fiche_est_refusee():
+    camion = services.creer_vehicule(**_donnees(kilometrage=50000))
+
+    with pytest.raises(KilometrageInvalide, match="plus de 5000 km"):
+        services.modifier_vehicule(camion, **_donnees(kilometrage=500000))
+    services.modifier_vehicule(camion, **_donnees(kilometrage=54000))
+
+    camion.refresh_from_db()
+    assert camion.kilometrage == 54000
