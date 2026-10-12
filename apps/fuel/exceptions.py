@@ -22,7 +22,8 @@ class KilometrageInvalide(CarburantError):
 
 
 class SaisieSuspecte(CarburantError):
-    """Écart > ±60 % : à vérifier puis à confirmer (cahier-des-charges.md:155).
+    """Écart au-delà du seuil de saisie suspecte des paramètres (± 60 % dans le cahier-des-charges.md:155) :
+    à vérifier puis à confirmer.
 
     Rien n'est enregistré tant que la saisie n'est pas confirmée.
     """

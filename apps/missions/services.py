@@ -27,6 +27,7 @@ from apps.drivers import services as drivers_services
 from apps.drivers.models import Chauffeur, Copilote, StatutChauffeur
 from apps.fleet import services as fleet_services
 from apps.fleet.models import StatutVehicule, Vehicule
+from apps.parametres import services as parametres_services
 
 from .exceptions import (
     AffectationImpossible,
@@ -555,10 +556,11 @@ def livrer_mission(mission: Mission, *, code: str, km_arrivee: int) -> Mission:
             f"Le kilométrage d'arrivée ({km_arrivee}) est inférieur au départ "
             f"({mission.km_depart})."
         )
-    if not fleet_services.distance_plausible(mission.km_depart, km_arrivee):
+    ecart_max = parametres_services.parametres().ecart_km_max
+    if not fleet_services.distance_plausible(mission.km_depart, km_arrivee, ecart_max=ecart_max):
         raise KilometrageInvalide(
             f"Le kilométrage d'arrivée ({km_arrivee}) est {km_arrivee - mission.km_depart} km au-dessus du "
-            f"départ ({mission.km_depart}) : plus de {fleet_services.ECART_KM_MAX} km sur une mission, "
+            f"départ ({mission.km_depart}) : plus de {ecart_max} km sur une mission, "
             "vérifiez la saisie (le compteur du camion ne peut plus reculer ensuite)."
         )
     vehicule = _recharger(mission.vehicule)

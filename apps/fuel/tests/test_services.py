@@ -6,6 +6,8 @@ from decimal import Decimal
 
 import pytest
 
+from apps.accounts.models import Role
+from apps.accounts.tests.factories import UserFactory
 from apps.drivers.tests.factories import ChauffeurFactory
 from apps.fleet.tests.factories import VehiculeFactory
 from apps.fuel import services
@@ -17,6 +19,7 @@ from apps.fuel.exceptions import (
     TicketDejaEnregistre,
 )
 from apps.fuel.models import NiveauAlerte, Plein
+from apps.parametres import services as parametres_services
 
 pytestmark = pytest.mark.django_db
 
@@ -353,3 +356,46 @@ def test_pleins_a_surveiller_liste_alertes_anomalies_et_saisies_suspectes(camion
 
     assert jaune in surveilles and anomalie in surveilles
     assert normal not in surveilles
+
+
+# --- seuils modifiés dans les paramètres (audit M1-10) ---
+
+
+def _regler(**valeurs):
+    parametres_services.modifier_parametres(UserFactory(role=Role.ADMIN), **valeurs)
+
+
+def test_les_seuils_d_ecart_des_parametres_s_appliquent(camion, chauffeur):
+    _regler(seuil_conso_jaune_pct=Decimal("10"), seuil_conso_rouge_pct=Decimal("15"), seuil_conso_saisie_pct=Decimal("50"))
+
+    plein = _suivant(camion, chauffeur, ["30"], "34")  # +13,33 % : aucune alerte avec le cahier des charges
+
+    assert plein.niveau_alerte == NiveauAlerte.JAUNE
+    assert _suivant(VehiculeFactory(), chauffeur, ["30"], "35").niveau_alerte == NiveauAlerte.ROUGE  # +16,67 %
+
+
+def test_le_seuil_de_saisie_suspecte_des_parametres_s_applique(camion, chauffeur):
+    _regler(seuil_conso_saisie_pct=Decimal("45"))
+
+    with pytest.raises(SaisieSuspecte):
+        _suivant(camion, chauffeur, ["30"], "44", confirmer=False)  # +46,67 % : sous les 60 % du cahier des charges
+
+
+def test_la_plage_plausible_des_parametres_s_applique(camion, chauffeur):
+    _regler(conso_min_l100=Decimal("25"), conso_max_l100=Decimal("35"))
+
+    assert _suivant(camion, chauffeur, [], "40").anomalie is True  # dans la plage 20-45 du cahier des charges
+    assert services.est_anomalie(Decimal("24")) is True
+    assert services.est_anomalie(Decimal("30")) is False
+
+
+def test_l_ecart_maximal_de_compteur_des_parametres_s_applique(camion, chauffeur):
+    _plein(camion, chauffeur, km=1000, litres=100, jour=0)
+    _regler(ecart_km_max=8000)
+
+    plein = _plein(camion, chauffeur, km=7000, litres=600, jour=1)  # 6 000 km : refusé avec 5 000 km
+
+    assert plein.distance_km == 6000
+    _regler(ecart_km_max=1000)
+    with pytest.raises(KilometrageInvalide, match="plus de 1000 km entre deux relevés"):
+        _plein(camion, chauffeur, km=8500, litres=100, jour=2)

@@ -92,15 +92,13 @@ def liberer_apres_mission(vehicule: Vehicule) -> Vehicule:
     return vehicule
 
 
-# Distance maximale crédible entre deux relevés du compteur d'un même camion (deux pleins, ou le départ et
-# l'arrivée d'une mission) : au-delà, c'est une faute de frappe (un chiffre en trop) plutôt qu'un trajet.
-# Le compteur ne pouvant jamais reculer, une valeur trop haute le fige définitivement (audit M5-10 / M6-09).
-ECART_KM_MAX = 5000
-
-
-def distance_plausible(depuis_km: int, jusqu_a_km: int) -> bool:
-    """Faux si la distance parcourue dépasse :data:`ECART_KM_MAX`."""
-    return jusqu_a_km - depuis_km <= ECART_KM_MAX
+def distance_plausible(depuis_km: int, jusqu_a_km: int, *, ecart_max: int | None = None) -> bool:
+    """Faux si la distance parcourue dépasse ``ecart_max`` (par défaut l'écart maximal des paramètres, 5 000 km
+    dans le cahier des charges) : au-delà, c'est une faute de frappe plutôt qu'un trajet. Le compteur ne pouvant
+    jamais reculer, une valeur trop haute le figerait définitivement (audit M5-10 / M6-09)."""
+    if ecart_max is None:
+        ecart_max = parametres_services.parametres().ecart_km_max
+    return jusqu_a_km - depuis_km <= ecart_max
 
 
 def enregistrer_kilometrage(vehicule: Vehicule, kilometrage: int) -> Vehicule:

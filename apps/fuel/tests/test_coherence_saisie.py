@@ -8,10 +8,10 @@ import pytest
 from django.utils import timezone
 
 from apps.drivers.tests.factories import ChauffeurFactory
-from apps.fleet import services as fleet_services
 from apps.fleet.tests.factories import VehiculeFactory
 from apps.fuel import services
 from apps.fuel.exceptions import KilometrageInvalide, SaisieInvalide
+from apps.parametres.models import ECART_KM_MAX
 
 pytestmark = pytest.mark.django_db
 
@@ -80,4 +80,4 @@ def test_la_distance_limite_est_acceptee():
     camion = VehiculeFactory()
     premier = _plein(camion)
 
-    assert _plein(camion, km_compteur=premier.km_compteur + fleet_services.ECART_KM_MAX).distance_km == 5000
+    assert _plein(camion, km_compteur=premier.km_compteur + ECART_KM_MAX).distance_km == 5000
