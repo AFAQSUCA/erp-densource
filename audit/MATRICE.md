@@ -14,11 +14,11 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 
 ## Bilan
 
-**440 exigences : 354 ✅, 60 🟡, 11 ❌, 12 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **87,9 %**.
+**440 exigences : 356 ✅, 58 🟡, 11 ❌, 12 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **88,1 %**.
 
 | Bloc | Lignes | ✅ | 🟡 | ❌ | ❓ | ⚪ |
 |---|---|---|---|---|---|---|
-| M1 Sécurité & audit | 77 | 76 | 1 | 0 | 0 | 0 |
+| M1 Sécurité & audit | 77 | 77 | 0 | 0 | 0 | 0 |
 | M2 Flotte | 26 | 18 | 7 | 1 | 0 | 0 |
 | M3 Chauffeurs | 18 | 17 | 1 | 0 | 0 | 0 |
 | M4 Clients | 15 | 14 | 1 | 0 | 0 | 0 |
@@ -30,12 +30,12 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M10 Finances | 13 | 12 | 1 | 0 | 0 | 0 |
 | M11 RH | 30 | 27 | 3 | 0 | 0 | 0 |
 | M12 Tableaux de bord | 28 | 24 | 2 | 0 | 0 | 2 |
-| Technique | 87 | 60 | 15 | 3 | 8 | 1 |
+| Technique | 87 | 61 | 14 | 3 | 8 | 1 |
 | Recette | 7 | 7 | 0 | 0 | 0 | 0 |
 | Avenants | 17 | 2 | 10 | 5 | 0 | 0 |
 | Écarts d'audit | 22 | 2 | 14 | 2 | 4 | 0 |
 
-**Reprise à M1-77** (première ligne non terminée, dans l'ordre des ID).
+**Reprise à M2-02** (première ligne non terminée, dans l'ordre des ID).
 
 ## Contradictions entre sources (règle 1)
 
@@ -128,7 +128,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M1-74 | M1 l.81 | Consultation par l'ADMIN | ✅ | `apps/audit/permissions.py:10` | — | Fait |
 | M1-75 | M1 l.81 | Lecture seule pour la DIRECTION | ✅ | `apps/audit/views.py` (aucune écriture) | — | Fait |
 | M1-76 | M1 l.82 | Export CSV | ✅ | `apps/audit/views.py` (`JournalExporterCsvView`) : toutes les cellules neutralisées contre l'injection de formule, lecture par lots (`iterator`) ; test `apps/audit/tests/test_views.py` (`…neutralise_les_formules…`) | Fait | Fait |
-| M1-77 | M1 l.82 | Export PDF | 🟡 | `apps/audit/views.py:71` (impression navigateur) | PDF généré par le serveur | À faire |
+| M1-77 | M1 l.82 | Export PDF | ✅ | Journal d'audit en vrai PDF (`ImpressionListeMixin.get`, `apps/core/pdf.py`), bouton « Télécharger en PDF » (décision du 12/10/2026, `avenant-export-pdf.md`) ; test `apps/core/tests/test_pdf.py` | Fait | Fait |
 
 ## Module 2 — Flotte & Camions (CDC §3 M2, lignes 86-100)
 
@@ -500,7 +500,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | TECH-79 | §4 l.302 | PWA espace chauffeur | ✅ | `apps/mobile_api/views_web.py:388` | — | Fait |
 | TECH-80 | §4 l.303 | Hors ligne + sync différée | ⚪ | Écarté le 29/09/2026 (CDC l.303) | — | — |
 | TECH-81 | §4 l.304 | Accessibilité WCAG 2.1 AA | 🟡 | Contraste bouton orange 3,19:1 (`apps/missions/templates/missions/mission_detail.html:170`), placeholders 2,56:1 (`apps/core/forms.py:5`), menu mobile fermé atteignable au clavier (`templates/base.html:20`), champ sans libellé (`apps/missions/templates/missions/frais_detail.html:80`) | Corriger ces 4 points | À faire |
-| TECH-82 | §4 l.305 | Export PDF | 🟡 | PDF serveur pour codes de mission et congés ; le reste par impression navigateur | Faire acter ou étendre | Décision |
+| TECH-82 | §4 l.305 | Export PDF | ✅ | Vrai PDF serveur partout : 16 listes, 5 rapports comptables, trésorerie, facture, devis, frais de mission, tableau de bord (`apps/core/pdf.py`, `TelechargementPdfMixin`, `reponse_rapport`) ; `apps/core/tests/test_pdf.py` (43 tests) ; rendu contrôlé (personnel, bilan, facture) | Fait | Fait |
 | TECH-83 | §4 l.305 | Export Excel | 🟡 | Finance et comptabilité seulement ; pas pour missions, flotte, carburant, stock, clients, chauffeurs, congés | Brancher `ExportXlsxMixin` | À faire |
 | TECH-84 | checklist Technique | Dépendances reproductibles | 🟡 | `requirements/*.txt` en `>=`, sans fichier de verrouillage | Fichier de verrouillage | À faire |
 | TECH-85 | checklist Technique | Migrations à jour | ✅ | `manage.py makemigrations --check` : aucun changement | — | Fait |

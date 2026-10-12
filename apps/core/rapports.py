@@ -5,8 +5,8 @@ tirage), avec le bouton « Imprimer » (`data-imprimer`, voir `static/js/app.js`
 navigateur — l'utilisateur choisit « Enregistrer au format PDF » ou une imprimante. Même mécanisme que
 `billing.facture_print` ; ce module en généralise l'en-tête pour ne pas le récrire à chaque rapport.
 
-Le seul cas qui a besoin d'une mise en page pixel-près (document envoyé à un tiers) reste
-`apps.missions.documents` (ReportLab) ; un rapport interne n'en a pas besoin.
+Chaque rapport se télécharge aussi en vrai PDF, généré par le serveur (`apps.core.pdf`, bouton « Télécharger
+en PDF », `url_pdf`) : décision du 12/10/2026, avenant-export-pdf.md.
 """
 
 from __future__ import annotations
