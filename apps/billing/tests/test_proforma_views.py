@@ -252,3 +252,14 @@ def test_abandonner_un_devis(client):
     from apps.billing.models import Proforma
 
     assert not Proforma.objects.filter(pk=proforma.pk).exists()
+
+
+def test_l_ecran_de_modification_du_devis_affiche_la_tva_sans_virgule(client):
+    # Audit AUD-21 : « 18,00 » (format français) était refusé par le champ numérique, qui s'affichait vide.
+    proforma = proforma_brouillon(prix="300000")
+    _connecte(client, Role.CHARGE_CLIENTELE)
+
+    page = client.get(reverse("billing:proforma_modifier", args=[proforma.pk])).content.decode()
+
+    assert 'value="18.00"' in page and "tva: '18.00'" in page
+    assert "18,00" not in page

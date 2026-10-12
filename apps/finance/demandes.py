@@ -29,6 +29,7 @@ from django.utils import timezone
 from apps.billing import services as billing_services
 from apps.billing.exceptions import ActionFactureNonAutorisee, MontantInvalide, TransitionFactureInterdite
 from apps.billing.models import CategorieDepense, Depense, OrigineDepense
+from apps.core.montants import exiger_montant_entier
 from apps.core.services import prochain_numero
 from apps.fleet.models import Vehicule
 
@@ -193,6 +194,7 @@ def soumettre_demande(
     montant_estime = Decimal(montant_estime)
     if montant_estime <= 0:
         raise MontantInvalide("Le montant estimé doit être strictement positif.")
+    exiger_montant_entier(montant_estime, libelle="Le montant estimé", erreur=MontantInvalide)
     motif = motif.strip()
     if not motif:
         raise MontantInvalide("Le motif est obligatoire.")
@@ -270,6 +272,7 @@ def executer_ordre(
     montant_reel = Decimal(montant_reel)
     if montant_reel <= 0:
         raise MontantInvalide("Le montant réel doit être strictement positif.")
+    exiger_montant_entier(montant_reel, libelle="Le montant réel", erreur=MontantInvalide)
     depasse = False
     with transaction.atomic():
         _verrouiller(ordre)
@@ -314,6 +317,7 @@ def revalider_ordre(ordre: OrdreDecaissement, acteur, *, montant_valide: Decimal
     montant_valide = Decimal(montant_valide)
     if montant_valide <= 0:
         raise MontantInvalide("Le montant validé doit être strictement positif.")
+    exiger_montant_entier(montant_valide, libelle="Le montant validé", erreur=MontantInvalide)
     ordre.montant_valide = montant_valide
     ordre.statut = StatutOrdreDecaissement.A_EXECUTER
     ordre.save(update_fields=["montant_valide", "statut", "updated_at"])

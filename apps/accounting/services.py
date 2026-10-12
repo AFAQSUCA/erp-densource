@@ -18,6 +18,7 @@ from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from apps.billing.models import COMPTE_DU_MODE
+from apps.core.montants import exiger_montant_entier
 from apps.core.services import prochain_numero
 
 from .constants import (
@@ -656,6 +657,7 @@ def ajouter_ligne_manuelle(
     montant = Decimal(montant)
     if montant <= 0:
         raise EcritureNonEquilibree("Le montant doit être strictement positif.")
+    exiger_montant_entier(montant, erreur=EcritureNonEquilibree)
     comptes = _comptes_actifs({compte})
     return LigneEcriture.objects.create(
         ecriture=ecriture, compte=comptes[compte], sens=sens, montant=montant, libelle=libelle.strip()

@@ -20,6 +20,7 @@ from django.db import transaction
 from django.db.models import Count, Q, QuerySet, Sum
 from django.utils import timezone
 
+from apps.core.montants import exiger_montant_entier
 from apps.core.search import filtrer_par_texte, normaliser
 from apps.core.services import etat_echeance, prochain_numero, total_par_mois
 from apps.customers.models import Client
@@ -295,6 +296,7 @@ def creer_mission(
         raise MissionError("Le poids doit être strictement positif.")
     if prix_convenu < 0:
         raise MissionError("Le prix convenu ne peut pas être négatif.")
+    exiger_montant_entier(prix_convenu, libelle="Le prix convenu", erreur=MissionError)
 
     code_expediteur, code_destinataire = _deux_codes()
 
@@ -347,6 +349,7 @@ def modifier_mission(
         raise MissionError("Le poids doit être strictement positif.")
     if prix_convenu < 0:
         raise MissionError("Le prix convenu ne peut pas être négatif.")
+    exiger_montant_entier(prix_convenu, libelle="Le prix convenu", erreur=MissionError)
 
     champs = [
         "lieu_chargement", "lieu_livraison", "nature_marchandise",

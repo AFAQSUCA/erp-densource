@@ -37,6 +37,8 @@ from apps.billing.models import (
     OrigineDepense,
     Reglement,
 )
+from apps.core.doublons import exiger_pas_de_doublon_recent
+from apps.core.montants import exiger_montant_entier
 from apps.core.services import debuts_de_mois, fin_de_mois
 from apps.fuel.models import Plein
 from apps.garage.models import OrdreReparation, StatutOr
@@ -75,10 +77,17 @@ def enregistrer_mouvement(
     montant = Decimal(montant)
     if montant <= 0:
         raise MontantInvalide("Le montant doit être strictement positif.")
+    exiger_montant_entier(montant, erreur=MontantInvalide)
     if date_mouvement > timezone.localdate():
         raise MontantInvalide("La date du mouvement ne peut pas être dans le futur.")
     if nature not in NatureMouvement.values:
         raise MontantInvalide("Nature de mouvement inconnue.")
+    exiger_pas_de_doublon_recent(
+        MouvementManuel.objects.filter(
+            sens=sens, date_mouvement=date_mouvement, libelle=libelle, montant=montant, mode=mode, saisi_par=acteur
+        ),
+        quoi="Un mouvement", erreur=MontantInvalide,
+    )
     mouvement = MouvementManuel.objects.create(
         sens=sens,
         nature=nature,
@@ -214,6 +223,7 @@ def saisir_ligne_releve(
     montant = Decimal(montant)
     if montant <= 0:
         raise MontantInvalide("Le montant doit être strictement positif.")
+    exiger_montant_entier(montant, erreur=MontantInvalide)
     if sens not in SensMouvement.values:
         raise MontantInvalide("Sens inconnu.")
     if date_operation > timezone.localdate():

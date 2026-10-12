@@ -18,6 +18,7 @@ from django.db import transaction
 from django.db.models import Q, QuerySet
 from django.utils import timezone
 
+from apps.core.montants import exiger_montant_entier
 from apps.core.search import filtrer_par_texte
 from apps.drivers.models import Chauffeur
 from apps.fleet import services as fleet_services
@@ -119,6 +120,7 @@ def enregistrer_plein(
         raise SaisieInvalide("La quantité doit être strictement positive.")
     if prix_unitaire <= 0:
         raise SaisieInvalide("Le prix unitaire doit être strictement positif.")
+    exiger_montant_entier(prix_unitaire, libelle="Le prix au litre", erreur=SaisieInvalide)
     if date_plein > timezone.localdate():
         # Un plein daté dans le futur bloquerait toutes les saisies suivantes du camion (HorsChronologie).
         raise SaisieInvalide("La date du plein ne peut pas être dans le futur.")

@@ -14,7 +14,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 
 ## Bilan
 
-**440 exigences : 372 ✅, 45 🟡, 10 ❌, 10 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **90,3 %**.
+**440 exigences : 377 ✅, 40 🟡, 10 ❌, 10 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **90,8 %**.
 
 | Bloc | Lignes | ✅ | 🟡 | ❌ | ❓ | ⚪ |
 |---|---|---|---|---|---|---|
@@ -26,16 +26,16 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M6 Carburant | 17 | 17 | 0 | 0 | 0 | 0 |
 | M7 Garage | 13 | 13 | 0 | 0 | 0 | 0 |
 | M8 Stocks | 12 | 12 | 0 | 0 | 0 | 0 |
-| M9 Facturation | 27 | 25 | 2 | 0 | 0 | 0 |
+| M9 Facturation | 27 | 27 | 0 | 0 | 0 | 0 |
 | M10 Finances | 13 | 12 | 1 | 0 | 0 | 0 |
 | M11 RH | 30 | 27 | 3 | 0 | 0 | 0 |
 | M12 Tableaux de bord | 28 | 25 | 1 | 0 | 0 | 2 |
 | Technique | 87 | 61 | 14 | 3 | 8 | 1 |
 | Recette | 7 | 7 | 0 | 0 | 0 | 0 |
 | Avenants | 17 | 2 | 10 | 5 | 0 | 0 |
-| Écarts d'audit | 22 | 4 | 14 | 2 | 2 | 0 |
+| Écarts d'audit | 22 | 7 | 11 | 2 | 2 | 0 |
 
-**Reprise à M9-16** (première ligne non terminée, dans l'ordre des ID).
+**Reprise à M10-07** (première ligne non terminée, dans l'ordre des ID).
 
 ## Contradictions entre sources (règle 1)
 
@@ -316,7 +316,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M9-13 | M9 l.187 | Motif ONG | ✅ | `apps/customers/models.py:20` | — | Fait |
 | M9-14 | M9 l.187 | Motif Convention | ✅ | `apps/customers/models.py:21` | — | Fait |
 | M9-15 | M9 l.188 | Motif Autre | ✅ | `apps/customers/models.py:22` | — | Fait |
-| M9-16 | M9 l.189 | Règlements : acomptes | 🟡 | `apps/billing/services.py:433` ; centimes acceptés, double clic non protégé | Voir AUD-05, AUD-06 | À faire |
+| M9-16 | M9 l.189 | Règlements : acomptes | ✅ | `apps/billing/services.py:436` ; montant entier exigé (`apps/billing/services.py:459`) et double saisie refusée (`apps/billing/services.py:469`) ; tests `apps/core/tests/test_montants.py`, `apps/core/tests/test_doublons.py` | Fait (`d621d1e`, `762f616`) | Fait |
 | M9-17 | M9 l.189 | Règlements : solde | ✅ | `apps/billing/services.py:433` | — | Fait |
 | M9-18 | M9 l.189 | Mode Virement | ✅ | `apps/billing/models.py:12` | — | Fait |
 | M9-19 | M9 l.189 | Mode Chèque | ✅ | `apps/billing/models.py:12` | — | Fait |
@@ -324,7 +324,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M9-21 | M9 l.190 | Mode Wave | ✅ | `apps/billing/models.py:12` | — | Fait |
 | M9-22 | M9 l.190 | Mode Orange Money | ✅ | `apps/billing/models.py:12` | — | Fait |
 | M9-23 | M9 l.190 | Mode MTN | ✅ | `apps/billing/models.py:12` | — | Fait |
-| M9-24 | M9 l.190 | Reste à recouvrer | 🟡 | `apps/billing/services.py:115` ; un reste de 0,50 FCFA possible | Voir AUD-05 | À faire |
+| M9-24 | M9 l.190 | Reste à recouvrer | ✅ | `apps/billing/services.py:117` ; plus de reste de 0,50 FCFA : règlement entier exigé (`apps/billing/services.py:459`) ; test `apps/core/tests/test_montants.py` (`test_un_reglement_avec_des_centimes_est_refuse_et_le_reste_ne_traine_pas_a_0_50`) | Fait (`d621d1e`) | Fait |
 | M9-25 | M9 l.191 | Dépense catégorie Péages | ✅ | `apps/billing/models.py:346` | — | Fait |
 | M9-26 | M9 l.191 | Dépense catégorie Entretien | ✅ | `apps/billing/models.py:346` | — | Fait |
 | M9-27 | M9 l.191 | Dépense catégorie Frais admin | ✅ | `apps/billing/models.py:346` | — | Fait |
@@ -549,8 +549,8 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | AUD-02 | M5 | Mission sans issue : ni annulation ni transfert (panne définitive) | ❓ | `apps/missions/services.py` (aucune transition de sortie) | Statut « Annulée » et/ou transfert | Décision |
 | AUD-03 | M6-07 | Pas d'annulation ni de correction d'un plein | ❌ | `apps/fuel/urls.py` | Annulation avec contre-passation de la dépense | À faire |
 | AUD-04 | TECH-57 | Suppression physique via l'admin Django | 🟡 | `apps/fuel/admin.py`, `apps/missions/admin.py`, `apps/garage/admin.py`, `apps/accounting/admin.py:29` (comptes) | Interdire | À faire |
-| AUD-05 | M9-16 | Centimes acceptés (règlements, dépenses, mouvements) | 🟡 | `apps/billing/forms.py:72`, `apps/billing/services.py:453` | Arrondir ou refuser | Décision |
-| AUD-06 | M9-16 | Double soumission non protégée (règlement, dépense, mouvement, imprévu) | 🟡 | `apps/billing/services.py:433`, `apps/missions/terrain.py:94` | Bouton désactivé + contrôle de doublon | À faire |
+| AUD-05 | M9-16 | Centimes acceptés (règlements, dépenses, mouvements) | ✅ | Refusés, jamais arrondis : `apps/core/montants.py` (`exiger_montant_entier`), appelé par billing, finance, missions, garage, inventory, fuel, accounting ; décision du 12/10/2026 (`avenant-montants-fcfa.md`) ; tests `apps/core/tests/test_montants.py` (13 tests) | Fait (`d621d1e`) | Fait |
+| AUD-06 | M9-16 | Double soumission non protégée (règlement, dépense, mouvement, imprévu) | ✅ | Navigateur : un formulaire POST envoyé une fois (`static/js/app.js:27`) ; serveur : enregistrement identique de moins d'une minute refusé (`apps/core/doublons.py`, `apps/billing/services.py:469,661`, `apps/finance/services.py:85`, `apps/missions/terrain.py:98,128`) ; tests `apps/core/tests/test_doublons.py` (6 tests) | Fait (`762f616`) | Fait |
 | AUD-07 | M11-11 | Même compte en N1 et N2 | 🟡 | `apps/hr/services.py:336` | Voir M11-11 | À faire |
 | AUD-08 | TECH-46 | `TRUSTED_PROXY_COUNT` absent de `docker-compose.yml` | ✅ | `docker-compose.yml` (`web`, `realtime` : `${TRUSTED_PROXY_COUNT:-1}`) ; guide § variables mis à jour | Fait | Fait |
 | AUD-09 | M1-11 | L'ADMIN peut créer un compte DIRECTION et valider à sa place | ❓ | `apps/accounts/services.py:76-121` | Règle des deux personnes ? | Décision |
@@ -565,5 +565,5 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | AUD-18 | TECH-55 | Mot de passe de la base dans les arguments de `pg_dump` | ✅ | `ops/fonctions-sauvegarde.sh:30` (URL sans mot de passe, `.pgpass` temporaire 600) ; tests `apps/sauvegardes/tests/test_scripts.py` | Fait (`b042d06`) | Fait |
 | AUD-19 | TECH-43 | Tables de sessions et de jetons jamais purgées | 🟡 | Aucune planification de `clearsessions` / `flushexpiredtokens` | Tâche planifiée | À faire |
 | AUD-20 | architecture | `architecture.md` ne reflète plus les dépendances réelles | 🟡 | `apps/notifications` importe 12 apps | Mettre à jour le schéma | À faire |
-| AUD-21 | M9-10 | Modification d'un devis : TVA écrite « 18,00 » (format français), refusée par le champ numérique qui reste vide | 🟡 | `apps/billing/templates/billing/proforma_modifier.html:21,41` | `unlocalize`, comme M4-09 | À faire |
+| AUD-21 | M9-10 | Modification d'un devis : TVA écrite « 18,00 » (format français), refusée par le champ numérique qui reste vide | ✅ | `apps/billing/templates/billing/proforma_modifier.html:22,42` (`unlocalize`) ; test `apps/billing/tests/test_proforma_views.py:257` | Fait (`7942790`) | Fait |
 | AUD-22 | AV-06 | Pièce d'une écriture limitée à 30 caractères, référence d'une dépense ou d'un mouvement à 100 : erreur 500 sur PostgreSQL au-delà de 30 | 🟡 | `apps/accounting/models.py:75` contre `apps/billing/models.py:394`, `apps/finance/models.py:42,184` ; utilisé `apps/accounting/services.py:411,532` | Aligner les longueurs (migration) ou contrôler à la saisie | À faire |

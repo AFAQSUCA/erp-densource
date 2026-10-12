@@ -150,12 +150,12 @@ def test_ajouter_et_supprimer_des_lignes_recalcule_les_totaux():
     acteur = finances()
 
     peage = services.ajouter_ligne(
-        facture, acteur, designation="Péages refacturés", quantite=Decimal("2"), prix_unitaire_ht=Decimal("7500.50")
+        facture, acteur, designation="Péages refacturés", quantite=Decimal("1.5"), prix_unitaire_ht=Decimal("7501")
     )
 
     facture.refresh_from_db()
-    assert peage.montant_ht == Decimal("15001")  # 2 x 7500,50 arrondi au franc
-    assert facture.montant_ht == Decimal("1015001") and facture.montant_tva == Decimal("182700")
+    assert peage.montant_ht == Decimal("11252")  # 1,5 x 7 501 = 11 251,5 arrondi au franc
+    assert facture.montant_ht == Decimal("1011252") and facture.montant_tva == Decimal("182025")
     services.supprimer_ligne(peage, acteur)
     facture.refresh_from_db()
     assert facture.montant_ht == Decimal("1000000")
