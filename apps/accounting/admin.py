@@ -1,5 +1,6 @@
 from django.contrib import admin
 
+from . import services
 from .models import Compte, EcritureComptable, ExerciceComptable, LigneEcriture
 
 # Le grand livre est en lecture seule dans l'admin : une écriture ne se crée, ne se valide et ne se corrige que
@@ -27,8 +28,15 @@ class CompteAdmin(admin.ModelAdmin):
 
     def get_readonly_fields(self, request, obj=None):
         # Comme ``services.modifier_compte`` : le numéro et la nature ne changent plus une fois le compte créé,
-        # pour ne jamais reclasser silencieusement des écritures déjà posées.
-        return ("numero", "nature") if obj is not None else ()
+        # pour ne jamais reclasser silencieusement des écritures déjà posées ; un compte mouvementé par le code ne
+        # se désactive pas (audit AV-05).
+        if obj is None:
+            return ()
+        return ("numero", "nature", "actif") if services.est_protege(obj) else ("numero", "nature")
+
+    def has_delete_permission(self, request, obj=None):
+        # Un compte ne se supprime jamais : il se désactive (``Compte.__doc__``), son historique restant lisible.
+        return False
 
 
 class LigneEcritureInline(admin.TabularInline):

@@ -30,6 +30,7 @@ from .constants import (
     COMPTE_TVA_COLLECTEE,
     COMPTE_TVA_DEDUCTIBLE,
     COMPTE_VENTES_TRANSPORT,
+    COMPTES_UTILISES_PAR_LE_CODE,
     NATURE_MOUVEMENT_VERS_COMPTE,
 )
 from . import permissions
@@ -39,6 +40,7 @@ from .exceptions import (
     CompteDejaExistant,
     ContrePassationImpossible,
     CompteInconnu,
+    CompteProtege,
     EcritureNonEquilibree,
     EcritureVerrouillee,
     ExerciceCloture,
@@ -81,6 +83,33 @@ def _exiger_brouillon(ecriture: EcritureComptable, action: str) -> None:
         raise EcritureVerrouillee(f"Impossible de {action} : l'écriture est « {ecriture.get_statut_display()} ».")
 
 
+# Classes du plan SYSCOHADA révisé -> natures possibles (audit AV-08). La classe 9 (engagements hors bilan,
+# comptabilité analytique) reste libre ; le plan reste à valider par un expert-comptable (constants.py).
+CLASSES_SYSCOHADA = {
+    "1": ("capitaux", {NatureCompte.PASSIF}),
+    "2": ("immobilisations", {NatureCompte.ACTIF}),
+    "3": ("stocks", {NatureCompte.ACTIF}),
+    "4": ("tiers", {NatureCompte.ACTIF, NatureCompte.PASSIF}),
+    "5": ("trésorerie", {NatureCompte.ACTIF, NatureCompte.PASSIF}),
+    "6": ("charges", {NatureCompte.CHARGE}),
+    "7": ("produits", {NatureCompte.PRODUIT}),
+    "8": ("hors activités ordinaires", {NatureCompte.CHARGE, NatureCompte.PRODUIT}),
+}
+
+
+def _exiger_classe_coherente(numero: str, nature: str) -> None:
+    """Numéro de 2 à 10 chiffres, de classe 1 à 9, et nature permise par sa classe : le bilan et le compte de
+    résultat classent les comptes par nature (audit AV-08)."""
+    if not (numero.isascii() and numero.isdigit() and 2 <= len(numero) <= 10) or numero[0] == "0":
+        raise CompteInconnu("Le numéro de compte s'écrit avec 2 à 10 chiffres, le premier étant la classe (1 à 9).")
+    classe = CLASSES_SYSCOHADA.get(numero[0])
+    if classe is not None and nature not in classe[1]:
+        permises = " ou ".join(sorted(str(NatureCompte(n).label) for n in classe[1]))
+        raise CompteInconnu(
+            f"Un compte de classe {numero[0]} ({classe[0]}) est de nature {permises} dans le plan SYSCOHADA."
+        )
+
+
 def creer_compte(acteur, *, numero: str, libelle: str, nature: str) -> Compte:
     """Ajoute un compte au plan comptable (avenant-comptabilite-autonomie.md § Lot F). Le numéro
     et la nature ne se modifient plus ensuite (:func:`modifier_compte`) : seuls le libellé et
@@ -97,17 +126,29 @@ def creer_compte(acteur, *, numero: str, libelle: str, nature: str) -> Compte:
         raise CompteInconnu("Le libellé est obligatoire.")
     if nature not in NatureCompte.values:
         raise CompteInconnu("Nature de compte inconnue.")
+    _exiger_classe_coherente(numero, nature)
     return Compte.objects.create(numero=numero, libelle=libelle, nature=nature)
+
+
+def est_protege(compte: Compte) -> bool:
+    """Compte mouvementé par le code (``constants.COMPTES_UTILISES_PAR_LE_CODE``) : jamais désactivé."""
+    return compte.numero in COMPTES_UTILISES_PAR_LE_CODE
 
 
 def modifier_compte(compte: Compte, acteur, *, libelle: str, actif: bool) -> Compte:
     """Corrige le libellé d'un compte et/ou le désactive (jamais supprimé, voir
     ``Compte.__doc__``) : un compte désactivé ne peut plus être utilisé dans une nouvelle
-    écriture, mais son historique reste lisible dans le grand livre."""
+    écriture, mais son historique reste lisible dans le grand livre. Un compte que le code
+    mouvemente de lui-même ne se désactive pas (:func:`est_protege`, audit AV-05)."""
     _exiger_role(acteur, permissions.GESTION_PLAN_COMPTABLE, "modifier un compte")
     libelle = libelle.strip()
     if not libelle:
         raise CompteInconnu("Le libellé est obligatoire.")
+    if not actif and est_protege(compte):
+        raise CompteProtege(
+            f"Le compte {compte.numero} est utilisé par les écritures automatiques (factures, règlements, "
+            "dépenses, trésorerie, clôture) : il ne peut pas être désactivé."
+        )
     compte.libelle, compte.actif = libelle, actif
     compte.save(update_fields=["libelle", "actif"])
     return compte
@@ -654,6 +695,8 @@ def ajouter_ligne_manuelle(
     """Ajoute une ligne à un brouillon d'écriture manuelle."""
     _exiger_role(acteur, permissions.SAISIE_OD, "saisir une écriture")
     _exiger_brouillon(ecriture, "ajouter une ligne")
+    if sens not in SensEcriture.values:  # audit AV-09
+        raise EcritureNonEquilibree("Le sens d'une ligne est débit ou crédit.")
     montant = Decimal(montant)
     if montant <= 0:
         raise EcritureNonEquilibree("Le montant doit être strictement positif.")
@@ -689,9 +732,11 @@ def valider_ecriture_manuelle(ecriture: EcritureComptable, acteur) -> EcritureCo
     _exiger_role(acteur, permissions.VALIDATION_OD, "valider une écriture", strict=True)
     _exiger_brouillon(ecriture, "valider l'écriture")
     _exiger_exercice_ouvert(ecriture.date_ecriture)
-    lignes = list(ecriture.lignes.all())
+    lignes = list(ecriture.lignes.select_related("compte"))
     if len(lignes) < 2:
         raise EcritureNonEquilibree("Une écriture comptable a au moins 2 lignes.")
+    # Un compte a pu être désactivé entre la saisie du brouillon et sa validation (audit AV-09).
+    _comptes_actifs({ligne.compte.numero for ligne in lignes})
     total_debit = sum((l.montant for l in lignes if l.sens == SensEcriture.DEBIT), Decimal("0"))
     total_credit = sum((l.montant for l in lignes if l.sens == SensEcriture.CREDIT), Decimal("0"))
     if total_debit != total_credit:
@@ -722,13 +767,31 @@ def grand_livre(
     return lignes.order_by("ecriture__date_ecriture", "pk")
 
 
+def _lignes_avant(avant: date) -> QuerySet[LigneEcriture]:
+    """Lignes validées antérieures à ``avant``, **écritures de clôture comprises** : la clôture d'un exercice
+    passé solde ses charges et produits et vire le résultat en 120000 ; sans elle, les charges de l'année
+    précédente pèseraient sur l'ouverture de la suivante."""
+    return LigneEcriture.objects.filter(ecriture__statut=StatutEcriture.VALIDEE, ecriture__date_ecriture__lt=avant)
+
+
+def solde_ouverture(compte: Compte, *, avant: date) -> Decimal:
+    """Solde du compte (débit - crédit) avant ``avant`` : point de départ d'un grand livre ou d'une balance sur
+    une période (audit AV-07)."""
+    totaux = _lignes_avant(avant).filter(compte=compte).aggregate(
+        debit=Coalesce(Sum("montant", filter=Q(sens=SensEcriture.DEBIT)), Value(ZERO)),
+        credit=Coalesce(Sum("montant", filter=Q(sens=SensEcriture.CREDIT)), Value(ZERO)),
+    )
+    return totaux["debit"] - totaux["credit"]
+
+
 def grand_livre_avec_solde(
     compte: Compte, *, debut: date | None = None, fin: date | None = None
 ) -> list[dict]:
     """Lignes du compte avec leur solde cumulé (débit augmente le solde, crédit le diminue —
     convention SYSCOHADA, valable pour un compte d'actif/charge ; un compte de passif/produit se
-    lit alors en négatif, ce qui reste correct pour vérifier l'équilibre ligne à ligne)."""
-    solde = ZERO
+    lit alors en négatif, ce qui reste correct pour vérifier l'équilibre ligne à ligne). Sur une période,
+    le cumul part du solde au début de la période (:func:`solde_ouverture`, audit AV-07)."""
+    solde = solde_ouverture(compte, avant=debut) if debut is not None else ZERO
     resultat = []
     for ligne in grand_livre(compte, debut=debut, fin=fin):
         solde += ligne.montant if ligne.sens == SensEcriture.DEBIT else -ligne.montant
@@ -756,7 +819,11 @@ def balance(
     VALIDEE comptent — un brouillon d'opération diverse ne doit jamais fausser la balance
     officielle avant l'approbation de la DIRECTION. Les écritures de clôture sont écartées par
     défaut (balance avant clôture : les charges et produits d'un exercice clôturé restent
-    lisibles) ; elles sont équilibrées, le total débit = total crédit tient dans les deux cas."""
+    lisibles) ; elles sont équilibrées, le total débit = total crédit tient dans les deux cas.
+
+    Avec ``debut`` : chaque compte reprend son **solde d'ouverture** (tout ce qui précède, clôtures des
+    exercices passés comprises), même sans mouvement dans la période, et le solde final cumule ouverture et
+    mouvements (audit AV-07). Sans ``debut``, l'ouverture est nulle."""
     lignes = LigneEcriture.objects.filter(ecriture__statut=StatutEcriture.VALIDEE)
     if not avec_cloture:
         lignes = lignes.exclude(ecriture__origine=ORIGINE_CLOTURE)
@@ -764,12 +831,25 @@ def balance(
         lignes = lignes.filter(ecriture__date_ecriture__gte=debut)
     if fin is not None:
         lignes = lignes.filter(ecriture__date_ecriture__lte=fin)
+    par_compte = {ligne["compte__numero"]: ligne for ligne in _agreger_par_compte(lignes)}
+    ouvertures = {}
+    if debut is not None:
+        for ligne in _agreger_par_compte(_lignes_avant(debut)):
+            solde = ligne["total_debit"] - ligne["total_credit"]
+            if solde:
+                ouvertures[ligne["compte__numero"]] = solde
+                par_compte.setdefault(
+                    ligne["compte__numero"], {**ligne, "total_debit": ZERO, "total_credit": ZERO}
+                )
     resultat = []
-    for ligne in _agreger_par_compte(lignes):
-        solde = ligne["total_debit"] - ligne["total_credit"]
+    for numero in sorted(par_compte):
+        ligne, ouverture = par_compte[numero], ouvertures.get(numero, ZERO)
+        solde = ouverture + ligne["total_debit"] - ligne["total_credit"]
         resultat.append(
             {
                 **ligne,
+                "solde_ouverture_debiteur": ouverture if ouverture > 0 else ZERO,
+                "solde_ouverture_crediteur": -ouverture if ouverture < 0 else ZERO,
                 "solde_debiteur": solde if solde > 0 else ZERO,
                 "solde_crediteur": -solde if solde < 0 else ZERO,
             }
