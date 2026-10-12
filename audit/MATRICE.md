@@ -14,11 +14,11 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 
 ## Bilan
 
-**440 exigences : 347 ✅, 67 🟡, 11 ❌, 12 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **87,1 %**.
+**440 exigences : 349 ✅, 65 🟡, 11 ❌, 12 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **87,3 %**.
 
 | Bloc | Lignes | ✅ | 🟡 | ❌ | ❓ | ⚪ |
 |---|---|---|---|---|---|---|
-| M1 Sécurité & audit | 77 | 71 | 6 | 0 | 0 | 0 |
+| M1 Sécurité & audit | 77 | 72 | 5 | 0 | 0 | 0 |
 | M2 Flotte | 26 | 18 | 7 | 1 | 0 | 0 |
 | M3 Chauffeurs | 18 | 17 | 1 | 0 | 0 | 0 |
 | M4 Clients | 15 | 14 | 1 | 0 | 0 | 0 |
@@ -33,9 +33,9 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | Technique | 87 | 59 | 16 | 3 | 8 | 1 |
 | Recette | 7 | 7 | 0 | 0 | 0 | 0 |
 | Avenants | 17 | 2 | 10 | 5 | 0 | 0 |
-| Écarts d'audit | 22 | 1 | 15 | 2 | 4 | 0 |
+| Écarts d'audit | 22 | 2 | 14 | 2 | 4 | 0 |
 
-**Reprise à M1-61** (première ligne non terminée, dans l'ordre des ID).
+**Reprise à M1-67** (première ligne non terminée, dans l'ordre des ID).
 
 ## Contradictions entre sources (règle 1)
 
@@ -104,15 +104,15 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M1-50 | M1 l.60 | audit_log : id BIGINT | ✅ | `config/settings/base.py:171` (`BigAutoField`) | — | Fait |
 | M1-51 | M1 l.61 | audit_log : date_heure automatique | ✅ | `apps/audit/models.py:30` | — | Fait |
 | M1-52 | M1 l.62 | audit_log : utilisateur_id | ✅ | `apps/audit/models.py:31` | — | Fait |
-| M1-53 | M1 l.63 | audit_log : utilisateur_nom | ✅ | `apps/audit/models.py:39` ; nom complet, à défaut identifiant de connexion (`apps/audit/services.py:48`) ; tests `apps/audit/tests/test_services.py` | Fait | Fait |
-| M1-54 | M1 l.64 | audit_log : rôle au moment de l'action | ✅ | `apps/audit/models.py:40` ; rôle effectif, ADMIN pour un superutilisateur (`apps/audit/services.py:50`) ; tests `apps/audit/tests/test_services.py` | Fait | Fait |
+| M1-53 | M1 l.63 | audit_log : utilisateur_nom | ✅ | `apps/audit/models.py:39` ; nom complet, à défaut identifiant de connexion (`apps/audit/services.py:50`) ; tests `apps/audit/tests/test_services.py` | Fait | Fait |
+| M1-54 | M1 l.64 | audit_log : rôle au moment de l'action | ✅ | `apps/audit/models.py:40` ; rôle effectif, ADMIN pour un superutilisateur (`apps/audit/services.py:51`) ; tests `apps/audit/tests/test_services.py` | Fait | Fait |
 | M1-55 | M1 l.65 | audit_log : action (6 valeurs) | ✅ | `apps/audit/models.py:8` | — | Fait |
 | M1-56 | M1 l.66 | audit_log : module | ✅ | `apps/audit/models.py:42` | — | Fait |
 | M1-57 | M1 l.67 | audit_log : entité | ✅ | `apps/audit/models.py:43` | — | Fait |
 | M1-58 | M1 l.68 | audit_log : entite_id | ✅ | `apps/audit/models.py:44` | — | Fait |
 | M1-59 | M1 l.69 | audit_log : ancienne valeur | ✅ | `apps/audit/models.py:45` | — | Fait |
 | M1-60 | M1 l.70 | audit_log : nouvelle valeur | ✅ | `apps/audit/models.py:46` | — | Fait |
-| M1-61 | M1 l.71 | audit_log : adresse IP | 🟡 | `apps/audit/models.py:47` ; derrière Nginx, `TRUSTED_PROXY_COUNT` vaut 0 par défaut (`config/settings/base.py:265`) → IP de Nginx | Fixer `TRUSTED_PROXY_COUNT` en production | À faire |
+| M1-61 | M1 l.71 | audit_log : adresse IP | ✅ | `apps/audit/models.py:47` ; `TRUSTED_PROXY_COUNT` fixé à 1 pour `web` et `realtime` dans `docker-compose.yml` (derrière Nginx) ; lecture testée `apps/audit/tests/test_services.py` (`…proxys_de_confiance`) | Fait | Fait |
 | M1-62 | M1 l.72 | audit_log : user-agent | ✅ | `apps/audit/models.py:48` | — | Fait |
 | M1-63 | M1 l.73 | audit_log : statut SUCCESS/FAILED | ✅ | `apps/audit/models.py:49` | — | Fait |
 | M1-64 | M1 l.76 | Enregistrement automatique (signaux/middleware) | ✅ | `apps/audit/registry.py:61` | — | Fait |
@@ -552,7 +552,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | AUD-05 | M9-16 | Centimes acceptés (règlements, dépenses, mouvements) | 🟡 | `apps/billing/forms.py:72`, `apps/billing/services.py:453` | Arrondir ou refuser | Décision |
 | AUD-06 | M9-16 | Double soumission non protégée (règlement, dépense, mouvement, imprévu) | 🟡 | `apps/billing/services.py:433`, `apps/missions/terrain.py:94` | Bouton désactivé + contrôle de doublon | À faire |
 | AUD-07 | M11-11 | Même compte en N1 et N2 | 🟡 | `apps/hr/services.py:336` | Voir M11-11 | À faire |
-| AUD-08 | TECH-46 | `TRUSTED_PROXY_COUNT` absent de `docker-compose.yml` | 🟡 | `config/settings/base.py:265` | Fixer à 1 | À faire |
+| AUD-08 | TECH-46 | `TRUSTED_PROXY_COUNT` absent de `docker-compose.yml` | ✅ | `docker-compose.yml` (`web`, `realtime` : `${TRUSTED_PROXY_COUNT:-1}`) ; guide § variables mis à jour | Fait | Fait |
 | AUD-09 | M1-11 | L'ADMIN peut créer un compte DIRECTION et valider à sa place | ❓ | `apps/accounts/services.py:76-121` | Règle des deux personnes ? | Décision |
 | AUD-10 | M5-04 | Chauffeur sans permis / visite / catégorie C-E affectable | ❓ | `apps/missions/services.py` (`documents_expires_du_chauffeur` ignore les dates vides) | Bloquer ou alerter | Décision |
 | AUD-11 | M1-67 | Imprévu ou avance acceptés sur une mission clôturée | 🟡 | `apps/missions/terrain.py:79-123` | Refuser hors statuts actifs | À faire |
