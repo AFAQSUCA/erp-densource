@@ -72,7 +72,9 @@ class EcritureComptable(BaseModel):
     journal = models.CharField(_("journal"), max_length=3, choices=Journal.choices)
     date_ecriture = models.DateField(_("date"))
     libelle = models.CharField(_("libellé"), max_length=255)
-    piece_reference = models.CharField(_("pièce justificative"), max_length=30, blank=True)
+    # Recopie la référence de la pièce d'origine (dépense, mouvement : 100 caractères) : même longueur, sinon
+    # erreur sur PostgreSQL (audit AUD-22).
+    piece_reference = models.CharField(_("pièce justificative"), max_length=100, blank=True)
     origine = models.CharField(_("origine"), max_length=30, blank=True)
     origine_id = models.PositiveIntegerField(_("ID origine"), null=True, blank=True)
     statut = models.CharField(
