@@ -14,11 +14,11 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 
 ## Bilan
 
-**440 exigences : 341 ✅, 71 🟡, 12 ❌, 13 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **86,2 %**.
+**440 exigences : 342 ✅, 71 🟡, 11 ❌, 13 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **86,4 %**.
 
 | Bloc | Lignes | ✅ | 🟡 | ❌ | ❓ | ⚪ |
 |---|---|---|---|---|---|---|
-| M1 Sécurité & audit | 77 | 66 | 9 | 1 | 1 | 0 |
+| M1 Sécurité & audit | 77 | 67 | 9 | 0 | 1 | 0 |
 | M2 Flotte | 26 | 18 | 7 | 1 | 0 | 0 |
 | M3 Chauffeurs | 18 | 17 | 1 | 0 | 0 | 0 |
 | M4 Clients | 15 | 14 | 1 | 0 | 0 | 0 |
@@ -35,7 +35,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | Avenants | 17 | 1 | 11 | 5 | 0 | 0 |
 | Écarts d'audit | 22 | 1 | 15 | 2 | 4 | 0 |
 
-**Reprise à M1-22** (première ligne non terminée, dans l'ordre des ID).
+**Reprise à M1-27** (première ligne non terminée, dans l'ordre des ID).
 
 ## Contradictions entre sources (règle 1)
 
@@ -73,7 +73,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M1-19 | M1 l.49 | DIRECTION : accès financier (lecture + validation) | ✅ | `apps/billing/permissions.py:16,18` | — | Fait |
 | M1-20 | M1 l.49 + R8 | DIRECTION : RH/Clientèle/Parc Auto (élargi par R8, C2) | ✅ | `apps/customers/permissions.py:16`, `apps/hr/permissions.py:19` | — | Fait |
 | M1-21 | M1 l.50 | RH : embauche | ✅ | `apps/hr/services.py:108`, `apps/hr/permissions.py:19` | — | Fait |
-| M1-22 | M1 l.50 | RH : licenciement (sortie d'un employé) | ❌ | NON TROUVÉ (`apps/hr/urls.py` : aucune sortie, aucun motif ni date de départ) | Sortie du personnel : date, motif, effets (compte, fiche chauffeur) | Décision |
+| M1-22 | M1 l.50 | RH : licenciement (sortie d'un employé) | ✅ | `apps/hr/sorties.py:135,172,220,240` (enregistrement, effets à la date, tâche du jour, annulation), récepteurs `apps/drivers/signals.py:57`, `apps/missions/services.py:257` ; écrans fiche et liste (décisions du 12/10/2026, `avenant-sortie-personnel.md`) ; tests `apps/hr/tests/test_sorties.py`, `test_sorties_ecrans.py`, `apps/missions/tests/test_sortie_personnel.py` (54 tests) ; vérifié dans le navigateur (formulaire, filtre de la liste) | Fait (`9ca31be` … `59b8288`) | Fait |
 | M1-23 | M1 l.50 | RH : contrats | ✅ | `apps/hr/models.py:68` | — | Fait |
 | M1-24 | M1 l.50 | RH : congés et absences | ✅ | `apps/hr/permissions.py:23` | — | Fait |
 | M1-25 | M1 l.50 | RH : dashboard RH | ✅ | `apps/dashboard/services.py:148` | — | Fait |
@@ -168,7 +168,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M3-01 | M3 l.106 | Chauffeur = extension de la fiche personnel | ✅ | `apps/drivers/models.py:32` | — | Fait |
 | M3-02 | M3 l.107 | Matricule unique (source : Personnel) | ✅ | `apps/hr/models.py:54` | — | Fait |
 | M3-03 | M3 l.108 | Poste « Chauffeur » → fiche créée automatiquement | ✅ | `apps/drivers/signals.py:11` | — | Fait |
-| M3-04 | M3 l.106 | La fiche suit le personnel (poste changé, personnel supprimé) | 🟡 | Rien ne la désactive : un ancien chauffeur reste Disponible et affectable (`apps/drivers/signals.py:11-21`) ; idem copilote | Passer la fiche en Inactif | À faire |
+| M3-04 | M3 l.106 | La fiche suit le personnel (poste changé, personnel supprimé) | 🟡 | Sortie du personnel : fiche « Inactif » (`apps/drivers/signals.py:57`, audit M1-22). Reste : poste changé ou fiche supprimée ne désactivent pas la fiche chauffeur/copilote (`apps/drivers/signals.py:11-30`) | Passer la fiche en Inactif dans ces deux cas | À faire |
 | M3-05 | M3 l.109 | Fiche : matricule | ✅ | `apps/drivers/models.py:66` | — | Fait |
 | M3-06 | M3 l.109 | Fiche : nom | ✅ | `apps/drivers/models.py:70` | — | Fait |
 | M3-07 | M3 l.109 | Fiche : prénom | ✅ | `apps/drivers/models.py:74` | — | Fait |
@@ -398,7 +398,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M12-10 | M12 l.231 | Alerte : permis expirants | 🟡 | `apps/dashboard/services.py:305` ; date de permis manquante jamais signalée | Signaler « non renseigné » | À faire |
 | M12-11 | M12 l.231 | Alerte : pièces sous seuil | ✅ | `apps/dashboard/services.py:336` | — | Fait |
 | M12-12 | M12 l.232 | Alerte : factures impayées échues | ✅ | `apps/dashboard/services.py:387` | — | Fait |
-| M12-13 | M12 l.234 | RH : effectif | ✅ | `apps/dashboard/services.py:148` | — | Fait |
+| M12-13 | M12 l.234 | RH : effectif | ✅ | `apps/dashboard/services.py:148`, sans le personnel sorti `apps/hr/services.py:543` (test `apps/hr/tests/test_sorties.py`) | — | Fait |
 | M12-14 | M12 l.234 | RH : congés / absents | ✅ | `apps/dashboard/services.py:148` | — | Fait |
 | M12-15 | M12 l.235 | Finances : CA | ✅ | `apps/dashboard/services.py:203` | — | Fait |
 | M12-16 | M12 l.235 | Finances : flux | ✅ | `apps/dashboard/services.py:203` | — | Fait |
