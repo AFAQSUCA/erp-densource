@@ -110,21 +110,42 @@ def _date(valeur, libelle: str, *, obligatoire: bool = False) -> date | None:
     return resultat
 
 
-def _entier(valeur, libelle: str) -> int:
+# Plus grandes valeurs que la base accepte (audit AV-13) : au-delà, PostgreSQL refusait l'enregistrement (erreur
+# 500) au lieu d'une erreur de ligne. Petit entier : année, délai ; entier : kilométrage, réservoir.
+PETIT_ENTIER_MAX = 32_767
+ENTIER_MAX = 2_147_483_647
+
+
+def _nombre_fini(valeur, libelle: str, attendu: str) -> Decimal:
+    """``Decimal`` lu dans la cellule ; « NaN », « Infinity » et tout texte non numérique sont des erreurs de ligne
+    (audit AV-13 : ils passaient la conversion puis faisaient échouer la première comparaison, erreur 500)."""
     try:
         nombre = Decimal(_texte(valeur).replace(" ", "").replace(",", "."))
     except InvalidOperation:
-        raise _Ligne(f"{libelle} « {valeur} » invalide (nombre entier attendu).") from None
+        raise _Ligne(f"{libelle} « {valeur} » invalide ({attendu} attendu).") from None
+    if not nombre.is_finite():
+        raise _Ligne(f"{libelle} « {valeur} » invalide ({attendu} attendu).")
+    return nombre
+
+
+def _exiger_maximum(nombre: Decimal, valeur, libelle: str, maximum) -> None:
+    if nombre > maximum:
+        raise _Ligne(f"{libelle} « {valeur} » trop grand (au plus {maximum}).")
+
+
+def _entier(valeur, libelle: str, *, maximum: int = ENTIER_MAX) -> int:
+    nombre = _nombre_fini(valeur, libelle, "nombre entier")
     if nombre != nombre.to_integral_value() or nombre < 0:
         raise _Ligne(f"{libelle} « {valeur} » invalide (nombre entier positif attendu).")
+    _exiger_maximum(nombre, valeur, libelle, maximum)
     return int(nombre)
 
 
-def _decimal(valeur, libelle: str) -> Decimal:
-    try:
-        return Decimal(_texte(valeur).replace(" ", "").replace(",", "."))
-    except InvalidOperation:
-        raise _Ligne(f"{libelle} « {valeur} » invalide (nombre attendu).") from None
+def _decimal(valeur, libelle: str, *, maximum: Decimal) -> Decimal:
+    """``maximum`` : la plus grande valeur que le champ accepte en base (``max_digits`` / ``decimal_places``)."""
+    nombre = _nombre_fini(valeur, libelle, "nombre")
+    _exiger_maximum(nombre, valeur, libelle, maximum)
+    return nombre
 
 
 def _obligatoire(valeur, libelle: str) -> str:
@@ -182,7 +203,7 @@ def _personnel(ligne: list, ctx: dict) -> str:
             f"département « {dept_brut} » inconnu. Acceptés : {', '.join(str(l) for _, l in Departement.choices)}."
         )
     date_embauche = _date(date_brut, "La date d'embauche", obligatoire=True)
-    salaire = _decimal(salaire_brut, "Le salaire de base")
+    salaire = _decimal(salaire_brut, "Le salaire de base", maximum=hr_services.SALAIRE_MAX)
     if salaire < 0:
         raise _Ligne(f"le salaire de base « {salaire_brut} » ne peut pas être négatif.")
     personne = hr_services.recruter(
@@ -243,7 +264,7 @@ def _client(ligne: list, ctx: dict) -> str:
         return "present"
     motifs = {normaliser(str(libelle)): code for code, libelle in MotifExoneration.choices}
     motifs.update({normaliser(code): code for code, _ in MotifExoneration.choices})
-    taux = _decimal(taux_brut, "Le taux de TVA") if _texte(taux_brut) else None
+    taux = _decimal(taux_brut, "Le taux de TVA", maximum=Decimal("999.99")) if _texte(taux_brut) else None
     kwargs = dict(
         raison_sociale=raison, ncc_nif=ncc, contact_principal=_obligatoire(contact, "Le contact principal"),
         telephone=_obligatoire(telephone, "Le téléphone"), email=_texte(email), adresse=_obligatoire(adresse, "L'adresse"),
@@ -252,7 +273,7 @@ def _client(ligne: list, ctx: dict) -> str:
     if taux is not None:
         kwargs["taux_tva"] = taux
     if _texte(delai_brut):
-        kwargs["delai_paiement_jours"] = _entier(delai_brut, "Le délai de paiement")
+        kwargs["delai_paiement_jours"] = _entier(delai_brut, "Le délai de paiement", maximum=PETIT_ENTIER_MAX)
     clients_services.creer_client(**kwargs)
     return "cree"
 
@@ -281,9 +302,10 @@ def _vehicule(ligne: list, ctx: dict) -> str:
         documents.append((type_document, delivrance or _un_an_avant(expiration), expiration))
     vehicule = fleet_services.creer_vehicule(
         immatriculation=immat, marque=_obligatoire(marque, "La marque"), modele=_obligatoire(mod, "Le modèle"),
-        annee=_entier(annee, "L'année"), vin=_obligatoire(vin, "Le n° de châssis (VIN)"),
+        annee=_entier(annee, "L'année", maximum=PETIT_ENTIER_MAX), vin=_obligatoire(vin, "Le n° de châssis (VIN)"),
         kilometrage=_entier(km, "Le kilométrage") if _texte(km) else 0,
-        capacite_charge_t=_decimal(capacite, "La capacité de charge"), reservoir_l=_entier(reservoir, "Le réservoir"),
+        capacite_charge_t=_decimal(capacite, "La capacité de charge", maximum=Decimal("9999.99")),
+        reservoir_l=_entier(reservoir, "Le réservoir"),
         chauffeur_habituel=chauffeur,
     )
     if statut != vehicule.statut:
@@ -360,6 +382,10 @@ def importer_classeur(fichier, acteur, *, simulation: bool = False) -> Rapport:
     except Exception as erreur:  # fichier corrompu, mauvais format, archive illisible...
         raise ImportInvalide("Ce fichier n'est pas un classeur Excel (.xlsx) lisible.") from erreur
     feuilles = _feuilles_du_classeur(classeur)
+    for feuille in feuilles.values():
+        # En lecture rapide, openpyxl s'arrête à la dimension annoncée par le fichier ; un logiciel qui l'écrit mal
+        # (« A1:A1 ») faisait perdre toutes les lignes sans erreur. On lit le contenu réel (audit AV-14).
+        feuille.reset_dimensions()
     if not feuilles:
         raise ImportInvalide(
             "Aucune feuille reconnue : le classeur doit contenir au moins une feuille « Personnel », « Véhicules », "

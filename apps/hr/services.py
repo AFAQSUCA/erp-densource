@@ -180,6 +180,9 @@ def modifier_personnel(
 # Ordre et intitulés attendus dans le fichier (ligne 1) — voir modele_import_personnel (views.py) et
 # templates/hr/personnel_import.html. Le matricule (généré), le supérieur et le compte utilisateur
 # ne se règlent pas depuis le fichier : à compléter ensuite fiche par fiche si besoin.
+# Plus grand salaire que la base accepte (``Personnel.salaire_base`` : 12 chiffres dont 2 décimales).
+SALAIRE_MAX = Decimal("9999999999")
+
 COLONNES_IMPORT = [
     "Nom", "Prénom", "Poste", "Département", "Type de contrat", "Date d'embauche", "Salaire de base",
 ]
@@ -302,7 +305,8 @@ def importer_personnel(fichier) -> ResultatImportPersonnel:
 
         try:
             salaire_base = Decimal(str(salaire_brut))
-            if salaire_base < 0:
+            # NaN, Infinity ou montant que la base refuserait : erreur de ligne, pas erreur 500 (audit AV-13).
+            if not salaire_base.is_finite() or not 0 <= salaire_base <= SALAIRE_MAX:
                 raise InvalidOperation
         except (TypeError, InvalidOperation):
             salaire_base = None
