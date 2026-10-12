@@ -14,11 +14,11 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 
 ## Bilan
 
-**440 exigences : 335 ✅, 76 🟡, 13 ❌, 13 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **85,4 %**.
+**440 exigences : 338 ✅, 74 🟡, 12 ❌, 13 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **85,8 %**.
 
 | Bloc | Lignes | ✅ | 🟡 | ❌ | ❓ | ⚪ |
 |---|---|---|---|---|---|---|
-| M1 Sécurité & audit | 77 | 63 | 11 | 2 | 1 | 0 |
+| M1 Sécurité & audit | 77 | 65 | 10 | 1 | 1 | 0 |
 | M2 Flotte | 26 | 18 | 7 | 1 | 0 | 0 |
 | M3 Chauffeurs | 18 | 17 | 1 | 0 | 0 | 0 |
 | M4 Clients | 15 | 14 | 1 | 0 | 0 | 0 |
@@ -26,7 +26,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M6 Carburant | 17 | 16 | 1 | 0 | 0 | 0 |
 | M7 Garage | 13 | 12 | 1 | 0 | 0 | 0 |
 | M8 Stocks | 12 | 12 | 0 | 0 | 0 | 0 |
-| M9 Facturation | 27 | 24 | 3 | 0 | 0 | 0 |
+| M9 Facturation | 27 | 25 | 2 | 0 | 0 | 0 |
 | M10 Finances | 13 | 12 | 1 | 0 | 0 | 0 |
 | M11 RH | 30 | 27 | 3 | 0 | 0 | 0 |
 | M12 Tableaux de bord | 28 | 24 | 2 | 0 | 0 | 2 |
@@ -35,7 +35,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | Avenants | 17 | 1 | 11 | 5 | 0 | 0 |
 | Écarts d'audit | 22 | 0 | 16 | 2 | 4 | 0 |
 
-**Reprise à M1-09** (première ligne non terminée, dans l'ordre des ID).
+**Reprise à M1-14** (première ligne non terminée, dans l'ordre des ID).
 
 ## Contradictions entre sources (règle 1)
 
@@ -60,8 +60,8 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M1-06 | M1 l.53 | Rôle FINANCES | ✅ | `apps/accounts/models.py:14` | — | Fait |
 | M1-07 | M1 l.54 | Rôle CHAUFFEUR | ✅ | `apps/accounts/models.py:15` | — | Fait |
 | M1-08 | M1 l.48 | ADMIN : accès total (hors validations strictes, C5) | ✅ | `apps/accounts/models.py:51` (`role_effectif`), ADMIN présent dans tous les ensembles de consultation | — | Fait |
-| M1-09 | M1 l.48 | ADMIN : configuration | 🟡 | Administration Django seulement ; aucun écran de paramétrage | Écran « Paramètres » réservé à l'ADMIN (avec M1-10) | À faire |
-| M1-10 | M1 l.48 | ADMIN : seuils d'alerte configurables | ❌ | `apps/core/constants.py:5` (`DELAI_ALERTE_JOURS = 30` en dur) | Paramètre modifiable par l'ADMIN, tracé | À faire |
+| M1-09 | M1 l.48 | ADMIN : configuration | ✅ | Écran « Paramètres » `apps/parametres/views.py:33`, modèle à ligne unique `apps/parametres/models.py:40`, service `apps/parametres/services.py:87` (ADMIN et DIRECTION, décision du 12/10/2026, `avenant-parametres.md`) ; tests `apps/parametres/tests/test_parametres.py` (36 tests, couverture 100 %) | Fait (`b7e1272` … `3d9d936`) | Fait |
+| M1-10 | M1 l.48 | ADMIN : seuils d'alerte configurables | ✅ | 12 paramètres lus par `apps/parametres/services.py:55` : délai d'alerte (fleet, drivers, dashboard, notifications), seuils carburant et écart de compteur (fuel, missions), TVA et délai de paiement (customers), délais et droit de congé (hr, mobile) ; tests dans chaque app (« …des_parametres… ») ; vérifié dans le navigateur (délai N1 72 h affiché puis remis à 48 h) | Fait (`2e5623e`, `d97d7ce`, `c515dd5`, `babceb5`) | Fait |
 | M1-11 | M1 l.48 | ADMIN : création d'utilisateurs | ✅ | `apps/accounts/services.py:76`, écran `apps/accounts/views_utilisateurs.py:17` | Voir AUD-09 (élévation de privilège) | Fait |
 | M1-12 | M1 l.48 | ADMIN : suppression d'utilisateurs (désactivation, C6) | ✅ | `apps/accounts/services.py:125` | — | Fait |
 | M1-13 | M1 l.48 | ADMIN : journal d'audit complet | ✅ | `apps/audit/permissions.py:10` | — | Fait |
@@ -308,7 +308,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M9-05 | M9 l.184 | TVA (18 % par défaut) | ✅ | `apps/billing/models.py:95` | — | Fait |
 | M9-06 | M9 l.184 | Montant TTC | ✅ | `apps/billing/models.py:96` | — | Fait |
 | M9-07 | M9 l.184 | Date d'échéance | ✅ | `apps/billing/models.py:93` | — | Fait |
-| M9-08 | M9 l.185 | TVA niveau système (18 %) | 🟡 | `apps/customers/models.py:12` (constante en dur) | Paramètre ADMIN (avec M1-10) | À faire |
+| M9-08 | M9 l.185 | TVA niveau système (18 %) | ✅ | Paramètre `tva_defaut` (`apps/parametres/models.py:40`), appliqué à la création d'un client `apps/customers/services.py:115` ; tests `apps/customers/tests/test_services.py`, `test_views.py` | Fait (`c515dd5`) | Fait |
 | M9-09 | M9 l.185 | TVA niveau client | ✅ | `apps/customers/models.py:43` | — | Fait |
 | M9-10 | M9 l.186 | TVA niveau facture | ✅ | `apps/billing/models.py:87` | — | Fait |
 | M9-11 | M9 l.187 | Motif obligatoire si TVA 0 % | ✅ | `apps/billing/models.py:88` | — | Fait |
