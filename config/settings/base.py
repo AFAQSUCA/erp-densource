@@ -66,6 +66,7 @@ LOCAL_APPS = [
     "apps.finance",
     "apps.accounting",
     "apps.importation",
+    "apps.parametres",
     "apps.notifications",
     "apps.dashboard",
     "apps.api",
