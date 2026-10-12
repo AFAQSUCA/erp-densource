@@ -13,6 +13,9 @@ seuils d'alerte ») ; périmètre et droits décidés le 12/10/2026 (`avenant-pa
   vide et `services.parametres()` renvoie ces valeurs **sans rien écrire**.
 - **Lecture** : toujours `services.parametres()` (ou `services.delai_alerte(jours)`), jamais une constante. Pas de
   cache partagé : une requête sur une table d'une ligne, et pas de valeur fantôme après l'annulation d'une transaction.
+  Dans une boucle, lire une fois et passer la valeur (`jours=`, `reglages=`). Dans un gabarit :
+  `{{ reglages.delai_validation_n1_heures }}` (`context_processors.parametres`, paresseux : aucune requête si la page
+  ne s'en sert pas).
 - **Pas de rétroactivité** : un niveau d'alerte de plein, une date limite de validation déjà calculés restent tels
   quels. Exception : le droit annuel, recalculé à chaque lecture d'un solde (année en cours comprise).
 - **Modification** (`services.modifier_parametres`) : ADMIN et DIRECTION (`permissions.MODIFICATION`, superutilisateur
