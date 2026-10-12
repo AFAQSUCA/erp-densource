@@ -28,3 +28,12 @@ class DocumentReglementaireFactory(factory.django.DjangoModelFactory):
     type_document = TypeDocument.ASSURANCE
     date_delivrance = date(2026, 1, 1)
     date_expiration = date(2027, 1, 1)
+
+
+def completer_documents(vehicule, *, expiration=date(2099, 1, 1)):
+    """Ajoute les documents réglementaires qui manquent au camion, valides longtemps : un test qui porte sur un
+    seul document n'est pas parasité par l'alerte « document manquant » des trois autres (audit M2-22)."""
+    for code in TypeDocument.values:
+        if not DocumentReglementaire.objects.filter(vehicule=vehicule, type_document=code).exists():
+            DocumentReglementaireFactory(vehicule=vehicule, type_document=code, date_expiration=expiration)
+    return vehicule

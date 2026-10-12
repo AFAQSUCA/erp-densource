@@ -40,6 +40,7 @@ class VehiculeListView(PaginationTolerante, RoleRequiredMixin, ListView):
             recherche=self.request.GET.get("q", ""),
             alerte=self.request.GET.get("alerte") == "1",
             vehicules_en_alerte=services.vehicules_avec_documents_a_renouveler(),
+            vehicules_incomplets=services.vehicules_avec_documents_manquants(),
             peut_modifier=self.request.user.role_effectif in permissions.MODIFICATION,
         )
         return contexte

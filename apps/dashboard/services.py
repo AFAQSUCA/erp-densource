@@ -298,6 +298,15 @@ def _alertes_documents(aujourd_hui):
                 "url": reverse("fleet:detail", args=[document.vehicule_id]),
             }
         )
+    for vehicule, _code, libelle in fleet_services.documents_manquants():  # audit M2-22
+        lignes.append(
+            {
+                "libelle": f"{libelle} · {vehicule.immatriculation}",
+                "detail": "non enregistré(e)",
+                "etat": "MANQUANT",
+                "url": reverse("fleet:detail", args=[vehicule.pk]),
+            }
+        )
     niveau = "URGENT" if any(ligne["etat"] == "EXPIRE" for ligne in lignes) else "ATTENTION"
     return _alerte(
         "documents", "Documents des camions à renouveler", "fa-file-shield", lignes,

@@ -16,7 +16,7 @@ from apps.fleet.exceptions import (
 )
 from apps.fleet.models import DocumentReglementaire, StatutVehicule, TypeDocument
 
-from .factories import DocumentReglementaireFactory, VehiculeFactory
+from .factories import DocumentReglementaireFactory, VehiculeFactory, completer_documents
 
 pytestmark = pytest.mark.django_db
 
@@ -181,8 +181,8 @@ def test_rechercher_vehicules_ne_garde_que_ceux_avec_un_document_a_renouveler():
     DocumentReglementaireFactory(
         vehicule=alerte, date_delivrance=date(2025, 1, 1), date_expiration=date(2026, 1, 1)
     )
-    en_regle = VehiculeFactory()
-    DocumentReglementaireFactory(vehicule=en_regle, date_expiration=date(2099, 1, 1))
+    completer_documents(alerte)
+    en_regle = completer_documents(VehiculeFactory())
 
     resultat = services.rechercher_vehicules(documents_a_renouveler=True)
 
@@ -334,3 +334,42 @@ def test_chauffeurs_actifs_exclut_les_inactifs_et_est_trie_par_nom():
 
     assert list(drivers_services.chauffeurs_actifs()) == [a, b]
 
+
+# --- documents manquants et camions non suivis (audit M2-22) ---
+
+
+def test_un_document_jamais_enregistre_est_signale_comme_manquant():
+    camion = VehiculeFactory(immatriculation="1234 AB 01")
+    DocumentReglementaireFactory(vehicule=camion, type_document=TypeDocument.ASSURANCE)
+
+    manquants = [(v.immatriculation, code) for v, code, _libelle in services.documents_manquants()]
+
+    assert manquants == [
+        ("1234 AB 01", TypeDocument.CARTE_GRISE), ("1234 AB 01", TypeDocument.VISITE_TECHNIQUE),
+        ("1234 AB 01", TypeDocument.PATENTE),
+    ]
+    assert services.rechercher_vehicules(documents_a_renouveler=True).get() == camion
+
+
+def test_un_camion_complet_n_a_aucun_document_manquant():
+    completer_documents(VehiculeFactory())
+
+    assert services.documents_manquants() == []
+
+
+@pytest.mark.parametrize("marquage", ["statut", "marquage"])
+def test_un_camion_hors_service_n_est_plus_surveille(marquage):
+    camion = VehiculeFactory(**{marquage: StatutVehicule.HORS_SERVICE})
+    DocumentReglementaireFactory(vehicule=camion, date_expiration=date(2026, 1, 1))
+
+    assert not services.documents_a_renouveler(aujourd_hui=date(2026, 10, 12)).exists()
+    assert services.documents_manquants() == []
+
+
+def test_un_camion_supprime_n_est_plus_surveille():
+    camion = VehiculeFactory()
+    DocumentReglementaireFactory(vehicule=camion, date_expiration=date(2026, 1, 1))
+    camion.delete()
+
+    assert not services.documents_a_renouveler(aujourd_hui=date(2026, 10, 12)).exists()
+    assert services.documents_manquants() == []

@@ -14,7 +14,7 @@ from apps.drivers.tests.factories import ChauffeurFactory
 from apps.fleet.models import DocumentReglementaire, StatutVehicule, TypeDocument, Vehicule
 from apps.parametres import services as parametres_services
 
-from .factories import DocumentReglementaireFactory, VehiculeFactory
+from .factories import DocumentReglementaireFactory, VehiculeFactory, completer_documents
 
 pytestmark = pytest.mark.django_db
 
@@ -126,7 +126,8 @@ def test_la_liste_signale_les_documents_a_renouveler_et_filtre_dessus(client):
         date_delivrance=aujourdhui - timedelta(days=300),
         date_expiration=aujourdhui + timedelta(days=10),
     )
-    VehiculeFactory(immatriculation="2222 BB 01")
+    completer_documents(alerte)
+    completer_documents(VehiculeFactory(immatriculation="2222 BB 01"))
 
     complet = client.get(reverse("fleet:liste"))
     filtre = client.get(reverse("fleet:liste"), {"alerte": "1"})
@@ -150,7 +151,8 @@ def test_la_liste_n_effectue_pas_une_requete_par_camion(client, django_assert_ma
     for _ in range(15):
         VehiculeFactory(chauffeur_habituel=ChauffeurFactory())
 
-    with django_assert_max_num_queries(10):
+    # 12 : deux de plus pour les documents manquants (audit M2-22), constantes quel que soit le nombre de camions.
+    with django_assert_max_num_queries(12):
         client.get(reverse("fleet:liste"))
 
 
@@ -448,3 +450,13 @@ def test_la_fiche_annonce_le_delai_d_alerte_des_parametres(client):
     assert "Une alerte apparaît 60 jours avant l'expiration." in reponse.content.decode()
     assurance = next(d for d in reponse.context["documents"] if d["code"] == TypeDocument.ASSURANCE)
     assert assurance["etat"] == "A_RENOUVELER"
+
+
+def test_la_liste_signale_un_document_manquant_au_lieu_de_a_jour(client):
+    _connecte(client, Role.PARCAUTO)
+    VehiculeFactory(immatriculation="3333 CC 01")  # aucun document
+    completer_documents(VehiculeFactory(immatriculation="4444 DD 01"))
+
+    page = client.get(reverse("fleet:liste")).content.decode()
+
+    assert page.count("Document manquant") == 1 and page.count("À jour") == 1

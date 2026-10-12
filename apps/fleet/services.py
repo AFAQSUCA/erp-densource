@@ -161,8 +161,30 @@ def documents_a_renouveler(
     """
     limite = (aujourd_hui or timezone.localdate()) + timedelta(days=parametres_services.delai_alerte(jours))
     return DocumentReglementaire.objects.select_related("vehicule").filter(
-        date_expiration__lte=limite
+        date_expiration__lte=limite, vehicule__in=vehicules_suivis()
     )
+
+
+def vehicules_suivis() -> QuerySet[Vehicule]:
+    """Camions dont les documents sont surveillés : ni supprimés, ni hors service (réformés) — audit M2-22."""
+    return Vehicule.objects.exclude(statut=StatutVehicule.HORS_SERVICE).exclude(marquage=StatutVehicule.HORS_SERVICE)
+
+
+def documents_manquants() -> list[tuple[Vehicule, str, str]]:
+    """Documents réglementaires jamais enregistrés pour un camion suivi (les 4 du CDC sont attendus) :
+    ``(camion, code, libellé)``, par immatriculation. Un document manquant est plus grave qu'un document qui
+    expire : il ne déclenchait aucune alerte et le camion paraissait « À jour » (audit M2-22)."""
+    presents = set(DocumentReglementaire.objects.values_list("vehicule_id", "type_document"))
+    return [
+        (vehicule, code, libelle)
+        for vehicule in vehicules_suivis().order_by("immatriculation")
+        for code, libelle in TypeDocument.choices
+        if (vehicule.pk, code) not in presents
+    ]
+
+
+def vehicules_avec_documents_manquants() -> set[int]:
+    return {vehicule.pk for vehicule, _code, _libelle in documents_manquants()}
 
 
 # --- fiche véhicule (cahier-des-charges.md:88-90) ---
@@ -291,8 +313,10 @@ def rechercher_vehicules(
     vehicules = filtrer_par_texte(
         vehicules, recherche, "immatriculation", "marque", "modele", "vin"
     )
-    if documents_a_renouveler:
-        vehicules = vehicules.filter(pk__in=vehicules_avec_documents_a_renouveler())
+    if documents_a_renouveler:  # à renouveler ou manquants : tout ce qui demande une action
+        vehicules = vehicules.filter(
+            pk__in=vehicules_avec_documents_a_renouveler() | vehicules_avec_documents_manquants()
+        )
     return vehicules
 
 
