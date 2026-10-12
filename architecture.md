@@ -106,6 +106,7 @@ graph TD
         NOTIF[notifications<br/>Email/SMS/Push]
         DASH[dashboard<br/>KPIs, dashboards]
         PARAM[parametres<br/>Seuils d'alerte, valeurs par défaut]
+        SAUV[sauvegardes<br/>Suivi des sauvegardes, ADMIN]
     end
 
     subgraph Référentiels
@@ -152,6 +153,8 @@ graph TD
     PARAM --> FUEL
     PARAM --> NOTIF
     PARAM --> DASH
+    AUDIT --> SAUV
+    SAUV --> DASH
     HR --> DRV
     DRV --> MISSION
     CUST --> MISSION

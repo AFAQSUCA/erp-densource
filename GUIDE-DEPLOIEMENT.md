@@ -90,7 +90,7 @@ cp .env.example .env
 | `CSRF_TRUSTED_ORIGINS` | `https://` + le même domaine |
 | `POSTGRES_PASSWORD` | un mot de passe long, différent de celui de `.env.example` — **obligatoire** : `docker compose` refuse de démarrer sans lui (aucun mot de passe par défaut) |
 | `TRUSTED_PROXY_COUNT` | `1` (Nginx est l'unique proxy devant l'application) |
-| `SAUVEGARDE_PASSPHRASE` | une phrase de passe longue, **à conserver ailleurs que sur ce serveur** (étape 9) |
+| `SAUVEGARDE_PASSPHRASE` | une phrase de passe longue, **à conserver ailleurs que sur ce serveur** (étape 9) — **obligatoire** : `docker compose` refuse de démarrer sans elle |
 
 `DATABASE_URL` et `REDIS_URL` n'ont **pas** à être renseignées dans `.env` pour ces quatre services :
 `docker-compose.yml` les fixe lui-même vers `db` et `redis` (les noms des conteneurs). Elles ne
@@ -107,7 +107,7 @@ lancer Gunicorn (`ops/entrypoint.sh`) ; `celery_worker` et `celery_beat` attende
 bonne santé (les migrations sont donc déjà passées) avant de démarrer.
 
 ```bash
-docker compose ps                 # les 7 services doivent être « healthy » ou « running »
+docker compose ps                 # les 8 services doivent être « healthy » ou « running »
 docker compose logs -f web        # suivre le démarrage
 curl -I http://localhost/connexion/   # doit répondre 301 (redirigé vers https)
 ```
@@ -186,42 +186,57 @@ dans `nginx/nginx.conf` ni dans `docker-compose.yml` : le domaine vient de `DOMA
    0 3 1 * * cd /chemin/vers/erp-densource && docker compose run --rm certbot renew --webroot -w /var/www/certbot && docker compose restart nginx
    ```
 
-## 9. Sauvegardes chiffrées (`ops/sauvegarde.sh`)
+## 9. Sauvegardes chiffrées (service `sauvegarde`)
 
-Sauvegarde quotidienne, chiffrée avec `SAUVEGARDE_PASSPHRASE` (GPG, symétrique), à copier vers un
-stockage **hors de ce serveur** (cahier-des-charges.md « sauvegardes chiffrées et testées »,
-« offsite ») :
+Rien à installer : le service `sauvegarde` de `docker-compose.yml` démarre avec le reste et sauvegarde **la base et
+les fichiers déposés** (justificatifs, pièces jointes : volume `media_data`), chiffrés avec `SAUVEGARDE_PASSPHRASE`
+(GPG, symétrique) :
 
-```cron
-0 2 * * * cd /chemin/vers/erp-densource && set -a && . ./.env && set +a && DATABASE_URL="postgres://erp_densource:${POSTGRES_PASSWORD}@localhost:5432/erp_densource" ops/sauvegarde.sh /chemin/vers/sauvegardes
-```
+- **chaque nuit** à `SAUVEGARDE_HEURE` (défaut `02:00`, fuseau `TZ`, défaut `Africa/Abidjan`) ;
+- **à la demande de l'ADMIN** : écran **Sauvegardes** de l'ERP, bouton « Sauvegarder maintenant » (la sauvegarde
+  démarre dans les 30 secondes ; l'application ne fait que déposer une demande, elle n'a aucun accès à Docker).
 
-Le script ne passe jamais la phrase de passe en argument de commande (visible de tous dans la liste des
-processus) : il la lit dans un fichier — `SAUVEGARDE_PASSPHRASE_FILE=/chemin/fichier` (à préférer, droits 600) ou
-un fichier temporaire fabriqué à partir de `SAUVEGARDE_PASSPHRASE`, supprimé en sortie. Deux options, toutes deux
-facultatives :
+L'écran **Sauvegardes** (ADMIN) montre les derniers essais (date, réussite ou échec, taille, empreinte SHA-256) et le
+**centre d'alertes** du tableau de bord prévient l'ADMIN si la dernière sauvegarde réussie a plus de 26 h, si le
+dernier essai a échoué, ou si la copie hors serveur a échoué.
 
-| Variable | Effet |
+Les fichiers (`erp_densource_<date>.dump.gpg` pour la base, `erp_densource_medias_<date>.tar.gz.gpg` pour les
+fichiers) et le journal (`journal.jsonl`) sont dans le volume `sauvegardes_data`. Ils ne servent à rien sans la phrase
+de passe : la conserver **hors de ce serveur**. Aucun secret n'apparaît dans la liste des processus du serveur (phrase
+de passe et mot de passe de la base passent par des fichiers temporaires privés).
+
+| Variable (`.env`) | Effet |
 |---|---|
-| `SAUVEGARDE_CONSERVER_JOURS` | rotation : supprime les sauvegardes du dossier plus vieilles que N jours, après une sauvegarde réussie (défaut 30 ; `0` = ne rien supprimer) |
-| `SAUVEGARDE_COPIE_RSYNC` | copie hors serveur : destination `rsync` (`utilisateur@hôte:/chemin/`) où chaque fichier chiffré est envoyé juste après sa création |
+| `SAUVEGARDE_PASSPHRASE` | **obligatoire** : `docker compose` refuse de démarrer sans elle |
+| `SAUVEGARDE_HEURE` | heure de la sauvegarde de nuit (`HH:MM`, défaut `02:00`) |
+| `SAUVEGARDE_CONSERVER_JOURS` | rotation : supprime les sauvegardes plus vieilles que N jours, après une sauvegarde réussie (défaut 30 ; `0` = ne rien supprimer) |
+| `SAUVEGARDE_COPIE_RSYNC` | copie hors serveur : destination `rsync` (`utilisateur@hôte:/chemin/`) où chaque fichier est envoyé juste après sa création. En cas d'échec de la copie, la sauvegarde locale est gardée et l'ADMIN est alerté |
 
-(`pg_dump`/`gpg` doivent être installés sur l'hôte — `apt install postgresql-client gnupg` — ou lancés
-dans un conteneur éphémère `postgres:16` avec les mêmes volumes réseau.)
+Suivre le service : `docker compose logs -f sauvegarde`. Lister les sauvegardes :
+`docker compose exec sauvegarde ls -l /sauvegardes`. Récupérer un fichier sur le serveur :
+`docker compose cp sauvegarde:/sauvegardes/<fichier> .`
+
+(Sans docker-compose, `ops/sauvegarde.sh` s'utilise seul, lancé par un cron : il lui faut `pg_dump`, `gpg` et
+`DATABASE_URL` ; `SAUVEGARDE_MEDIAS=/chemin/vers/media` ajoute les fichiers.)
 
 ### Tester une restauration (mensuel)
 
-**Jamais sur la base de production.** Créer une base à part et y restaurer la dernière sauvegarde :
+**Jamais sur la base ni le dossier de production.** Restaurer la dernière sauvegarde dans une base et un dossier à
+part, depuis le service `sauvegarde` (il contient déjà `pg_restore` et `gpg`) :
 
 ```bash
+docker compose exec sauvegarde ls -l /sauvegardes
 docker compose exec db createdb -U erp_densource erp_densource_essai_restauration
-DATABASE_URL="postgres://erp_densource:${POSTGRES_PASSWORD}@localhost:5432/erp_densource_essai_restauration" \
-  ops/restauration.sh /chemin/vers/sauvegardes/<fichier>.dump.gpg
+docker compose exec -e DATABASE_URL="postgres://erp_densource:${POSTGRES_PASSWORD}@db:5432/erp_densource_essai_restauration" \
+  sauvegarde /ops/restauration.sh /sauvegardes/erp_densource_<date>.dump.gpg
+docker compose exec -e RESTAURATION_MEDIAS=/tmp/essai_medias \
+  sauvegarde /ops/restauration.sh /sauvegardes/erp_densource_medias_<date>.tar.gz.gpg
+docker compose exec db psql -U erp_densource -d erp_densource_essai_restauration -c "select count(*) from billing_facture;"
 docker compose exec db dropdb -U erp_densource erp_densource_essai_restauration   # nettoyage
 ```
 
-Une restauration qui échoue silencieusement est pire qu'une absence de sauvegarde : ce test mensuel
-est ce qui distingue les deux.
+(`POSTGRES_PASSWORD` doit être chargé dans le terminal : `set -a && . ./.env && set +a`.) Une restauration qui échoue
+silencieusement est pire qu'une absence de sauvegarde : ce test mensuel est ce qui distingue les deux.
 
 ## 10. Supervision (Sentry)
 
@@ -298,6 +313,13 @@ Testé en local avec `docker compose up -d --build` (domaine `localhost`, sans c
   `realtime` → navigateur) ; sans cookie de session, la connexion est refusée (403) ;
 - une sauvegarde chiffrée (`ops/sauvegarde.sh`) puis sa restauration (`ops/restauration.sh`) dans
   une base à part ont réellement été jouées contre le PostgreSQL du `docker-compose.yml`.
+
+Service `sauvegarde` (12/10/2026, audit M1-14), joué dans un projet Compose à part avec `db` : une demande déposée
+comme le fait l'écran de l'ERP est prise en charge en quelques secondes ; base et fichiers déposés sont chiffrés
+(droits 600), le journal est lisible par le compte de l'application (uid 1000), qui peut déposer une demande mais
+ne peut pas lire les fichiers chiffrés ; la base restaurée dans une base à part et les fichiers restaurés dans un
+dossier à part sont identiques ; base arrêtée, l'essai est consigné « ECHEC », aucun fichier tronqué n'est laissé et
+le service continue ; l'ERP lit ce journal réel (dernière réussite, alerte « le dernier essai a échoué »).
 
 Démarrage de Nginx sans certificat (étape 8), joué avec l'image `nginx/Dockerfile` et un domaine fictif :
 - sans rien dans `./certs`, Nginx démarre avec le certificat provisoire (journal `preparer-https`), sert le
