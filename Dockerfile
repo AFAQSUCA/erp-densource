@@ -24,11 +24,11 @@ RUN pip install -r requirements/prod.txt
 
 COPY . .
 
-# Compte non privilégié : l'application n'a besoin d'écrire que staticfiles/ et media/ (montés en
-# volumes par docker-compose.yml). Les créer ici, avant le premier montage du volume : Docker
+# Compte non privilégié : l'application n'a besoin d'écrire que staticfiles/, media/ et sauvegardes/ (demandes de
+# sauvegarde de l'ADMIN), montés en volumes par docker-compose.yml. Les créer ici, avant le premier montage du volume : Docker
 # reprend alors les droits de ce dossier pour initialiser le volume (sinon, root).
 RUN useradd --create-home --uid 1000 django \
-    && mkdir -p staticfiles media \
+    && mkdir -p staticfiles media sauvegardes \
     && chown -R django:django /app
 USER django
 

@@ -1,0 +1,12 @@
+# Image du service `sauvegarde` (docker-compose.yml, audit M1-14) : la même version de PostgreSQL que `db`
+# (pg_dump doit être au moins aussi récent que le serveur), plus gpg (chiffrement), rsync et ssh (copie hors serveur).
+FROM postgres:16
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends gnupg rsync openssh-client \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY ops/fonctions-sauvegarde.sh ops/sauvegarde.sh ops/restauration.sh ops/planificateur-sauvegarde.sh /ops/
+RUN chmod 755 /ops/*.sh
+
+ENTRYPOINT ["/ops/planificateur-sauvegarde.sh"]

@@ -11,6 +11,7 @@ htmlcov/
 node_modules/
 staticfiles/
 media/
+sauvegardes/
 tutoriel/
 outils/
 GUIDE-*.md
