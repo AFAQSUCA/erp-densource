@@ -17,6 +17,10 @@ class StatutVehicule(models.TextChoices):
     HORS_SERVICE = "HORS_SERVICE", _("Hors service")
 
 
+# Statuts posés à la main et conservés par la règle 3 du recalcul (cahier-des-charges.md:99).
+MARQUAGES = (StatutVehicule.IMMOBILISE, StatutVehicule.HORS_SERVICE)
+
+
 class Vehicule(BaseModel):
     """Fiche camion — cahier-des-charges.md:88-90."""
 
@@ -46,6 +50,13 @@ class Vehicule(BaseModel):
         choices=StatutVehicule.choices,
         default=StatutVehicule.DISPONIBLE,
     )
+    # Marquage Immobilisé / Hors service posé à la main : conservé quand le statut affiché passe « En maintenance »
+    # le temps d'un autre OR (règle 1), pour que la règle 3 le rétablisse à la clôture du dernier OR (audit M2-25).
+    # Levé seulement par « Remettre en service ».
+    marquage = models.CharField(
+        _("marquage"), max_length=15, blank=True, default="",
+        choices=[(statut.value, statut.label) for statut in MARQUAGES],
+    )
 
     class Meta:
         verbose_name = _("véhicule")
@@ -55,6 +66,11 @@ class Vehicule(BaseModel):
 
     def __str__(self):
         return f"{self.immatriculation} ({self.marque} {self.modele})"
+
+    @property
+    def marquage_effectif(self) -> str:
+        """Le marquage en vigueur ; un statut Immobilisé / Hors service posé avant ce champ en tient lieu."""
+        return self.marquage or (self.statut if self.statut in MARQUAGES else "")
 
 
 class TypeDocument(models.TextChoices):

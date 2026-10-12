@@ -192,3 +192,55 @@ def test_ordres_du_vehicule_ignore_les_autres_camions():
     camion = VehiculeFactory()
 
     assert list(services.ordres_du_vehicule(camion)) == []
+
+
+# --- marquage conservé à travers plusieurs OR (audit M2-25, règle 3 : cahier-des-charges.md:99) ---
+
+
+@pytest.mark.parametrize("marquage", [StatutVehicule.IMMOBILISE, StatutVehicule.HORS_SERVICE])
+def test_un_camion_marque_avec_deux_or_retrouve_son_marquage_a_la_derniere_cloture(marquage):
+    camion = VehiculeFactory()
+    definir_statut(camion, marquage)
+    premier, second = _ouvrir(camion), _ouvrir(camion)
+
+    services.cloturer_or(premier)
+    assert _statut(camion) == StatutVehicule.EN_MAINTENANCE  # règle 1 : un autre OR est ouvert
+
+    services.cloturer_or(second)
+    assert _statut(camion) == marquage  # règle 3 : le marquage revient, jamais « Disponible »
+
+
+def test_un_camion_immobilise_pendant_un_or_le_reste_apres_la_cloture():
+    camion = VehiculeFactory()
+    ordre = _ouvrir(camion)
+    services.immobiliser_vehicule(camion)
+    autre = _ouvrir(camion)
+
+    services.cloturer_or(ordre)
+    services.cloturer_or(autre)
+
+    assert _statut(camion) == StatutVehicule.IMMOBILISE
+
+
+def test_la_remise_en_service_leve_le_marquage_meme_en_maintenance():
+    camion = VehiculeFactory()
+    definir_statut(camion, StatutVehicule.IMMOBILISE)
+    premier, second = _ouvrir(camion), _ouvrir(camion)
+    services.cloturer_or(premier)  # affiché « En maintenance », marquage conservé
+
+    services.remettre_en_service(camion)
+    assert _statut(camion) == StatutVehicule.EN_MAINTENANCE  # l'OR restant le garde au garage
+    services.cloturer_or(second)
+
+    camion.refresh_from_db()
+    assert camion.statut == StatutVehicule.DISPONIBLE and camion.marquage == ""
+
+
+def test_un_camion_marque_en_maintenance_ne_se_re_marque_pas():
+    camion = VehiculeFactory()
+    definir_statut(camion, StatutVehicule.IMMOBILISE)
+    premier, _second = _ouvrir(camion), _ouvrir(camion)
+    services.cloturer_or(premier)
+
+    with pytest.raises(StatutVehiculeInvalide, match="déjà immobilisé"):
+        services.immobiliser_vehicule(camion)

@@ -26,7 +26,7 @@ from .exceptions import (
     KilometrageInvalide,
     VehiculeInvalide,
 )
-from .models import DocumentReglementaire, StatutVehicule, TypeDocument, Vehicule
+from .models import MARQUAGES, DocumentReglementaire, StatutVehicule, TypeDocument, Vehicule
 
 
 def vehicules_disponibles() -> QuerySet[Vehicule]:
@@ -37,7 +37,7 @@ def vehicules_disponibles() -> QuerySet[Vehicule]:
 
 
 def calculer_statut(
-    statut_actuel: str, *, or_ouverts: bool, mission_active: bool
+    statut_actuel: str, *, or_ouverts: bool, mission_active: bool, marquage: str = ""
 ) -> str:
     """Statut d'un camion selon l'algorithme du CDC (cahier-des-charges.md:96-100).
 
@@ -50,14 +50,17 @@ def calculer_statut(
     Fonction pure : ``garage`` et ``missions`` (apps situées sous ``fleet``
     dans architecture.md:161-163) calculent ``or_ouverts`` et
     ``mission_active`` et les passent en paramètre, ``fleet`` n'a donc
-    jamais à les importer.
+    jamais à les importer. ``marquage`` : l'étiquette Immobilisé / Hors service
+    posée à la main (``Vehicule.marquage``), qui survit à un passage « En
+    maintenance » ; à défaut, un statut actuel Immobilisé / Hors service en tient lieu.
     """
     if or_ouverts:
         return StatutVehicule.EN_MAINTENANCE
     if mission_active:
         return StatutVehicule.EN_MISSION
-    if statut_actuel in (StatutVehicule.IMMOBILISE, StatutVehicule.HORS_SERVICE):
-        return statut_actuel
+    marque = marquage or (statut_actuel if statut_actuel in MARQUAGES else "")
+    if marque:
+        return marque
     return StatutVehicule.DISPONIBLE
 
 
@@ -66,18 +69,30 @@ def recalculer_statut(
 ) -> Vehicule:
     """Applique :func:`calculer_statut` et enregistre le résultat."""
     vehicule.statut = calculer_statut(
-        vehicule.statut, or_ouverts=or_ouverts, mission_active=mission_active
+        vehicule.statut, or_ouverts=or_ouverts, mission_active=mission_active, marquage=vehicule.marquage
     )
     vehicule.save(update_fields=["statut", "updated_at"])
     return vehicule
 
 
 def definir_statut(vehicule: Vehicule, statut: str) -> Vehicule:
-    """Change le statut manuellement (ex. Immobilisé, Hors service)."""
+    """Change le statut manuellement. Immobilisé / Hors service posent aussi le marquage, qui survivra à un
+    passage « En maintenance » (règle 3 du CDC) jusqu'à :func:`lever_marquage`."""
     if statut not in StatutVehicule.values:
         raise ValueError(f"Statut véhicule inconnu : {statut!r}")
     vehicule.statut = statut
-    vehicule.save(update_fields=["statut", "updated_at"])
+    champs = ["statut", "updated_at"]
+    if statut in MARQUAGES:
+        vehicule.marquage = statut
+        champs.append("marquage")
+    vehicule.save(update_fields=champs)
+    return vehicule
+
+
+def lever_marquage(vehicule: Vehicule) -> Vehicule:
+    """Retire l'étiquette Immobilisé / Hors service (« Remettre en service ») ; le statut est à recalculer ensuite."""
+    vehicule.marquage = ""
+    vehicule.save(update_fields=["marquage", "updated_at"])
     return vehicule
 
 
