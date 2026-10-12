@@ -14,28 +14,28 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 
 ## Bilan
 
-**440 exigences : 356 ✅, 58 🟡, 11 ❌, 12 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **88,1 %**.
+**440 exigences : 372 ✅, 45 🟡, 10 ❌, 10 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **90,3 %**.
 
 | Bloc | Lignes | ✅ | 🟡 | ❌ | ❓ | ⚪ |
 |---|---|---|---|---|---|---|
 | M1 Sécurité & audit | 77 | 77 | 0 | 0 | 0 | 0 |
-| M2 Flotte | 26 | 18 | 7 | 1 | 0 | 0 |
-| M3 Chauffeurs | 18 | 17 | 1 | 0 | 0 | 0 |
-| M4 Clients | 15 | 14 | 1 | 0 | 0 | 0 |
-| M5 Missions | 31 | 30 | 1 | 0 | 0 | 0 |
-| M6 Carburant | 17 | 16 | 1 | 0 | 0 | 0 |
-| M7 Garage | 13 | 12 | 1 | 0 | 0 | 0 |
+| M2 Flotte | 26 | 26 | 0 | 0 | 0 | 0 |
+| M3 Chauffeurs | 18 | 18 | 0 | 0 | 0 | 0 |
+| M4 Clients | 15 | 15 | 0 | 0 | 0 | 0 |
+| M5 Missions | 31 | 31 | 0 | 0 | 0 | 0 |
+| M6 Carburant | 17 | 17 | 0 | 0 | 0 | 0 |
+| M7 Garage | 13 | 13 | 0 | 0 | 0 | 0 |
 | M8 Stocks | 12 | 12 | 0 | 0 | 0 | 0 |
 | M9 Facturation | 27 | 25 | 2 | 0 | 0 | 0 |
 | M10 Finances | 13 | 12 | 1 | 0 | 0 | 0 |
 | M11 RH | 30 | 27 | 3 | 0 | 0 | 0 |
-| M12 Tableaux de bord | 28 | 24 | 2 | 0 | 0 | 2 |
+| M12 Tableaux de bord | 28 | 25 | 1 | 0 | 0 | 2 |
 | Technique | 87 | 61 | 14 | 3 | 8 | 1 |
 | Recette | 7 | 7 | 0 | 0 | 0 | 0 |
 | Avenants | 17 | 2 | 10 | 5 | 0 | 0 |
-| Écarts d'audit | 22 | 2 | 14 | 2 | 4 | 0 |
+| Écarts d'audit | 22 | 4 | 14 | 2 | 2 | 0 |
 
-**Reprise à M2-02** (première ligne non terminée, dans l'ordre des ID).
+**Reprise à M9-16** (première ligne non terminée, dans l'ordre des ID).
 
 ## Contradictions entre sources (règle 1)
 
@@ -135,15 +135,15 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | ID | Source | Exigence | Verdict | Preuve | Action | Statut |
 |---|---|---|---|---|---|---|
 | M2-01 | M2 l.88 | Immatriculation | ✅ | `apps/fleet/models.py:23` | — | Fait |
-| M2-02 | M2 l.88 | Immatriculation unique | 🟡 | Normalisation espaces/casse seulement : `AB-123-CD` accepté à côté de `AB 123 CD` ; l'import ne reconnaît pas `AB123CD` | Normaliser aussi les tirets ; aligner l'import | À faire |
+| M2-02 | M2 l.88 | Immatriculation unique | ✅ | Comparaison sans séparateur `apps/fleet/services.py:203,209` (saisie et import Excel) ; tests `apps/fleet/tests/test_fiche.py` (`…ecrite_autrement…`) | Fait (`dee8e4f`) | Fait |
 | M2-03 | M2 l.88 | Marque | ✅ | `apps/fleet/models.py:24` | — | Fait |
 | M2-04 | M2 l.88 | Modèle | ✅ | `apps/fleet/models.py:25` | — | Fait |
-| M2-05 | M2 l.89 | Année | 🟡 | `apps/fleet/models.py:26` ; le service accepte 5 ou 2999 | Borner l'année dans le service | À faire |
-| M2-06 | M2 l.89 | N° de châssis VIN | 🟡 | `apps/fleet/models.py:29` ; longueur non contrôlée par le service (import → 500 sur PostgreSQL) | Contrôler la longueur | À faire |
-| M2-07 | M2 l.89 | Kilométrage compteur | 🟡 | `apps/fleet/models.py:30` ; la fiche accepte n'importe quelle hausse (pas de borne de plausibilité) | Borne de plausibilité à la modification | À faire |
+| M2-05 | M2 l.89 | Année | ✅ | Bornée 1950 → an prochain dans le service `apps/fleet/services.py:216` ; tests `test_fiche.py` | Fait (`dee8e4f`) | Fait |
+| M2-06 | M2 l.89 | N° de châssis VIN | ✅ | 17 caractères au plus `apps/fleet/services.py:217` (plus d'erreur 500 à l'import) ; tests `test_fiche.py` | Fait (`dee8e4f`) | Fait |
+| M2-07 | M2 l.89 | Kilométrage compteur | ✅ | Hausse au-delà de l'écart maximal des paramètres refusée sur la fiche `apps/fleet/services.py:325` (correction ADMIN sinon) ; tests `test_fiche.py` | Fait (`dee8e4f`) | Fait |
 | M2-08 | M2 l.89 | Capacité de charge (t) | ✅ | `apps/fleet/models.py:31` | — | Fait |
 | M2-09 | M2 l.90 | Réservoir (L) | ✅ | `apps/fleet/models.py:34` | — | Fait |
-| M2-10 | M2 l.90 | Chauffeur habituel | 🟡 | `apps/fleet/models.py:35` ; perdu à l'enregistrement s'il est devenu Inactif (`apps/fleet/forms.py:41`) | Garder la valeur actuelle dans la liste | À faire |
+| M2-10 | M2 l.90 | Chauffeur habituel | ✅ | Chauffeur actuel conservé même inactif `apps/fleet/forms.py:42` ; tests `apps/fleet/tests/test_views.py` | Fait (`96b1b8d`) | Fait |
 | M2-11 | M2 l.91 | Statut Disponible | ✅ | `apps/fleet/models.py:13` | — | Fait |
 | M2-12 | M2 l.91 | Statut En mission | ✅ | `apps/fleet/models.py:14` | — | Fait |
 | M2-13 | M2 l.91 | Statut En maintenance | ✅ | `apps/fleet/models.py:15` | — | Fait |
@@ -155,10 +155,10 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M2-19 | M2 l.94 | Document Patente | ✅ | `apps/fleet/models.py:66` | — | Fait |
 | M2-20 | M2 l.94 | Date de délivrance | ✅ | `apps/fleet/models.py:86` | — | Fait |
 | M2-21 | M2 l.94 | Date d'expiration | ✅ | `apps/fleet/models.py:87` | — | Fait |
-| M2-22 | M2 l.95 | Alerte préventive à 30 jours | 🟡 | `apps/fleet/services.py:141` ; document **manquant** jamais signalé, liste « À jour » à tort ; camions supprimés ou hors service toujours en alerte | Signaler les documents manquants ; exclure supprimés/hors service | À faire |
-| M2-23 | M2 l.97 | Recalcul à la clôture : autres OR ouverts → En maintenance | 🟡 | `apps/fleet/services.py:39` ; écrase Immobilisé/Hors service (voir M2-25) | Faire primer la règle 3 | À faire |
+| M2-22 | M2 l.95 | Alerte préventive à 30 jours | ✅ | Documents manquants signalés `apps/fleet/services.py:174`, camions supprimés ou hors service exclus `:169` ; centre d'alertes `apps/dashboard/services.py:301`, badge « Document manquant » de la liste ; tests `test_fiche.py`, `test_views.py`, `apps/dashboard/tests/test_dashboard.py` | Fait (`cbb3d51`) | Fait |
+| M2-23 | M2 l.97 | Recalcul à la clôture : autres OR ouverts → En maintenance | ✅ | `apps/fleet/services.py:40` (règle 1, marquage conservé dans `Vehicule.marquage`) ; tests `apps/garage/tests/test_statut_vehicule.py` | Fait (`9f8b812`) | Fait |
 | M2-24 | M2 l.98 | Recalcul : mission planifiée/en cours → En mission | ✅ | `apps/fleet/services.py:39` | — | Fait |
-| M2-25 | M2 l.99 | Recalcul : Immobilisé/Hors service conservé | ❌ | Camion Immobilisé avec 2 OR : la 1re clôture le passe En maintenance, la 2e Disponible (`apps/garage/services.py:94`) | Conserver le statut dans tous les cas | À faire |
+| M2-25 | M2 l.99 | Recalcul : Immobilisé/Hors service conservé | ✅ | Marquage dédié `apps/fleet/models.py:56` (repris des statuts existants par la migration `fleet.0002`), relu par la règle 3, levé seulement par « Remettre en service » (`apps/fleet/services.py:93`) ; scénario 2 OR testé `apps/garage/tests/test_statut_vehicule.py` | Fait (`9f8b812`) | Fait |
 | M2-26 | M2 l.100 | Recalcul : sinon Disponible | ✅ | `apps/fleet/services.py:39` | — | Fait |
 
 ## Module 3 — Chauffeurs (CDC §3 M3, lignes 104-113)
@@ -168,7 +168,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M3-01 | M3 l.106 | Chauffeur = extension de la fiche personnel | ✅ | `apps/drivers/models.py:32` | — | Fait |
 | M3-02 | M3 l.107 | Matricule unique (source : Personnel) | ✅ | `apps/hr/models.py:54` | — | Fait |
 | M3-03 | M3 l.108 | Poste « Chauffeur » → fiche créée automatiquement | ✅ | `apps/drivers/signals.py:11` | — | Fait |
-| M3-04 | M3 l.106 | La fiche suit le personnel (poste changé, personnel supprimé) | 🟡 | Sortie du personnel : fiche « Inactif » (`apps/drivers/signals.py:57`, audit M1-22). Reste : poste changé ou fiche supprimée ne désactivent pas la fiche chauffeur/copilote (`apps/drivers/signals.py:11-30`) | Passer la fiche en Inactif dans ces deux cas | À faire |
+| M3-04 | M3 l.106 | La fiche suit le personnel (poste changé, personnel supprimé) | ✅ | `apps/drivers/signals.py` (`creer_fiche_chauffeur`, `creer_fiche_copilote`) et `apps/drivers/services.py` (`desactiver_fiche_chauffeur/copilote`) : poste quitté ou fiche supprimée → « Inactif » ; changement refusé pendant une mission ; sortie du personnel (M1-22) ; tests `apps/drivers/tests/test_suivi_personnel.py` | Fait | Fait |
 | M3-05 | M3 l.109 | Fiche : matricule | ✅ | `apps/drivers/models.py:66` | — | Fait |
 | M3-06 | M3 l.109 | Fiche : nom | ✅ | `apps/drivers/models.py:70` | — | Fait |
 | M3-07 | M3 l.109 | Fiche : prénom | ✅ | `apps/drivers/models.py:74` | — | Fait |
@@ -189,7 +189,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | ID | Source | Exigence | Verdict | Preuve | Action | Statut |
 |---|---|---|---|---|---|---|
 | M4-01 | M4 l.119 | Raison sociale | ✅ | `apps/customers/models.py:28` | — | Fait |
-| M4-02 | M4 l.119 | NCC/NIF | 🟡 | `apps/customers/models.py:29` ; unicité sensible à la casse et aux espaces (`ci-123` ≠ `CI-123`) | Normaliser | À faire |
+| M4-02 | M4 l.119 | NCC/NIF | ✅ | Comparaison sans séparateur ni casse `apps/customers/services.py` (`cle_ncc`, `client_par_ncc`), saisie et import Excel ; NCC enregistré en majuscules ; tests `apps/customers/tests/test_services.py` | Fait (`ba562d8`) | Fait |
 | M4-03 | M4 l.119 | Contact principal | ✅ | `apps/customers/models.py:30` | — | Fait |
 | M4-04 | M4 l.119 | Téléphone | ✅ | `apps/customers/models.py:31` | — | Fait |
 | M4-05 | M4 l.120 | Email | ✅ | `apps/customers/models.py:32` | — | Fait |
@@ -211,7 +211,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M5-01 | M5 l.129 | N° automatique MIS-AAAA-XXXX | ✅ | `apps/missions/services.py:266` | — | Fait |
 | M5-02 | M5 l.129 | Client | ✅ | `apps/missions/models.py:46` | — | Fait |
 | M5-03 | M5 l.129 | Camion disponible | ✅ | `apps/missions/services.py` (`_verifier_vehicule`) | — | Fait |
-| M5-04 | M5 l.129 | Chauffeur disponible | 🟡 | `apps/missions/services.py` (`_verifier_chauffeur`) ; un chauffeur sans permis renseigné ni catégorie est affectable | Voir AUD-10 | Décision |
+| M5-04 | M5 l.129 | Chauffeur disponible | ✅ | Disponible, non réservé, permis complet (n°, catégorie C ou E, dates) et visite médicale valides, à l'affectation, à la réaffectation et au départ : `apps/missions/services.py` (`documents_manquants_du_chauffeur`, `_exiger_documents_valides`) ; décision du 12/10/2026 (`avenant-affectation-documents.md`) ; tests `apps/missions/tests/test_documents_et_reaffectation.py` | Fait (`65c73ed`) | Fait |
 | M5-05 | M5 l.130 | Lieu de chargement | ✅ | `apps/missions/models.py:86` | — | Fait |
 | M5-06 | M5 l.130 | Lieu de livraison | ✅ | `apps/missions/models.py:87` | — | Fait |
 | M5-07 | M5 l.130 | Nature de la marchandise | ✅ | `apps/missions/models.py:88` | — | Fait |
@@ -250,7 +250,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M6-04 | M6 l.149 | Plein : station | ✅ | `apps/fuel/models.py:37` | — | Fait |
 | M6-05 | M6 l.149 | Plein : quantité (L) | ✅ | `apps/fuel/models.py:38` | — | Fait |
 | M6-06 | M6 l.150 | Plein : prix unitaire (FCFA) | ✅ | `apps/fuel/models.py:41` | — | Fait |
-| M6-07 | M6 l.150 | Plein : km compteur | 🟡 | `apps/fuel/models.py:44` ; aucun plancher : un premier plein trop bas bloque ensuite le camion | Plancher = compteur du camion | À faire |
+| M6-07 | M6 l.150 | Plein : km compteur | ✅ | Plancher du premier plein = compteur du camion `apps/fuel/services.py` (`enregistrer_plein`) ; tests `apps/fuel/tests/test_services.py` (`…premier_plein_sous_le_compteur…`) | Fait | Fait |
 | M6-08 | M6 l.150 | Plein : n° ticket / reçu | ✅ | `apps/fuel/models.py:45` | — | Fait |
 | M6-09 | M6 l.151 | Formule L/100 km | ✅ | `apps/fuel/services.py:46` | — | Fait |
 | M6-10 | M6 l.153 | Alerte jaune si écart > +20 % | ✅ | `apps/fuel/services.py:37` | — | Fait |
@@ -276,7 +276,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M7-08 | M7 l.165 | Lieu : prestataire externe | ✅ | `apps/garage/models.py:18` | — | Fait |
 | M7-09 | M7 l.165 | Motif / symptômes | ✅ | `apps/garage/models.py:46` | — | Fait |
 | M7-10 | M7 l.166 | Ouverture → En maintenance | ✅ | `apps/garage/services.py:44` | — | Fait |
-| M7-11 | M7 l.167 | Clôture → recalcul automatique | 🟡 | `apps/garage/services.py:71` ; voir M2-25 | Idem M2-25 | À faire |
+| M7-11 | M7 l.167 | Clôture → recalcul automatique | ✅ | `apps/garage/services.py` (`cloturer_or`) ; voir M2-25 | Fait (`9f8b812`) | Fait |
 | M7-12 | M7 l.168 | Coût main-d'œuvre | ✅ | `apps/garage/models.py:52` | — | Fait |
 | M7-13 | M7 l.168 | Coût automatique des pièces | ✅ | `apps/inventory/services.py:227` | — | Fait |
 
@@ -394,7 +394,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M12-06 | M12 l.229 | Camions en mission | ✅ | `apps/dashboard/services.py:90` | — | Fait |
 | M12-07 | M12 l.229 | Camions au garage | ✅ | `apps/dashboard/services.py:90` | — | Fait |
 | M12-08 | M12 l.230 | Conso moyenne globale | ✅ | `apps/dashboard/services.py:90` | — | Fait |
-| M12-09 | M12 l.231 | Alerte : assurances expirantes | 🟡 | `apps/dashboard/services.py:284` ; même limite que M2-22 | Idem M2-22 | À faire |
+| M12-09 | M12 l.231 | Alerte : assurances expirantes | ✅ | `apps/dashboard/services.py:284` ; documents manquants et camions réformés traités (voir M2-22) | Fait (`cbb3d51`) | Fait |
 | M12-10 | M12 l.231 | Alerte : permis expirants | 🟡 | `apps/dashboard/services.py:305` ; date de permis manquante jamais signalée | Signaler « non renseigné » | À faire |
 | M12-11 | M12 l.231 | Alerte : pièces sous seuil | ✅ | `apps/dashboard/services.py:336` | — | Fait |
 | M12-12 | M12 l.232 | Alerte : factures impayées échues | ✅ | `apps/dashboard/services.py:387` | — | Fait |
@@ -554,9 +554,9 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | AUD-07 | M11-11 | Même compte en N1 et N2 | 🟡 | `apps/hr/services.py:336` | Voir M11-11 | À faire |
 | AUD-08 | TECH-46 | `TRUSTED_PROXY_COUNT` absent de `docker-compose.yml` | ✅ | `docker-compose.yml` (`web`, `realtime` : `${TRUSTED_PROXY_COUNT:-1}`) ; guide § variables mis à jour | Fait | Fait |
 | AUD-09 | M1-11 | L'ADMIN peut créer un compte DIRECTION et valider à sa place | ❓ | `apps/accounts/services.py:76-121` | Règle des deux personnes ? | Décision |
-| AUD-10 | M5-04 | Chauffeur sans permis / visite / catégorie C-E affectable | ❓ | `apps/missions/services.py` (`documents_expires_du_chauffeur` ignore les dates vides) | Bloquer ou alerter | Décision |
+| AUD-10 | M5-04 | Chauffeur sans permis / visite / catégorie C-E affectable | ✅ | Bloquant (décision du 12/10/2026) : voir M5-04 | Fait (`65c73ed`) | Fait |
 | AUD-11 | M1-67 | Imprévu ou avance acceptés sur une mission clôturée | 🟡 | `apps/missions/terrain.py:79-123` | Refuser hors statuts actifs | À faire |
-| AUD-12 | M2 | Camion aux documents expirés affectable | ❓ | `apps/missions/services.py` (seuls les documents du chauffeur sont contrôlés) | Bloquer ou alerter | Décision |
+| AUD-12 | M2 | Camion aux documents expirés affectable | ✅ | Bloquant si expiré ou manquant (décision du 12/10/2026) : `apps/missions/services.py` (`documents_non_valides_du_vehicule`, `_exiger_vehicule_en_regle`), affectation et départ ; tests `test_documents_et_reaffectation.py` | Fait (`65c73ed`) | Fait |
 | AUD-13 | M6-08 | N° de ticket unique globalement (pas par station) | 🟡 | `apps/fuel/models.py:99-103` | Unicité (station, ticket) | Décision |
 | AUD-14 | AV-03 | Enveloppe globale dupliquée (NULL), aucun verrou | 🟡 | `apps/finance/models.py:97`, `apps/finance/demandes.py:152` | Contrainte + verrou | À faire |
 | AUD-15 | M5-11 | Pages contenant les codes sans `Cache-Control: no-store` | 🟡 | `apps/missions/views.py` (fiche mission) | `no-store` | À faire |

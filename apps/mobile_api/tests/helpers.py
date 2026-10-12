@@ -6,7 +6,7 @@ from apps.accounts.models import Role
 from apps.accounts.tests.factories import UserFactory
 from apps.customers.tests.factories import ClientFactory
 from apps.drivers.tests.factories import ChauffeurFactory
-from apps.fleet.tests.factories import VehiculeFactory
+from apps.fleet.tests.factories import VehiculeEnRegleFactory
 from apps.garage.models import CODES_CHECKLIST
 from apps.missions.models import StatutMission
 from apps.missions.tests.factories import MissionFactory
@@ -26,7 +26,7 @@ def chauffeur_avec_compte(**surcharges):
 
 def mission_de(chauffeur, statut=StatutMission.AFFECTEE, **surcharges):
     donnees = dict(
-        statut=statut, chauffeur=chauffeur, vehicule=VehiculeFactory(), client=ClientFactory(),
+        statut=statut, chauffeur=chauffeur, vehicule=VehiculeEnRegleFactory(), client=ClientFactory(),
         code_expediteur=CODE_EXPEDITEUR, code_destinataire=CODE_DESTINATAIRE,
         prix_convenu=Decimal("850000"),
     )

@@ -9,7 +9,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from apps.accounts.models import Role
 from apps.accounts.tests.factories import UserFactory
 from apps.drivers.tests.factories import ChauffeurFactory
-from apps.fleet.tests.factories import VehiculeFactory
+from apps.fleet.tests.factories import VehiculeEnRegleFactory
 from apps.hr.tests.factories import PersonnelFactory
 from apps.missions import terrain as services
 from apps.missions.exceptions import ActionFraisNonAutorisee, FraisInvalide
@@ -32,7 +32,7 @@ def _chauffeur():
 def _mission_affectee(chauffeur=None):
     chauffeur = chauffeur or _chauffeur()
     return MissionFactory(
-        statut=StatutMission.AFFECTEE, vehicule=VehiculeFactory(), chauffeur=chauffeur
+        statut=StatutMission.AFFECTEE, vehicule=VehiculeEnRegleFactory(), chauffeur=chauffeur
     )
 
 

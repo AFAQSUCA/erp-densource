@@ -10,7 +10,7 @@ from apps.customers.tests.factories import ClientFactory
 from apps.drivers.models import StatutChauffeur
 from apps.drivers.tests.factories import ChauffeurFactory, CopiloteFactory
 from apps.fleet.models import StatutVehicule
-from apps.fleet.tests.factories import VehiculeFactory
+from apps.fleet.tests.factories import VehiculeEnRegleFactory
 from apps.missions import services
 from apps.missions.exceptions import (
     AffectationImpossible,
@@ -44,7 +44,7 @@ def _planifiee(**surcharges):
 
 
 def _affectee(vehicule=None, chauffeur=None, copilote=None, **surcharges):
-    vehicule = vehicule or VehiculeFactory()
+    vehicule = vehicule or VehiculeEnRegleFactory(kilometrage=120000)  # compteur réel : départ et arrivée s'y comparent
     chauffeur = chauffeur or ChauffeurFactory()
     return services.affecter_mission(
         _planifiee(**surcharges), vehicule=vehicule, chauffeur=chauffeur, copilote=copilote
@@ -125,7 +125,7 @@ def test_planifier_refuse_hors_brouillon():
 
 
 def test_affecter_reserve_camion_et_chauffeur_sans_les_passer_en_mission():
-    vehicule, chauffeur = VehiculeFactory(), ChauffeurFactory()
+    vehicule, chauffeur = VehiculeEnRegleFactory(), ChauffeurFactory()
 
     mission = _affectee(vehicule, chauffeur)
 
@@ -138,7 +138,7 @@ def test_affecter_reserve_camion_et_chauffeur_sans_les_passer_en_mission():
 def test_affecter_refuse_une_mission_non_planifiee():
     with pytest.raises(TransitionMissionInterdite):
         services.affecter_mission(
-            _creer(), vehicule=VehiculeFactory(), chauffeur=ChauffeurFactory()
+            _creer(), vehicule=VehiculeEnRegleFactory(), chauffeur=ChauffeurFactory()
         )
 
 
@@ -155,7 +155,7 @@ def test_affecter_refuse_un_camion_non_disponible(statut):
     with pytest.raises(AffectationImpossible, match="camion"):
         services.affecter_mission(
             _planifiee(),
-            vehicule=VehiculeFactory(statut=statut),
+            vehicule=VehiculeEnRegleFactory(statut=statut),
             chauffeur=ChauffeurFactory(),
         )
 
@@ -173,13 +173,13 @@ def test_affecter_refuse_un_chauffeur_non_disponible(statut):
     with pytest.raises(AffectationImpossible, match="chauffeur"):
         services.affecter_mission(
             _planifiee(),
-            vehicule=VehiculeFactory(),
+            vehicule=VehiculeEnRegleFactory(),
             chauffeur=ChauffeurFactory(statut=statut),
         )
 
 
 def test_affecter_refuse_un_camion_deja_reserve_par_une_autre_mission():
-    vehicule = VehiculeFactory()
+    vehicule = VehiculeEnRegleFactory()
     _affectee(vehicule=vehicule)
 
     with pytest.raises(AffectationImpossible, match="déjà réservé"):
@@ -194,7 +194,7 @@ def test_affecter_refuse_un_chauffeur_deja_reserve_par_une_autre_mission():
 
     with pytest.raises(AffectationImpossible, match="déjà réservé"):
         services.affecter_mission(
-            _planifiee(), vehicule=VehiculeFactory(), chauffeur=chauffeur
+            _planifiee(), vehicule=VehiculeEnRegleFactory(), chauffeur=chauffeur
         )
 
 
@@ -208,7 +208,7 @@ def test_affecter_refuse_une_charge_superieure_a_la_capacite_du_camion():
     with pytest.raises(AffectationImpossible, match="capacité"):
         services.affecter_mission(
             _planifiee(poids_t=Decimal("25.01")),
-            vehicule=VehiculeFactory(capacite_charge_t=Decimal("25.00")),
+            vehicule=VehiculeEnRegleFactory(capacite_charge_t=Decimal("25.00")),
             chauffeur=ChauffeurFactory(),
         )
 
@@ -249,7 +249,7 @@ def test_affecter_refuse_un_copilote_non_disponible(statut):
     with pytest.raises(AffectationImpossible, match="copilote"):
         services.affecter_mission(
             _planifiee(),
-            vehicule=VehiculeFactory(),
+            vehicule=VehiculeEnRegleFactory(),
             chauffeur=ChauffeurFactory(),
             copilote=CopiloteFactory(statut=statut),
         )
@@ -261,7 +261,7 @@ def test_affecter_refuse_un_copilote_deja_reserve_par_une_autre_mission():
 
     with pytest.raises(AffectationImpossible, match="déjà réservé"):
         services.affecter_mission(
-            _planifiee(), vehicule=VehiculeFactory(), chauffeur=ChauffeurFactory(), copilote=copilote
+            _planifiee(), vehicule=VehiculeEnRegleFactory(), chauffeur=ChauffeurFactory(), copilote=copilote
         )
 
 
@@ -269,7 +269,7 @@ def test_affecter_refuse_un_copilote_deja_reserve_par_une_autre_mission():
 
 
 def test_demarrer_passe_camion_et_chauffeur_en_mission_et_releve_le_km():
-    vehicule = VehiculeFactory(kilometrage=120000)
+    vehicule = VehiculeEnRegleFactory(kilometrage=120000)
     chauffeur = ChauffeurFactory()
     mission = services.demarrer_mission(_affectee(vehicule, chauffeur))
 
@@ -283,7 +283,7 @@ def test_demarrer_passe_camion_et_chauffeur_en_mission_et_releve_le_km():
 
 
 def test_demarrer_refuse_si_le_camion_est_passe_en_maintenance_entre_temps():
-    vehicule = VehiculeFactory()
+    vehicule = VehiculeEnRegleFactory()
     mission = _affectee(vehicule=vehicule)
     vehicule.statut = StatutVehicule.EN_MAINTENANCE
     vehicule.save()
@@ -509,7 +509,7 @@ def test_vehicule_a_mission_active_selon_l_etape(etape, attendu):
 def test_un_camion_sans_mission_n_a_pas_de_mission_active():
     _planifiee()
 
-    assert services.vehicule_a_mission_active(VehiculeFactory()) is False
+    assert services.vehicule_a_mission_active(VehiculeEnRegleFactory()) is False
 
 
 def test_le_cycle_complet_est_audite():

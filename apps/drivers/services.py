@@ -10,6 +10,7 @@ from django.utils import timezone
 
 from apps.core.search import filtrer_par_texte
 from apps.core.services import etat_echeance
+from apps.hr.exceptions import PersonnelError
 from apps.hr.models import Conge, Personnel, StatutConge
 from apps.parametres import services as parametres_services
 
@@ -95,6 +96,30 @@ def rappeler_de_conge(chauffeur: Chauffeur) -> Chauffeur:
     if chauffeur.statut == StatutChauffeur.EN_CONGE:
         return changer_statut(chauffeur, StatutChauffeur.DISPONIBLE)
     return chauffeur
+
+
+def _desactiver(fiche, changer) -> None:
+    """Passe une fiche chauffeur ou copilote « Inactif » quand elle ne correspond plus au personnel (poste quitté,
+    fiche personnel supprimée). Refusé pendant une mission : un camion sur la route ne change pas d'équipage ; le
+    changement de poste se refait après la livraison. Une fiche ainsi désactivée ne se réactive pas toute seule
+    si le poste revient : la RH la remet « Disponible » à la main (audit M3-04)."""
+    if fiche is None or fiche.statut == StatutChauffeur.INACTIF:
+        return
+    if fiche.statut == StatutChauffeur.EN_MISSION:
+        raise PersonnelError(
+            f"{fiche.personnel.prenom} {fiche.personnel.nom} est en mission : changez son poste après la livraison."
+        )
+    changer(fiche, StatutChauffeur.INACTIF)
+
+
+def desactiver_fiche_chauffeur(personnel: Personnel) -> None:
+    _desactiver(Chauffeur.objects.select_related("personnel").filter(personnel=personnel).first(), changer_statut)
+
+
+def desactiver_fiche_copilote(personnel: Personnel) -> None:
+    _desactiver(
+        Copilote.objects.select_related("personnel").filter(personnel=personnel).first(), changer_statut_copilote
+    )
 
 
 # --- copilotes (assistants du chauffeur, missions qui l'exigent) ---

@@ -29,13 +29,13 @@ from apps.core.exceptions import ErreurMetier
 from apps.core.search import normaliser
 from apps.customers import services as clients_services
 from apps.customers.exceptions import ClientError
-from apps.customers.models import Client, MotifExoneration
+from apps.customers.models import MotifExoneration
 from apps.drivers import services as drivers_services
 from apps.drivers.exceptions import ChauffeurError
 from apps.drivers.models import Chauffeur, Copilote, StatutChauffeur
 from apps.fleet import services as fleet_services
 from apps.fleet.exceptions import FlotteError
-from apps.fleet.models import StatutVehicule, Vehicule
+from apps.fleet.models import StatutVehicule
 from apps.hr import services as hr_services
 from apps.hr.exceptions import PersonnelError
 from apps.hr.models import POSTES_COURANTS, Departement, Personnel
@@ -239,7 +239,7 @@ def _copilote(ligne: list, ctx: dict) -> str:
 def _client(ligne: list, ctx: dict) -> str:
     raison, ncc, contact, telephone, email, adresse, taux_brut, motif_brut, delai_brut = ligne[:9]
     raison, ncc = _obligatoire(raison, "La raison sociale"), _obligatoire(ncc, "Le NCC / NIF")
-    if Client.all_objects.filter(ncc_nif=ncc).exists():
+    if clients_services.client_par_ncc(ncc) is not None:  # même comparaison qu'à la saisie (audit M4-02)
         return "present"
     motifs = {normaliser(str(libelle)): code for code, libelle in MotifExoneration.choices}
     motifs.update({normaliser(code): code for code, _ in MotifExoneration.choices})
@@ -260,10 +260,8 @@ def _client(ligne: list, ctx: dict) -> str:
 def _vehicule(ligne: list, ctx: dict) -> str:
     immat, marque, mod, annee, vin, km, capacite, reservoir, statut_brut, habituel = ligne[:10]
     immat = _obligatoire(immat, "L'immatriculation")
-    immat_normalisee = re.sub(r"\s+", "", immat).upper()
-    if Vehicule.all_objects.filter(immatriculation__iexact=immat).exists() or Vehicule.all_objects.filter(
-        immatriculation=immat_normalisee
-    ).exists():
+    # Même comparaison qu'à la saisie (sans séparateur) : « AB-123-CD » retrouve « AB 123 CD » (audit M2-02).
+    if fleet_services.vehicule_par_immatriculation(immat) is not None:
         return "present"
     statuts = {
         normaliser(str(StatutVehicule(code).label)): code

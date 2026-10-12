@@ -150,7 +150,7 @@ def _refuser_si_mission_active(vehicule: Vehicule, action: str) -> None:
 def immobiliser_vehicule(vehicule: Vehicule) -> Vehicule:
     """Marque le camion « Immobilisé » (ex. accident, saisie, document expiré)."""
     _verrouiller(vehicule)
-    if vehicule.statut == StatutVehicule.IMMOBILISE:
+    if vehicule.marquage_effectif == StatutVehicule.IMMOBILISE:
         raise StatutVehiculeInvalide("Ce camion est déjà immobilisé.")
     _refuser_si_mission_active(vehicule, "immobiliser")
     return fleet_services.definir_statut(vehicule, StatutVehicule.IMMOBILISE)
@@ -160,7 +160,7 @@ def immobiliser_vehicule(vehicule: Vehicule) -> Vehicule:
 def mettre_hors_service(vehicule: Vehicule) -> Vehicule:
     """Marque le camion « Hors service » (réforme, épave)."""
     _verrouiller(vehicule)
-    if vehicule.statut == StatutVehicule.HORS_SERVICE:
+    if vehicule.marquage_effectif == StatutVehicule.HORS_SERVICE:
         raise StatutVehiculeInvalide("Ce camion est déjà hors service.")
     _refuser_si_mission_active(vehicule, "mettre hors service")
     return fleet_services.definir_statut(vehicule, StatutVehicule.HORS_SERVICE)
@@ -175,10 +175,11 @@ def remettre_en_service(vehicule: Vehicule) -> Vehicule:
     ouvert → En maintenance, mission → En mission, sinon Disponible).
     """
     _verrouiller(vehicule)
-    if vehicule.statut not in (StatutVehicule.IMMOBILISE, StatutVehicule.HORS_SERVICE):
+    if not vehicule.marquage_effectif:
         raise StatutVehiculeInvalide(
             "Seul un camion immobilisé ou hors service peut être remis en service."
         )
+    fleet_services.lever_marquage(vehicule)
     fleet_services.definir_statut(vehicule, StatutVehicule.DISPONIBLE)
     return fleet_services.recalculer_statut(
         vehicule,

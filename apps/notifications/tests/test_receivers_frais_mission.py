@@ -28,13 +28,13 @@ def _preuve():
 def test_la_finance_est_prevenue_d_une_affectation():
     finance = UserFactory(role=Role.FINANCES)
     from apps.drivers.tests.factories import ChauffeurFactory
-    from apps.fleet.tests.factories import VehiculeFactory
+    from apps.fleet.tests.factories import VehiculeEnRegleFactory
     from apps.missions.models import StatutMission
     from apps.missions.tests.factories import MissionFactory
 
     mission = MissionFactory(statut=StatutMission.PLANIFIEE)
 
-    missions_services.affecter_mission(mission, vehicule=VehiculeFactory(), chauffeur=ChauffeurFactory())
+    missions_services.affecter_mission(mission, vehicule=VehiculeEnRegleFactory(), chauffeur=ChauffeurFactory())
 
     (notification,) = _de(finance)
     assert notification.categorie == CategorieNotification.FRAIS_MISSION

@@ -14,8 +14,8 @@ from apps.accounts.tests.factories import UserFactory
 from apps.customers.tests.factories import ClientFactory
 from apps.dashboard import services
 from apps.drivers.tests.factories import ChauffeurFactory
-from apps.fleet.models import StatutVehicule, TypeDocument
-from apps.fleet.tests.factories import DocumentReglementaireFactory, VehiculeFactory
+from apps.fleet.models import DocumentReglementaire, StatutVehicule, TypeDocument
+from apps.fleet.tests.factories import DocumentReglementaireFactory, VehiculeFactory, completer_documents
 from apps.fuel import services as fuel_services
 from apps.hr import services as hr_services
 from apps.hr.models import Conge, StatutConge
@@ -178,15 +178,22 @@ def test_sans_donnees_la_page_reste_lisible(client):
 # --- centre d'alertes ---
 
 
+def _document(**champs):
+    """Un document du camion, les trois autres valides : seul ce document compte dans l'alerte (audit M2-22)."""
+    document = DocumentReglementaireFactory(**champs)
+    completer_documents(document.vehicule)
+    return document
+
+
 def _groupes(role, **kwargs):
     return {g["code"]: g for g in services.centre_alertes(role, aujourd_hui=AUJOURD_HUI, **kwargs)}
 
 
 def test_alerte_documents_avec_niveau_et_comptes():
-    DocumentReglementaireFactory(
+    _document(
         type_document=TypeDocument.ASSURANCE, date_expiration=AUJOURD_HUI + timedelta(days=10)
     )
-    DocumentReglementaireFactory(date_expiration=AUJOURD_HUI + timedelta(days=200))  # pas concerné
+    _document(date_expiration=AUJOURD_HUI + timedelta(days=200))  # pas concerné
 
     groupe = _groupes(Role.PARCAUTO)["documents"]
 
@@ -196,7 +203,7 @@ def test_alerte_documents_avec_niveau_et_comptes():
 
 
 def test_un_document_expire_rend_l_alerte_urgente():
-    DocumentReglementaireFactory(date_expiration=AUJOURD_HUI - timedelta(days=4))
+    _document(date_expiration=AUJOURD_HUI - timedelta(days=4))
 
     groupe = _groupes(Role.PARCAUTO)["documents"]
 
@@ -205,7 +212,7 @@ def test_un_document_expire_rend_l_alerte_urgente():
 
 def test_un_groupe_n_affiche_que_5_lignes_mais_compte_toutes_les_alertes():
     for i in range(8):
-        DocumentReglementaireFactory(date_expiration=AUJOURD_HUI + timedelta(days=i + 1))
+        _document(date_expiration=AUJOURD_HUI + timedelta(days=i + 1))
 
     groupe = _groupes(Role.PARCAUTO)["documents"]
 
@@ -294,7 +301,7 @@ def test_alerte_conges_en_retard_pour_la_rh_la_direction_et_l_admin():
 
 
 def test_chaque_role_ne_recoit_que_les_alertes_de_ses_ecrans():
-    DocumentReglementaireFactory(date_expiration=AUJOURD_HUI + timedelta(days=2))
+    _document(date_expiration=AUJOURD_HUI + timedelta(days=2))
     ChauffeurFactory(date_expiration_permis=AUJOURD_HUI + timedelta(days=2))
     ArticleFactory(quantite=0, seuil_minimal=2)
 
@@ -307,7 +314,7 @@ def test_chaque_role_ne_recoit_que_les_alertes_de_ses_ecrans():
 
 
 def test_la_page_liste_les_alertes_avec_liens_et_voir_tout(client):
-    document = DocumentReglementaireFactory(
+    document = _document(
         date_expiration=timezone.localdate() + timedelta(days=5)
     )
 
@@ -406,7 +413,7 @@ def test_le_centre_d_alertes_n_est_jamais_mis_en_cache(settings):
     cache.clear()
     assert services.centre_alertes(Role.PARCAUTO, aujourd_hui=AUJOURD_HUI) == []
 
-    DocumentReglementaireFactory(date_expiration=AUJOURD_HUI + timedelta(days=1))
+    _document(date_expiration=AUJOURD_HUI + timedelta(days=1))
 
     assert len(services.centre_alertes(Role.PARCAUTO, aujourd_hui=AUJOURD_HUI)) == 1
     cache.clear()
@@ -418,7 +425,7 @@ def test_le_centre_d_alertes_n_est_jamais_mis_en_cache(settings):
 def test_le_tableau_de_bord_de_l_admin_reste_a_requetes_constantes(client, django_assert_max_num_queries):
     for i in range(15):
         VehiculeFactory()
-        DocumentReglementaireFactory(date_expiration=timezone.localdate() + timedelta(days=i))
+        _document(date_expiration=timezone.localdate() + timedelta(days=i))
         ArticleFactory(quantite=0, seuil_minimal=2)
         ChauffeurFactory(date_expiration_permis=timezone.localdate() + timedelta(days=i))
         MissionFactory(client=ClientFactory())
@@ -608,7 +615,7 @@ def test_le_graphique_des_clients_renvoie_a_la_fiche_client(client):
 def test_le_delai_d_alerte_des_parametres_s_applique_aux_documents_et_aux_chauffeurs():
     # Audit M1-10 : délai porté à 60 jours par l'écran « Paramètres ».
     parametres_services.modifier_parametres(UserFactory(role=Role.ADMIN), delai_alerte_jours=60)
-    DocumentReglementaireFactory(date_expiration=AUJOURD_HUI + timedelta(days=45))
+    _document(date_expiration=AUJOURD_HUI + timedelta(days=45))
     ChauffeurFactory(date_expiration_permis=AUJOURD_HUI + timedelta(days=45))
 
     documents = _groupes(Role.PARCAUTO)["documents"]
@@ -616,3 +623,15 @@ def test_le_delai_d_alerte_des_parametres_s_applique_aux_documents_et_aux_chauff
 
     assert documents["nombre"] == 1 and documents["lignes"][0]["detail"] == "expire dans 45 j"
     assert chauffeurs["nombre"] == 1 and chauffeurs["lignes"][0]["detail"] == "expire dans 45 j"
+
+
+def test_un_document_jamais_enregistre_apparait_au_centre_d_alertes():
+    camion = VehiculeFactory(immatriculation="5555 EE 01")
+    _document(vehicule=camion)  # les quatre documents...
+    DocumentReglementaire.objects.filter(vehicule=camion, type_document=TypeDocument.ASSURANCE).delete()  # ...sauf un
+
+    groupe = _groupes(Role.PARCAUTO)["documents"]
+
+    assert groupe["nombre"] == 1 and groupe["niveau"] == "ATTENTION"
+    assert groupe["lignes"][0]["libelle"] == "Assurance · 5555 EE 01"
+    assert groupe["lignes"][0]["detail"] == "non enregistré(e)"

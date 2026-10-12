@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import date, timedelta
 
 from decimal import Decimal
@@ -26,7 +27,7 @@ from .exceptions import (
     KilometrageInvalide,
     VehiculeInvalide,
 )
-from .models import DocumentReglementaire, StatutVehicule, TypeDocument, Vehicule
+from .models import MARQUAGES, DocumentReglementaire, StatutVehicule, TypeDocument, Vehicule
 
 
 def vehicules_disponibles() -> QuerySet[Vehicule]:
@@ -37,7 +38,7 @@ def vehicules_disponibles() -> QuerySet[Vehicule]:
 
 
 def calculer_statut(
-    statut_actuel: str, *, or_ouverts: bool, mission_active: bool
+    statut_actuel: str, *, or_ouverts: bool, mission_active: bool, marquage: str = ""
 ) -> str:
     """Statut d'un camion selon l'algorithme du CDC (cahier-des-charges.md:96-100).
 
@@ -50,14 +51,17 @@ def calculer_statut(
     Fonction pure : ``garage`` et ``missions`` (apps situées sous ``fleet``
     dans architecture.md:161-163) calculent ``or_ouverts`` et
     ``mission_active`` et les passent en paramètre, ``fleet`` n'a donc
-    jamais à les importer.
+    jamais à les importer. ``marquage`` : l'étiquette Immobilisé / Hors service
+    posée à la main (``Vehicule.marquage``), qui survit à un passage « En
+    maintenance » ; à défaut, un statut actuel Immobilisé / Hors service en tient lieu.
     """
     if or_ouverts:
         return StatutVehicule.EN_MAINTENANCE
     if mission_active:
         return StatutVehicule.EN_MISSION
-    if statut_actuel in (StatutVehicule.IMMOBILISE, StatutVehicule.HORS_SERVICE):
-        return statut_actuel
+    marque = marquage or (statut_actuel if statut_actuel in MARQUAGES else "")
+    if marque:
+        return marque
     return StatutVehicule.DISPONIBLE
 
 
@@ -66,18 +70,30 @@ def recalculer_statut(
 ) -> Vehicule:
     """Applique :func:`calculer_statut` et enregistre le résultat."""
     vehicule.statut = calculer_statut(
-        vehicule.statut, or_ouverts=or_ouverts, mission_active=mission_active
+        vehicule.statut, or_ouverts=or_ouverts, mission_active=mission_active, marquage=vehicule.marquage
     )
     vehicule.save(update_fields=["statut", "updated_at"])
     return vehicule
 
 
 def definir_statut(vehicule: Vehicule, statut: str) -> Vehicule:
-    """Change le statut manuellement (ex. Immobilisé, Hors service)."""
+    """Change le statut manuellement. Immobilisé / Hors service posent aussi le marquage, qui survivra à un
+    passage « En maintenance » (règle 3 du CDC) jusqu'à :func:`lever_marquage`."""
     if statut not in StatutVehicule.values:
         raise ValueError(f"Statut véhicule inconnu : {statut!r}")
     vehicule.statut = statut
-    vehicule.save(update_fields=["statut", "updated_at"])
+    champs = ["statut", "updated_at"]
+    if statut in MARQUAGES:
+        vehicule.marquage = statut
+        champs.append("marquage")
+    vehicule.save(update_fields=champs)
+    return vehicule
+
+
+def lever_marquage(vehicule: Vehicule) -> Vehicule:
+    """Retire l'étiquette Immobilisé / Hors service (« Remettre en service ») ; le statut est à recalculer ensuite."""
+    vehicule.marquage = ""
+    vehicule.save(update_fields=["marquage", "updated_at"])
     return vehicule
 
 
@@ -146,8 +162,30 @@ def documents_a_renouveler(
     """
     limite = (aujourd_hui or timezone.localdate()) + timedelta(days=parametres_services.delai_alerte(jours))
     return DocumentReglementaire.objects.select_related("vehicule").filter(
-        date_expiration__lte=limite
+        date_expiration__lte=limite, vehicule__in=vehicules_suivis()
     )
+
+
+def vehicules_suivis() -> QuerySet[Vehicule]:
+    """Camions dont les documents sont surveillés : ni supprimés, ni hors service (réformés) — audit M2-22."""
+    return Vehicule.objects.exclude(statut=StatutVehicule.HORS_SERVICE).exclude(marquage=StatutVehicule.HORS_SERVICE)
+
+
+def documents_manquants() -> list[tuple[Vehicule, str, str]]:
+    """Documents réglementaires jamais enregistrés pour un camion suivi (les 4 du CDC sont attendus) :
+    ``(camion, code, libellé)``, par immatriculation. Un document manquant est plus grave qu'un document qui
+    expire : il ne déclenchait aucune alerte et le camion paraissait « À jour » (audit M2-22)."""
+    presents = set(DocumentReglementaire.objects.values_list("vehicule_id", "type_document"))
+    return [
+        (vehicule, code, libelle)
+        for vehicule in vehicules_suivis().order_by("immatriculation")
+        for code, libelle in TypeDocument.choices
+        if (vehicule.pk, code) not in presents
+    ]
+
+
+def vehicules_avec_documents_manquants() -> set[int]:
+    return {vehicule.pk for vehicule, _code, _libelle in documents_manquants()}
 
 
 # --- fiche véhicule (cahier-des-charges.md:88-90) ---
@@ -162,26 +200,54 @@ def _normaliser(immatriculation: str, vin: str) -> tuple[str, str]:
     return " ".join(immatriculation.upper().split()), vin.strip().upper()
 
 
+def cle_immatriculation(immatriculation: str) -> str:
+    """Immatriculation sans séparateur, en majuscules : « AB-123-CD », « AB 123 CD » et « ab123cd » sont le même
+    camion (audit M2-02)."""
+    return re.sub(r"[^0-9A-Z]", "", immatriculation.upper())
+
+
+def vehicule_par_immatriculation(immatriculation: str, *, sauf: Vehicule | None = None) -> Vehicule | None:
+    """Le camion (supprimé logiquement compris) qui porte déjà cette immatriculation, quelle que soit son écriture."""
+    cle = cle_immatriculation(immatriculation)
+    candidats = Vehicule.all_objects.exclude(pk=sauf.pk if sauf else None).only("pk", "immatriculation")
+    return next((v for v in candidats if cle_immatriculation(v.immatriculation) == cle), None)
+
+
+ANNEE_MIN = 1950
+VIN_LONGUEUR_MAX = 17  # longueur d'un VIN normalisé, et de la colonne en base
+
+
 def _verifier_fiche(
     *,
     immatriculation: str,
     vin: str,
+    annee: int,
     capacite_charge_t: Decimal,
     reservoir_l: int,
     exclure: Vehicule | None = None,
 ) -> None:
     if not immatriculation:
         raise VehiculeInvalide("L'immatriculation est obligatoire.")
+    if len(immatriculation) > Vehicule._meta.get_field("immatriculation").max_length:
+        raise VehiculeInvalide("L'immatriculation est trop longue.")
     if not vin:
         raise VehiculeInvalide("Le n° de châssis (VIN) est obligatoire.")
+    if len(vin) > VIN_LONGUEUR_MAX:
+        raise VehiculeInvalide(f"Le n° de châssis (VIN) compte au plus {VIN_LONGUEUR_MAX} caractères.")
+    annee_max = timezone.localdate().year + 1
+    if not ANNEE_MIN <= annee <= annee_max:
+        raise VehiculeInvalide(f"L'année doit être comprise entre {ANNEE_MIN} et {annee_max}.")
     if capacite_charge_t <= 0:
         raise VehiculeInvalide("La capacité de charge doit être strictement positive.")
     if reservoir_l <= 0:
         raise VehiculeInvalide("La capacité du réservoir doit être strictement positive.")
     # all_objects : l'unicité en base compte aussi les camions supprimés logiquement.
     autres = Vehicule.all_objects.exclude(pk=exclure.pk if exclure else None)
-    if autres.filter(immatriculation=immatriculation).exists():
-        raise DoublonVehicule(f"L'immatriculation {immatriculation} est déjà utilisée.")
+    existant = vehicule_par_immatriculation(immatriculation, sauf=exclure)
+    if existant is not None:
+        raise DoublonVehicule(
+            f"L'immatriculation {immatriculation} est déjà utilisée (camion {existant.immatriculation})."
+        )
     if autres.filter(vin=vin).exists():
         raise DoublonVehicule(f"Le n° de châssis {vin} est déjà utilisé.")
 
@@ -205,6 +271,7 @@ def creer_vehicule(
     _verifier_fiche(
         immatriculation=immatriculation,
         vin=vin,
+        annee=annee,
         capacite_charge_t=capacite_charge_t,
         reservoir_l=reservoir_l,
     )
@@ -244,6 +311,7 @@ def modifier_vehicule(
     _verifier_fiche(
         immatriculation=immatriculation,
         vin=vin,
+        annee=annee,
         capacite_charge_t=capacite_charge_t,
         reservoir_l=reservoir_l,
         exclure=vehicule,
@@ -251,6 +319,14 @@ def modifier_vehicule(
     if kilometrage < vehicule.kilometrage:
         raise KilometrageInvalide(
             f"Le compteur ({vehicule.kilometrage} km) ne peut pas diminuer."
+        )
+    # Une faute de frappe (un chiffre en trop) figerait le compteur : au-delà de l'écart maximal des paramètres,
+    # la hausse passe par la correction du compteur de l'ADMIN, tracée (audit M2-07).
+    ecart_max = parametres_services.parametres().ecart_km_max
+    if not distance_plausible(vehicule.kilometrage, kilometrage, ecart_max=ecart_max):
+        raise KilometrageInvalide(
+            f"Le compteur passerait de {vehicule.kilometrage} à {kilometrage} km (plus de {ecart_max} km) : "
+            "vérifiez la saisie, ou faites corriger le compteur par l'administrateur."
         )
     vehicule.immatriculation = immatriculation
     vehicule.marque = marque.strip()
@@ -276,8 +352,10 @@ def rechercher_vehicules(
     vehicules = filtrer_par_texte(
         vehicules, recherche, "immatriculation", "marque", "modele", "vin"
     )
-    if documents_a_renouveler:
-        vehicules = vehicules.filter(pk__in=vehicules_avec_documents_a_renouveler())
+    if documents_a_renouveler:  # à renouveler ou manquants : tout ce qui demande une action
+        vehicules = vehicules.filter(
+            pk__in=vehicules_avec_documents_a_renouveler() | vehicules_avec_documents_manquants()
+        )
     return vehicules
 
 

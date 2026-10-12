@@ -78,7 +78,7 @@
               <td class="whitespace-nowrap px-4 py-3 text-right text-slate-700">{{ vehicule.kilometrage|intcomma }} km</td>
               <td class="whitespace-nowrap px-4 py-3">{% badge vehicule.statut vehicule.get_statut_display %}</td>
               <td class="whitespace-nowrap px-4 py-3">
-                {% if vehicule.pk in vehicules_en_alerte %}{% badge "A_RENOUVELER" "À renouveler" %}{% else %}<span class="text-slate-600">À jour</span>{% endif %}
+                {% if vehicule.pk in vehicules_en_alerte %}{% badge "A_RENOUVELER" "À renouveler" %}{% elif vehicule.pk in vehicules_incomplets %}{% badge "A_RENOUVELER" "Document manquant" %}{% elif vehicule.statut == "HORS_SERVICE" %}<span class="text-slate-600">Non suivi (hors service)</span>{% else %}<span class="text-slate-600">À jour</span>{% endif %}
               </td>
             </tr>
           {% endfor %}

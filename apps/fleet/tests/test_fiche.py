@@ -4,6 +4,7 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
+from django.utils import timezone
 
 from apps.audit.models import AuditLog
 from apps.drivers.tests.factories import ChauffeurFactory
@@ -16,7 +17,7 @@ from apps.fleet.exceptions import (
 )
 from apps.fleet.models import DocumentReglementaire, StatutVehicule, TypeDocument
 
-from .factories import DocumentReglementaireFactory, VehiculeFactory
+from .factories import DocumentReglementaireFactory, VehiculeFactory, completer_documents
 
 pytestmark = pytest.mark.django_db
 
@@ -64,7 +65,7 @@ def test_deux_saisies_qui_ne_different_que_par_la_casse_sont_un_doublon():
     services.creer_vehicule(**_donnees())
 
     with pytest.raises(DoublonVehicule, match="immatriculation"):
-        services.creer_vehicule(**_donnees(immatriculation="1234 ab 01", vin="AUTRE0000000000001"))
+        services.creer_vehicule(**_donnees(immatriculation="1234 ab 01", vin="AUTRE000000000000"))
 
 
 def test_un_vin_deja_utilise_est_refuse():
@@ -79,7 +80,7 @@ def test_l_immatriculation_d_un_camion_supprime_logiquement_reste_reservee():
     ancien.delete()
 
     with pytest.raises(DoublonVehicule):
-        services.creer_vehicule(**_donnees(vin="AUTRE0000000000001"))
+        services.creer_vehicule(**_donnees(vin="AUTRE000000000000"))
 
 
 @pytest.mark.parametrize(
@@ -137,7 +138,7 @@ def test_modifier_vehicule_refuse_l_immatriculation_d_un_autre_camion():
     autre = VehiculeFactory(kilometrage=0)
 
     with pytest.raises(DoublonVehicule):
-        services.modifier_vehicule(autre, **_donnees(vin="AUTRE0000000000001", kilometrage=0))
+        services.modifier_vehicule(autre, **_donnees(vin="AUTRE000000000000", kilometrage=0))
 
 
 def test_le_compteur_ne_peut_pas_reculer_lors_d_une_modification():
@@ -181,8 +182,8 @@ def test_rechercher_vehicules_ne_garde_que_ceux_avec_un_document_a_renouveler():
     DocumentReglementaireFactory(
         vehicule=alerte, date_delivrance=date(2025, 1, 1), date_expiration=date(2026, 1, 1)
     )
-    en_regle = VehiculeFactory()
-    DocumentReglementaireFactory(vehicule=en_regle, date_expiration=date(2099, 1, 1))
+    completer_documents(alerte)
+    en_regle = completer_documents(VehiculeFactory())
 
     resultat = services.rechercher_vehicules(documents_a_renouveler=True)
 
@@ -334,3 +335,95 @@ def test_chauffeurs_actifs_exclut_les_inactifs_et_est_trie_par_nom():
 
     assert list(drivers_services.chauffeurs_actifs()) == [a, b]
 
+
+# --- documents manquants et camions non suivis (audit M2-22) ---
+
+
+def test_un_document_jamais_enregistre_est_signale_comme_manquant():
+    camion = VehiculeFactory(immatriculation="1234 AB 01")
+    DocumentReglementaireFactory(vehicule=camion, type_document=TypeDocument.ASSURANCE)
+
+    manquants = [(v.immatriculation, code) for v, code, _libelle in services.documents_manquants()]
+
+    assert manquants == [
+        ("1234 AB 01", TypeDocument.CARTE_GRISE), ("1234 AB 01", TypeDocument.VISITE_TECHNIQUE),
+        ("1234 AB 01", TypeDocument.PATENTE),
+    ]
+    assert services.rechercher_vehicules(documents_a_renouveler=True).get() == camion
+
+
+def test_un_camion_complet_n_a_aucun_document_manquant():
+    completer_documents(VehiculeFactory())
+
+    assert services.documents_manquants() == []
+
+
+@pytest.mark.parametrize("marquage", ["statut", "marquage"])
+def test_un_camion_hors_service_n_est_plus_surveille(marquage):
+    camion = VehiculeFactory(**{marquage: StatutVehicule.HORS_SERVICE})
+    DocumentReglementaireFactory(vehicule=camion, date_expiration=date(2026, 1, 1))
+
+    assert not services.documents_a_renouveler(aujourd_hui=date(2026, 10, 12)).exists()
+    assert services.documents_manquants() == []
+
+
+def test_un_camion_supprime_n_est_plus_surveille():
+    camion = VehiculeFactory()
+    DocumentReglementaireFactory(vehicule=camion, date_expiration=date(2026, 1, 1))
+    camion.delete()
+
+    assert not services.documents_a_renouveler(aujourd_hui=date(2026, 10, 12)).exists()
+    assert services.documents_manquants() == []
+
+
+# --- contrôles de la fiche (audit M2-02, M2-05, M2-06, M2-07) ---
+
+
+@pytest.mark.parametrize("autre_ecriture", ["1234-AB-01", "1234AB01", " 1234 - ab - 01 "])
+def test_une_meme_immatriculation_ecrite_autrement_est_un_doublon(autre_ecriture):
+    services.creer_vehicule(**_donnees())
+
+    with pytest.raises(DoublonVehicule, match=r"déjà utilisée \(camion 1234 AB 01\)"):
+        services.creer_vehicule(**_donnees(immatriculation=autre_ecriture, vin="AUTRE000000000001"))
+
+
+def test_modifier_son_immatriculation_en_changeant_seulement_les_separateurs_est_permis():
+    camion = services.creer_vehicule(**_donnees())
+
+    services.modifier_vehicule(camion, **_donnees(immatriculation="1234-AB-01"))
+
+    camion.refresh_from_db()
+    assert camion.immatriculation == "1234-AB-01"
+
+
+@pytest.mark.parametrize("annee", [5, 1949, 2999])
+def test_une_annee_invraisemblable_est_refusee(annee):
+    with pytest.raises(VehiculeInvalide, match="L'année doit être comprise entre 1950"):
+        services.creer_vehicule(**_donnees(annee=annee))
+
+
+def test_l_annee_prochaine_est_acceptee():
+    camion = services.creer_vehicule(**_donnees(annee=timezone.localdate().year + 1))
+
+    assert camion.annee == timezone.localdate().year + 1
+
+
+def test_un_vin_trop_long_est_refuse_au_lieu_de_faire_planter_la_base():
+    with pytest.raises(VehiculeInvalide, match="au plus 17 caractères"):
+        services.creer_vehicule(**_donnees(vin="W" * 18))
+
+
+def test_une_immatriculation_trop_longue_est_refusee():
+    with pytest.raises(VehiculeInvalide, match="trop longue"):
+        services.creer_vehicule(**_donnees(immatriculation="A" * 21))
+
+
+def test_une_hausse_de_compteur_invraisemblable_sur_la_fiche_est_refusee():
+    camion = services.creer_vehicule(**_donnees(kilometrage=50000))
+
+    with pytest.raises(KilometrageInvalide, match="plus de 5000 km"):
+        services.modifier_vehicule(camion, **_donnees(kilometrage=500000))
+    services.modifier_vehicule(camion, **_donnees(kilometrage=54000))
+
+    camion.refresh_from_db()
+    assert camion.kilometrage == 54000

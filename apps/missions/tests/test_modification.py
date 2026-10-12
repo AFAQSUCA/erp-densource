@@ -13,7 +13,7 @@ from apps.accounts.tests.factories import UserFactory
 from apps.drivers.models import StatutChauffeur
 from apps.drivers.tests.factories import ChauffeurFactory
 from apps.fleet.models import StatutVehicule
-from apps.fleet.tests.factories import VehiculeFactory
+from apps.fleet.tests.factories import VehiculeEnRegleFactory
 from apps.missions import services
 from apps.missions.exceptions import AffectationImpossible, MissionError, TransitionMissionInterdite
 from apps.missions.models import Mission, StatutMission
@@ -122,7 +122,7 @@ def test_ne_pas_changer_le_lieu_garde_les_memes_codes():
 
 def test_reaffecter_camion_et_chauffeur_sur_une_mission_affectee():
     mission = _affectee()
-    nouveau_vehicule, nouveau_chauffeur = VehiculeFactory(), ChauffeurFactory()
+    nouveau_vehicule, nouveau_chauffeur = VehiculeEnRegleFactory(), ChauffeurFactory()
 
     modifiee = services.modifier_mission(
         mission, **_champs(mission), vehicule=nouveau_vehicule, chauffeur=nouveau_chauffeur
@@ -137,12 +137,12 @@ def test_reaffecter_revalide_la_disponibilite():
     with pytest.raises(AffectationImpossible, match="camion"):
         services.modifier_mission(
             mission, **_champs(mission),
-            vehicule=VehiculeFactory(statut=StatutVehicule.EN_MAINTENANCE), chauffeur=ChauffeurFactory(),
+            vehicule=VehiculeEnRegleFactory(statut=StatutVehicule.EN_MAINTENANCE), chauffeur=ChauffeurFactory(),
         )
 
 
 def test_reaffecter_refuse_un_camion_deja_reserve_par_une_autre_mission():
-    vehicule = VehiculeFactory()
+    vehicule = VehiculeEnRegleFactory()
     _affectee(vehicule=vehicule)
     mission = _affectee()
 
@@ -168,7 +168,7 @@ def test_reaffecter_impossible_apres_le_depart():
 
     with pytest.raises(TransitionMissionInterdite, match="avant le départ"):
         services.modifier_mission(
-            mission, **_champs(mission), vehicule=VehiculeFactory(), chauffeur=ChauffeurFactory()
+            mission, **_champs(mission), vehicule=VehiculeEnRegleFactory(), chauffeur=ChauffeurFactory()
         )
 
 
@@ -177,7 +177,7 @@ def test_reaffecter_impossible_avant_l_affectation():
 
     with pytest.raises(TransitionMissionInterdite, match="avant le départ"):
         services.modifier_mission(
-            mission, **_champs(mission), vehicule=VehiculeFactory(), chauffeur=ChauffeurFactory()
+            mission, **_champs(mission), vehicule=VehiculeEnRegleFactory(), chauffeur=ChauffeurFactory()
         )
 
 
@@ -185,7 +185,7 @@ def test_camion_et_chauffeur_se_changent_ensemble():
     mission = _affectee()
 
     with pytest.raises(MissionError, match="ensemble"):
-        services.modifier_mission(mission, **_champs(mission), vehicule=VehiculeFactory())
+        services.modifier_mission(mission, **_champs(mission), vehicule=VehiculeEnRegleFactory())
 
 
 # --- audit ---

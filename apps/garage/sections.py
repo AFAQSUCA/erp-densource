@@ -20,17 +20,18 @@ def section_maintenance(vehicule, utilisateur):
     if role not in permissions.CONSULTATION:
         return None
     peut_modifier = role in permissions.MODIFICATION
-    statut = vehicule.statut
+    marquage = vehicule.marquage_effectif
     return {
         "template": "garage/_maintenance_vehicule.html",
         "contexte": {
             "ordres": list(services.ordres_du_vehicule(vehicule)),
             "peut_modifier": peut_modifier,
             "peut_immobiliser": peut_modifier
-            and statut != StatutVehicule.IMMOBILISE,
+            and marquage != StatutVehicule.IMMOBILISE,
             "peut_mettre_hors_service": peut_modifier
-            and statut != StatutVehicule.HORS_SERVICE,
-            "peut_remettre_en_service": peut_modifier
-            and statut in (StatutVehicule.IMMOBILISE, StatutVehicule.HORS_SERVICE),
+            and marquage != StatutVehicule.HORS_SERVICE,
+            "peut_remettre_en_service": peut_modifier and bool(marquage),
+            # Marqué mais affiché « En maintenance » le temps d'un OR : le marquage reviendra à la dernière clôture.
+            "marquage_en_attente": vehicule.get_marquage_display() if marquage and marquage != vehicule.statut else "",
         },
     }

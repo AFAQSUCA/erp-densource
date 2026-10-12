@@ -4,7 +4,7 @@ import pytest
 
 from apps.fleet.models import StatutVehicule
 from apps.fleet.services import definir_statut
-from apps.fleet.tests.factories import VehiculeFactory
+from apps.fleet.tests.factories import VehiculeEnRegleFactory
 from apps.garage import services
 from apps.garage.exceptions import StatutVehiculeInvalide
 from apps.garage.models import LieuReparation, TypeOr
@@ -28,7 +28,7 @@ def _statut(vehicule):
 
 
 def test_immobiliser_un_camion_disponible():
-    camion = VehiculeFactory()
+    camion = VehiculeEnRegleFactory()
 
     services.immobiliser_vehicule(camion)
 
@@ -36,7 +36,7 @@ def test_immobiliser_un_camion_disponible():
 
 
 def test_mettre_hors_service_un_camion_disponible():
-    camion = VehiculeFactory()
+    camion = VehiculeEnRegleFactory()
 
     services.mettre_hors_service(camion)
 
@@ -44,7 +44,7 @@ def test_mettre_hors_service_un_camion_disponible():
 
 
 def test_un_camion_immobilise_peut_devenir_hors_service():
-    camion = VehiculeFactory(statut=StatutVehicule.IMMOBILISE)
+    camion = VehiculeEnRegleFactory(statut=StatutVehicule.IMMOBILISE)
 
     services.mettre_hors_service(camion)
 
@@ -52,14 +52,14 @@ def test_un_camion_immobilise_peut_devenir_hors_service():
 
 
 def test_immobiliser_deux_fois_est_refuse():
-    camion = VehiculeFactory(statut=StatutVehicule.IMMOBILISE)
+    camion = VehiculeEnRegleFactory(statut=StatutVehicule.IMMOBILISE)
 
     with pytest.raises(StatutVehiculeInvalide, match="déjà immobilisé"):
         services.immobiliser_vehicule(camion)
 
 
 def test_mettre_hors_service_deux_fois_est_refuse():
-    camion = VehiculeFactory(statut=StatutVehicule.HORS_SERVICE)
+    camion = VehiculeEnRegleFactory(statut=StatutVehicule.HORS_SERVICE)
 
     with pytest.raises(StatutVehiculeInvalide, match="déjà hors service"):
         services.mettre_hors_service(camion)
@@ -86,7 +86,7 @@ def test_un_camion_peut_etre_immobilise_apres_la_fin_de_sa_mission():
 
 
 def test_immobiliser_un_camion_pendant_un_or_conserve_l_immobilisation_a_la_cloture():
-    camion = VehiculeFactory()
+    camion = VehiculeEnRegleFactory()
     ordre = _ouvrir(camion)
 
     services.immobiliser_vehicule(camion)
@@ -99,7 +99,7 @@ def test_immobiliser_un_camion_pendant_un_or_conserve_l_immobilisation_a_la_clot
 def test_ouvrir_un_or_sur_un_camion_deja_immobilise_ou_hors_service_le_conserve_a_la_cloture(
     statut,
 ):
-    camion = VehiculeFactory(statut=statut)
+    camion = VehiculeEnRegleFactory(statut=statut)
     ordre = _ouvrir(camion)
 
     assert _statut(camion) == statut  # l'ouverture ne doit pas écraser le statut
@@ -114,7 +114,7 @@ def test_ouvrir_un_or_sur_un_camion_deja_immobilise_ou_hors_service_le_conserve_
 
 @pytest.mark.parametrize("statut", [StatutVehicule.IMMOBILISE, StatutVehicule.HORS_SERVICE])
 def test_remettre_en_service_un_camion_sans_or_ni_mission_le_rend_disponible(statut):
-    camion = VehiculeFactory(statut=statut)
+    camion = VehiculeEnRegleFactory(statut=statut)
 
     services.remettre_en_service(camion)
 
@@ -122,7 +122,7 @@ def test_remettre_en_service_un_camion_sans_or_ni_mission_le_rend_disponible(sta
 
 
 def test_remettre_en_service_avec_un_or_ouvert_donne_en_maintenance():
-    camion = VehiculeFactory()
+    camion = VehiculeEnRegleFactory()
     _ouvrir(camion)
     services.immobiliser_vehicule(camion)
 
@@ -145,7 +145,7 @@ def test_remettre_en_service_avec_une_mission_reservee_donne_en_mission():
     [StatutVehicule.DISPONIBLE, StatutVehicule.EN_MISSION, StatutVehicule.EN_MAINTENANCE],
 )
 def test_remettre_en_service_refuse_un_camion_qui_n_est_pas_immobilise(statut):
-    camion = VehiculeFactory(statut=statut)
+    camion = VehiculeEnRegleFactory(statut=statut)
 
     with pytest.raises(StatutVehiculeInvalide, match="immobilisé ou hors service"):
         services.remettre_en_service(camion)
@@ -157,11 +157,11 @@ def test_remettre_en_service_refuse_un_camion_qui_n_est_pas_immobilise(statut):
 
 
 def test_rechercher_ordres_par_statut_type_lieu_et_texte():
-    camion = VehiculeFactory(immatriculation="1111 AA 01")
+    camion = VehiculeEnRegleFactory(immatriculation="1111 AA 01")
     ouvert = services.ouvrir_or(
         camion, type_or=TypeOr.PNEUMATIQUES, lieu=LieuReparation.EXTERNE, motif="Crevaison avant droite"
     )
-    cloture = _ouvrir(VehiculeFactory())
+    cloture = _ouvrir(VehiculeEnRegleFactory())
     services.cloturer_or(cloture)
 
     assert list(services.rechercher_ordres(statut="OUVERT")) == [ouvert]
@@ -173,13 +173,13 @@ def test_rechercher_ordres_par_statut_type_lieu_et_texte():
 
 
 def test_rechercher_ordres_ignore_les_valeurs_inconnues():
-    _ouvrir(VehiculeFactory())
+    _ouvrir(VehiculeEnRegleFactory())
 
     assert services.rechercher_ordres(statut="?", type_or="?", lieu="?", recherche=" ").count() == 1
 
 
 def test_ordres_du_vehicule_du_plus_recent_au_plus_ancien_avec_limite():
-    camion = VehiculeFactory()
+    camion = VehiculeEnRegleFactory()
     ordres = [_ouvrir(camion) for _ in range(4)]
 
     recents = list(services.ordres_du_vehicule(camion, limite=3))
@@ -188,7 +188,59 @@ def test_ordres_du_vehicule_du_plus_recent_au_plus_ancien_avec_limite():
 
 
 def test_ordres_du_vehicule_ignore_les_autres_camions():
-    _ouvrir(VehiculeFactory())
-    camion = VehiculeFactory()
+    _ouvrir(VehiculeEnRegleFactory())
+    camion = VehiculeEnRegleFactory()
 
     assert list(services.ordres_du_vehicule(camion)) == []
+
+
+# --- marquage conservé à travers plusieurs OR (audit M2-25, règle 3 : cahier-des-charges.md:99) ---
+
+
+@pytest.mark.parametrize("marquage", [StatutVehicule.IMMOBILISE, StatutVehicule.HORS_SERVICE])
+def test_un_camion_marque_avec_deux_or_retrouve_son_marquage_a_la_derniere_cloture(marquage):
+    camion = VehiculeEnRegleFactory()
+    definir_statut(camion, marquage)
+    premier, second = _ouvrir(camion), _ouvrir(camion)
+
+    services.cloturer_or(premier)
+    assert _statut(camion) == StatutVehicule.EN_MAINTENANCE  # règle 1 : un autre OR est ouvert
+
+    services.cloturer_or(second)
+    assert _statut(camion) == marquage  # règle 3 : le marquage revient, jamais « Disponible »
+
+
+def test_un_camion_immobilise_pendant_un_or_le_reste_apres_la_cloture():
+    camion = VehiculeEnRegleFactory()
+    ordre = _ouvrir(camion)
+    services.immobiliser_vehicule(camion)
+    autre = _ouvrir(camion)
+
+    services.cloturer_or(ordre)
+    services.cloturer_or(autre)
+
+    assert _statut(camion) == StatutVehicule.IMMOBILISE
+
+
+def test_la_remise_en_service_leve_le_marquage_meme_en_maintenance():
+    camion = VehiculeEnRegleFactory()
+    definir_statut(camion, StatutVehicule.IMMOBILISE)
+    premier, second = _ouvrir(camion), _ouvrir(camion)
+    services.cloturer_or(premier)  # affiché « En maintenance », marquage conservé
+
+    services.remettre_en_service(camion)
+    assert _statut(camion) == StatutVehicule.EN_MAINTENANCE  # l'OR restant le garde au garage
+    services.cloturer_or(second)
+
+    camion.refresh_from_db()
+    assert camion.statut == StatutVehicule.DISPONIBLE and camion.marquage == ""
+
+
+def test_un_camion_marque_en_maintenance_ne_se_re_marque_pas():
+    camion = VehiculeEnRegleFactory()
+    definir_statut(camion, StatutVehicule.IMMOBILISE)
+    premier, _second = _ouvrir(camion), _ouvrir(camion)
+    services.cloturer_or(premier)
+
+    with pytest.raises(StatutVehiculeInvalide, match="déjà immobilisé"):
+        services.immobiliser_vehicule(camion)

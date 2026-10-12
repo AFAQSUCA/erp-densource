@@ -9,6 +9,7 @@ import pytest
 from apps.accounts.models import Role
 from apps.accounts.tests.factories import UserFactory
 from apps.drivers.tests.factories import ChauffeurFactory
+from apps.fleet.models import Vehicule
 from apps.fleet.tests.factories import VehiculeFactory
 from apps.fuel import services
 from apps.fuel.exceptions import (
@@ -291,12 +292,25 @@ def test_le_plein_releve_le_compteur_du_camion_s_il_est_superieur(chauffeur):
 
 
 def test_le_plein_ne_fait_jamais_reculer_le_compteur(chauffeur):
-    camion = VehiculeFactory(kilometrage=130000)
+    camion = VehiculeFactory(kilometrage=124000)
+    _plein(camion, chauffeur, km=124000, litres=100, jour=0)
+    Vehicule.objects.filter(pk=camion.pk).update(kilometrage=130000)  # une mission a avancé le compteur depuis
 
-    _plein(camion, chauffeur, km=125000, litres=100, jour=0)
+    _plein(camion, chauffeur, km=125000, litres=100, jour=1)  # plein saisi en retard, entre les deux relevés
 
     camion.refresh_from_db()
     assert camion.kilometrage == 130000
+
+
+def test_un_premier_plein_sous_le_compteur_du_camion_est_refuse(chauffeur):
+    # Audit M6-07 : accepté, il bloquait le plein suivant (refusé comme trop éloigné de ce relevé trop bas).
+    camion = VehiculeFactory(kilometrage=120000)
+
+    with pytest.raises(KilometrageInvalide, match=r"inférieur au compteur du camion \(120000 km\)"):
+        _plein(camion, chauffeur, km=1000, litres=100, jour=0)
+    assert not Plein.objects.filter(vehicule=camion).exists()
+
+    assert _plein(camion, chauffeur, km=120300, litres=100, jour=0).km_compteur == 120300
 
 
 # --- analyse par camion, par chauffeur, globale (cahier-des-charges.md:156) ---

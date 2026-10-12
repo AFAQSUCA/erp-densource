@@ -10,24 +10,29 @@ from .models import Chauffeur, Copilote, StatutChauffeur
 
 @receiver(post_save, sender=Personnel)
 def creer_fiche_chauffeur(sender, instance, raw=False, **kwargs):
-    """Poste « Chauffeur » → fiche chauffeur créée (cahier-des-charges.md:108).
+    """Poste « Chauffeur » → fiche chauffeur créée (cahier-des-charges.md:108). La fiche suit le personnel : poste
+    quitté ou fiche personnel supprimée → fiche « Inactif », plus jamais affectable (audit M3-04).
 
     C'est ``drivers`` qui écoute ``hr`` (et non l'inverse) pour respecter le
     sens des dépendances de architecture.md:161-163.
     """
-    if raw or instance.is_deleted:
+    if raw:
         return
-    if instance.est_chauffeur:
+    if not instance.is_deleted and instance.est_chauffeur:
         services.assurer_fiche_chauffeur(instance)
+    else:
+        services.desactiver_fiche_chauffeur(instance)
 
 
 @receiver(post_save, sender=Personnel)
 def creer_fiche_copilote(sender, instance, raw=False, **kwargs):
-    """Poste « Copilote » → fiche copilote créée, même principe que le chauffeur."""
-    if raw or instance.is_deleted:
+    """Poste « Copilote » → fiche copilote créée, même principe que le chauffeur (y compris la désactivation)."""
+    if raw:
         return
-    if instance.est_copilote:
+    if not instance.is_deleted and instance.est_copilote:
         services.assurer_fiche_copilote(instance)
+    else:
+        services.desactiver_fiche_copilote(instance)
 
 
 @receiver(post_save, sender=Conge)

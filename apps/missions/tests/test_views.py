@@ -10,7 +10,7 @@ from apps.accounts.models import Role
 from apps.accounts.tests.factories import UserFactory
 from apps.customers.tests.factories import ClientFactory
 from apps.fleet.models import StatutVehicule
-from apps.fleet.tests.factories import VehiculeFactory
+from apps.fleet.tests.factories import VehiculeEnRegleFactory
 from apps.drivers.tests.factories import ChauffeurFactory
 from apps.missions import services
 from apps.missions.models import Mission, StatutMission
@@ -226,8 +226,8 @@ def test_le_charge_clientele_peut_planifier_un_brouillon_mais_pas_affecter(clien
 def test_la_direction_voit_le_formulaire_d_affectation_avec_les_seuls_camions_disponibles(client):
     _connecte(client, Role.DIRECTION)
     mission = _planifiee()
-    libre = VehiculeFactory(immatriculation="1111 AA 01")
-    VehiculeFactory(immatriculation="2222 BB 01", statut=StatutVehicule.EN_MAINTENANCE)
+    libre = VehiculeEnRegleFactory(immatriculation="1111 AA 01")
+    VehiculeEnRegleFactory(immatriculation="2222 BB 01", statut=StatutVehicule.EN_MAINTENANCE)
 
     reponse = client.get(_url("detail", mission))
     contenu = reponse.content.decode()
@@ -410,7 +410,7 @@ def test_une_action_refusee_par_le_service_affiche_l_erreur_sans_rien_changer(cl
 def test_un_role_sans_droit_ne_peut_pas_agir_meme_par_post_direct(client):
     _connecte(client, Role.CHARGE_CLIENTELE)
     mission = _planifiee()
-    camion, chauffeur = VehiculeFactory(), ChauffeurFactory()
+    camion, chauffeur = VehiculeEnRegleFactory(), ChauffeurFactory()
 
     reponse = client.post(
         _url("affecter", mission), {"vehicule": camion.pk, "chauffeur": chauffeur.pk}
@@ -424,7 +424,7 @@ def test_un_role_sans_droit_ne_peut_pas_agir_meme_par_post_direct(client):
 def test_affecter(client):
     _connecte(client, Role.DIRECTION)
     mission = _planifiee()
-    camion, chauffeur = VehiculeFactory(), ChauffeurFactory()
+    camion, chauffeur = VehiculeEnRegleFactory(), ChauffeurFactory()
 
     client.post(
         _url("affecter", mission), {"vehicule": camion.pk, "chauffeur": chauffeur.pk}
@@ -438,7 +438,7 @@ def test_affecter(client):
 def test_affecter_un_camion_indisponible_est_refuse(client):
     _connecte(client, Role.DIRECTION)
     mission = _planifiee()
-    en_panne = VehiculeFactory(statut=StatutVehicule.EN_MAINTENANCE)
+    en_panne = VehiculeEnRegleFactory(statut=StatutVehicule.EN_MAINTENANCE)
 
     reponse = client.post(
         _url("affecter", mission),
@@ -454,7 +454,7 @@ def test_affecter_un_camion_indisponible_est_refuse(client):
 def test_affecter_une_charge_trop_lourde_affiche_l_erreur_du_service(client):
     _connecte(client, Role.DIRECTION)
     mission = _planifiee(poids_t=Decimal("30"))
-    petit = VehiculeFactory(capacite_charge_t=Decimal("10"))
+    petit = VehiculeEnRegleFactory(capacite_charge_t=Decimal("10"))
 
     reponse = client.post(
         _url("affecter", mission),
@@ -585,7 +585,7 @@ def test_un_parcours_complet_par_l_interface(client):
     admin = Client()
     _connecte(admin, Role.ADMIN)
     societe = ClientFactory()
-    camion, chauffeur = VehiculeFactory(kilometrage=50000), ChauffeurFactory()
+    camion, chauffeur = VehiculeEnRegleFactory(kilometrage=50000), ChauffeurFactory()
 
     charge.post(
         reverse("missions:creer"),

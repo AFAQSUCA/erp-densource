@@ -13,7 +13,7 @@ from rest_framework_simplejwt.tokens import AccessToken
 from apps.accounts.models import Role
 from apps.accounts.tests.factories import UserFactory
 from apps.drivers.tests.factories import ChauffeurFactory
-from apps.fleet.tests.factories import VehiculeFactory
+from apps.fleet.tests.factories import VehiculeEnRegleFactory
 from apps.garage.models import Incident
 from apps.missions.models import StatutMission
 
@@ -263,7 +263,7 @@ def test_plein_avec_donnees_invalides(chauffeur):
 def test_le_chauffeur_ne_declare_pas_de_plein_sur_le_camion_d_un_autre(chauffeur):
     fiche, _, api = chauffeur
     mission_de(fiche)
-    etranger = VehiculeFactory()
+    etranger = VehiculeEnRegleFactory()
 
     reponse = api.post(reverse("api:mobile:pleins"), _plein_corps(vehicule=etranger.pk), format="json")
 
@@ -309,9 +309,9 @@ def test_incident_avec_donnees_invalides_ou_mission_etrangere(chauffeur):
 
 def test_un_chauffeur_ne_voit_pas_les_incidents_d_un_autre(chauffeur):
     fiche, _, api = chauffeur
-    VehiculeFactory(chauffeur_habituel=fiche)
+    VehiculeEnRegleFactory(chauffeur_habituel=fiche)
     autre, compte_autre = chauffeur_avec_compte()
-    VehiculeFactory(chauffeur_habituel=autre)
+    VehiculeEnRegleFactory(chauffeur_habituel=autre)
     _api(compte_autre).post(
         reverse("api:mobile:incidents"),
         {"type_incident": "AUTRE", "gravite": "FAIBLE", "description": "Chez l'autre"}, format="json",

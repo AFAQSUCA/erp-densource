@@ -9,6 +9,11 @@
       </a>
     {% endif %}
   </div>
+  {% if section.contexte.marquage_en_attente %}
+    <p role="status" class="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+      Marqué « {{ section.contexte.marquage_en_attente }} » : il le redeviendra à la clôture du dernier OR, sauf remise en service.
+    </p>
+  {% endif %}
 
   {% if section.contexte.ordres %}
     <ul class="mt-4 divide-y divide-slate-100 text-sm">
