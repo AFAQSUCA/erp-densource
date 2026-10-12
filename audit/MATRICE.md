@@ -14,11 +14,11 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 
 ## Bilan
 
-**440 exigences : 353 ✅, 61 🟡, 11 ❌, 12 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **87,8 %**.
+**440 exigences : 354 ✅, 60 🟡, 11 ❌, 12 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **87,9 %**.
 
 | Bloc | Lignes | ✅ | 🟡 | ❌ | ❓ | ⚪ |
 |---|---|---|---|---|---|---|
-| M1 Sécurité & audit | 77 | 75 | 2 | 0 | 0 | 0 |
+| M1 Sécurité & audit | 77 | 76 | 1 | 0 | 0 | 0 |
 | M2 Flotte | 26 | 18 | 7 | 1 | 0 | 0 |
 | M3 Chauffeurs | 18 | 17 | 1 | 0 | 0 | 0 |
 | M4 Clients | 15 | 14 | 1 | 0 | 0 | 0 |
@@ -35,7 +35,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | Avenants | 17 | 2 | 10 | 5 | 0 | 0 |
 | Écarts d'audit | 22 | 2 | 14 | 2 | 4 | 0 |
 
-**Reprise à M1-76** (première ligne non terminée, dans l'ordre des ID).
+**Reprise à M1-77** (première ligne non terminée, dans l'ordre des ID).
 
 ## Contradictions entre sources (règle 1)
 
@@ -127,7 +127,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M1-73 | M1 l.80 | Conservation ≥ 5 ans | ✅ | Aucune purge applicative ; suppression bloquée (`apps/core/immuable.py`) | — | Fait |
 | M1-74 | M1 l.81 | Consultation par l'ADMIN | ✅ | `apps/audit/permissions.py:10` | — | Fait |
 | M1-75 | M1 l.81 | Lecture seule pour la DIRECTION | ✅ | `apps/audit/views.py` (aucune écriture) | — | Fait |
-| M1-76 | M1 l.82 | Export CSV | 🟡 | `apps/audit/views.py:95` ; neutralisation des formules sur 3 colonnes seulement, sans `iterator()` | Neutraliser toutes les colonnes, itérer | À faire |
+| M1-76 | M1 l.82 | Export CSV | ✅ | `apps/audit/views.py` (`JournalExporterCsvView`) : toutes les cellules neutralisées contre l'injection de formule, lecture par lots (`iterator`) ; test `apps/audit/tests/test_views.py` (`…neutralise_les_formules…`) | Fait | Fait |
 | M1-77 | M1 l.82 | Export PDF | 🟡 | `apps/audit/views.py:71` (impression navigateur) | PDF généré par le serveur | À faire |
 
 ## Module 2 — Flotte & Camions (CDC §3 M2, lignes 86-100)
