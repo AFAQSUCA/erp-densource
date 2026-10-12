@@ -11,6 +11,7 @@ from apps.accounts.models import Role
 from apps.accounts.tests.factories import UserFactory
 from apps.hr import services
 from apps.hr.models import Conge, StatutConge
+from apps.parametres import services as parametres_services
 
 from .factories import PersonnelFactory
 
@@ -458,3 +459,14 @@ def test_le_directeur_valide_lui_meme_sa_demande_de_conge(client):
 
     conge.refresh_from_db()
     assert conge.statut == StatutConge.VALIDATION_N1
+
+
+def test_les_ecrans_annoncent_les_delais_de_validation_des_parametres(client, equipe):
+    parametres_services.modifier_parametres(
+        UserFactory(role=Role.ADMIN), delai_validation_n1_heures=72, delai_validation_n2_heures=12
+    )
+    client.force_login(equipe.compte)
+
+    page = client.get(reverse("hr:conges_liste")).content.decode()
+
+    assert "supérieur hiérarchique (72 h), puis celle de la RH (12 h)" in page

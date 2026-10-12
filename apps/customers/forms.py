@@ -1,10 +1,12 @@
 from django import forms
 from django.utils import timezone
 
+from apps.core.formats import nombre
 from apps.core.forms import StyleTailwindMixin
+from apps.parametres import services as parametres_services
 
 from . import services
-from .models import DELAI_PAIEMENT_DEFAUT, TVA_DEFAUT, MotifExoneration, TypeInteraction
+from .models import MotifExoneration, TypeInteraction
 
 
 def _libelle_compte(u) -> str:
@@ -29,8 +31,6 @@ class ClientForm(StyleTailwindMixin, forms.Form):
         max_value=100,
         max_digits=5,
         decimal_places=2,
-        initial=TVA_DEFAUT,
-        help_text="18 % par défaut ; 0 % pour un client exonéré (motif obligatoire).",
     )
     motif_exoneration = forms.ChoiceField(
         label="Motif d'exonération",
@@ -42,12 +42,19 @@ class ClientForm(StyleTailwindMixin, forms.Form):
         label="Délai de paiement (jours)",
         min_value=1,
         max_value=365,
-        initial=DELAI_PAIEMENT_DEFAUT,
         help_text="L'échéance de ses factures = date d'émission + ce délai.",
     )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        reglages = parametres_services.parametres()  # valeurs proposées à la création (paramètres)
+        tva = reglages.tva_defaut
+        self.fields["taux_tva"].initial = tva
+        self.fields["taux_tva"].help_text = (
+            f"{nombre(tva, 0 if tva == tva.to_integral_value() else 2)} % par défaut ; "
+            "0 % pour un client exonéré (motif obligatoire)."
+        )
+        self.fields["delai_paiement_jours"].initial = reglages.delai_paiement_defaut_jours
         queryset = services.charges_clientele()
         actuel = self.initial.get("charge_clientele")
         if actuel is not None:

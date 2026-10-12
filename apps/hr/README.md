@@ -71,8 +71,17 @@ Interface (`views.py`, `templates/hr/`, montée sous `/rh/`) :
   (`hr.sections.DETAIL_CONGE`), sur les missions planifiées, affectées ou en cours qui ont
   une date de départ prévue.
 
-Pas encore d'écran : licenciement (sortie du personnel), jours fériés (à saisir dans
-l'admin, notamment les fêtes musulmanes), notifications (étape 5).
+Sortie du personnel (`sorties.py`, `avenant-sortie-personnel.md`) : démission, licenciement, fin de contrat,
+retraite, décès, autre. Section « Sortie » de la fiche (RH, DIRECTION, ADMIN ; jamais pour soi-même), date à
+venir possible (préavis). À la date, en une transaction : demandes de congé en attente refusées, congés approuvés
+à venir annulés, équipe rattachée au supérieur du partant, compte désactivé ; signaux `sortie_a_verifier`
+(`missions` refuse tant qu'il est sur la route) et `sortie_appliquee` (`drivers` : fiches inactives ;
+`missions` : missions affectées libérées, Parc Auto prévenu), en `send()` brut. Les sorties échues s'appliquent
+par `manage.py taches_quotidiennes` ; une sortie retenue est réessayée chaque jour et la RH prévenue une fois.
+Annulation avec motif (rien n'est réactivé automatiquement). Liste du personnel : présents par défaut ;
+l'effectif du tableau de bord ne compte plus le personnel sorti.
+
+Pas encore d'écran : jours fériés (à saisir dans l'admin, notamment les fêtes musulmanes).
 
 Événements (`signals.py`) : `conge_soumis`, `conge_valide_n1`, `conge_decide` (approuvé, refusé
 ou annulé) sont émis par les services ; `notifications` s'y abonne. Lectures du tableau de bord :

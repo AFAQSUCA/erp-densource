@@ -1,10 +1,11 @@
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 
+from apps.hr import signals as hr_signals
 from apps.hr.models import Conge, Personnel, StatutConge
 
 from . import services
-from .models import Chauffeur, Copilote
+from .models import Chauffeur, Copilote, StatutChauffeur
 
 
 @receiver(post_save, sender=Personnel)
@@ -50,3 +51,19 @@ def aligner_statut_chauffeur_sur_conge(sender, instance, raw=False, **kwargs):
             services.mettre_copilote_en_conge(copilote)
         else:
             services.rappeler_copilote_de_conge(copilote)
+
+
+@receiver(hr_signals.sortie_appliquee)
+def desactiver_les_fiches_du_sortant(sender, sortie, **kwargs):
+    """Sortie du personnel (hr.sorties) : fiches chauffeur et copilote « Inactif », plus jamais proposées ni
+    affectables. Une mission en cours a déjà bloqué la sortie : la fiche n'est donc pas « En mission »."""
+    bilan = {}
+    fiche = Chauffeur.objects.filter(personnel_id=sortie.employe_id).first()
+    if fiche is not None and fiche.statut != StatutChauffeur.INACTIF:
+        services.changer_statut(fiche, StatutChauffeur.INACTIF)
+        bilan["fiche_chauffeur_inactive"] = True
+    copilote = Copilote.objects.filter(personnel_id=sortie.employe_id).first()
+    if copilote is not None and copilote.statut != StatutChauffeur.INACTIF:
+        services.changer_statut_copilote(copilote, StatutChauffeur.INACTIF)
+        bilan["fiche_copilote_inactive"] = True
+    return bilan

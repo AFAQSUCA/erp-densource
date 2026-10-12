@@ -27,6 +27,7 @@ from apps.drivers import services as drivers_services
 from apps.drivers.models import Chauffeur, Copilote, StatutChauffeur
 from apps.fleet import services as fleet_services
 from apps.fleet.models import StatutVehicule, Vehicule
+from apps.parametres import services as parametres_services
 
 from .exceptions import (
     AffectationImpossible,
@@ -38,7 +39,7 @@ from .exceptions import (
 )
 from . import signals
 from .models import STATUTS_ACTIFS, STATUTS_MODIFIABLES, Mission, StatutMission
-from .signals import mission_affectee, mission_demarree
+from .signals import mission_affectee, mission_demarree, mission_desaffectee
 
 PREFIXE_NUMERO = "MIS"
 # Sans caractères ambigus (0/O, 1/I) : les codes se dictent au téléphone.
@@ -238,6 +239,41 @@ def chauffeur_a_mission_active(chauffeur: Chauffeur, *, sauf: Mission | None = N
 
 def copilote_a_mission_active(copilote: Copilote, *, sauf: Mission | None = None) -> bool:
     return _missions_actives(sauf).filter(copilote=copilote).exists()
+
+
+# --- sortie du personnel (hr.sorties, avenant-sortie-personnel.md) ---
+
+STATUTS_EN_ROUTE = (StatutMission.EN_COURS_DEPART, StatutMission.EN_COURS_COLIS_RECUPERE)
+
+
+def missions_en_route_du_personnel(personnel_id: int) -> QuerySet[Mission]:
+    """Missions parties que cet employé conduit ou accompagne : elles bloquent sa sortie."""
+    return Mission.objects.filter(statut__in=STATUTS_EN_ROUTE).filter(
+        Q(chauffeur__personnel_id=personnel_id) | Q(copilote__personnel_id=personnel_id)
+    )
+
+
+@transaction.atomic
+def liberer_missions_du_partant(personnel_id: int, *, motif: str) -> dict:
+    """Missions « Affectées » (pas encore parties) d'un employé qui sort : s'il en est le chauffeur, la mission
+    repasse « Planifiée » sans camion, chauffeur ni copilote (camion libéré) et le Parc Auto est prévenu pour la
+    réaffecter ; s'il en est le copilote, il en est seulement retiré."""
+    desaffectees, sans_copilote = [], []
+    for mission in Mission.objects.select_for_update().filter(
+        statut=StatutMission.AFFECTEE, chauffeur__personnel_id=personnel_id
+    ):
+        mission.vehicule = mission.chauffeur = mission.copilote = None
+        mission.statut = StatutMission.PLANIFIEE
+        mission.save(update_fields=["vehicule", "chauffeur", "copilote", "statut", "updated_at"])
+        signals.emettre(mission_desaffectee, mission=mission, motif=motif)
+        desaffectees.append(mission.numero)
+    for mission in Mission.objects.select_for_update().filter(
+        statut=StatutMission.AFFECTEE, copilote__personnel_id=personnel_id
+    ):
+        mission.copilote = None
+        mission.save(update_fields=["copilote", "updated_at"])
+        sans_copilote.append(mission.numero)
+    return {"missions_desaffectees": desaffectees, "missions_sans_copilote": sans_copilote}
 
 
 # --- cycle de vie ---
@@ -555,10 +591,11 @@ def livrer_mission(mission: Mission, *, code: str, km_arrivee: int) -> Mission:
             f"Le kilométrage d'arrivée ({km_arrivee}) est inférieur au départ "
             f"({mission.km_depart})."
         )
-    if not fleet_services.distance_plausible(mission.km_depart, km_arrivee):
+    ecart_max = parametres_services.parametres().ecart_km_max
+    if not fleet_services.distance_plausible(mission.km_depart, km_arrivee, ecart_max=ecart_max):
         raise KilometrageInvalide(
             f"Le kilométrage d'arrivée ({km_arrivee}) est {km_arrivee - mission.km_depart} km au-dessus du "
-            f"départ ({mission.km_depart}) : plus de {fleet_services.ECART_KM_MAX} km sur une mission, "
+            f"départ ({mission.km_depart}) : plus de {ecart_max} km sur une mission, "
             "vérifiez la saisie (le compteur du camion ne peut plus reculer ensuite)."
         )
     vehicule = _recharger(mission.vehicule)

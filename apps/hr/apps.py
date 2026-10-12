@@ -11,9 +11,10 @@ class HrConfig(AppConfig):
         from apps.audit.registry import audit_model
 
         from . import permissions
-        from .models import AttributionConge, Conge, Personnel
+        from .models import AttributionConge, Conge, Personnel, SortiePersonnel
 
         audit_model(Personnel, module="RH")
+        audit_model(SortiePersonnel, module="RH")
         audit_model(Conge, module="RH", validation=("statut", ("VALIDATION_N1", "APPROUVE")))
         audit_model(AttributionConge, module="RH")
         enregistrer(

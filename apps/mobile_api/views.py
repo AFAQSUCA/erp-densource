@@ -189,9 +189,9 @@ class CongesView(ChauffeurAPIView):
 
     @extend_schema(
         tags=TAG, summary="Demander un congé",
-        description="Le supérieur hiérarchique valide en N1 (48 h), puis la RH en N2 (24 h). Refusé si le "
-                    "solde est insuffisant, si la période chevauche un autre congé ou si aucun supérieur "
-                    "n'est renseigné.",
+        description="Le supérieur hiérarchique valide en N1 puis la RH en N2 (délais des paramètres, 48 h et "
+                    "24 h par défaut). Refusé si le solde est insuffisant, si la période chevauche un autre "
+                    "congé ou si aucun supérieur n'est renseigné.",
         request=CongeEntreeSerializer, responses={201: CongeSerializer},
     )
     def post(self, request):

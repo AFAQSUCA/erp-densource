@@ -1,9 +1,16 @@
 from django import forms
 from django.utils import timezone
 
+from apps.core.formats import nombre
 from apps.core.forms import StyleTailwindMixin
 from apps.drivers import services as drivers_services
 from apps.fleet import services as fleet_services
+from apps.parametres import services as parametres_services
+
+
+def _seuil(valeur) -> str:
+    """Seuil lisible : « 20 », ou « 20,50 » s'il a des décimales."""
+    return nombre(valeur, 0 if valeur == valeur.to_integral_value() else 2)
 
 
 def _libelle_camion(v):
@@ -51,14 +58,21 @@ class PleinForm(StyleTailwindMixin, forms.Form):
 class FiltrePleinsForm(StyleTailwindMixin, forms.Form):
     """Filtres de la liste (GET). Une valeur invalide est simplement ignorée."""
 
-    ALERTES = [
-        ("", "Toutes"),
-        ("A_SURVEILLER", "À surveiller (toutes alertes)"),
-        ("JAUNE", "Alerte jaune (> +20 %)"),
-        ("ROUGE", "Alerte rouge (> +40 %)"),
-        ("ANOMALIE", "Anomalie (> 45 ou < 20 L/100 km)"),
-        ("SAISIE", "Saisie suspecte confirmée"),
-    ]
+    @staticmethod
+    def alertes() -> list[tuple[str, str]]:
+        """Choix du filtre « Alerte », libellés avec les seuils en vigueur (paramètres)."""
+        p = parametres_services.parametres()
+        return [
+            ("", "Toutes"),
+            ("A_SURVEILLER", "À surveiller (toutes alertes)"),
+            ("JAUNE", f"Alerte jaune (> +{_seuil(p.seuil_conso_jaune_pct)} %)"),
+            ("ROUGE", f"Alerte rouge (> +{_seuil(p.seuil_conso_rouge_pct)} %)"),
+            (
+                "ANOMALIE",
+                f"Anomalie (> {_seuil(p.conso_max_l100)} ou < {_seuil(p.conso_min_l100)} L/100 km)",
+            ),
+            ("SAISIE", "Saisie suspecte confirmée"),
+        ]
 
     q = forms.CharField(label="Rechercher", required=False)
     vehicule = forms.ModelChoiceField(label="Camion", queryset=None, required=False, empty_label="Tous")
@@ -69,10 +83,11 @@ class FiltrePleinsForm(StyleTailwindMixin, forms.Form):
     date_fin = forms.DateField(
         label="Au", required=False, widget=forms.DateInput(attrs={"type": "date"})
     )
-    alerte = forms.ChoiceField(label="Alerte", choices=ALERTES, required=False)
+    alerte = forms.ChoiceField(label="Alerte", choices=(), required=False)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields["alerte"].choices = self.alertes()
         self.fields["vehicule"].queryset = fleet_services.vehicules_queryset().order_by(
             "immatriculation"
         )

@@ -9,8 +9,8 @@ class NiveauAlerte(models.TextChoices):
     """Alerte de surconsommation — cahier-des-charges.md:152-155."""
 
     AUCUNE = "AUCUNE", _("Aucune")
-    JAUNE = "JAUNE", _("Jaune (> +20 %)")
-    ROUGE = "ROUGE", _("Rouge (> +40 %)")
+    JAUNE = "JAUNE", _("Jaune")  # seuils : paramètres (cahier des charges : > +20 %)
+    ROUGE = "ROUGE", _("Rouge")  # cahier des charges : > +40 %
 
 
 class Plein(BaseModel):
@@ -78,10 +78,10 @@ class Plein(BaseModel):
         default=NiveauAlerte.AUCUNE,
     )
     alerte_saisie = models.BooleanField(
-        _("alerte de saisie (écart > ±60 %)"), default=False
+        _("alerte de saisie (écart suspect)"), default=False
     )
     anomalie = models.BooleanField(
-        _("anomalie (> 45 ou < 20 L/100 km)"), default=False
+        _("anomalie (consommation hors plage plausible)"), default=False
     )
 
     class Meta:

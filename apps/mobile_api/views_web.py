@@ -29,6 +29,7 @@ from apps.billing.exceptions import BillingError
 from apps.garage.exceptions import GarageError
 from apps.hr.exceptions import CongeError
 from apps.missions.exceptions import MissionError
+from apps.parametres import services as parametres_services
 
 from . import services
 from .exceptions import MissionIntrouvable, MobileError
@@ -377,7 +378,8 @@ class CongesView(ChauffeurRequisMixin, TemplateView):
         messages.success(
             request,
             f"Demande envoyée : {conge.jours} jour{pluriel} ouvré{pluriel}. "
-            "Votre supérieur doit la valider sous 48 h, puis la RH.",
+            f"Votre supérieur doit la valider sous {parametres_services.parametres().delai_validation_n1_heures} h, "
+            "puis la RH.",
         )
         return redirect("chauffeur:conges")
 

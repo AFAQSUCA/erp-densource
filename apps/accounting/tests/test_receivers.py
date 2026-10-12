@@ -7,7 +7,7 @@ from decimal import Decimal
 import pytest
 
 from apps.accounting.constants import COMPTE_CLIENTS, COMPTE_TVA_COLLECTEE, COMPTE_VENTES_TRANSPORT
-from apps.accounting.models import EcritureComptable, Journal, SensEcriture
+from apps.accounting.models import EcritureComptable, Journal, LigneEcriture, SensEcriture
 from apps.billing import services as billing_services
 from apps.billing.models import CategorieDepense, ModePaiement, OrigineDepense
 from apps.billing.tests.helpers import a_valider, direction, emise, finances
@@ -229,8 +229,25 @@ def test_changer_le_mode_reclasse_la_tresorerie():
     reclassements = EcritureComptable.objects.filter(journal=Journal.OPERATIONS_DIVERSES)
     ecriture = reclassements.latest("pk")
     lignes = {l.compte.numero: (l.sens, l.montant) for l in ecriture.lignes.all()}
-    assert lignes["521000"] == (SensEcriture.DEBIT, Decimal("50000"))
-    assert lignes["571000"] == (SensEcriture.CREDIT, Decimal("50000"))
+    # Audit AV-04 : on rend l'argent à l'ancien compte (débit) et on le sort du nouveau (crédit).
+    assert lignes["571000"] == (SensEcriture.DEBIT, Decimal("50000"))
+    assert lignes["521000"] == (SensEcriture.CREDIT, Decimal("50000"))
+    assert ecriture.piece_reference == depense.reference
+
+
+def test_apres_reclassement_la_sortie_est_portee_par_le_nouveau_compte_seulement():
+    depense = _depense_automatique(1006)  # ESPECES -> 571000 par défaut
+
+    billing_services.changer_mode_depense(depense, finances(), mode=ModePaiement.VIREMENT)
+
+    def solde(numero):  # débit - crédit, toutes écritures confondues
+        lignes = LigneEcriture.objects.filter(compte__numero=numero)
+        debit = sum((l.montant for l in lignes if l.sens == SensEcriture.DEBIT), Decimal("0"))
+        credit = sum((l.montant for l in lignes if l.sens == SensEcriture.CREDIT), Decimal("0"))
+        return debit - credit
+
+    assert solde("571000") == Decimal("0")  # la caisse n'a finalement rien payé
+    assert solde("521000") == Decimal("-50000")  # la banque a payé la dépense
 
 
 def test_changer_le_mode_vers_le_meme_compte_de_tresorerie_ne_reclasse_rien():

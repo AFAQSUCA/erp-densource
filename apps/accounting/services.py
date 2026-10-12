@@ -412,10 +412,18 @@ def comptabiliser_une_depense_automatique(depense) -> EcritureComptable:
     )
 
 
+LIBELLE_RECLASSEMENT = "Reclassement de trésorerie — "
+# Libellé des reclassements passés à l'envers avant la correction de l'audit AV-04 : un libellé distinct permet de
+# les retrouver sans confusion possible avec les reclassements corrects (voir ``reclassements_inverses``).
+LIBELLE_RECLASSEMENT_INVERSE = "Reclassement du mode de paiement — "
+
+
 def reclasser_mode_depense(depense, ancien_mode: str) -> EcritureComptable | None:
     """Corrige le compte de trésorerie d'une dépense automatique après coup (Finance corrige le
-    mode réel via ``billing.services.changer_mode_depense``) : contre-passe l'ancien compte,
-    impute le nouveau, plutôt que de modifier l'écriture d'origine (append-only). Ne crée rien si
+    mode réel via ``billing.services.changer_mode_depense``) : l'écriture d'origine a crédité
+    l'ancien compte de trésorerie (sortie d'argent) ; le reclassement le **débite** (on lui rend la
+    somme) et **crédite** le nouveau (c'est lui qui a payé), plutôt que de modifier l'écriture
+    d'origine (append-only). Ne crée rien si
     l'ancien et le nouveau mode partagent le même compte de trésorerie (ex. virement → chèque,
     tous deux Banque).
 
@@ -428,12 +436,12 @@ def reclasser_mode_depense(depense, ancien_mode: str) -> EcritureComptable | Non
         return None
     lignes = [
         LigneSaisie(
-            compte=COMPTE_TRESORERIE_VERS_COMPTE[nouveau_compte_tresorerie],
+            compte=COMPTE_TRESORERIE_VERS_COMPTE[ancien_compte_tresorerie],
             sens=SensEcriture.DEBIT,
             montant=depense.montant,
         ),
         LigneSaisie(
-            compte=COMPTE_TRESORERIE_VERS_COMPTE[ancien_compte_tresorerie],
+            compte=COMPTE_TRESORERIE_VERS_COMPTE[nouveau_compte_tresorerie],
             sens=SensEcriture.CREDIT,
             montant=depense.montant,
         ),
@@ -441,8 +449,57 @@ def reclasser_mode_depense(depense, ancien_mode: str) -> EcritureComptable | Non
     return passer_ecriture(
         journal=Journal.OPERATIONS_DIVERSES,
         date_ecriture=timezone.localdate(),
-        libelle=f"Reclassement du mode de paiement — {depense.libelle}",
+        libelle=f"{LIBELLE_RECLASSEMENT}{depense.libelle}"[:255],
         lignes=lignes,
+        piece_reference=depense.reference,
+    )
+
+
+ORIGINE_CORRECTION_RECLASSEMENT = "CORRECTION_RECLASSEMENT"
+
+
+def reclassements_inverses() -> QuerySet[EcritureComptable]:
+    """Reclassements passés **à l'envers** avant la correction de l'audit AV-04 (débit du nouveau compte, crédit de
+    l'ancien) et pas encore corrigés. On les reconnaît à leur libellé : depuis la correction, un reclassement
+    s'intitule ``LIBELLE_RECLASSEMENT``."""
+    corriges = EcritureComptable.objects.filter(origine=ORIGINE_CORRECTION_RECLASSEMENT).values("origine_id")
+    return (
+        EcritureComptable.objects.filter(
+            journal=Journal.OPERATIONS_DIVERSES,
+            statut=StatutEcriture.VALIDEE,
+            origine="",
+            libelle__startswith=LIBELLE_RECLASSEMENT_INVERSE,
+        )
+        .exclude(pk__in=corriges)
+        .order_by("pk")
+    )
+
+
+@transaction.atomic
+def corriger_reclassement_inverse(ecriture: EcritureComptable) -> EcritureComptable:
+    """Corrige un reclassement passé à l'envers sans rien effacer (append-only) : une contre-passation l'annule,
+    puis le bon reclassement est passé (débit de l'ancien compte, crédit du nouveau), tous deux datés du jour.
+    Idempotente : le bon reclassement porte ``origine`` = ``CORRECTION_RECLASSEMENT`` et ``origine_id`` = l'écriture
+    fausse ; une contre-passation déjà faite à la main est réutilisée."""
+    lignes = list(ecriture.lignes.select_related("compte"))
+    debits = [l for l in lignes if l.sens == SensEcriture.DEBIT]
+    credits = [l for l in lignes if l.sens == SensEcriture.CREDIT]
+    if len(debits) != 1 or len(credits) != 1:
+        raise ContrePassationImpossible(
+            f"L'écriture {ecriture.numero} n'a pas la forme d'un reclassement (un débit, un crédit) : à corriger à la main."
+        )
+    contre_passer(ecriture, motif="reclassement passé à l'envers, audit AV-04")
+    nouveau, ancien = debits[0], credits[0]  # sens faux : le nouveau compte avait été débité
+    return passer_ecriture(
+        journal=Journal.OPERATIONS_DIVERSES,
+        date_ecriture=timezone.localdate(),
+        libelle=f"Reclassement corrigé ({ecriture.numero}) — {ecriture.libelle.removeprefix(LIBELLE_RECLASSEMENT_INVERSE)}"[:255],
+        lignes=[
+            LigneSaisie(compte=ancien.compte.numero, sens=SensEcriture.DEBIT, montant=ancien.montant),
+            LigneSaisie(compte=nouveau.compte.numero, sens=SensEcriture.CREDIT, montant=nouveau.montant),
+        ],
+        origine=ORIGINE_CORRECTION_RECLASSEMENT,
+        origine_id=ecriture.pk,
     )
 
 

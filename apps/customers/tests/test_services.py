@@ -11,6 +11,7 @@ from apps.accounts.tests.factories import UserFactory
 from apps.customers import services
 from apps.customers.exceptions import ClientError
 from apps.customers.models import Client, Interaction, MotifExoneration, TypeInteraction
+from apps.parametres import services as parametres_services
 
 from .factories import ClientFactory
 
@@ -218,3 +219,24 @@ def test_modifier_le_delai_de_paiement():
 
     client.refresh_from_db()
     assert client.delai_paiement_jours == 60
+
+
+def test_un_nouveau_client_recoit_la_tva_et_le_delai_des_parametres():
+    # Audit M1-10 / M9-08 : TVA « niveau système » et délai de paiement réglés dans l'écran « Paramètres ».
+    parametres_services.modifier_parametres(
+        UserFactory(role=Role.ADMIN), tva_defaut=Decimal("9"), delai_paiement_defaut_jours=45
+    )
+
+    client = services.creer_client(**_champs())
+
+    assert (client.taux_tva, client.delai_paiement_jours) == (Decimal("9.00"), 45)
+
+
+def test_un_changement_de_parametre_ne_touche_pas_les_clients_existants():
+    client = services.creer_client(**_champs())
+    parametres_services.modifier_parametres(UserFactory(role=Role.ADMIN), tva_defaut=Decimal("9"))
+
+    services.modifier_client(client, telephone="+2250101010101")
+
+    client.refresh_from_db()
+    assert client.taux_tva == Decimal("18.00")

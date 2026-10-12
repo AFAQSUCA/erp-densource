@@ -4,7 +4,8 @@
 
 Alertes (écart de la conso à la moyenne des 3 derniers pleins) :
 jaune > +20 %, rouge > +40 %, alerte de saisie > ±60 %. Anomalie : conso
-> 45 ou < 20 L/100 km. Tous les seuils sont stricts (« > »).
+> 45 ou < 20 L/100 km. Tous les seuils sont stricts (« > »). Ces valeurs du cahier des charges sont celles
+par défaut : les seuils en vigueur se lisent dans les paramètres (``apps.parametres``).
 """
 
 from __future__ import annotations
@@ -21,6 +22,8 @@ from apps.core.search import filtrer_par_texte
 from apps.drivers.models import Chauffeur
 from apps.fleet import services as fleet_services
 from apps.fleet.models import Vehicule
+from apps.parametres import services as parametres_services
+from apps.parametres.models import Parametres
 
 from .exceptions import (
     HorsChronologie,
@@ -34,11 +37,6 @@ from .signals import alerte_consommation, plein_enregistre
 
 CENTIME = Decimal("0.01")
 NB_PLEINS_REFERENCE = 3
-SEUIL_JAUNE = Decimal("20")
-SEUIL_ROUGE = Decimal("40")
-SEUIL_SAISIE = Decimal("60")
-CONSO_MAX = Decimal("45")
-CONSO_MIN = Decimal("20")
 
 logger = logging.getLogger(__name__)
 
@@ -69,26 +67,29 @@ def moyenne_reference(vehicule: Vehicule) -> Decimal | None:
 
 
 def evaluer_ecart(
-    consommation: Decimal, moyenne: Decimal
+    consommation: Decimal, moyenne: Decimal, *, reglages: Parametres | None = None
 ) -> tuple[Decimal, str, bool]:
-    """Retourne ``(écart %, niveau d'alerte, alerte de saisie)``.
+    """Retourne ``(écart %, niveau d'alerte, alerte de saisie)``, selon les seuils des paramètres
+    (``reglages`` : déjà lus par l'appelant, sinon relus ici).
 
-    Les deux alertes sont indépendantes : un écart de +65 % est à la fois
+    Les deux alertes sont indépendantes : avec les seuils du cahier des charges, un écart de +65 % est à la fois
     rouge (> +40 %) et une alerte de saisie (> ±60 %).
     """
+    reglages = reglages or parametres_services.parametres()
     ecart = (consommation - moyenne) / moyenne * 100
-    if ecart > SEUIL_ROUGE:
+    if ecart > reglages.seuil_conso_rouge_pct:
         niveau = NiveauAlerte.ROUGE
-    elif ecart > SEUIL_JAUNE:
+    elif ecart > reglages.seuil_conso_jaune_pct:
         niveau = NiveauAlerte.JAUNE
     else:
         niveau = NiveauAlerte.AUCUNE
-    return ecart.quantize(CENTIME, rounding=ROUND_HALF_UP), niveau, abs(ecart) > SEUIL_SAISIE
+    return ecart.quantize(CENTIME, rounding=ROUND_HALF_UP), niveau, abs(ecart) > reglages.seuil_conso_saisie_pct
 
 
-def est_anomalie(consommation: Decimal) -> bool:
-    """Consommation hors de la plage plausible 20-45 L/100 km."""
-    return consommation > CONSO_MAX or consommation < CONSO_MIN
+def est_anomalie(consommation: Decimal, *, reglages: Parametres | None = None) -> bool:
+    """Consommation hors de la plage plausible des paramètres (20-45 L/100 km dans le cahier des charges)."""
+    reglages = reglages or parametres_services.parametres()
+    return consommation > reglages.conso_max_l100 or consommation < reglages.conso_min_l100
 
 
 @transaction.atomic
@@ -138,9 +139,10 @@ def enregistrer_plein(
         Plein.objects.filter(vehicule=vehicule).order_by("-date_plein", "-pk").first()
     )
     champs_calcules: dict = {}
+    reglages = parametres_services.parametres()
     if precedent is None and vehicule.kilometrage > 0:
         # Premier plein enregistré : on se repère sur le compteur du camion (0 = jamais renseigné, rien à vérifier).
-        _exiger_distance_plausible(vehicule.kilometrage, km_compteur)
+        _exiger_distance_plausible(vehicule.kilometrage, km_compteur, reglages)
     if precedent is not None:
         if date_plein < precedent.date_plein:
             raise HorsChronologie(
@@ -153,17 +155,17 @@ def enregistrer_plein(
                 f"précédent ({precedent.km_compteur})."
             )
         distance = km_compteur - precedent.km_compteur
-        _exiger_distance_plausible(precedent.km_compteur, km_compteur)
+        _exiger_distance_plausible(precedent.km_compteur, km_compteur, reglages)
         consommation = calculer_consommation(quantite_litres, distance)
         champs_calcules.update(
             km_precedent=precedent.km_compteur,
             distance_km=distance,
             consommation=consommation,
-            anomalie=est_anomalie(consommation),
+            anomalie=est_anomalie(consommation, reglages=reglages),
         )
         moyenne = moyenne_reference(vehicule)
         if moyenne is not None and moyenne > 0:
-            ecart, niveau, saisie_suspecte = evaluer_ecart(consommation, moyenne)
+            ecart, niveau, saisie_suspecte = evaluer_ecart(consommation, moyenne, reglages=reglages)
             if saisie_suspecte and not confirmer_alerte_saisie:
                 raise SaisieSuspecte(ecart, consommation, moyenne)
             champs_calcules.update(
@@ -196,13 +198,13 @@ def enregistrer_plein(
     return plein
 
 
-def _exiger_distance_plausible(depuis_km: int, jusqu_a_km: int) -> None:
+def _exiger_distance_plausible(depuis_km: int, jusqu_a_km: int, reglages: Parametres) -> None:
     """Refuse un km compteur très au-dessus du relevé précédent : une faute de frappe gonflerait le compteur du
     camion de façon irréversible (``fleet.services.enregistrer_kilometrage``)."""
-    if not fleet_services.distance_plausible(depuis_km, jusqu_a_km):
+    if not fleet_services.distance_plausible(depuis_km, jusqu_a_km, ecart_max=reglages.ecart_km_max):
         raise KilometrageInvalide(
             f"Le km compteur ({jusqu_a_km}) est {jusqu_a_km - depuis_km} km au-dessus du relevé précédent "
-            f"({depuis_km}) : plus de {fleet_services.ECART_KM_MAX} km entre deux relevés, vérifiez la saisie."
+            f"({depuis_km}) : plus de {reglages.ecart_km_max} km entre deux relevés, vérifiez la saisie."
         )
 
 
@@ -332,6 +334,7 @@ def _consommation_par_groupe(cle: str, *libelles: str) -> list[dict]:
         g["distance"] += distance
         g["pleins"] += 1
     moyenne_flotte = consommation_moyenne()
+    reglages = parametres_services.parametres()  # une lecture pour tous les groupes
     resultat = []
     for g in groupes.values():
         g["consommation"] = calculer_consommation(g["litres"], g["distance"])
@@ -342,7 +345,7 @@ def _consommation_par_groupe(cle: str, *libelles: str) -> list[dict]:
             if moyenne_flotte
             else None
         )
-        g["anomalie"] = est_anomalie(g["consommation"])
+        g["anomalie"] = est_anomalie(g["consommation"], reglages=reglages)
         resultat.append(g)
     return sorted(resultat, key=lambda g: g["consommation"], reverse=True)
 

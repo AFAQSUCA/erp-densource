@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block titre %}Sauvegardes{% endblock %}
+{% block entete %}Administration{% endblock %}
+{% block head_extra %}{% if rafraichir %}<meta http-equiv="refresh" content="20">{% endif %}{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-5xl">
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <div>
+      <h1 class="text-2xl font-bold text-slate-900">Sauvegardes</h1>
+      <p class="mt-1 text-sm text-slate-600">
+        Chaque nuit, la base et les fichiers déposés (justificatifs, pièces jointes) sont sauvegardés et chiffrés par le
+        service de sauvegarde du serveur. Les fichiers chiffrés restent sur le serveur (et sa copie hors serveur si elle
+        est configurée) : ils ne se téléchargent pas depuis l'ERP.
+      </p>
+    </div>
+    {% if peut_demander %}
+      <form method="post">
+        {% csrf_token %}
+        <button type="submit" {% if en_cours or demande %}disabled aria-disabled="true"{% endif %}
+                class="inline-flex items-center gap-2 rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-400">
+          <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> Sauvegarder maintenant
+        </button>
+      </form>
+    {% endif %}
+  </div>
+
+  {% if en_cours %}
+    <p role="status" class="mt-5 rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900">
+      <i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>
+      Sauvegarde en cours depuis {{ en_cours.debut|date:"H:i" }} ({{ en_cours.declencheur }}). Cette page se met à jour toute seule.
+    </p>
+  {% elif demande %}
+    <p role="status" class="mt-5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+      Sauvegarde demandée à {{ demande.depuis|date:"H:i" }}{% if demande.par %} par {{ demande.par }}{% endif %} : elle démarre dans la minute.
+      {% if demande.depuis %}Si rien ne se passe après quelques minutes, le service de sauvegarde ne tourne pas (<code>docker compose ps sauvegarde</code>).{% endif %}
+    </p>
+  {% endif %}
+
+  {% if alerte %}
+    <p role="alert" class="mt-5 rounded-lg border {% if alerte.niveau == 'URGENT' %}border-red-300 bg-red-50 text-red-900{% else %}border-amber-300 bg-amber-50 text-amber-900{% endif %} px-4 py-3 text-sm">
+      <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> Attention : {{ alerte.detail }}.
+    </p>
+  {% endif %}
+
+  <section class="mt-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="titre-derniere">
+    <h2 id="titre-derniere" class="text-base font-semibold text-slate-900">Dernière sauvegarde réussie</h2>
+    {% if derniere %}
+      <p class="mt-2 text-sm text-slate-700">
+        Le {{ derniere.fin|date:"d/m/Y à H:i" }} ({{ derniere.declencheur }}){% if derniere.statut == "ALERTE" %} — <strong class="text-amber-800">{{ derniere.message }}</strong>{% endif %}.
+      </p>
+    {% else %}
+      <p class="mt-2 text-sm text-slate-700">Aucune sauvegarde réussie n'est enregistrée{% if not surveillees %} (le service de sauvegarde ne tourne qu'en production){% endif %}.</p>
+    {% endif %}
+  </section>
+
+  <section class="mt-6" aria-labelledby="titre-journal">
+    <h2 id="titre-journal" class="text-base font-semibold text-slate-900">Derniers essais</h2>
+    {% if essais %}
+      <div class="mt-3 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+        <table class="min-w-full divide-y divide-slate-200 text-sm">
+          <caption class="sr-only">Journal des sauvegardes, du plus récent au plus ancien</caption>
+          <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+            <tr>
+              <th scope="col" class="px-4 py-2">Fin</th>
+              <th scope="col" class="px-4 py-2">Résultat</th>
+              <th scope="col" class="px-4 py-2">Origine</th>
+              <th scope="col" class="px-4 py-2">Base</th>
+              <th scope="col" class="px-4 py-2">Fichiers</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            {% for essai in essais %}
+              <tr>
+                <td class="whitespace-nowrap px-4 py-2 text-slate-800">{{ essai.fin|date:"d/m/Y H:i" }}</td>
+                <td class="px-4 py-2">
+                  {% if essai.statut == "OK" %}<span class="font-medium text-emerald-800">Réussie</span>
+                  {% elif essai.statut == "ALERTE" %}<span class="font-medium text-amber-800">Réussie, copie hors serveur échouée</span>
+                  {% else %}<span class="font-semibold text-red-800">Échec</span>{% endif %}
+                  {% if essai.statut == "ECHEC" and essai.message %}<span class="block text-xs text-slate-600">{{ essai.message }}</span>{% endif %}
+                </td>
+                <td class="px-4 py-2 text-slate-700">{{ essai.declencheur }}</td>
+                {% include "sauvegardes/_fichier.html" with fichier=essai.base %}
+                {% include "sauvegardes/_fichier.html" with fichier=essai.medias %}
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="mt-2 text-sm text-slate-600">Aucun essai enregistré pour l'instant.</p>
+    {% endif %}
+  </section>
+
+  <p class="mt-6 text-xs text-slate-600">
+    Une sauvegarde n'est fiable que si sa restauration a été essayée : une fois par mois, restaurer la dernière dans une
+    base à part (GUIDE-DEPLOIEMENT.md, « Tester une restauration »).
+  </p>
+</div>
+{% endblock %}

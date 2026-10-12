@@ -6,6 +6,7 @@ db.sqlite3
 test_db.sqlite3
 .env
 media/
+/sauvegardes/
 staticfiles/
 *.log
 .pytest_cache/

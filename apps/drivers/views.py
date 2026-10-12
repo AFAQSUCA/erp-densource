@@ -11,6 +11,7 @@ from django.views.generic import DetailView, FormView, ListView
 
 from apps.accounts.mixins import RoleRequiredMixin
 from apps.core.views import ImpressionListeMixin, PaginationTolerante
+from apps.parametres import services as parametres_services
 
 from . import permissions, services
 from .exceptions import ChauffeurError
@@ -33,13 +34,14 @@ class ChauffeurListView(PaginationTolerante, RoleRequiredMixin, ListView):
 
     def get_context_data(self, **kwargs):
         contexte = super().get_context_data(**kwargs)
+        jours = parametres_services.delai_alerte()
         contexte.update(
             statuts=StatutChauffeur.choices,
             statut_choisi=self.request.GET.get("statut", ""),
             recherche=self.request.GET.get("q", ""),
             alerte=self.request.GET.get("alerte") == "1",
             lignes=[
-                {"chauffeur": c, "echeances": services.etat_echeances(c)}
+                {"chauffeur": c, "echeances": services.etat_echeances(c, jours=jours)}
                 for c in contexte["page_obj"]
             ],
         )
@@ -82,8 +84,10 @@ class ChauffeurDetailView(RoleRequiredMixin, DetailView):
         contexte = super().get_context_data(**kwargs)
         chauffeur = self.object
         peut_modifier = self.request.user.role_effectif in permissions.MODIFICATION
+        jours = parametres_services.delai_alerte()
         contexte.update(
-            echeances=services.etat_echeances(chauffeur),
+            echeances=services.etat_echeances(chauffeur, jours=jours),
+            delai_alerte=jours,
             peut_modifier=peut_modifier,
             statut_verrouille=chauffeur.statut in services.STATUTS_VERROUILLES,
             form_statut=StatutForm(initial={"statut": chauffeur.statut})

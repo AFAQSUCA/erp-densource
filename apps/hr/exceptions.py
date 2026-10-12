@@ -1,3 +1,6 @@
+from apps.core.exceptions import ErreurMetier
+
+
 class CongeError(Exception):
     """Erreur métier du workflow de congés (traduite en 400/403/409 par l'API)."""
 
@@ -16,6 +19,11 @@ class ActionNonAutorisee(CongeError):
 
 class PersonnelError(Exception):
     """Erreur métier sur la fiche du personnel (matricule, hiérarchie, compte)."""
+
+
+class SortieImpossible(PersonnelError, ErreurMetier):
+    """Sortie d'un employé refusée (droits, sortie déjà enregistrée, mission en cours…) : message affichable,
+    y compris quand elle est refusée par une autre app (``missions``) à travers le signal de vérification."""
 
 
 class ImportPersonnelError(Exception):

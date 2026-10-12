@@ -3,8 +3,8 @@ from django.utils import timezone
 
 from apps.core.forms import StyleTailwindMixin
 
-from . import services
-from .models import Departement, Personnel, POSTES_COURANTS
+from . import services, sorties
+from .models import Departement, MotifSortie, Personnel, POSTES_COURANTS
 
 POSTE_AUTRE = "AUTRE"
 
@@ -94,6 +94,28 @@ class AttributionForm(StyleTailwindMixin, forms.Form):
         self.fields["annee"].initial = timezone.localdate().year
 
 
+class SortieForm(StyleTailwindMixin, forms.Form):
+    """Sortie d'un employé : la date peut être à venir (préavis), le commentaire est obligatoire pour « Autre »."""
+
+    date_sortie = forms.DateField(
+        label="Date de sortie (dernier jour)", widget=forms.DateInput(attrs={"type": "date"})
+    )
+    motif = forms.ChoiceField(label="Motif", choices=[("", "—")] + MotifSortie.choices)
+    commentaire = forms.CharField(
+        label="Commentaire", required=False, widget=forms.Textarea(attrs={"rows": 2})
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["date_sortie"].initial = timezone.localdate()
+
+
+class AnnulationSortieForm(StyleTailwindMixin, forms.Form):
+    motif = forms.CharField(
+        label="Motif de l'annulation", widget=forms.Textarea(attrs={"rows": 2})
+    )
+
+
 def _libelle_employe(p: Personnel) -> str:
     return f"{p.prenom} {p.nom} ({p.matricule})"
 
@@ -149,7 +171,12 @@ class PersonnelForm(StyleTailwindMixin, forms.Form):
     def __init__(self, *args, personnel: Personnel | None = None, **kwargs):
         super().__init__(*args, **kwargs)
         self.personnel = personnel
-        superieurs = services.personnel_queryset().order_by("nom", "prenom")
+        superieurs = sorties.presents(services.personnel_queryset())
+        if personnel is not None and personnel.superieur_id:
+            # Le supérieur actuel reste proposé même s'il est sorti depuis : sinon l'enregistrement le remplaçait
+            # en silence par « aucun ».
+            superieurs = superieurs | services.personnel_queryset().filter(pk=personnel.superieur_id)
+        superieurs = superieurs.order_by("nom", "prenom")
         if personnel is not None:
             superieurs = superieurs.exclude(pk=personnel.pk)
             del self.fields["date_embauche"]

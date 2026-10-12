@@ -66,6 +66,8 @@ LOCAL_APPS = [
     "apps.finance",
     "apps.accounting",
     "apps.importation",
+    "apps.parametres",
+    "apps.sauvegardes",
     "apps.notifications",
     "apps.dashboard",
     "apps.api",
@@ -120,6 +122,7 @@ TEMPLATES = [
                 "django.contrib.messages.context_processors.messages",
                 "apps.accounts.context_processors.menu",
                 "apps.notifications.context_processors.notifications",
+                "apps.parametres.context_processors.parametres",
             ],
         },
     },
@@ -231,6 +234,12 @@ DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="ERP DEN Source Group <no
 # Durée (secondes) de mise en cache des indicateurs du tableau de bord ; 0 = pas de cache.
 # Avec Redis en production (CACHES), le cache est partagé entre les processus.
 DASHBOARD_CACHE_SECONDS = env.int("DASHBOARD_CACHE_SECONDS", default=60)
+
+# Écran « Sauvegardes » (ADMIN) : dossier partagé avec le service `sauvegarde` de docker-compose.yml (journal,
+# demandes). Alerte au tableau de bord si la dernière sauvegarde réussie est trop ancienne : seulement là où le
+# service tourne (production), sinon l'alerte serait permanente.
+SAUVEGARDES_DIR = env.path("SAUVEGARDES_DIR", default=BASE_DIR / "sauvegardes")
+SAUVEGARDES_SURVEILLEES = env.bool("SAUVEGARDES_SURVEILLEES", default=False)
 
 # Mentions de l'émetteur sur la facture imprimable (à renseigner par l'environnement).
 ENTREPRISE_NOM = env("ENTREPRISE_NOM", default="DEN Source Group")

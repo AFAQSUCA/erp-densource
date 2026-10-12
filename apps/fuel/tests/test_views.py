@@ -16,6 +16,7 @@ from apps.drivers.tests.factories import ChauffeurFactory
 from apps.fleet.tests.factories import VehiculeFactory
 from apps.fuel import services
 from apps.fuel.models import NiveauAlerte, Plein
+from apps.parametres import services as parametres_services
 
 pytestmark = pytest.mark.django_db
 
@@ -555,3 +556,15 @@ def test_une_date_illisible_est_signalee_sans_erreur(client):
 
     assert reponse.status_code == 200
     assert "Saisissez une date valide" in reponse.content.decode()
+
+
+def test_le_filtre_des_alertes_affiche_les_seuils_des_parametres(client):
+    parametres_services.modifier_parametres(
+        UserFactory(role=Role.ADMIN), seuil_conso_jaune_pct=Decimal("15"), conso_max_l100=Decimal("50.5")
+    )
+    _connecte(client, Role.PARCAUTO)
+
+    page = client.get(reverse("fuel:liste")).content.decode()
+
+    assert "Alerte jaune (&gt; +15 %)" in page
+    assert "Anomalie (&gt; 50,50 ou &lt; 20 L/100 km)" in page

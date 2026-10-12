@@ -20,6 +20,7 @@ from apps.hr.models import StatutConge
 from apps.hr.tests.factories import PersonnelFactory
 from apps.notifications import taches
 from apps.notifications.models import NiveauNotification, Notification
+from apps.parametres import services as parametres_services
 
 pytestmark = pytest.mark.django_db
 
@@ -222,3 +223,16 @@ def test_la_commande_affiche_les_compteurs_et_est_rejouable():
 
     assert re.search(r"documents vehicules\s+1", premiere.getvalue())
     assert re.search(r"documents vehicules\s+0", seconde.getvalue())
+
+
+def test_le_delai_d_alerte_des_parametres_s_applique_aux_notifications():
+    parametres_services.modifier_parametres(UserFactory(role=Role.ADMIN), delai_alerte_jours=60)
+    parc, rh = UserFactory(role=Role.PARCAUTO), UserFactory(role=Role.RH)
+    DocumentReglementaireFactory(date_expiration=AUJOURD_HUI + timedelta(days=45))
+    ChauffeurFactory(date_expiration_permis=AUJOURD_HUI + timedelta(days=45))
+
+    taches.alerter_documents_vehicules(aujourd_hui=AUJOURD_HUI)
+    taches.alerter_echeances_chauffeurs(aujourd_hui=AUJOURD_HUI)
+
+    assert len(_de(parc)) == 1 and "expire dans 45 jours" in _de(parc)[0].titre
+    assert len(_de(rh)) == 1 and "expire dans 45 jours" in _de(rh)[0].titre

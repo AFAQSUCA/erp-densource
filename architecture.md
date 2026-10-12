@@ -105,6 +105,8 @@ graph TD
         AUDIT[audit<br/>AuditLog append-only]
         NOTIF[notifications<br/>Email/SMS/Push]
         DASH[dashboard<br/>KPIs, dashboards]
+        PARAM[parametres<br/>Seuils d'alerte, valeurs par défaut]
+        SAUV[sauvegardes<br/>Suivi des sauvegardes, ADMIN]
     end
 
     subgraph Référentiels
@@ -142,6 +144,17 @@ graph TD
     ACC --> CORE
     CORE --> AUDIT
     AUDIT --> NOTIF
+    AUDIT --> PARAM
+    PARAM --> HR
+    PARAM --> DRV
+    PARAM --> CUST
+    PARAM --> FLEET
+    PARAM --> MISSION
+    PARAM --> FUEL
+    PARAM --> NOTIF
+    PARAM --> DASH
+    AUDIT --> SAUV
+    SAUV --> DASH
     HR --> DRV
     DRV --> MISSION
     CUST --> MISSION

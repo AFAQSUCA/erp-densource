@@ -57,6 +57,8 @@ services:
     volumes:
       - static_data:/app/staticfiles
       - media_data:/app/media
+      # Écran « Sauvegardes » (ADMIN) : lit le journal du service `sauvegarde` et y dépose les demandes.
+      - sauvegardes_data:/app/sauvegardes
     depends_on:
       db:
         condition: service_healthy
@@ -137,6 +139,29 @@ services:
       web:
         condition: service_healthy
 
+  # Sauvegarde chiffrée de la base et des fichiers déposés, chaque nuit et à la demande de l'ADMIN (écran
+  # « Sauvegardes ») : ops/planificateur-sauvegarde.sh. Les fichiers chiffrés et le journal sont dans le volume
+  # `sauvegardes_data` ; une copie hors serveur se règle avec SAUVEGARDE_COPIE_RSYNC (GUIDE-DEPLOIEMENT.md § 9).
+  sauvegarde:
+    build:
+      context: .
+      dockerfile: ops/Dockerfile.sauvegarde
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://erp_densource:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD doit être défini dans .env}@db:5432/erp_densource
+      SAUVEGARDE_PASSPHRASE: ${SAUVEGARDE_PASSPHRASE:?SAUVEGARDE_PASSPHRASE doit être défini dans .env (phrase de passe des sauvegardes, à conserver hors du serveur)}
+      SAUVEGARDE_MEDIAS: /medias
+      SAUVEGARDE_HEURE: ${SAUVEGARDE_HEURE:-02:00}
+      SAUVEGARDE_CONSERVER_JOURS: ${SAUVEGARDE_CONSERVER_JOURS:-30}
+      SAUVEGARDE_COPIE_RSYNC: ${SAUVEGARDE_COPIE_RSYNC:-}
+      TZ: ${TZ:-Africa/Abidjan}
+    volumes:
+      - sauvegardes_data:/sauvegardes
+      - media_data:/medias:ro
+    depends_on:
+      db:
+        condition: service_healthy
+
   # Outil ponctuel, jamais démarré par `docker compose up` (profil « outils ») : obtient et renouvelle le
   # certificat HTTPS sans avoir à deviner le nom du volume partagé avec Nginx (GUIDE-DEPLOIEMENT.md § 8) :
   #   docker compose run --rm certbot certonly --webroot -w /var/www/certbot -d <domaine> ...
@@ -154,3 +179,4 @@ volumes:
   static_data:
   media_data:
   certbot_www:
+  sauvegardes_data:

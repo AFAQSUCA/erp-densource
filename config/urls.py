@@ -32,6 +32,8 @@ urlpatterns = [
     path("comptabilite/", include("apps.accounting.urls")),
     path("audit/", include("apps.audit.urls")),
     path("import/", include("apps.importation.urls")),
+    path("parametres/", include("apps.parametres.urls")),
+    path("sauvegardes/", include("apps.sauvegardes.urls")),
     path("notifications/", include("apps.notifications.urls")),
     path("api/v1/", include("apps.api.urls")),
     path("chauffeur/", include("apps.mobile_api.urls_web")),

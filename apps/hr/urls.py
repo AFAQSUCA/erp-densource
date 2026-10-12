@@ -41,4 +41,10 @@ urlpatterns = [
         views.AttributionView.as_view(),
         name="personnel_attribution",
     ),
+    path("personnel/<int:pk>/sortie/", views.SortieView.as_view(), name="personnel_sortie"),
+    path(
+        "personnel/sortie/<int:pk>/annuler/",
+        views.AnnulationSortieView.as_view(),
+        name="personnel_sortie_annuler",
+    ),
 ]
