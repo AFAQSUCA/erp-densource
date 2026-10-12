@@ -20,6 +20,7 @@ from apps.billing.models import CategorieDepense, Depense, ModePaiement, Origine
 from apps.billing.tests.helpers import finances
 from apps.drivers.tests.factories import ChauffeurFactory
 from apps.finance import services
+from apps.finance.models import SensMouvement
 from apps.fleet.tests.factories import VehiculeFactory
 from apps.fuel import services as fuel
 from apps.fuel.models import Plein
@@ -202,6 +203,39 @@ def test_la_finance_corrige_le_mode_et_le_compte_debite_change():
 
     soldes = services.soldes_par_compte()
     assert soldes["BANQUE"] == Decimal("-60000") and soldes["CAISSE"] == Decimal("0")
+
+
+def _depense_pointee_en_banque():
+    """Un plein passé en virement, puis rapproché de sa ligne du relevé bancaire."""
+    _plein("100", "600")
+    depense = _auto(OrigineDepense.PLEIN).get()
+    billing.changer_mode_depense(depense, finances(), mode=ModePaiement.VIREMENT)
+    ligne = services.saisir_ligne_releve(
+        finances(), date_operation=AUJOURD_HUI, libelle="Prélèvement carburant", montant=Decimal("60000"),
+        sens=SensMouvement.SORTIE,
+    )
+    services.pointer_ligne_releve(ligne, finances(), origine="DEPENSE", mouvement_id=depense.pk)
+    return depense, ligne
+
+
+def test_une_depense_pointee_qui_quitte_la_banque_est_depointee():
+    """Audit M10-07 : passée en espèces, la dépense n'est plus sur le compte Banque ; la ligne du relevé
+    redevient à pointer au lieu de rester rapprochée d'un mouvement de caisse."""
+    depense, ligne = _depense_pointee_en_banque()
+
+    billing.changer_mode_depense(depense, finances(), mode=ModePaiement.ESPECES)
+
+    ligne.refresh_from_db()
+    assert not ligne.pointee and ligne.mouvement_origine == "" and ligne.mouvement_id is None
+
+
+def test_une_depense_pointee_qui_reste_en_banque_reste_pointee():
+    depense, ligne = _depense_pointee_en_banque()
+
+    billing.changer_mode_depense(depense, finances(), mode=ModePaiement.CHEQUE)  # Banque aussi
+
+    ligne.refresh_from_db()
+    assert ligne.pointee and ligne.mouvement_id == depense.pk
 
 
 def test_seule_la_finance_corrige_et_seulement_les_depenses_automatiques():
