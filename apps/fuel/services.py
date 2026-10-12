@@ -142,6 +142,12 @@ def enregistrer_plein(
     reglages = parametres_services.parametres()
     if precedent is None and vehicule.kilometrage > 0:
         # Premier plein enregistré : on se repère sur le compteur du camion (0 = jamais renseigné, rien à vérifier).
+        # Plancher (audit M6-07) : un premier plein sous le compteur bloquerait le suivant, refusé comme trop loin.
+        if km_compteur < vehicule.kilometrage:
+            raise KilometrageInvalide(
+                f"Le km compteur ({km_compteur}) est inférieur au compteur du camion ({vehicule.kilometrage} km) : "
+                "vérifiez la saisie."
+            )
         _exiger_distance_plausible(vehicule.kilometrage, km_compteur, reglages)
     if precedent is not None:
         if date_plein < precedent.date_plein:

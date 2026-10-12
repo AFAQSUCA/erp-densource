@@ -44,7 +44,7 @@ def _planifiee(**surcharges):
 
 
 def _affectee(vehicule=None, chauffeur=None, copilote=None, **surcharges):
-    vehicule = vehicule or VehiculeFactory()
+    vehicule = vehicule or VehiculeFactory(kilometrage=120000)  # compteur réel : départ et arrivée s'y comparent
     chauffeur = chauffeur or ChauffeurFactory()
     return services.affecter_mission(
         _planifiee(**surcharges), vehicule=vehicule, chauffeur=chauffeur, copilote=copilote

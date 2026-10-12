@@ -15,7 +15,7 @@ class VehiculeFactory(factory.django.DjangoModelFactory):
     modele = "Actros"
     annee = 2020
     vin = factory.Sequence(lambda n: f"VIN{n:014d}")
-    kilometrage = 120000
+    kilometrage = 0  # compteur jamais renseigné : aucun plancher pour un premier plein de test (audit M6-07)
     capacite_charge_t = Decimal("25.00")
     reservoir_l = 600
 
