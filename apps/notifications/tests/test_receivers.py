@@ -28,6 +28,9 @@ pytestmark = pytest.mark.django_db
 
 MAINTENANT = datetime(2026, 9, 1, 8, 0, tzinfo=dt_timezone.utc)
 DEBUT, FIN = date(2026, 10, 5), date(2026, 10, 9)
+# « Aujourd'hui » des scénarios de report : en plein congé. Fixé pour que les tests ne dépendent pas de la vraie
+# date (ils échouaient depuis le 08/10/2026, la reprise du 07/10 devenant « dans le passé » : audit AUD-01).
+JOUR_DU_REPORT = date(2026, 10, 6)
 
 
 def _de(utilisateur):
@@ -203,7 +206,8 @@ def test_la_rh_est_prevenue_d_une_demande_de_report(equipe):
     conge = _en_cours(equipe)
 
     report = hr.demander_report(
-        conge, equipe.compte, nouvelle_date_fin=date(2026, 10, 7), motif="Fin des vacances"
+        conge, equipe.compte, nouvelle_date_fin=date(2026, 10, 7), motif="Fin des vacances",
+        aujourd_hui=JOUR_DU_REPORT,
     )
 
     notification = _de(equipe.compte_rh)[-1]  # la RH a déjà la notification de validation N2 (_en_cours)
@@ -216,9 +220,11 @@ def test_la_rh_est_prevenue_d_une_demande_de_report(equipe):
 
 def test_l_employe_est_prevenu_de_la_decision_sur_son_report(equipe):
     conge = _en_cours(equipe)
-    report = hr.demander_report(conge, equipe.compte, nouvelle_date_fin=date(2026, 10, 7), motif="x")
+    report = hr.demander_report(
+        conge, equipe.compte, nouvelle_date_fin=date(2026, 10, 7), motif="x", aujourd_hui=JOUR_DU_REPORT
+    )
 
-    hr.approuver_report(report, equipe.compte_rh)
+    hr.approuver_report(report, equipe.compte_rh, aujourd_hui=JOUR_DU_REPORT)
 
     notification = _de(equipe.compte)[-1]  # l'employé a déjà la notification d'approbation (_en_cours)
     assert "validé" in notification.titre
@@ -227,7 +233,9 @@ def test_l_employe_est_prevenu_de_la_decision_sur_son_report(equipe):
 
 def test_l_employe_est_prevenu_du_refus_de_son_report(equipe):
     conge = _en_cours(equipe)
-    report = hr.demander_report(conge, equipe.compte, nouvelle_date_fin=date(2026, 10, 7), motif="x")
+    report = hr.demander_report(
+        conge, equipe.compte, nouvelle_date_fin=date(2026, 10, 7), motif="x", aujourd_hui=JOUR_DU_REPORT
+    )
 
     hr.refuser_report(report, equipe.compte_rh, motif="Effectif insuffisant")
 
