@@ -283,6 +283,26 @@ def test_le_formulaire_de_modification_est_prerempli(client):
     assert reponse.context["form"].initial["raison_sociale"] == "Solibra"
 
 
+def test_le_formulaire_de_modification_conserve_la_tva_a_zero_d_un_client_exonere(client):
+    # Audit M4-09 : ``|default:'18'`` prenait 0,00 pour une valeur vide et remettait 18 %.
+    _connecte(client, Role.ADMIN)
+    fiche = ClientFactory(taux_tva=Decimal("0.00"), motif_exoneration="ONG")
+
+    page = client.get(reverse("customers:modifier", args=[fiche.pk])).content.decode()
+
+    assert 'name="taux_tva"' in page
+    assert 'value="0.00"' in page
+    assert 'value="18' not in page
+
+
+def test_le_formulaire_de_creation_propose_18_pourcent(client):
+    _connecte(client, Role.ADMIN)
+
+    page = client.get(reverse("customers:creer")).content.decode()
+
+    assert 'value="18.00"' in page
+
+
 def test_la_creation_exige_le_csrf():
     http = HttpClient(enforce_csrf_checks=True)
     http.force_login(UserFactory(role=Role.ADMIN))

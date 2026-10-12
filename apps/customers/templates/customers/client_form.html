@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load l10n %}
 {% block titre %}{% if client %}Modifier {{ client.raison_sociale }}{% else %}Nouveau client{% endif %}{% endblock %}
 {% block entete %}Clients{% endblock %}
 
@@ -47,7 +48,7 @@
         <div>
           <label for="{{ form.taux_tva.id_for_label }}" class="block text-sm font-medium text-slate-800">{{ form.taux_tva.label }}<span class="text-red-700" aria-hidden="true"> *</span></label>
           <div class="mt-1"><input type="number" name="taux_tva" id="{{ form.taux_tva.id_for_label }}" step="0.01" min="0" max="100" required
-                 value="{{ form.taux_tva.value|default:'18' }}" x-ref="taux" @input="tva = $event.target.value"
+                 value="{{ form.taux_tva.value|default_if_none:''|unlocalize }}" x-ref="taux" @input="tva = $event.target.value"
                  class="block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-marque-600 focus:outline-none focus:ring-2 focus:ring-marque-600/30"></div>
           <p class="mt-1 text-xs text-slate-600">{{ form.taux_tva.help_text }}</p>
           {% for erreur in form.taux_tva.errors %}<p class="mt-1 text-xs font-medium text-red-700" role="alert">{{ erreur }}</p>{% endfor %}
