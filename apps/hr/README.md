@@ -39,9 +39,11 @@ Services (`services.py`) : `recruter`, `demander_conge`, `valider_n1`,
 `synchroniser_statuts_conges` (à planifier chaque jour par Celery Beat, étape 5),
 `initialiser_jours_feries`.
 
-Jours fériés : `python manage.py initialiser_jours_feries 2026` crée les fêtes
-fixes et chrétiennes ; les fêtes musulmanes (fixées par décret) se saisissent
-dans l'admin.
+Jours fériés (audit M11-26) : écran `/rh/jours-feries/` (menu « Jours fériés », RH, DIRECTION, ADMIN) pour
+saisir les fêtes musulmanes (fixées par décret), générer les fêtes fixes et chrétiennes d'une année ou supprimer
+un jour. La tâche quotidienne génère celles de l'année en cours et de la suivante ; un jour supprimé n'est pas
+recréé. `python manage.py initialiser_jours_feries 2026` fait la même génération à la main. Les congés déjà
+demandés ne sont pas recalculés.
 
 Points en attente d'autres apps :
 - Notifications et rappels d'échéance (`date_limite_n1/n2`) : `notifications` (étape 5).
@@ -84,7 +86,6 @@ par `manage.py taches_quotidiennes` ; une sortie retenue est réessayée chaque 
 Annulation avec motif (rien n'est réactivé automatiquement). Liste du personnel : présents par défaut ;
 l'effectif du tableau de bord ne compte plus le personnel sorti.
 
-Pas encore d'écran : jours fériés (à saisir dans l'admin, notamment les fêtes musulmanes).
 
 Événements (`signals.py`) : `conge_soumis`, `conge_valide_n1`, `conge_decide` (approuvé, refusé
 ou annulé) sont émis par les services ; `notifications` s'y abonne. Lectures du tableau de bord :

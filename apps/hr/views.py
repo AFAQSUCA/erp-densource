@@ -9,7 +9,8 @@ import openpyxl
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied
 from django.http import Http404, HttpResponse
-from django.shortcuts import get_object_or_404, redirect
+from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.views import View
 from django.views.generic import DetailView, FormView, ListView
@@ -20,19 +21,20 @@ from apps.core.views import ImpressionListeMixin, PaginationTolerante
 from apps.parametres import services as parametres_services
 
 from . import documents, permissions, sections, services, sorties
-from .exceptions import CongeError, ImportPersonnelError, PersonnelError, SortieImpossible
+from .exceptions import CongeError, ImportPersonnelError, JourFerieInvalide, PersonnelError, SortieImpossible
 from .forms import (
+    AnnulationSortieForm,
     AttributionForm,
     CongeForm,
     DecisionForm,
     DecisionReportForm,
     ImportPersonnelForm,
-    AnnulationSortieForm,
+    JourFerieForm,
     PersonnelForm,
     ReportForm,
     SortieForm,
 )
-from .models import AttributionConge, Departement, ReportConge, SortiePersonnel, StatutConge
+from .models import AttributionConge, Departement, JourFerie, ReportConge, SortiePersonnel, StatutConge
 
 VUE_MES, VUE_A_VALIDER, VUE_TOUS = "mes", "a_valider", "tous"
 
@@ -639,3 +641,56 @@ class AttributionView(RoleRequiredMixin, View):
                 f"pour {attribution.annee}.",
             )
         return redirect("hr:personnel_detail", pk=employe.pk)
+
+
+# --- jours fériés (audit M11-26) ---
+
+
+class JoursFeriesView(RoleRequiredMixin, View):
+    """Jours fériés d'une année, exclus du décompte des congés : la RH saisit les fêtes musulmanes (décret annuel),
+    génère les fêtes fixes et chrétiennes (aussi faites chaque nuit par la tâche quotidienne) ou en supprime un."""
+
+    roles = permissions.PERSONNEL_MODIFICATION
+    template_name = "hr/jours_feries.html"
+
+    @staticmethod
+    def _annee(valeur) -> int:
+        try:
+            annee = int(valeur)
+        except (TypeError, ValueError):
+            return timezone.localdate().year
+        return annee if 2000 <= annee <= 2100 else timezone.localdate().year
+
+    def get(self, request, form=None):
+        annee = self._annee(request.GET.get("annee"))
+        return render(request, self.template_name, {
+            "annee": annee,
+            "jours_feries": services.jours_feries_de(annee),
+            "form": form or JourFerieForm(),
+        })
+
+    def post(self, request):
+        action = request.POST.get("action")
+        annee = self._annee(request.POST.get("annee"))
+        try:
+            if action == "ajouter":
+                form = JourFerieForm(request.POST)
+                if not form.is_valid():
+                    _erreurs_en_messages(request, form)
+                else:
+                    jour = services.ajouter_jour_ferie(
+                        request.user, jour=form.cleaned_data["date"], libelle=form.cleaned_data["libelle"]
+                    )
+                    annee = jour.date.year
+                    messages.success(request, f"{jour.libelle} ({jour.date:%d/%m/%Y}) ajouté aux jours fériés.")
+            elif action == "generer":
+                crees = services.initialiser_jours_feries(annee)
+                messages.success(request, f"{crees} jour(s) férié(s) fixe(s) ou chrétien(s) ajouté(s) pour {annee}.")
+            elif action == "supprimer":
+                jour = get_object_or_404(JourFerie, pk=request.POST.get("jour_ferie"))
+                annee = jour.date.year
+                services.supprimer_jour_ferie(request.user, jour)
+                messages.success(request, f"{jour.libelle} ({jour.date:%d/%m/%Y}) supprimé des jours fériés.")
+        except JourFerieInvalide as erreur:
+            messages.error(request, str(erreur))
+        return redirect(f"{reverse('hr:jours_feries')}?annee={annee}")

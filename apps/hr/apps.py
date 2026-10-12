@@ -41,3 +41,9 @@ class HrConfig(AppConfig):
                 ordre=26,
             )
         )
+        enregistrer(
+            EntreeMenu(
+                "Jours fériés", "hr:jours_feries", "fa-calendar-day", permissions.PERSONNEL_MODIFICATION,
+                ordre=27,
+            )
+        )

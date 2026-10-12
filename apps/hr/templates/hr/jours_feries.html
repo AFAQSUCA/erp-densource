@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block titre %}Jours fériés {{ annee }}{% endblock %}
+{% block entete %}Jours fériés{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-4xl">
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <div>
+      <h1 class="text-2xl font-bold text-slate-900">Jours fériés {{ annee }}</h1>
+      <p class="mt-1 text-sm text-slate-600">
+        Ils sont exclus du décompte des congés (jours ouvrés). Les fêtes fixes et chrétiennes sont ajoutées
+        automatiquement chaque nuit pour l'année en cours et la suivante.
+        <strong>Les fêtes musulmanes</strong> (fin du Ramadan, Tabaski, Maouloud) sont fixées chaque année par
+        décret : saisissez-les ci-dessous dès leur publication.
+      </p>
+    </div>
+    <nav aria-label="Changer d'année" class="flex items-center gap-2">
+      <a href="?annee={{ annee|add:'-1' }}" class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+        <i class="fa-solid fa-chevron-left" aria-hidden="true"></i> {{ annee|add:'-1' }}
+      </a>
+      <a href="?annee={{ annee|add:'1' }}" class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+        {{ annee|add:'1' }} <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+      </a>
+    </nav>
+  </div>
+
+  <div class="mt-6 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+    <table class="min-w-full divide-y divide-slate-200 text-sm">
+      <caption class="sr-only">Jours fériés de l'année {{ annee }}</caption>
+      <thead class="bg-slate-50 text-left text-slate-600">
+        <tr>
+          <th scope="col" class="px-4 py-2 font-semibold">Date</th>
+          <th scope="col" class="px-4 py-2 font-semibold">Jour</th>
+          <th scope="col" class="px-4 py-2 font-semibold">Libellé</th>
+          <th scope="col" class="px-4 py-2"><span class="sr-only">Actions</span></th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for jour in jours_feries %}
+          <tr>
+            <td class="whitespace-nowrap px-4 py-2 font-medium text-slate-900">{{ jour.date|date:"d/m/Y" }}</td>
+            <td class="whitespace-nowrap px-4 py-2 text-slate-600">{{ jour.date|date:"l" }}</td>
+            <td class="px-4 py-2 text-slate-800">{{ jour.libelle }}</td>
+            <td class="px-4 py-2 text-right">
+              <form method="post" data-confirm="Supprimer « {{ jour.libelle }} » ({{ jour.date|date:'d/m/Y' }}) des jours fériés ?">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="supprimer">
+                <input type="hidden" name="jour_ferie" value="{{ jour.pk }}">
+                <button type="submit" class="rounded-lg px-2 py-1 text-sm font-medium text-red-700 hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-600">
+                  Supprimer<span class="sr-only"> {{ jour.libelle }}</span>
+                </button>
+              </form>
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="4" class="px-4 py-6 text-center text-slate-600">Aucun jour férié enregistré pour {{ annee }}.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="mt-6 grid gap-6 md:grid-cols-2">
+    <form method="post" novalidate class="space-y-4 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="ajouter">
+      <h2 class="text-sm font-semibold text-slate-900">Ajouter un jour férié</h2>
+      {% include "components/_champ.html" with champ=form.date %}
+      {% include "components/_champ.html" with champ=form.libelle %}
+      <div class="flex justify-end">
+        <button type="submit" class="rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">Ajouter</button>
+      </div>
+    </form>
+
+    <form method="post" class="space-y-3 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="generer">
+      <input type="hidden" name="annee" value="{{ annee }}">
+      <h2 class="text-sm font-semibold text-slate-900">Fêtes fixes et chrétiennes</h2>
+      <p class="text-sm text-slate-600">
+        Jour de l'An, lundi de Pâques, fête du Travail, Ascension, lundi de Pentecôte, Indépendance, Assomption,
+        Toussaint, journée de la Paix, Noël. Un jour supprimé n'est pas recréé.
+      </p>
+      <button type="submit" class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+        Ajouter celles de {{ annee }}
+      </button>
+    </form>
+  </div>
+
+  <p class="mt-4 text-sm text-slate-600">
+    Un jour férié ajouté ou supprimé compte pour les congés demandés ensuite ; les congés déjà demandés ne sont pas
+    recalculés.
+  </p>
+</div>
+{% endblock %}

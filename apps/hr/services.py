@@ -23,11 +23,12 @@ from apps.core.search import filtrer_par_texte, normaliser
 from apps.core.services import prochain_numero
 from apps.parametres import services as parametres_services
 
-from . import signals, sorties
+from . import permissions, signals, sorties
 from .exceptions import (
     ActionNonAutorisee,
     CongeError,
     ImportPersonnelError,
+    JourFerieInvalide,
     PersonnelError,
     SoldeInsuffisant,
     TransitionInterdite,
@@ -1071,10 +1072,12 @@ def initialiser_jours_feries(annee: int) -> int:
     """Crée les jours fériés fixes et chrétiens manquants ; retourne le nombre créé.
 
     Idempotent : ne recrée pas un jour déjà présent (et ne touche pas aux fêtes
-    musulmanes saisies à la main).
+    musulmanes saisies à la main). Un jour **supprimé** par la RH (par exemple un férié
+    qui ne l'est pas cette année-là) n'est pas recréé non plus : la tâche quotidienne
+    appelle cette fonction (audit M11-26).
     """
     existants = set(
-        JourFerie.objects.filter(date__year=annee).values_list("date", flat=True)
+        JourFerie.all_objects.filter(date__year=annee).values_list("date", flat=True)
     )
     a_creer = [
         JourFerie(date=jour, libelle=libelle)
@@ -1083,3 +1086,35 @@ def initialiser_jours_feries(annee: int) -> int:
     ]
     JourFerie.objects.bulk_create(a_creer)
     return len(a_creer)
+
+
+# --- jours fériés entretenus par la RH (audit M11-26) ---
+
+
+def jours_feries_de(annee: int) -> QuerySet[JourFerie]:
+    return JourFerie.objects.filter(date__year=annee)
+
+
+def _exiger_gestion_jours_feries(acteur) -> None:
+    if acteur is None or acteur.role_effectif not in permissions.PERSONNEL_MODIFICATION:
+        raise JourFerieInvalide("Seules la RH, la Direction et l'administrateur gèrent les jours fériés.")
+
+
+@transaction.atomic
+def ajouter_jour_ferie(acteur, *, jour: date, libelle: str) -> JourFerie:
+    """Saisie d'un jour férié, en particulier des fêtes musulmanes fixées chaque année par décret. Les congés
+    demandés ensuite l'excluent de leur décompte ; ceux déjà demandés ne sont pas recalculés."""
+    _exiger_gestion_jours_feries(acteur)
+    libelle = (libelle or "").strip()
+    if not libelle:
+        raise JourFerieInvalide("Le libellé est obligatoire (par exemple « Tabaski »).")
+    if JourFerie.objects.filter(date=jour).exists():
+        raise JourFerieInvalide(f"Le {jour:%d/%m/%Y} est déjà un jour férié.")
+    return JourFerie.objects.create(date=jour, libelle=libelle[:100])
+
+
+@transaction.atomic
+def supprimer_jour_ferie(acteur, jour_ferie: JourFerie) -> None:
+    """Suppression (douce, journalisée) : la génération automatique ne le recrée pas."""
+    _exiger_gestion_jours_feries(acteur)
+    jour_ferie.delete(deleted_by=acteur)

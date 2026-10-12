@@ -21,6 +21,7 @@ urlpatterns = [
         views.ReportDecisionView.as_view(),
         name="conges_report_decision",
     ),
+    path("jours-feries/", views.JoursFeriesView.as_view(), name="jours_feries"),
     path("personnel/", views.PersonnelListView.as_view(), name="personnel_liste"),
     path("personnel/imprimer/", views.PersonnelImprimerView.as_view(), name="personnel_imprimer"),
     path("personnel/nouveau/", views.PersonnelCreateView.as_view(), name="personnel_nouveau"),

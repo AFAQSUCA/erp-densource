@@ -197,6 +197,11 @@ def executer_taches_quotidiennes(*, aujourd_hui: date | None = None) -> dict[str
         # Avant la synchronisation des congés : les congés à venir d'un partant sont annulés, pas démarrés.
         "sorties_appliquees": appliquer_sorties_du_jour(aujourd_hui=aujourd_hui),
     }
+    # Jours fériés fixes et chrétiens de l'année et de la suivante (un congé de janvier se demande en décembre) :
+    # idempotent, les fêtes musulmanes restent saisies par la RH (audit M11-26).
+    resultat["jours_feries_crees"] = sum(
+        hr_services.initialiser_jours_feries(annee) for annee in (aujourd_hui.year, aujourd_hui.year + 1)
+    )
     conges = hr_services.synchroniser_statuts_conges(aujourd_hui=aujourd_hui)
     resultat["conges_demarres"] = conges["demarres"]
     resultat["conges_termines"] = conges["termines"]
