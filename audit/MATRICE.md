@@ -14,7 +14,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 
 ## Bilan
 
-**440 exigences : 377 ✅, 40 🟡, 10 ❌, 10 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **90,8 %**.
+**440 exigences : 378 ✅, 39 🟡, 10 ❌, 10 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **91,0 %**.
 
 | Bloc | Lignes | ✅ | 🟡 | ❌ | ❓ | ⚪ |
 |---|---|---|---|---|---|---|
@@ -27,7 +27,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M7 Garage | 13 | 13 | 0 | 0 | 0 | 0 |
 | M8 Stocks | 12 | 12 | 0 | 0 | 0 | 0 |
 | M9 Facturation | 27 | 27 | 0 | 0 | 0 | 0 |
-| M10 Finances | 13 | 12 | 1 | 0 | 0 | 0 |
+| M10 Finances | 13 | 13 | 0 | 0 | 0 | 0 |
 | M11 RH | 30 | 27 | 3 | 0 | 0 | 0 |
 | M12 Tableaux de bord | 28 | 25 | 1 | 0 | 0 | 2 |
 | Technique | 87 | 61 | 14 | 3 | 8 | 1 |
@@ -35,7 +35,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | Avenants | 17 | 2 | 10 | 5 | 0 | 0 |
 | Écarts d'audit | 22 | 7 | 11 | 2 | 2 | 0 |
 
-**Reprise à M10-07** (première ligne non terminée, dans l'ordre des ID).
+**Reprise à M11-08** (première ligne non terminée, dans l'ordre des ID).
 
 ## Contradictions entre sources (règle 1)
 
@@ -339,7 +339,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M10-04 | M10 l.198 | Suivi des décaissements | ✅ | `apps/finance/services.py:113` | — | Fait |
 | M10-05 | M10 l.198 | Solde en temps réel | ✅ | `apps/finance/services.py:341` | — | Fait |
 | M10-06 | M10 l.199 | Rapprochement : saisie manuelle du relevé | ✅ | `apps/finance/services.py:204` | — | Fait |
-| M10-07 | M10 l.199 | Rapprochement : suggestion de pointage | 🟡 | `apps/finance/services.py:231` ; changer le mode d'une dépense pointée ne défait pas le pointage | Dépointer au changement de mode | À faire |
+| M10-07 | M10 l.199 | Rapprochement : suggestion de pointage | ✅ | `apps/finance/services.py:241` ; une dépense pointée passée hors banque est dépointée (`apps/finance/receivers.py:122`), elle reste pointée si elle reste en banque ; tests `apps/finance/tests/test_depenses_parc_auto.py:221` | Fait (`1e1cf60`) | Fait |
 | M10-08 | M10 l.199 | Rapprochement : écart signalé | ✅ | `apps/finance/services.py:304` | — | Fait |
 | M10-09 | M10 l.200 | Indicateur CA | ✅ | `apps/finance/services.py:471` | — | Fait |
 | M10-10 | M10 l.200 | Indicateur charges | ✅ | `apps/finance/services.py:471` | — | Fait |
