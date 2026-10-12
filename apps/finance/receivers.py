@@ -16,8 +16,8 @@ from django.dispatch import receiver
 from django.utils import timezone
 
 from apps.billing import services as billing_services
-from apps.billing.models import CategorieDepense, OrigineDepense
-from apps.billing.signals import reglement_annule, reglement_enregistre
+from apps.billing.models import COMPTE_DU_MODE, CategorieDepense, CompteTresorerie, OrigineDepense
+from apps.billing.signals import depense_mode_a_reclasser, reglement_annule, reglement_enregistre
 from apps.fuel.signals import plein_enregistre
 from apps.garage.signals import or_cloture
 from apps.inventory.signals import entree_stock_enregistree
@@ -116,3 +116,12 @@ def defaire_le_pointage_d_un_reglement_annule(sender, reglement, **kwargs):
     """Une ligne de relevé pointée sur ce règlement redevient à pointer (``send()`` brut : avec la
     contre-passation comptable, l'annulation d'un règlement est tout ou rien)."""
     services.depointer_mouvement("REGLEMENT", reglement.pk)
+
+
+@receiver(depense_mode_a_reclasser)
+def defaire_le_pointage_d_une_depense_sortie_de_la_banque(sender, depense, ancien_mode, **kwargs):
+    """Une dépense pointée sur le relevé bancaire, passée sur un mode hors banque (espèces, Mobile Money),
+    n'est plus un mouvement du compte Banque : sa ligne de relevé redevient à pointer (audit M10-07). Un
+    changement qui reste en banque (virement → chèque) garde le pointage."""
+    if COMPTE_DU_MODE[depense.mode] != CompteTresorerie.BANQUE:
+        services.depointer_mouvement("DEPENSE", depense.pk)
