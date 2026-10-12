@@ -275,6 +275,11 @@ montant précis sur le devis.
   numéro, employé, dates, jours décomptés, validateurs N1/N2, solde restant de l'année, et la
   section report si applicable. Même en-tête (logo, couleurs de la marque) que le PDF des codes de
   mission.
+- **Nouveau (12/10/2026, audit M11-11) : un même compte ne valide jamais les deux niveaux.** Quand le
+  supérieur direct de l'employé est un compte RH, il valide le N1 ; le N2 revient à un **autre compte RH**.
+  S'il était le seul compte RH, la **DIRECTION** décide du N2 tout de suite, sans attendre le délai de 24 h, et
+  c'est elle qui est notifiée. La règle vaut aussi pour la DIRECTION qui remplace un validateur en retard : celle
+  qui a remplacé le N1 ne remplace pas aussi le N2. Sans aucun compte RH, la règle du délai dépassé s'applique.
 
 **Implémentation** : `apps.hr.models.ReportConge`, `apps.hr.services.demander_report` /
 `approuver_report` / `refuser_report`, écran `/rh/conges/<id>/reporter/`, PDF

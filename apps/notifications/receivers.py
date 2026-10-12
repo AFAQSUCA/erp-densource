@@ -106,7 +106,7 @@ def prevenir_le_validateur_n1(sender, conge, **kwargs):
 def prevenir_la_rh(sender, conge, **kwargs):
     employe = conge.employe
     notifier(
-        hr_services.comptes_rh(sauf=employe),
+        hr_services.validateurs_n2(conge),  # jamais le compte du N1 ; la Direction s'il n'y a pas d'autre RH
         categorie=CategorieNotification.CONGE,
         niveau=NiveauNotification.ATTENTION,
         titre=f"Congé à valider en N2 : {employe.prenom} {employe.nom}",

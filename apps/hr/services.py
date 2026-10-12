@@ -487,6 +487,54 @@ def comptes_rh(*, sauf: Personnel | None = None) -> QuerySet[User]:
     return comptes
 
 
+def _validateur_n1_du(conge: Conge) -> int | None:
+    """Compte qui a approuvé le N1 de ce congé (``None`` tant qu'il n'est pas validé N1)."""
+    return (
+        conge.validations.filter(niveau=NiveauValidation.N1, decision=DecisionConge.APPROUVE)
+        .order_by("-created_at")
+        .values_list("validateur_id", flat=True)
+        .first()
+    )
+
+
+def _ids_rh_actifs() -> set[int]:
+    return set(comptes_rh().values_list("pk", flat=True))
+
+
+def _direction_sans_attendre(conge: Conge, n1: int | None, ids_rh: set[int]) -> bool:
+    """Le N1 a été validé par le seul compte RH disponible : la Direction décide du N2 sans attendre le délai
+    (audit M11-11, décision du 12/10/2026). Sans aucun compte RH, la règle reste celle du délai dépassé."""
+    return n1 in ids_rh and not ids_rh - {n1, conge.employe.utilisateur_id}
+
+
+def validateurs_n2(conge: Conge) -> QuerySet[User]:
+    """Comptes qui décident du N2 sans attendre le délai : la RH, sauf l'employé lui-même et le compte qui a
+    validé le N1 (un même compte ne valide pas les deux niveaux) ; si ce compte était le seul RH, la Direction."""
+    n1, ids_rh = _validateur_n1_du(conge), _ids_rh_actifs()
+    if _direction_sans_attendre(conge, n1, ids_rh):
+        comptes = User.objects.filter(role=Role.DIRECTION, is_active=True)
+    else:
+        comptes = User.objects.filter(pk__in=ids_rh)
+    return comptes.exclude(pk=n1).exclude(pk=conge.employe.utilisateur_id)
+
+
+def _peut_decider_n2(acteur, conge: Conge, *, n1: int | None = None, ids_rh: set[int] | None = None) -> bool:
+    """Valider ou refuser le N2 : la RH ou, à défaut (:func:`_direction_sans_attendre`), la Direction, ou la
+    Direction qui remplace une RH en retard ; jamais l'employé lui-même ni le compte qui a validé le N1.
+    ``n1`` et ``ids_rh`` évitent de relire la base pour chaque congé d'une liste."""
+    if acteur is None:
+        return False
+    n1 = _validateur_n1_du(conge) if n1 is None else n1
+    if acteur.pk in (n1, conge.employe.utilisateur_id):
+        return False
+    if acteur.role == Role.RH:
+        return acteur.is_active
+    if acteur.role == Role.DIRECTION:
+        ids_rh = _ids_rh_actifs() if ids_rh is None else ids_rh
+        return _direction_sans_attendre(conge, n1, ids_rh) or _direction_remplace(acteur, conge)
+    return False
+
+
 def fiche_personnel(acteur) -> Personnel | None:
     """Fiche de l'employé rattachée au compte, ou ``None``."""
     return _fiche_de(acteur)
@@ -511,13 +559,19 @@ def conges_a_valider(acteur) -> QuerySet[Conge]:
         n1 |= Q(employe__superieur__isnull=True, employe__utilisateur=acteur)
     conditions = Q(statut=StatutConge.DEMANDE) & n1
     fiche = _fiche_de(acteur)
-    if acteur.role == Role.RH:
-        conditions |= Q(statut=StatutConge.VALIDATION_N1)
+    if acteur.role in (Role.RH, Role.DIRECTION):
+        # Une seule lecture pour tous les congés en attente de N2 et leur validateur N1 (liste à requêtes constantes).
+        validations_n1 = ValidationConge.objects.filter(
+            conge__statut=StatutConge.VALIDATION_N1, niveau=NiveauValidation.N1, decision=DecisionConge.APPROUVE
+        ).select_related("conge__employe").order_by("created_at")
+        en_n2 = {v.conge_id: (v.conge, v.validateur_id) for v in validations_n1}
+        ids_rh = _ids_rh_actifs() if acteur.role == Role.DIRECTION else set()
+        a_decider_n2 = [
+            pk for pk, (conge, n1) in en_n2.items() if _peut_decider_n2(acteur, conge, n1=n1, ids_rh=ids_rh)
+        ]
+        conditions |= Q(pk__in=a_decider_n2)
     if acteur.role == Role.DIRECTION:
-        maintenant = timezone.now()
-        en_retard = Q(statut=StatutConge.DEMANDE, date_limite_n1__lt=maintenant) | Q(
-            statut=StatutConge.VALIDATION_N1, date_limite_n2__lt=maintenant
-        )
+        en_retard = Q(statut=StatutConge.DEMANDE, date_limite_n1__lt=timezone.now())
         if fiche is not None:
             en_retard &= ~Q(employe=fiche)
         conditions |= en_retard
@@ -545,13 +599,10 @@ def actions_disponibles(conge: Conge, acteur) -> frozenset[str]:
         _est_superieur_de(acteur, conge.employe) or _direction_remplace(acteur, conge)
     ):
         return frozenset({ACTION_VALIDER, ACTION_REFUSER})
-    if conge.statut == StatutConge.VALIDATION_N1 and _direction_remplace(acteur, conge):
+    if conge.statut == StatutConge.VALIDATION_N1 and _peut_decider_n2(acteur, conge):
         return frozenset({ACTION_VALIDER, ACTION_REFUSER})
-    if _est_rh_pour(acteur, conge.employe):
-        if conge.statut == StatutConge.VALIDATION_N1:
-            return frozenset({ACTION_VALIDER, ACTION_REFUSER})
-        if conge.statut == StatutConge.APPROUVE:
-            return frozenset({ACTION_ANNULER})
+    if conge.statut == StatutConge.APPROUVE and _est_rh_pour(acteur, conge.employe):
+        return frozenset({ACTION_ANNULER})
     return frozenset()
 
 
@@ -746,8 +797,11 @@ def valider_n2(conge: Conge, acteur, *, commentaire: str = "") -> Conge:
     _recharger(conge)
     if conge.statut != StatutConge.VALIDATION_N1:
         raise TransitionInterdite("Seul un congé validé N1 peut être validé en N2.")
-    if not (_est_rh_pour(acteur, conge.employe) or _direction_remplace(acteur, conge)):
-        raise ActionNonAutorisee("Validation N2 réservée à la RH (ou à la Direction une fois le délai dépassé).")
+    if not _peut_decider_n2(acteur, conge):
+        raise ActionNonAutorisee(
+            "Validation N2 réservée à la RH, par un autre compte que celui qui a validé le N1 (à défaut d'autre "
+            "compte RH, à la Direction ; sinon à la Direction une fois le délai dépassé)."
+        )
 
     _exiger_solde(_verrouiller_employe(conge.employe), conge.date_debut.year, conge.jours)
 
@@ -776,7 +830,7 @@ def refuser(conge: Conge, acteur, *, commentaire: str = "") -> Conge:
         autorise = _est_superieur_de(acteur, conge.employe) or _direction_remplace(acteur, conge)
     elif conge.statut == StatutConge.VALIDATION_N1:
         niveau = NiveauValidation.N2
-        autorise = _est_rh_pour(acteur, conge.employe) or _direction_remplace(acteur, conge)
+        autorise = _peut_decider_n2(acteur, conge)
     else:
         raise TransitionInterdite("Ce congé n'est plus en attente de validation.")
     if not autorise:
