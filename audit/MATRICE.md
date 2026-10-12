@@ -14,7 +14,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 
 ## Bilan
 
-**440 exigences : 378 ✅, 39 🟡, 10 ❌, 10 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **91,0 %**.
+**440 exigences : 382 ✅, 35 🟡, 10 ❌, 10 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **91,4 %**.
 
 | Bloc | Lignes | ✅ | 🟡 | ❌ | ❓ | ⚪ |
 |---|---|---|---|---|---|---|
@@ -28,14 +28,14 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M8 Stocks | 12 | 12 | 0 | 0 | 0 | 0 |
 | M9 Facturation | 27 | 27 | 0 | 0 | 0 | 0 |
 | M10 Finances | 13 | 13 | 0 | 0 | 0 | 0 |
-| M11 RH | 30 | 27 | 3 | 0 | 0 | 0 |
+| M11 RH | 30 | 30 | 0 | 0 | 0 | 0 |
 | M12 Tableaux de bord | 28 | 25 | 1 | 0 | 0 | 2 |
 | Technique | 87 | 61 | 14 | 3 | 8 | 1 |
 | Recette | 7 | 7 | 0 | 0 | 0 | 0 |
-| Avenants | 17 | 2 | 10 | 5 | 0 | 0 |
+| Avenants | 17 | 3 | 9 | 5 | 0 | 0 |
 | Écarts d'audit | 22 | 7 | 11 | 2 | 2 | 0 |
 
-**Reprise à M11-08** (première ligne non terminée, dans l'ordre des ID).
+**Reprise à M12-10** (première ligne non terminée, dans l'ordre des ID).
 
 ## Contradictions entre sources (règle 1)
 
@@ -358,10 +358,10 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M11-05 | M11 l.207 | Fiche : département (4 valeurs) | ✅ | `apps/hr/models.py:35` | — | Fait |
 | M11-06 | M11 l.208 | Fiche : date d'embauche | ✅ | `apps/hr/models.py:61` | — | Fait |
 | M11-07 | M11 l.208 | Fiche : salaire de base (FCFA) | ✅ | `apps/hr/models.py:62` | — | Fait |
-| M11-08 | M11 l.209 | Recrutement (champs de la fiche) | 🟡 | `apps/hr/services.py:108` ; l'import Excel RH n'est pas idempotent et plante en 500 sur un fichier invalide | Voir AV-17 | À faire |
+| M11-08 | M11 l.209 | Recrutement (champs de la fiche) | ✅ | `apps/hr/services.py:108` ; import Excel rejouable et robuste : `apps/hr/services.py:236` (voir AV-17) ; tests `apps/hr/tests/test_import_personnel.py` | Fait (`0b38030`) | Fait |
 | M11-09 | M11 l.210 | Recrutement : type de contrat | ✅ | `apps/hr/models.py:68` | — | Fait |
 | M11-10 | M11 l.212 | Congé : demande employé (dates + motif) | ✅ | `apps/hr/services.py:640` | — | Fait |
-| M11-11 | M11 l.213 | Validation N1 par le supérieur direct | 🟡 | `apps/hr/services.py:679` ; un compte RH supérieur direct valide N1 puis N2 | Interdire le même compte en N1 et N2 | À faire |
+| M11-11 | M11 l.213 | Validation N1 par le supérieur direct | ✅ | Un même compte ne valide jamais N1 et N2 : `apps/hr/services.py:511,522` ; le N2 revient à un autre RH, ou à la Direction sans attendre s'il était le seul ; notification et relance (`apps/notifications/receivers.py:109`, `apps/notifications/taches.py:122`) ; décision du 12/10/2026 (`avenant-separation-des-taches.md` § R7) ; tests `apps/hr/tests/test_separation_n1_n2.py` (7 tests) | Fait (`a1a8ddf`, `ab285ae`) | Fait |
 | M11-12 | M11 l.213 | Le directeur valide lui-même son N1 | ✅ | `apps/hr/services.py` (`_est_sommet_hierarchie`) | — | Fait |
 | M11-13 | M11 l.213 | Délai N1 48 h | ✅ | `apps/hr/services.py:48` | DIRECTION non alertée des retards (AUD-16) | Fait |
 | M11-14 | M11 l.214 | Validation N2 RH | ✅ | `apps/hr/services.py:707` | — | Fait |
@@ -376,7 +376,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M11-23 | M11 l.218 | Statut REFUSE | ✅ | `apps/hr/models.py:114` | — | Fait |
 | M11-24 | M11 l.219 + R7 | Droit annuel (26 jours ouvrés, avenant R7) | ✅ | `apps/hr/services.py:56` | — | Fait |
 | M11-25 | M11 l.219 | Jours exceptionnels accordés par la RH, motif obligatoire | ✅ | `apps/hr/services.py:419` | — | Fait |
-| M11-26 | M11 l.220 + R7 | Décompte en jours ouvrés, hors jours fériés | 🟡 | `apps/hr/services.py:600` ; les fériés ne sont jamais entretenus (commande jamais lancée, saisie réservée à l'admin Django) | Écran RH des jours fériés + initialisation | À faire |
+| M11-26 | M11 l.220 + R7 | Décompte en jours ouvrés, hors jours fériés | ✅ | `apps/hr/services.py:685` ; fériés entretenus : écran `/rh/jours-feries/` (`apps/hr/views.py:649`, menu RH), saisie `apps/hr/services.py:1104`, génération quotidienne de l'année et de la suivante (`apps/notifications/taches.py:202`), un jour supprimé n'est pas recréé (`apps/hr/services.py:1071`) ; tests `apps/hr/tests/test_jours_feries_ecran.py` (9 tests) ; vérifié dans le navigateur | Fait (`23b4918`) | Fait |
 | M11-27 | M11 l.220 | Blocage si solde insuffisant | ✅ | `apps/hr/services.py:409` | — | Fait |
 | M11-28 | M11 l.220 | Alerte N1 si mission sur la période | ✅ | `apps/missions/services.py:136` | — | Fait |
 | M11-29 | M11 l.221 | Annulation d'un congé approuvé : RH uniquement | ✅ | `apps/hr/services.py:765` | — | Fait |
@@ -539,7 +539,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | AV-14 | Import | Fichier à dimension fausse | ❌ | Lignes perdues sans erreur (`apps/importation/services.py:385`) | `reset_dimensions()` | À faire |
 | AV-15 | Import | Enregistrements supprimés logiquement | 🟡 | Personnel supprimé recréé en doublon ; client/camion supprimés comptés « déjà présents » | Aligner les règles | À faire |
 | AV-16 | Import | Archives piégées (zip bomb) | 🟡 | Aucun contrôle de la taille décompressée ; import RH sans `read_only` ni limite | Contrôler avant ouverture | À faire |
-| AV-17 | Import RH | Import du personnel idempotent et robuste | 🟡 | `apps/hr/services.py:223` : doublons au réimport, 500 sur fichier invalide | Aligner sur `apps/importation` | À faire |
+| AV-17 | Import RH | Import du personnel idempotent et robuste | ✅ | `apps/hr/services.py:236` : un employé déjà présent (même nom et prénom, sans accents ni majuscules, comme `apps/importation`) est signalé et non recréé ; fichier illisible refusé avec un message au lieu d'une 500 ; tests `apps/hr/tests/test_import_personnel.py` (6 nouveaux) | Fait (`0b38030`) | Fait |
 
 ## Écarts d'audit sans exigence écrite (qualité, sécurité, cohérence)
 
