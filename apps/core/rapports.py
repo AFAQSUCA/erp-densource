@@ -23,6 +23,13 @@ def contexte_entreprise() -> dict:
     }
 
 
+def url_pdf(request) -> str:
+    """Adresse du même rapport en PDF (mêmes filtres, ``format=pdf``) : bouton « Télécharger en PDF »."""
+    parametres = request.GET.copy()
+    parametres["format"] = "pdf"
+    return f"{request.path}?{parametres.urlencode()}"
+
+
 def contexte_rapport(request, *, titre: str, sous_titre: str = "") -> dict:
     """Contexte commun à tout gabarit de `templates/rapports/` : en-tête entreprise, titre, généré le/par."""
     utilisateur = request.user

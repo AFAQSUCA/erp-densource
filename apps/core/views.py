@@ -1,6 +1,7 @@
 """Aides communes aux vues."""
 
-from .rapports import contexte_rapport
+from . import pdf
+from .rapports import contexte_rapport, url_pdf
 
 
 class PaginationTolerante:
@@ -64,6 +65,23 @@ class ImpressionListeMixin:
                 valeur = valeur()
         return valeur if valeur not in (None, "") else "—"
 
+    def get(self, request, *args, **kwargs):
+        """``?format=pdf`` : le même rapport en vrai PDF, généré par le serveur (avenant-export-pdf.md)."""
+        if request.GET.get("format") != "pdf":
+            return super().get(request, *args, **kwargs)
+        self.object_list = self.get_queryset()
+        contexte = self.get_context_data()
+        nombre = contexte["nombre"]
+        resume = f"{nombre} ligne{'s' if nombre > 1 else ''}"
+        if contexte["tronque"]:
+            resume += f" — limité aux {nombre} premières ; affinez la recherche pour voir le reste"
+        contenu = pdf.generer_pdf(
+            titre=contexte["titre"], sous_titre=contexte["sous_titre"], entreprise=contexte["entreprise"],
+            genere_par=contexte["genere_par"], genere_le=contexte["genere_le"],
+            blocs=[pdf.Texte(resume, discret=True), pdf.Tableau(entetes=contexte["entetes"], lignes=contexte["lignes"])],
+        )
+        return pdf.reponse_pdf(contenu, contexte["titre"])
+
     def get_context_data(self, **kwargs):
         objets = list(self.get_queryset()[: self.limite_impression + 1])
         tronque = len(objets) > self.limite_impression
@@ -76,5 +94,6 @@ class ImpressionListeMixin:
             lignes=[[self._valeur(o, cle) for _, cle in self.colonnes] for o in objets],
             nombre=len(objets),
             tronque=tronque,
+            url_pdf=url_pdf(self.request),
         )
         return contexte
