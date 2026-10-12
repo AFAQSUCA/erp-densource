@@ -66,3 +66,29 @@ def test_log_login_failed_records_failed_status_and_attempted_username():
     assert entry.statut == StatutChoices.FAILED
     assert entry.nouvelle_valeur == {"username_tente": "intrus"}
     assert entry.utilisateur is None
+
+
+# --- nom et rôle de l'auteur (audit M1-53, M1-54) ---
+
+
+def test_un_superutilisateur_sans_nom_est_journalise_avec_son_identifiant_et_le_role_admin():
+    racine = UserFactory(username="racine", first_name="", last_name="", role="", is_superuser=True)
+
+    entree = services.log_action(action=ActionChoices.UPDATE, module="TEST", entite="X", utilisateur=racine)
+
+    assert entree.utilisateur_nom == "racine"
+    assert entree.role == Role.ADMIN  # rôle effectif : un superutilisateur agit en ADMIN
+
+
+def test_un_compte_avec_un_nom_complet_garde_son_nom_et_son_role():
+    compte = UserFactory(first_name="Awa", last_name="Kone", role=Role.RH)
+
+    entree = services.log_action(action=ActionChoices.UPDATE, module="TEST", entite="X", utilisateur=compte)
+
+    assert entree.utilisateur_nom == "Awa Kone" and entree.role == Role.RH
+
+
+def test_une_action_sans_auteur_n_a_ni_nom_ni_role():
+    entree = services.log_action(action=ActionChoices.UPDATE, module="TEST", entite="X")
+
+    assert entree.utilisateur_nom == "" and entree.role == ""
