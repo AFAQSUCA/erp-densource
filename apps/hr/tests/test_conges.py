@@ -24,6 +24,7 @@ from apps.hr.exceptions import (
     TransitionInterdite,
 )
 from apps.hr.models import Conge, Departement, StatutConge
+from apps.parametres import services as parametres_services
 
 from .factories import PersonnelFactory
 
@@ -494,3 +495,25 @@ def test_valider_n1_sans_acteur_est_refuse():
 
     with pytest.raises(ActionNonAutorisee):
         services.valider_n1(conge, None)
+
+
+def test_les_delais_de_validation_des_parametres_s_appliquent():
+    # Audit M1-10 : délais N1 et N2 réglés dans l'écran « Paramètres ».
+    parametres_services.modifier_parametres(
+        UserFactory(role=Role.ADMIN), delai_validation_n1_heures=72, delai_validation_n2_heures=12
+    )
+    conge, superieur = _demande()
+
+    services.valider_n1(conge, superieur, maintenant=MAINTENANT)
+
+    conge.refresh_from_db()
+    assert conge.date_limite_n1 == MAINTENANT + timedelta(hours=72)
+    assert conge.date_limite_n2 == MAINTENANT + timedelta(hours=12)
+
+
+def test_un_changement_de_delai_ne_deplace_pas_l_echeance_d_une_demande_deja_faite():
+    conge, _ = _demande()
+    parametres_services.modifier_parametres(UserFactory(role=Role.ADMIN), delai_validation_n1_heures=72)
+
+    conge.refresh_from_db()
+    assert conge.date_limite_n1 == MAINTENANT + timedelta(hours=48)

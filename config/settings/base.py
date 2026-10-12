@@ -121,6 +121,7 @@ TEMPLATES = [
                 "django.contrib.messages.context_processors.messages",
                 "apps.accounts.context_processors.menu",
                 "apps.notifications.context_processors.notifications",
+                "apps.parametres.context_processors.parametres",
             ],
         },
     },

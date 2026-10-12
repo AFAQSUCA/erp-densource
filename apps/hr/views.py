@@ -17,6 +17,7 @@ from django.views.generic import DetailView, FormView, ListView
 from apps.accounts.mixins import RoleRequiredMixin
 from apps.core.formats import nombre
 from apps.core.views import ImpressionListeMixin, PaginationTolerante
+from apps.parametres import services as parametres_services
 
 from . import documents, permissions, sections, services
 from .exceptions import CongeError, ImportPersonnelError, PersonnelError
@@ -178,7 +179,8 @@ class CongeCreateView(RoleRequiredMixin, FormView):
         messages.success(
             self.request,
             f"Demande enregistrée : {conge.jours} jour{'s' if conge.jours > 1 else ''} "
-            "ouvrable(s). Votre supérieur hiérarchique doit la valider sous 48 h.",
+            "ouvrable(s). Votre supérieur hiérarchique doit la valider sous "
+            f"{parametres_services.parametres().delai_validation_n1_heures} h.",
         )
         return redirect("hr:conges_detail", pk=conge.pk)
 
@@ -261,7 +263,10 @@ class CongeDecisionView(RoleRequiredMixin, View):
         if action == services.ACTION_ANNULER:
             return "Congé annulé : les jours sont restitués à l'employé."
         if statut_avant == StatutConge.DEMANDE:
-            return "Demande validée en N1. Elle attend maintenant la validation de la RH (24 h)."
+            return (
+                "Demande validée en N1. Elle attend maintenant la validation de la RH "
+                f"({parametres_services.parametres().delai_validation_n2_heures} h)."
+            )
         return (
             f"Congé approuvé : {conge.jours} jour{'s' if conge.jours > 1 else ''} "
             f"décompté{'s' if conge.jours > 1 else ''} du droit de {conge.date_debut.year}."

@@ -10,6 +10,7 @@ from apps.audit.models import AuditLog
 from apps.hr import services
 from apps.hr.exceptions import ActionNonAutorisee, CongeError, SoldeInsuffisant
 from apps.hr.models import JourFerie, StatutConge
+from apps.parametres import services as parametres_services
 
 from .factories import PersonnelFactory
 from .test_conges import _approuve, _demande, _hierarchie, _rh
@@ -195,3 +196,11 @@ def test_un_jour_ferie_supprime_logiquement_redevient_ouvre():
     ferie.delete()
 
     assert services.calculer_jours(date(2026, 8, 3), date(2026, 8, 8)) == 5  # lun-ven (sam toujours exclu)
+
+
+def test_le_droit_annuel_des_parametres_s_applique_au_solde():
+    # Audit M1-10 : droit annuel réglé dans l'écran « Paramètres » (26 jours ouvrés par défaut, avenant R7).
+    employe = PersonnelFactory()
+    parametres_services.modifier_parametres(UserFactory(role=Role.ADMIN), droit_annuel_jours=30)
+
+    assert _droits(employe)["droit_annuel"] == 30 and _droits(employe)["disponible"] == 30

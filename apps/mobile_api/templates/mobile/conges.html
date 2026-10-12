@@ -4,7 +4,7 @@
 
 {% block contenu %}
 <h1 class="text-xl font-bold text-slate-900">Mes congés</h1>
-<p class="text-sm text-slate-600">Votre supérieur valide votre demande sous 48 h, puis la RH sous 24 h.</p>
+<p class="text-sm text-slate-600">Votre supérieur valide votre demande sous {{ reglages.delai_validation_n1_heures }} h, puis la RH sous {{ reglages.delai_validation_n2_heures }} h.</p>
 
 <dl class="mt-4 grid grid-cols-3 gap-2 text-center">
   <div class="rounded-2xl border border-slate-200 bg-white px-2 py-3"><dt class="text-xs text-slate-600">Droit {{ droits.annee }}</dt><dd class="mt-1 text-lg font-bold text-slate-900">{{ droits.droit_annuel|add:droits.exceptionnels }} j</dd></div>

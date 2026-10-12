@@ -20,6 +20,7 @@ from django.utils import timezone
 from apps.accounts.models import Role, User
 from apps.core.search import filtrer_par_texte
 from apps.core.services import prochain_numero
+from apps.parametres import services as parametres_services
 
 from . import signals
 from .exceptions import (
@@ -45,15 +46,11 @@ from .models import (
     ValidationConge,
 )
 
-DELAI_VALIDATION_N1 = timedelta(hours=48)  # cahier-des-charges.md:213
-DELAI_VALIDATION_N2 = timedelta(hours=24)  # cahier-des-charges.md:214
+# Délais de validation N1 (48 h, cahier-des-charges.md:213) et N2 (24 h, :214) et droit annuel de congé (26 jours
+# ouvrés, avenant R7) : valeurs par défaut des paramètres (``apps.parametres``), lues à chaque opération.
 
 PREFIXE_MATRICULE = "PERS"  # matricule auto-généré : PERS-AAAA-XXXX (voir recruter)
 
-# Droit annuel : 26 jours ouvrés (lundi-vendredi), au-delà du minimum légal ivoirien de 2,2 jours
-# ouvrables par mois — avantage social décidé par l'entreprise (avenant-separation-des-taches.md § R7 ;
-# remplace les 12 jours ouvrables du cahier-des-charges.md:219-221 d'origine).
-DROIT_ANNUEL_JOURS = 26
 STATUTS_DECOMPTES = (StatutConge.APPROUVE, StatutConge.EN_COURS, StatutConge.TERMINE)
 JOURS_NON_OUVRES = (5, 6)  # samedi, dimanche (weekday()) : jours ouvrés, pas ouvrables
 
@@ -384,8 +381,10 @@ def droits_conges(employe: Personnel, annee: int) -> dict[str, int]:
 
     ``disponible`` = droit annuel + jours exceptionnels - jours déjà décomptés
     (congés approuvés, en cours ou terminés commençant cette année-là). Les
-    demandes en attente ne sont pas décomptées avant la validation N2.
+    demandes en attente ne sont pas décomptées avant la validation N2. Le droit annuel est celui des paramètres
+    au moment de la lecture, quelle que soit l'année.
     """
+    droit_annuel = parametres_services.parametres().droit_annuel_jours
     exceptionnels = (
         AttributionConge.objects.filter(employe=employe, annee=annee).aggregate(
             total=Sum("jours")
@@ -399,10 +398,10 @@ def droits_conges(employe: Personnel, annee: int) -> dict[str, int]:
         or 0
     )
     return {
-        "droit_annuel": DROIT_ANNUEL_JOURS,
+        "droit_annuel": droit_annuel,
         "exceptionnels": exceptionnels,
         "consommes": consommes,
-        "disponible": DROIT_ANNUEL_JOURS + exceptionnels - consommes,
+        "disponible": droit_annuel + exceptionnels - consommes,
     }
 
 
@@ -579,7 +578,7 @@ def conges_en_attente() -> dict[str, int]:
 
 
 def conges_en_retard(maintenant: datetime | None = None) -> QuerySet[Conge]:
-    """Demandes dont le délai de validation (48 h en N1, 24 h en N2) est dépassé."""
+    """Demandes dont le délai de validation (paramètres : 48 h en N1, 24 h en N2) est dépassé."""
     maintenant = maintenant or timezone.now()
     return conges_queryset().filter(
         Q(statut=StatutConge.DEMANDE, date_limite_n1__lt=maintenant)
@@ -669,7 +668,7 @@ def demander_conge(
         date_fin=date_fin,
         jours=jours,
         motif=motif,
-        date_limite_n1=maintenant + DELAI_VALIDATION_N1,
+        date_limite_n1=maintenant + timedelta(hours=parametres_services.parametres().delai_validation_n1_heures),
     )
     signals.emettre(signals.conge_soumis, conge=conge)
     return conge
@@ -679,7 +678,7 @@ def demander_conge(
 def valider_n1(
     conge: Conge, acteur, *, commentaire: str = "", maintenant: datetime | None = None
 ) -> Conge:
-    """Étape 2 : validation N1 par le supérieur hiérarchique de l'employé (48 h)."""
+    """Étape 2 : validation N1 par le supérieur hiérarchique de l'employé (délai des paramètres, 48 h)."""
     _recharger(conge)
     if conge.statut != StatutConge.DEMANDE:
         raise TransitionInterdite("Seule une demande peut être validée en N1.")
@@ -697,7 +696,9 @@ def valider_n1(
         commentaire=commentaire,
     )
     conge.statut = StatutConge.VALIDATION_N1
-    conge.date_limite_n2 = (maintenant or timezone.now()) + DELAI_VALIDATION_N2
+    conge.date_limite_n2 = (maintenant or timezone.now()) + timedelta(
+        hours=parametres_services.parametres().delai_validation_n2_heures
+    )
     conge.save(update_fields=["statut", "date_limite_n2", "updated_at"])
     signals.emettre(signals.conge_valide_n1, conge=conge)
     return conge
@@ -705,7 +706,7 @@ def valider_n1(
 
 @transaction.atomic
 def valider_n2(conge: Conge, acteur, *, commentaire: str = "") -> Conge:
-    """Étape 3 : validation N2 par la RH (24 h). Le solde est recontrôlé, puis
+    """Étape 3 : validation N2 par la RH (délai des paramètres, 24 h). Le solde est recontrôlé, puis
     le congé approuvé est décompté du droit de l'année."""
     _recharger(conge)
     if conge.statut != StatutConge.VALIDATION_N1:
