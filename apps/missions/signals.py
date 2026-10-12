@@ -15,6 +15,10 @@ mission_demarree = Signal()
 # La mission vient de passer « Affectée » : mouvement de caisse probable (R4). Argument : ``mission``.
 mission_affectee = Signal()
 
+# La mission vient de repasser « Planifiée » sans camion ni chauffeur (sortie du chauffeur affecté) : le Parc
+# Auto doit la réaffecter. Arguments : ``mission``, ``motif``.
+mission_desaffectee = Signal()
+
 # Un imprévu vient d'être déclaré par le chauffeur, avec sa preuve. Argument : ``frais``.
 frais_mission_declare = Signal()
 # Le Parc Auto vient de valider un imprévu (première validation) : la Finance doit confirmer.

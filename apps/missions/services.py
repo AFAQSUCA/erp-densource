@@ -39,7 +39,7 @@ from .exceptions import (
 )
 from . import signals
 from .models import STATUTS_ACTIFS, STATUTS_MODIFIABLES, Mission, StatutMission
-from .signals import mission_affectee, mission_demarree
+from .signals import mission_affectee, mission_demarree, mission_desaffectee
 
 PREFIXE_NUMERO = "MIS"
 # Sans caractères ambigus (0/O, 1/I) : les codes se dictent au téléphone.
@@ -239,6 +239,41 @@ def chauffeur_a_mission_active(chauffeur: Chauffeur, *, sauf: Mission | None = N
 
 def copilote_a_mission_active(copilote: Copilote, *, sauf: Mission | None = None) -> bool:
     return _missions_actives(sauf).filter(copilote=copilote).exists()
+
+
+# --- sortie du personnel (hr.sorties, avenant-sortie-personnel.md) ---
+
+STATUTS_EN_ROUTE = (StatutMission.EN_COURS_DEPART, StatutMission.EN_COURS_COLIS_RECUPERE)
+
+
+def missions_en_route_du_personnel(personnel_id: int) -> QuerySet[Mission]:
+    """Missions parties que cet employé conduit ou accompagne : elles bloquent sa sortie."""
+    return Mission.objects.filter(statut__in=STATUTS_EN_ROUTE).filter(
+        Q(chauffeur__personnel_id=personnel_id) | Q(copilote__personnel_id=personnel_id)
+    )
+
+
+@transaction.atomic
+def liberer_missions_du_partant(personnel_id: int, *, motif: str) -> dict:
+    """Missions « Affectées » (pas encore parties) d'un employé qui sort : s'il en est le chauffeur, la mission
+    repasse « Planifiée » sans camion, chauffeur ni copilote (camion libéré) et le Parc Auto est prévenu pour la
+    réaffecter ; s'il en est le copilote, il en est seulement retiré."""
+    desaffectees, sans_copilote = [], []
+    for mission in Mission.objects.select_for_update().filter(
+        statut=StatutMission.AFFECTEE, chauffeur__personnel_id=personnel_id
+    ):
+        mission.vehicule = mission.chauffeur = mission.copilote = None
+        mission.statut = StatutMission.PLANIFIEE
+        mission.save(update_fields=["vehicule", "chauffeur", "copilote", "statut", "updated_at"])
+        signals.emettre(mission_desaffectee, mission=mission, motif=motif)
+        desaffectees.append(mission.numero)
+    for mission in Mission.objects.select_for_update().filter(
+        statut=StatutMission.AFFECTEE, copilote__personnel_id=personnel_id
+    ):
+        mission.copilote = None
+        mission.save(update_fields=["copilote", "updated_at"])
+        sans_copilote.append(mission.numero)
+    return {"missions_desaffectees": desaffectees, "missions_sans_copilote": sans_copilote}
 
 
 # --- cycle de vie ---

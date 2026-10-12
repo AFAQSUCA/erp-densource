@@ -39,6 +39,7 @@ from apps.missions.signals import (
     frais_mission_valide_parcauto,
     mission_affectee,
     mission_demarree,
+    mission_desaffectee,
 )
 
 from .models import CategorieNotification, NiveauNotification
@@ -252,6 +253,19 @@ def prevenir_du_depart(sender, mission, **kwargs):
             f"({chauffeur.prenom} {chauffeur.nom}) est parti de {mission.lieu_chargement} "
             f"vers {mission.lieu_livraison}."
         ),
+        url=reverse("missions:detail", args=[mission.pk]),
+    )
+
+
+@receiver(mission_desaffectee)
+def prevenir_le_parc_auto_d_une_mission_a_reaffecter(sender, mission, motif, **kwargs):
+    """Le chauffeur affecté sort de l'entreprise : la mission est redevenue « Planifiée » (avenant-sortie-personnel.md)."""
+    notifier(
+        utilisateurs_du_role(Role.PARCAUTO),
+        categorie=CategorieNotification.MISSION,
+        niveau=NiveauNotification.ATTENTION,
+        titre=f"Mission {mission.numero} à réaffecter",
+        message=f"{motif} : la mission repasse « Planifiée », son camion est libéré.",
         url=reverse("missions:detail", args=[mission.pk]),
     )
 

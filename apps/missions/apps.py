@@ -16,7 +16,7 @@ class MissionsConfig(AppConfig):
 
         from django.db.models.signals import post_save
 
-        from . import permissions, sections, temps_reel
+        from . import permissions, receivers, sections, temps_reel  # noqa: F401 (receivers : sortie du personnel)
         from .models import FraisMission, Mission
 
         # Les codes secrets ne doivent jamais apparaître dans le journal.
