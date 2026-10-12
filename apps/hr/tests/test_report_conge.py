@@ -5,6 +5,7 @@ from datetime import date
 
 import pytest
 from django.urls import reverse
+from django.utils import timezone
 
 from apps.accounts.models import Role
 from apps.accounts.tests.factories import UserFactory
@@ -18,6 +19,18 @@ from .test_conges import _approuve, _demande, _rh
 pytestmark = pytest.mark.django_db
 
 DEBUT, FIN = date(2026, 10, 5), date(2026, 10, 30)  # lundi-vendredi, 20 jours ouvrés
+AUJOURD_HUI = date(2026, 10, 12)  # pendant le congé : une reprise au 26/10 n'est pas « dans le passé »
+
+
+@pytest.fixture(autouse=True)
+def _aujourd_hui_fixe(monkeypatch):
+    """« Aujourd'hui » fixé pour tout le fichier, écrans compris : sans cela, les scénarios d'octobre 2026
+    échoueraient dès le 31/10/2026, la date de reprise devenant « dans le passé » (audit AUD-01). Une date
+    passée en argument (conversion d'un horodatage) garde le vrai calcul."""
+    vrai_localdate = timezone.localdate
+    monkeypatch.setattr(
+        timezone, "localdate", lambda value=None, *a, **k: AUJOURD_HUI if value is None else vrai_localdate(value, *a, **k)
+    )
 
 
 def _hierarchie(poste="Dispatcheur"):

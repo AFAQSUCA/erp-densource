@@ -14,7 +14,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 
 ## Bilan
 
-**440 exigences : 384 ✅, 33 🟡, 10 ❌, 10 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **91,6 %**.
+**440 exigences : 387 ✅, 33 🟡, 7 ❌, 10 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **92,3 %**.
 
 | Bloc | Lignes | ✅ | 🟡 | ❌ | ❓ | ⚪ |
 |---|---|---|---|---|---|---|
@@ -30,10 +30,10 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M10 Finances | 13 | 13 | 0 | 0 | 0 | 0 |
 | M11 RH | 30 | 30 | 0 | 0 | 0 | 0 |
 | M12 Tableaux de bord | 28 | 26 | 0 | 0 | 0 | 2 |
-| Technique | 87 | 61 | 14 | 3 | 8 | 1 |
+| Technique | 87 | 63 | 14 | 1 | 8 | 1 |
 | Recette | 7 | 7 | 0 | 0 | 0 | 0 |
 | Avenants | 17 | 3 | 9 | 5 | 0 | 0 |
-| Écarts d'audit | 22 | 8 | 10 | 2 | 2 | 0 |
+| Écarts d'audit | 22 | 9 | 10 | 1 | 2 | 0 |
 
 **Reprise à TECH-18** (première ligne non terminée, dans l'ordre des ID).
 
@@ -504,8 +504,8 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | TECH-83 | §4 l.305 | Export Excel | 🟡 | Finance et comptabilité seulement ; pas pour missions, flotte, carburant, stock, clients, chauffeurs, congés | Brancher `ExportXlsxMixin` | À faire |
 | TECH-84 | checklist Technique | Dépendances reproductibles | 🟡 | `requirements/*.txt` en `>=`, sans fichier de verrouillage | Fichier de verrouillage | À faire |
 | TECH-85 | checklist Technique | Migrations à jour | ✅ | `manage.py makemigrations --check` : aucun changement | — | Fait |
-| TECH-86 | checklist Technique | Suite de tests verte | ❌ | 3 échecs datés (`apps/notifications/tests/test_receivers.py:206,219,230`) | Voir AUD-01 | À faire |
-| TECH-87 | §4 l.273 | Changement de mot de passe une fois connecté | ❌ | NON TROUVÉ (aucune route `password_change`) | Écran « Changer mon mot de passe » | À faire |
+| TECH-86 | checklist Technique | Suite de tests verte | ✅ | 3 173 tests réussis, 0 échec ; suite rejouée avec l'horloge avancée d'un et de deux ans sans autre échec (seul un artefact du décalage) ; voir AUD-01 | Fait (`1c87fbb`) | Fait |
+| TECH-87 | §4 l.273 | Changement de mot de passe une fois connecté | ✅ | `apps/accounts/views.py:91` (`/mon-mot-de-passe/`, lien clé dans `templates/base.html`) : ancien mot de passe exigé, validateurs, session gardée, événement tracé (`apps/audit/signals.py`) ; tests `apps/accounts/tests/test_changer_mot_de_passe.py` (6 tests) ; vérifié dans le navigateur | Fait (`358b5c9`) | Fait |
 
 ## Recette (CDC §6, lignes 330-343)
 
@@ -545,7 +545,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 
 | ID | Rattachement | Écart | Verdict | Preuve | Action | Statut |
 |---|---|---|---|---|---|---|
-| AUD-01 | TECH-86 | 3 tests à dates codées en dur échouent depuis le 08/10/2026 | ❌ | `apps/notifications/tests/test_receivers.py:206,219,230` | Dates relatives | À faire |
+| AUD-01 | TECH-86 | 3 tests à dates codées en dur échouent depuis le 08/10/2026 | ✅ | `apps/notifications/tests/test_receivers.py` (jour du report fixé) ; 18 autres tests datés corrigés avant d'échouer : `apps/hr/tests/test_report_conge.py` (fixture « aujourd'hui »), `apps/finance/tests/test_demandes.py`, `apps/hr/tests/test_recrutement.py`, `apps/api/tests/test_v1.py` | Fait (`1c87fbb`) | Fait |
 | AUD-02 | M5 | Mission sans issue : ni annulation ni transfert (panne définitive) | ❓ | `apps/missions/services.py` (aucune transition de sortie) | Statut « Annulée » et/ou transfert | Décision |
 | AUD-03 | M6-07 | Pas d'annulation ni de correction d'un plein | ❌ | `apps/fuel/urls.py` | Annulation avec contre-passation de la dépense | À faire |
 | AUD-04 | TECH-57 | Suppression physique via l'admin Django | 🟡 | `apps/fuel/admin.py`, `apps/missions/admin.py`, `apps/garage/admin.py`, `apps/accounting/admin.py:29` (comptes) | Interdire | À faire |

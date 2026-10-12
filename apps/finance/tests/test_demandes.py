@@ -5,6 +5,7 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
+from django.utils import timezone
 
 from apps.accounts.models import Role
 from apps.accounts.tests.factories import UserFactory
@@ -184,7 +185,7 @@ def test_soumettre_une_demande_manuelle():
 
     assert demande.origine == OrigineDemande.MANUELLE
     assert demande.statut == StatutDemandeDepense.SOUMISE
-    assert demande.numero.startswith("DEM-2026-")
+    assert demande.numero.startswith(f"DEM-{timezone.localdate().year}-")  # numéroté sur l'année en cours
 
 
 def test_seul_le_parc_auto_soumet_une_demande():
@@ -217,7 +218,7 @@ def test_valider_une_demande_manuelle_genere_un_ordre():
     ordre = OrdreDecaissement.objects.get(demande=demande)
     assert ordre.montant_valide == Decimal("200000")
     assert ordre.statut == StatutOrdreDecaissement.A_EXECUTER
-    assert ordre.numero.startswith("ODC-2026-")
+    assert ordre.numero.startswith(f"ODC-{timezone.localdate().year}-")
 
 
 def test_valider_peut_ajuster_le_montant():

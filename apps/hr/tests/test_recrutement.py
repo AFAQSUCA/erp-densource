@@ -2,6 +2,7 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
+from django.utils import timezone
 
 from apps.drivers.models import Chauffeur
 from apps.hr import services
@@ -60,7 +61,7 @@ def test_recruter_sans_matricule_en_genere_un_automatiquement():
 
     personnel = services.recruter(**donnees)
 
-    annee = date.today().year
+    annee = timezone.localdate().year  # même horloge que la numérotation (fuseau de l'application)
     assert personnel.matricule == f"PERS-{annee}-0001"
 
 
@@ -71,5 +72,5 @@ def test_recruter_sans_matricule_incremente_a_chaque_recrutement():
     premier = services.recruter(**donnees)
     second = services.recruter(**{**donnees, "nom": "Koné"})
 
-    annee = date.today().year
+    annee = timezone.localdate().year  # même horloge que la numérotation (fuseau de l'application)
     assert (premier.matricule, second.matricule) == (f"PERS-{annee}-0001", f"PERS-{annee}-0002")

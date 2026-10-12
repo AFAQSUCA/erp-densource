@@ -7,6 +7,7 @@ import pytest
 from django.core.cache import cache
 from django.test import Client as HttpClient
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import AccessToken
 
@@ -210,7 +211,7 @@ def test_facture_avec_reste_a_recouvrer_et_lignes_au_detail():
 
 def test_factures_filtrees_par_statut_echeance_et_texte():
     echue = emise(aujourd_hui=date(2026, 7, 1))
-    a_jour = emise(aujourd_hui=date.today())
+    a_jour = emise(aujourd_hui=timezone.localdate())  # même horloge que le filtre « échues »
     brouillon()
     api = _api(Role.DIRECTION)
     url = reverse("api:facture-list")

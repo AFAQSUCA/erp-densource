@@ -19,6 +19,9 @@ Entités : `User` (`AUTH_USER_MODEL`), `Role`, `AppareilMFA` (application TOTP d
   `TRUSTED_PROXY_COUNT` (proxys de confiance) est renseigné, et seule l'adresse ajoutée par eux compte.
   Sinon un client pourrait forger son adresse et échapper à la limitation. Derrière Nginx : `1`.
 - L'administration Django n'a plus son propre formulaire : `/admin/login/` renvoie vers `/connexion/`.
+- **Changer mon mot de passe** (`/mon-mot-de-passe/`, icône clé de l'en-tête, tous les rôles connectés) :
+  ancien mot de passe exigé, mêmes règles qu'à l'inscription, session gardée ouverte, événement
+  `mot_de_passe_change` tracé au journal (audit TECH-87).
 - **Mot de passe oublié** (`/mot-de-passe/`) : les 4 vues standard de Django (demande de l'adresse,
   confirmation d'envoi, lien reçu par e-mail, nouveau mot de passe), gabarits français assortis au
   reste du site. Ne révèle jamais si l'adresse correspond à un compte (même page dans les deux cas).

@@ -21,6 +21,8 @@ urlpatterns = [
         views_utilisateurs.UtilisateurActivationView.as_view(),
         name="utilisateur_activation",
     ),
+    # Changer son mot de passe, une fois connecté.
+    path("mon-mot-de-passe/", views.ChangerMotDePasseView.as_view(), name="password_change"),
     # Mot de passe oublié : ouvert à tous, avant connexion.
     path("mot-de-passe/", views.ReinitialiserMotDePasseView.as_view(), name="password_reset"),
     path(
