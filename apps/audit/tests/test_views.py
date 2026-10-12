@@ -117,6 +117,18 @@ def test_export_csv_reprend_les_filtres_et_contient_les_colonnes(client):
     assert "Date/heure;Utilisateur;Rôle;Action;Module;Entité;ID entité;Statut;Adresse IP" in contenu
 
 
+def test_export_csv_neutralise_les_formules_dans_toutes_les_colonnes(client):
+    # Audit M1-76 : un nom d'utilisateur (saisi librement) commençant par « = » s'exécuterait dans Excel.
+    client.force_login(UserFactory(role=Role.ADMIN))
+    _entree(utilisateur_nom='=HYPERLINK("http://x")', entite="+Piege", module="-RH", role="@x")
+
+    contenu = client.get(reverse("audit:export_csv")).content.decode("utf-8-sig")
+
+    ligne = contenu.splitlines()[1]
+    assert "'=HYPERLINK" in ligne and "'+Piege" in ligne and "'-RH" in ligne and "'@x" in ligne
+    assert ';=' not in ligne and not ligne.startswith("=")
+
+
 def test_export_csv_interdit_hors_role(client):
     client.force_login(UserFactory(role=Role.RH))
 
