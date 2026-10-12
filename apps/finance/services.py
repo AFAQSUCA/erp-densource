@@ -37,6 +37,7 @@ from apps.billing.models import (
     OrigineDepense,
     Reglement,
 )
+from apps.core.doublons import exiger_pas_de_doublon_recent
 from apps.core.montants import exiger_montant_entier
 from apps.core.services import debuts_de_mois, fin_de_mois
 from apps.fuel.models import Plein
@@ -81,6 +82,12 @@ def enregistrer_mouvement(
         raise MontantInvalide("La date du mouvement ne peut pas être dans le futur.")
     if nature not in NatureMouvement.values:
         raise MontantInvalide("Nature de mouvement inconnue.")
+    exiger_pas_de_doublon_recent(
+        MouvementManuel.objects.filter(
+            sens=sens, date_mouvement=date_mouvement, libelle=libelle, montant=montant, mode=mode, saisi_par=acteur
+        ),
+        quoi="Un mouvement", erreur=MontantInvalide,
+    )
     mouvement = MouvementManuel.objects.create(
         sens=sens,
         nature=nature,

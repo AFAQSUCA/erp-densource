@@ -18,6 +18,7 @@ from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from apps.audit import services as audit_services
+from apps.core.doublons import exiger_pas_de_doublon_recent
 from apps.core.montants import exiger_montant_entier
 from apps.core.search import filtrer_par_texte
 from apps.core.services import prochain_numero, total_par_mois
@@ -465,6 +466,10 @@ def enregistrer_reglement(
         raise ReglementInvalide("La date du règlement ne peut pas être dans le futur.")
     if date_reglement < facture.date_emission:
         raise ReglementInvalide("Le règlement ne peut pas précéder la date d'émission de la facture.")
+    exiger_pas_de_doublon_recent(
+        Reglement.objects.filter(facture=facture, montant=montant, mode=mode, date_reglement=date_reglement),
+        quoi="Un règlement", erreur=ReglementInvalide,
+    )
     reglement = Reglement.objects.create(
         facture=facture,
         date_reglement=date_reglement,
@@ -653,6 +658,12 @@ def enregistrer_depense(
         raise MontantInvalide("La TVA déductible doit être strictement inférieure au montant TTC.")
     if date_depense > timezone.localdate():
         raise MontantInvalide("La date de la dépense ne peut pas être dans le futur.")
+    exiger_pas_de_doublon_recent(
+        Depense.objects.filter(
+            categorie=categorie, date_depense=date_depense, libelle=libelle, montant=montant, mode=mode, saisi_par=acteur
+        ),
+        quoi="Une dépense", erreur=MontantInvalide,
+    )
     depense = Depense.objects.create(
         categorie=categorie,
         date_depense=date_depense,

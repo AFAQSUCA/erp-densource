@@ -485,7 +485,7 @@ def test_pointer_refuse_un_sens_different():
 def test_pointer_refuse_une_ligne_deja_pointee():
     facture = emise(prix="1000000")
     premier = _reglement(facture, "100000", ModePaiement.VIREMENT)
-    second = _reglement(facture, "100000", ModePaiement.VIREMENT)
+    second = _reglement(facture, "100000", ModePaiement.CHEQUE)  # même montant (sinon : doublon refusé)
     ligne = _ligne_releve(montant="100000")
     services.pointer_ligne_releve(ligne, finances(), origine="REGLEMENT", mouvement_id=premier.pk)
 

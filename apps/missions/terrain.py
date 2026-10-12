@@ -17,6 +17,7 @@ from django.db import transaction
 from django.db.models import QuerySet
 from django.utils import timezone
 
+from apps.core.doublons import exiger_pas_de_doublon_recent
 from apps.core.montants import exiger_montant_entier
 
 from apps.drivers.models import Chauffeur
@@ -94,6 +95,12 @@ def declarer_imprevu(
     exiger_montant_entier(montant, erreur=FraisInvalide)
     if not justificatif:
         raise FraisInvalide("Une preuve (photo, facture) est obligatoire pour un imprévu.")
+    exiger_pas_de_doublon_recent(
+        FraisMission.objects.filter(
+            mission=mission, type_frais=TypeFraisMission.IMPREVU, montant=montant, chauffeur=chauffeur
+        ),
+        quoi="Un imprévu", erreur=FraisInvalide,
+    )
     frais = FraisMission.objects.create(
         mission=mission,
         type_frais=TypeFraisMission.IMPREVU,
@@ -118,6 +125,10 @@ def planifier_frais(
     if montant <= 0:
         raise FraisInvalide("Le montant doit être strictement positif.")
     exiger_montant_entier(montant, erreur=FraisInvalide)
+    exiger_pas_de_doublon_recent(
+        FraisMission.objects.filter(mission=mission, type_frais=type_frais, montant=montant, saisi_par=acteur),
+        quoi="Un frais", erreur=FraisInvalide,
+    )
     return FraisMission.objects.create(
         mission=mission,
         type_frais=type_frais,
