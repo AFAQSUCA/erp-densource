@@ -14,11 +14,11 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 
 ## Bilan
 
-**440 exigences : 345 ✅, 69 🟡, 11 ❌, 12 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **86,8 %**.
+**440 exigences : 347 ✅, 67 🟡, 11 ❌, 12 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **87,1 %**.
 
 | Bloc | Lignes | ✅ | 🟡 | ❌ | ❓ | ⚪ |
 |---|---|---|---|---|---|---|
-| M1 Sécurité & audit | 77 | 69 | 8 | 0 | 0 | 0 |
+| M1 Sécurité & audit | 77 | 71 | 6 | 0 | 0 | 0 |
 | M2 Flotte | 26 | 18 | 7 | 1 | 0 | 0 |
 | M3 Chauffeurs | 18 | 17 | 1 | 0 | 0 | 0 |
 | M4 Clients | 15 | 14 | 1 | 0 | 0 | 0 |
@@ -35,7 +35,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | Avenants | 17 | 2 | 10 | 5 | 0 | 0 |
 | Écarts d'audit | 22 | 1 | 15 | 2 | 4 | 0 |
 
-**Reprise à M1-53** (première ligne non terminée, dans l'ordre des ID).
+**Reprise à M1-61** (première ligne non terminée, dans l'ordre des ID).
 
 ## Contradictions entre sources (règle 1)
 
@@ -104,8 +104,8 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M1-50 | M1 l.60 | audit_log : id BIGINT | ✅ | `config/settings/base.py:171` (`BigAutoField`) | — | Fait |
 | M1-51 | M1 l.61 | audit_log : date_heure automatique | ✅ | `apps/audit/models.py:30` | — | Fait |
 | M1-52 | M1 l.62 | audit_log : utilisateur_id | ✅ | `apps/audit/models.py:31` | — | Fait |
-| M1-53 | M1 l.63 | audit_log : utilisateur_nom | 🟡 | `apps/audit/models.py:39` ; vide pour un superutilisateur sans nom (`apps/audit/services.py:48`) | Repli sur l'identifiant de connexion | À faire |
-| M1-54 | M1 l.64 | audit_log : rôle au moment de l'action | 🟡 | `apps/audit/models.py:40` ; vide pour un superutilisateur | Utiliser `role_effectif` | À faire |
+| M1-53 | M1 l.63 | audit_log : utilisateur_nom | ✅ | `apps/audit/models.py:39` ; nom complet, à défaut identifiant de connexion (`apps/audit/services.py:48`) ; tests `apps/audit/tests/test_services.py` | Fait | Fait |
+| M1-54 | M1 l.64 | audit_log : rôle au moment de l'action | ✅ | `apps/audit/models.py:40` ; rôle effectif, ADMIN pour un superutilisateur (`apps/audit/services.py:50`) ; tests `apps/audit/tests/test_services.py` | Fait | Fait |
 | M1-55 | M1 l.65 | audit_log : action (6 valeurs) | ✅ | `apps/audit/models.py:8` | — | Fait |
 | M1-56 | M1 l.66 | audit_log : module | ✅ | `apps/audit/models.py:42` | — | Fait |
 | M1-57 | M1 l.67 | audit_log : entité | ✅ | `apps/audit/models.py:43` | — | Fait |
