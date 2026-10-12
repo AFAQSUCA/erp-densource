@@ -45,10 +45,12 @@ VOIR_CODES = frozenset({Role.ADMIN, Role.DIRECTION, Role.CHARGE_CLIENTELE})
 # validation, jamais par celui qui l'a déclaré). Écran séparé de la fiche mission : ni le
 # chargé clientèle (qui ne voit déjà pas le prix convenu côté chauffeur) ni la trésorerie n'y
 # figurent sur les mêmes rôles que ``CONSULTATION``.
-FRAIS_CONSULTATION = frozenset({Role.ADMIN, Role.DIRECTION, Role.PARCAUTO, Role.FINANCES})
+# La RH fait tout ce que fait la FINANCES, y compris confirmer (avenant R8 § 2) : oubliée ici jusqu'à l'audit
+# M1-27 (décision confirmée le 12/10/2026), alors qu'elle recevait déjà les notifications de ces frais.
+FRAIS_CONSULTATION = frozenset({Role.ADMIN, Role.DIRECTION, Role.PARCAUTO, Role.FINANCES, Role.RH})
 FRAIS_SAISIE_PREVISION = frozenset({Role.ADMIN, Role.DIRECTION, Role.PARCAUTO})
 FRAIS_VALIDATION_PARCAUTO = frozenset({Role.PARCAUTO})
-FRAIS_VALIDATION_FINANCES = frozenset({Role.FINANCES})
+FRAIS_VALIDATION_FINANCES = frozenset({Role.FINANCES, Role.RH})
 
 
 def actions_disponibles(utilisateur, mission: Mission) -> dict[str, bool]:

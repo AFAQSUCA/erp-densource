@@ -23,7 +23,8 @@ def _connecte(client, role):
     return compte
 
 
-@pytest.mark.parametrize("role", [Role.ADMIN, Role.DIRECTION, Role.PARCAUTO, Role.FINANCES])
+# La RH fait tout ce que fait la FINANCES (avenant R8 § 2 ; audit M1-27, décision du 12/10/2026).
+@pytest.mark.parametrize("role", [Role.ADMIN, Role.DIRECTION, Role.PARCAUTO, Role.FINANCES, Role.RH])
 def test_les_frais_de_mission_sont_accessibles_aux_roles_concernes(client, role):
     _connecte(client, role)
     mission = _mission_affectee()
@@ -32,7 +33,7 @@ def test_les_frais_de_mission_sont_accessibles_aux_roles_concernes(client, role)
         assert client.get(url).status_code == 200, url
 
 
-@pytest.mark.parametrize("role", [Role.RH, Role.CHARGE_CLIENTELE, Role.CHAUFFEUR])
+@pytest.mark.parametrize("role", [Role.CHARGE_CLIENTELE, Role.CHAUFFEUR])
 def test_les_frais_de_mission_sont_interdits_aux_autres_roles(client, role):
     _connecte(client, role)
     mission = _mission_affectee()

@@ -133,6 +133,41 @@ def test_la_finance_confirme_directement_une_avance_de_route():
     assert frais.valide_finances_par is not None
 
 
+def test_la_rh_confirme_une_avance_comme_la_finance():
+    # Avenant R8 § 2 : la RH fait tout ce que fait la FINANCES (audit M1-27).
+    mission = _mission_affectee()
+    frais = services.planifier_frais(
+        mission, _parcauto(), type_frais=TypeFraisMission.AVANCE_ROUTE, montant=Decimal("50000")
+    )
+    rh = UserFactory(role=Role.RH)
+
+    services.valider_finances(frais, rh)
+
+    frais.refresh_from_db()
+    assert frais.statut == StatutFraisMission.CONFIRME and frais.valide_finances_par == rh
+
+
+def test_la_rh_rejette_une_avance_comme_la_finance():
+    mission = _mission_affectee()
+    frais = services.planifier_frais(
+        mission, _parcauto(), type_frais=TypeFraisMission.AVANCE_ROUTE, montant=Decimal("50000")
+    )
+
+    services.rejeter(frais, UserFactory(role=Role.RH), motif="Montant à revoir")
+
+    frais.refresh_from_db()
+    assert frais.statut == StatutFraisMission.REJETE
+
+
+def test_la_rh_ne_donne_pas_la_premiere_validation_d_un_imprevu():
+    chauffeur = _chauffeur()
+    mission = _mission_affectee(chauffeur)
+    frais = services.declarer_imprevu(mission, chauffeur, montant=Decimal("15000"), justificatif=_preuve())
+
+    with pytest.raises(ActionFraisNonAutorisee):
+        services.valider_parcauto(frais, UserFactory(role=Role.RH))
+
+
 def test_seule_la_finance_valide_une_avance_de_route():
     mission = _mission_affectee()
     frais = services.planifier_frais(
