@@ -240,3 +240,34 @@ def test_un_changement_de_parametre_ne_touche_pas_les_clients_existants():
 
     client.refresh_from_db()
     assert client.taux_tva == Decimal("18.00")
+
+
+# --- NCC / NIF unique quelle que soit son écriture (audit M4-02) ---
+
+
+@pytest.mark.parametrize("autre_ecriture", ["ci-1234567a", "CI 1234567 A", "ci1234567a"])
+def test_un_meme_ncc_ecrit_autrement_est_un_doublon(autre_ecriture):
+    services.creer_client(**_champs(ncc_nif="CI-1234567A"))
+
+    with pytest.raises(ClientError, match=r"déjà utilisé par un autre client \(Cimaf CI, CI-1234567A\)"):
+        services.creer_client(**_champs(ncc_nif=autre_ecriture, raison_sociale="Autre"))
+
+
+def test_le_ncc_est_enregistre_en_majuscules_sans_espaces_superflus():
+    client = services.creer_client(**_champs(ncc_nif="  ci-1234567a  "))
+
+    assert client.ncc_nif == "CI-1234567A"
+
+
+def test_un_client_peut_corriger_l_ecriture_de_son_propre_ncc():
+    client = services.creer_client(**_champs(ncc_nif="CI-1234567A"))
+
+    services.modifier_client(client, ncc_nif="CI 1234567 A")
+
+    client.refresh_from_db()
+    assert client.ncc_nif == "CI 1234567 A"
+
+
+def test_un_ncc_sans_aucun_caractere_utile_est_refuse():
+    with pytest.raises(ClientError, match="obligatoire"):
+        services.creer_client(**_champs(ncc_nif=" - "))

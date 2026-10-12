@@ -5,6 +5,7 @@ Réf. cahier-des-charges.md:119-124, 185-188.
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta
 from decimal import Decimal
 
@@ -14,10 +15,9 @@ from django.utils import timezone
 
 from apps.accounts.models import Role, User
 from apps.core.search import filtrer_par_texte
-
-from .exceptions import ClientError
 from apps.parametres import services as parametres_services
 
+from .exceptions import ClientError
 from .models import Client, Interaction, TypeInteraction
 
 CHAMPS_MODIFIABLES = (
@@ -80,6 +80,19 @@ def interactions_du_client(client: Client) -> QuerySet[Interaction]:
     return client.interactions.select_related("auteur").order_by("-date_interaction", "-pk")
 
 
+def cle_ncc(ncc_nif: str) -> str:
+    """NCC / NIF sans séparateur, en majuscules : « ci-123 », « CI 123 » et « CI123 » sont le même client
+    (audit M4-02)."""
+    return re.sub(r"[^0-9A-Z]", "", ncc_nif.upper())
+
+
+def client_par_ncc(ncc_nif: str, *, sauf: Client | None = None) -> Client | None:
+    """Le client (supprimé logiquement compris) qui porte déjà ce NCC / NIF, quelle que soit son écriture."""
+    cle = cle_ncc(ncc_nif)
+    candidats = Client.all_objects.exclude(pk=sauf.pk if sauf else None).only("pk", "ncc_nif", "raison_sociale")
+    return next((c for c in candidats if cle_ncc(c.ncc_nif) == cle), None)
+
+
 def _controler(champs: dict, *, client: Client | None = None) -> dict:
     """Vérifie et normalise les champs d'une fiche client."""
     taux = Decimal(champs["taux_tva"])
@@ -99,11 +112,15 @@ def _controler(champs: dict, *, client: Client | None = None) -> dict:
         # Garder le chargé actuel reste permis même s'il a été désactivé depuis : seul un NOUVEAU choix doit
         # être un compte actif de ce rôle (sinon modifier une autre information du client échouait).
         raise ClientError("Le chargé clientèle attitré doit être un compte actif de ce rôle.")
-    doublon = Client.all_objects.filter(ncc_nif=champs["ncc_nif"])
-    if client is not None:
-        doublon = doublon.exclude(pk=client.pk)
-    if doublon.exists():
-        raise ClientError(f"Le NCC / NIF {champs['ncc_nif']} est déjà utilisé par un autre client.")
+    ncc = " ".join(str(champs["ncc_nif"]).split()).upper()  # majuscules, espaces superflus retirés
+    if not cle_ncc(ncc):
+        raise ClientError("Le NCC / NIF est obligatoire.")
+    resultat["ncc_nif"] = ncc
+    doublon = client_par_ncc(ncc, sauf=client)
+    if doublon is not None:
+        raise ClientError(
+            f"Le NCC / NIF {ncc} est déjà utilisé par un autre client ({doublon.raison_sociale}, {doublon.ncc_nif})."
+        )
     return resultat
 
 

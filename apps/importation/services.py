@@ -29,7 +29,7 @@ from apps.core.exceptions import ErreurMetier
 from apps.core.search import normaliser
 from apps.customers import services as clients_services
 from apps.customers.exceptions import ClientError
-from apps.customers.models import Client, MotifExoneration
+from apps.customers.models import MotifExoneration
 from apps.drivers import services as drivers_services
 from apps.drivers.exceptions import ChauffeurError
 from apps.drivers.models import Chauffeur, Copilote, StatutChauffeur
@@ -239,7 +239,7 @@ def _copilote(ligne: list, ctx: dict) -> str:
 def _client(ligne: list, ctx: dict) -> str:
     raison, ncc, contact, telephone, email, adresse, taux_brut, motif_brut, delai_brut = ligne[:9]
     raison, ncc = _obligatoire(raison, "La raison sociale"), _obligatoire(ncc, "Le NCC / NIF")
-    if Client.all_objects.filter(ncc_nif=ncc).exists():
+    if clients_services.client_par_ncc(ncc) is not None:  # même comparaison qu'à la saisie (audit M4-02)
         return "present"
     motifs = {normaliser(str(libelle)): code for code, libelle in MotifExoneration.choices}
     motifs.update({normaliser(code): code for code, _ in MotifExoneration.choices})
