@@ -14,7 +14,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 
 ## Bilan
 
-**439 exigences : 334 ✅, 75 🟡, 14 ❌, 13 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **85,2 %**.
+**440 exigences : 335 ✅, 76 🟡, 13 ❌, 13 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **85,4 %**.
 
 | Bloc | Lignes | ✅ | 🟡 | ❌ | ❓ | ⚪ |
 |---|---|---|---|---|---|---|
@@ -32,10 +32,10 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M12 Tableaux de bord | 28 | 24 | 2 | 0 | 0 | 2 |
 | Technique | 87 | 58 | 17 | 3 | 8 | 1 |
 | Recette | 7 | 7 | 0 | 0 | 0 | 0 |
-| Avenants | 17 | 0 | 11 | 6 | 0 | 0 |
-| Écarts d'audit | 21 | 0 | 15 | 2 | 4 | 0 |
+| Avenants | 17 | 1 | 11 | 5 | 0 | 0 |
+| Écarts d'audit | 22 | 0 | 16 | 2 | 4 | 0 |
 
-**Reprise à AV-04 (point critique demandé en priorité), puis M1-09** (première ligne non terminée, dans l'ordre des ID).
+**Reprise à M1-09** (première ligne non terminée, dans l'ordre des ID).
 
 ## Contradictions entre sources (règle 1)
 
@@ -526,7 +526,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | AV-01 | R7 | Report de congé : la date de reprise n'est pas un jour de congé | 🟡 | `apps/hr/services.py:832,861` décompte le jour de reprise ; libellé « Je reprends le travail le » (`apps/hr/forms.py:61`) | Exclure le jour de reprise | À faire |
 | AV-02 | R8 §2 | RH = FINANCES partout (dont frais de mission) | 🟡 | `apps/missions/permissions.py:48` exclut RH ; la RH reçoit le lien et obtient un 403 | Ajouter RH, ou corriger l'avenant | Décision |
 | AV-03 | R2 | Dépassement d'enveloppe validé : la dépense suivante n'est plus bloquée | 🟡 | `apps/finance/demandes.py:165-175` : chaque dépense suivante rouvre une demande | Relever le plafond du montant validé | À faire |
-| AV-04 | Compta P3 | Reclassement du mode de paiement d'une dépense : écriture correcte | ❌ | **Critique** : sens inversé (`apps/accounting/services.py:429-440`), erreur de 2 × le montant | Inverser + reprise de l'existant | À faire |
+| AV-04 | Compta P3 | Reclassement du mode de paiement d'une dépense : écriture correcte | ✅ | `apps/accounting/services.py:421-455` (débit de l'ancien compte, crédit du nouveau, pièce de la dépense) ; reprise `apps/accounting/services.py:461,479` + commande `corriger_reclassements_inverses` ; tests `apps/accounting/tests/test_receivers.py:224,238`, `apps/accounting/tests/test_reprise_reclassements.py` (8 tests) ; couverture 99 % ; avenant P3 corrigé | Corrigé (`595cb83`, `ed05eec`, `50497cc`) ; lancer la commande en production | Fait |
 | AV-05 | Compta P1/F | Comptes utilisés par le code non désactivables | ❌ | **Élevée** : `apps/accounting/services.py:102` ; désactiver 411000 bloque la facturation | Interdire leur désactivation | À faire |
 | AV-06 | Compta P1 | Écritures validées immuables | 🟡 | `update()`/`delete()` en masse possibles ; pas de trigger | `AppendOnlyQuerySet` + trigger | À faire |
 | AV-07 | Compta P6 | Grand livre et balance d'une période : solde d'ouverture | 🟡 | `apps/accounting/services.py:672` repart de 0 | Ligne « solde au début de période » | À faire |
@@ -566,3 +566,4 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | AUD-19 | TECH-43 | Tables de sessions et de jetons jamais purgées | 🟡 | Aucune planification de `clearsessions` / `flushexpiredtokens` | Tâche planifiée | À faire |
 | AUD-20 | architecture | `architecture.md` ne reflète plus les dépendances réelles | 🟡 | `apps/notifications` importe 12 apps | Mettre à jour le schéma | À faire |
 | AUD-21 | M9-10 | Modification d'un devis : TVA écrite « 18,00 » (format français), refusée par le champ numérique qui reste vide | 🟡 | `apps/billing/templates/billing/proforma_modifier.html:21,41` | `unlocalize`, comme M4-09 | À faire |
+| AUD-22 | AV-06 | Pièce d'une écriture limitée à 30 caractères, référence d'une dépense ou d'un mouvement à 100 : erreur 500 sur PostgreSQL au-delà de 30 | 🟡 | `apps/accounting/models.py:75` contre `apps/billing/models.py:394`, `apps/finance/models.py:42,184` ; utilisé `apps/accounting/services.py:411,532` | Aligner les longueurs (migration) ou contrôler à la saisie | À faire |
