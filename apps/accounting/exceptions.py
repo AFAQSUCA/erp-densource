@@ -37,3 +37,7 @@ class ContrePassationImpossible(AccountingError):
 class ClotureImpossible(AccountingError):
     """L'exercice ne peut pas être clôturé : brouillons non résolus (saisie manuelle) ou année pas
     encore terminée."""
+
+
+class CompteProtege(AccountingError):
+    """Compte mouvementé par les écritures automatiques : il ne se désactive pas (audit AV-05)."""

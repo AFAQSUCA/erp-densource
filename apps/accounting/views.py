@@ -263,6 +263,16 @@ class CompteModifierView(RoleRequiredMixin, FormView):
     def get_initial(self):
         return {"libelle": self.compte.libelle, "actif": self.compte.actif}
 
+    def get_form(self, form_class=None):
+        form = super().get_form(form_class)
+        if services.est_protege(self.compte):  # audit AV-05 : la case reste cochée, grisée
+            form.fields["actif"].disabled = True
+            form.fields["actif"].help_text = (
+                "Ce compte est utilisé par les écritures automatiques (factures, règlements, dépenses, trésorerie, "
+                "clôture) : il ne peut pas être désactivé."
+            )
+        return form
+
     def get_context_data(self, **kwargs):
         return super().get_context_data(compte=self.compte, **kwargs)
 

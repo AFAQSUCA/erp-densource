@@ -30,6 +30,7 @@ from .constants import (
     COMPTE_TVA_COLLECTEE,
     COMPTE_TVA_DEDUCTIBLE,
     COMPTE_VENTES_TRANSPORT,
+    COMPTES_UTILISES_PAR_LE_CODE,
     NATURE_MOUVEMENT_VERS_COMPTE,
 )
 from . import permissions
@@ -39,6 +40,7 @@ from .exceptions import (
     CompteDejaExistant,
     ContrePassationImpossible,
     CompteInconnu,
+    CompteProtege,
     EcritureNonEquilibree,
     EcritureVerrouillee,
     ExerciceCloture,
@@ -100,14 +102,25 @@ def creer_compte(acteur, *, numero: str, libelle: str, nature: str) -> Compte:
     return Compte.objects.create(numero=numero, libelle=libelle, nature=nature)
 
 
+def est_protege(compte: Compte) -> bool:
+    """Compte mouvementé par le code (``constants.COMPTES_UTILISES_PAR_LE_CODE``) : jamais désactivé."""
+    return compte.numero in COMPTES_UTILISES_PAR_LE_CODE
+
+
 def modifier_compte(compte: Compte, acteur, *, libelle: str, actif: bool) -> Compte:
     """Corrige le libellé d'un compte et/ou le désactive (jamais supprimé, voir
     ``Compte.__doc__``) : un compte désactivé ne peut plus être utilisé dans une nouvelle
-    écriture, mais son historique reste lisible dans le grand livre."""
+    écriture, mais son historique reste lisible dans le grand livre. Un compte que le code
+    mouvemente de lui-même ne se désactive pas (:func:`est_protege`, audit AV-05)."""
     _exiger_role(acteur, permissions.GESTION_PLAN_COMPTABLE, "modifier un compte")
     libelle = libelle.strip()
     if not libelle:
         raise CompteInconnu("Le libellé est obligatoire.")
+    if not actif and est_protege(compte):
+        raise CompteProtege(
+            f"Le compte {compte.numero} est utilisé par les écritures automatiques (factures, règlements, "
+            "dépenses, trésorerie, clôture) : il ne peut pas être désactivé."
+        )
     compte.libelle, compte.actif = libelle, actif
     compte.save(update_fields=["libelle", "actif"])
     return compte

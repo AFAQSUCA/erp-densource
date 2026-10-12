@@ -57,3 +57,13 @@ COMPTE_TRESORERIE_VERS_JOURNAL = {
     CompteTresorerie.CAISSE: Journal.CAISSE,
     CompteTresorerie.MOBILE_MONEY: Journal.BANQUE,
 }
+
+# Tous les comptes que le code mouvemente de lui-même : désactiver l'un d'eux ferait échouer l'écriture
+# automatique, donc l'opération d'origine (une facture ne se validerait plus sans 411000). Ils ne se désactivent
+# pas (``services.modifier_compte``, admin) — audit AV-05.
+COMPTES_UTILISES_PAR_LE_CODE = frozenset(
+    {COMPTE_CLIENTS, COMPTE_VENTES_TRANSPORT, COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE, COMPTE_RESULTAT}
+    | set(CATEGORIE_DEPENSE_VERS_COMPTE.values())
+    | set(NATURE_MOUVEMENT_VERS_COMPTE.values())
+    | set(COMPTE_TRESORERIE_VERS_COMPTE.values())
+)
