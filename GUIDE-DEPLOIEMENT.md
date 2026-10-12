@@ -259,6 +259,15 @@ docker compose exec web python manage.py comptabiliser_historique_parc_auto --dr
 docker compose exec web python manage.py comptabiliser_historique_parc_auto [--depuis AAAA-MM-JJ]
 ```
 
+**Une fois, après la mise à jour qui corrige le sens des reclassements de mode de paiement** (audit AV-04,
+octobre 2026) : les reclassements déjà écrits à l'envers faussent les soldes de caisse, de banque et de mobile
+money de deux fois leur montant. La commande les liste, puis les corrige (contre-passation et bon reclassement,
+datés du jour ; rien n'est effacé, rejouable sans doublon) :
+```bash
+docker compose exec web python manage.py corriger_reclassements_inverses --dry-run
+docker compose exec web python manage.py corriger_reclassements_inverses
+```
+
 ## 12. Dépannage
 
 | Symptôme | Piste |

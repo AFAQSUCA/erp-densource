@@ -154,8 +154,16 @@ pas de provisoire pour cette origine.
 
 **Reclassement de mode** (`apps/accounting/services.py::reclasser_mode_depense`) : quand la
 Finance corrige le mode d'une dépense provisoire, une écriture de reclassement (journal
-Opérations diverses) débite le nouveau compte de trésorerie et crédite l'ancien — jamais d'édition
-de l'écriture d'origine (append-only). Aucune écriture si l'ancien et le nouveau mode partagent le
+Opérations diverses) **débite l'ancien compte de trésorerie et crédite le nouveau** — jamais d'édition
+de l'écriture d'origine (append-only). L'écriture d'origine a crédité l'ancien compte (sortie
+d'argent) : le reclassement lui rend la somme et la fait sortir du nouveau.
+
+> **Correction du 12/10/2026 (audit AV-04)** : la version initiale de ce paragraphe, et le code, disaient
+> l'inverse (débit du nouveau compte, crédit de l'ancien), ce qui faussait les deux soldes de deux fois
+> le montant. Les reclassements écrits ainsi se reprennent avec
+> `python manage.py corriger_reclassements_inverses [--dry-run]` : contre-passation de l'écriture fausse
+> puis bon reclassement, datés du jour. Depuis la correction, l'écriture s'intitule « Reclassement de
+> trésorerie » et porte la pièce de la dépense. Aucune écriture si l'ancien et le nouveau mode partagent le
 même compte de trésorerie (ex. virement → chèque, tous deux Banque).
 
 **Déclencheurs** :

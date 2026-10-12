@@ -14,7 +14,9 @@ client et l'écriture comptable équilibrée », cahier-des-charges.md:340).
 **Phase 3** : dépenses automatiques du parc auto/missions — écriture générée automatiquement pour
 un plein, un achat de pièces, une main-d'œuvre d'OR, un frais de mission confirmé ou un ordre de
 décaissement exécuté ; reclassement de trésorerie quand la Finance corrige après coup le mode
-d'une dépense provisoire.
+d'une dépense provisoire (débit de l'ancien compte de trésorerie, crédit du nouveau). Les reclassements
+écrits à l'envers avant la correction de l'audit AV-04 se reprennent avec
+`manage.py corriger_reclassements_inverses [--dry-run]` (contre-passation puis bon reclassement).
 
 **Phase 4** : saisie manuelle — écriture générée automatiquement pour un mouvement manuel de
 trésorerie (`finance.MouvementManuel`, champ `nature` pour déduire le compte de contrepartie) ;
