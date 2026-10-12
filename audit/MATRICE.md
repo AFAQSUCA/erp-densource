@@ -14,11 +14,11 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 
 ## Bilan
 
-**440 exigences : 342 ✅, 71 🟡, 11 ❌, 13 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **86,4 %**.
+**440 exigences : 344 ✅, 69 🟡, 11 ❌, 13 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **86,6 %**.
 
 | Bloc | Lignes | ✅ | 🟡 | ❌ | ❓ | ⚪ |
 |---|---|---|---|---|---|---|
-| M1 Sécurité & audit | 77 | 67 | 9 | 0 | 1 | 0 |
+| M1 Sécurité & audit | 77 | 68 | 8 | 0 | 1 | 0 |
 | M2 Flotte | 26 | 18 | 7 | 1 | 0 | 0 |
 | M3 Chauffeurs | 18 | 17 | 1 | 0 | 0 | 0 |
 | M4 Clients | 15 | 14 | 1 | 0 | 0 | 0 |
@@ -32,10 +32,10 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M12 Tableaux de bord | 28 | 24 | 2 | 0 | 0 | 2 |
 | Technique | 87 | 59 | 16 | 3 | 8 | 1 |
 | Recette | 7 | 7 | 0 | 0 | 0 | 0 |
-| Avenants | 17 | 1 | 11 | 5 | 0 | 0 |
+| Avenants | 17 | 2 | 10 | 5 | 0 | 0 |
 | Écarts d'audit | 22 | 1 | 15 | 2 | 4 | 0 |
 
-**Reprise à M1-27** (première ligne non terminée, dans l'ordre des ID).
+**Reprise à M1-37** (première ligne non terminée, dans l'ordre des ID).
 
 ## Contradictions entre sources (règle 1)
 
@@ -78,7 +78,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M1-24 | M1 l.50 | RH : congés et absences | ✅ | `apps/hr/permissions.py:23` | — | Fait |
 | M1-25 | M1 l.50 | RH : dashboard RH | ✅ | `apps/dashboard/services.py:148` | — | Fait |
 | M1-26 | M1 l.50 | RH : pas d'accès aux clients | ✅ | `apps/customers/permissions.py:14` (RH absente) | — | Fait |
-| M1-27 | M1 l.50 + R8 | RH : accès financier (élargi par R8, C3) | 🟡 | `apps/billing/permissions.py:16` ; mais `apps/missions/permissions.py:48` exclut RH des frais de mission | Voir AV-02 | À faire |
+| M1-27 | M1 l.50 + R8 | RH : accès financier (élargi par R8, C3) | ✅ | `apps/billing/permissions.py:16` ; frais de mission `apps/missions/permissions.py` (`FRAIS_CONSULTATION`, `FRAIS_VALIDATION_FINANCES` avec RH) ; seuls oublis trouvés, vérifié sur tous les ensembles ; tests `apps/missions/tests/test_frais_mission.py`, `test_frais_mission_views.py` | Fait (`d1456ed`) | Fait |
 | M1-28 | M1 l.51 | CHARGE_CLIENTELE : portefeuille clients | ✅ | `apps/customers/permissions.py:16` | — | Fait |
 | M1-29 | M1 l.51 | CHARGE_CLIENTELE : historique | ✅ | `apps/customers/models.py:89` | — | Fait |
 | M1-30 | M1 l.51 | CHARGE_CLIENTELE : devis | ✅ | `apps/billing/permissions.py:25` | — | Fait |
@@ -524,7 +524,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | ID | Source | Exigence | Verdict | Preuve | Action | Statut |
 |---|---|---|---|---|---|---|
 | AV-01 | R7 | Report de congé : la date de reprise n'est pas un jour de congé | 🟡 | `apps/hr/services.py:832,861` décompte le jour de reprise ; libellé « Je reprends le travail le » (`apps/hr/forms.py:61`) | Exclure le jour de reprise | À faire |
-| AV-02 | R8 §2 | RH = FINANCES partout (dont frais de mission) | 🟡 | `apps/missions/permissions.py:48` exclut RH ; la RH reçoit le lien et obtient un 403 | Ajouter RH, ou corriger l'avenant | Décision |
+| AV-02 | R8 §2 | RH = FINANCES partout (dont frais de mission) | ✅ | `apps/missions/permissions.py` (RH dans `FRAIS_CONSULTATION` et `FRAIS_VALIDATION_FINANCES`), décision du 12/10/2026, note datée dans l'avenant R8 § 2 | Fait (`d1456ed`) | Fait |
 | AV-03 | R2 | Dépassement d'enveloppe validé : la dépense suivante n'est plus bloquée | 🟡 | `apps/finance/demandes.py:165-175` : chaque dépense suivante rouvre une demande | Relever le plafond du montant validé | À faire |
 | AV-04 | Compta P3 | Reclassement du mode de paiement d'une dépense : écriture correcte | ✅ | `apps/accounting/services.py:421-455` (débit de l'ancien compte, crédit du nouveau, pièce de la dépense) ; reprise `apps/accounting/services.py:461,479` + commande `corriger_reclassements_inverses` ; tests `apps/accounting/tests/test_receivers.py:224,238`, `apps/accounting/tests/test_reprise_reclassements.py` (8 tests) ; couverture 99 % ; avenant P3 corrigé | Corrigé (`595cb83`, `ed05eec`, `50497cc`) ; lancer la commande en production | Fait |
 | AV-05 | Compta P1/F | Comptes utilisés par le code non désactivables | ❌ | **Élevée** : `apps/accounting/services.py:102` ; désactiver 411000 bloque la facturation | Interdire leur désactivation | À faire |
