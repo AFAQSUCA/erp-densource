@@ -14,7 +14,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 
 ## Bilan
 
-**440 exigences : 369 ✅, 46 🟡, 10 ❌, 12 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **89,7 %**.
+**440 exigences : 372 ✅, 45 🟡, 10 ❌, 10 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **90,3 %**.
 
 | Bloc | Lignes | ✅ | 🟡 | ❌ | ❓ | ⚪ |
 |---|---|---|---|---|---|---|
@@ -22,7 +22,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M2 Flotte | 26 | 26 | 0 | 0 | 0 | 0 |
 | M3 Chauffeurs | 18 | 18 | 0 | 0 | 0 | 0 |
 | M4 Clients | 15 | 15 | 0 | 0 | 0 | 0 |
-| M5 Missions | 31 | 30 | 1 | 0 | 0 | 0 |
+| M5 Missions | 31 | 31 | 0 | 0 | 0 | 0 |
 | M6 Carburant | 17 | 17 | 0 | 0 | 0 | 0 |
 | M7 Garage | 13 | 13 | 0 | 0 | 0 | 0 |
 | M8 Stocks | 12 | 12 | 0 | 0 | 0 | 0 |
@@ -33,9 +33,9 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | Technique | 87 | 61 | 14 | 3 | 8 | 1 |
 | Recette | 7 | 7 | 0 | 0 | 0 | 0 |
 | Avenants | 17 | 2 | 10 | 5 | 0 | 0 |
-| Écarts d'audit | 22 | 2 | 14 | 2 | 4 | 0 |
+| Écarts d'audit | 22 | 4 | 14 | 2 | 2 | 0 |
 
-**Reprise à M5-04** (première ligne non terminée, dans l'ordre des ID).
+**Reprise à M9-16** (première ligne non terminée, dans l'ordre des ID).
 
 ## Contradictions entre sources (règle 1)
 
@@ -211,7 +211,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M5-01 | M5 l.129 | N° automatique MIS-AAAA-XXXX | ✅ | `apps/missions/services.py:266` | — | Fait |
 | M5-02 | M5 l.129 | Client | ✅ | `apps/missions/models.py:46` | — | Fait |
 | M5-03 | M5 l.129 | Camion disponible | ✅ | `apps/missions/services.py` (`_verifier_vehicule`) | — | Fait |
-| M5-04 | M5 l.129 | Chauffeur disponible | 🟡 | `apps/missions/services.py` (`_verifier_chauffeur`) ; un chauffeur sans permis renseigné ni catégorie est affectable | Voir AUD-10 | Décision |
+| M5-04 | M5 l.129 | Chauffeur disponible | ✅ | Disponible, non réservé, permis complet (n°, catégorie C ou E, dates) et visite médicale valides, à l'affectation, à la réaffectation et au départ : `apps/missions/services.py` (`documents_manquants_du_chauffeur`, `_exiger_documents_valides`) ; décision du 12/10/2026 (`avenant-affectation-documents.md`) ; tests `apps/missions/tests/test_documents_et_reaffectation.py` | Fait (`65c73ed`) | Fait |
 | M5-05 | M5 l.130 | Lieu de chargement | ✅ | `apps/missions/models.py:86` | — | Fait |
 | M5-06 | M5 l.130 | Lieu de livraison | ✅ | `apps/missions/models.py:87` | — | Fait |
 | M5-07 | M5 l.130 | Nature de la marchandise | ✅ | `apps/missions/models.py:88` | — | Fait |
@@ -554,9 +554,9 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | AUD-07 | M11-11 | Même compte en N1 et N2 | 🟡 | `apps/hr/services.py:336` | Voir M11-11 | À faire |
 | AUD-08 | TECH-46 | `TRUSTED_PROXY_COUNT` absent de `docker-compose.yml` | ✅ | `docker-compose.yml` (`web`, `realtime` : `${TRUSTED_PROXY_COUNT:-1}`) ; guide § variables mis à jour | Fait | Fait |
 | AUD-09 | M1-11 | L'ADMIN peut créer un compte DIRECTION et valider à sa place | ❓ | `apps/accounts/services.py:76-121` | Règle des deux personnes ? | Décision |
-| AUD-10 | M5-04 | Chauffeur sans permis / visite / catégorie C-E affectable | ❓ | `apps/missions/services.py` (`documents_expires_du_chauffeur` ignore les dates vides) | Bloquer ou alerter | Décision |
+| AUD-10 | M5-04 | Chauffeur sans permis / visite / catégorie C-E affectable | ✅ | Bloquant (décision du 12/10/2026) : voir M5-04 | Fait (`65c73ed`) | Fait |
 | AUD-11 | M1-67 | Imprévu ou avance acceptés sur une mission clôturée | 🟡 | `apps/missions/terrain.py:79-123` | Refuser hors statuts actifs | À faire |
-| AUD-12 | M2 | Camion aux documents expirés affectable | ❓ | `apps/missions/services.py` (seuls les documents du chauffeur sont contrôlés) | Bloquer ou alerter | Décision |
+| AUD-12 | M2 | Camion aux documents expirés affectable | ✅ | Bloquant si expiré ou manquant (décision du 12/10/2026) : `apps/missions/services.py` (`documents_non_valides_du_vehicule`, `_exiger_vehicule_en_regle`), affectation et départ ; tests `test_documents_et_reaffectation.py` | Fait (`65c73ed`) | Fait |
 | AUD-13 | M6-08 | N° de ticket unique globalement (pas par station) | 🟡 | `apps/fuel/models.py:99-103` | Unicité (station, ticket) | Décision |
 | AUD-14 | AV-03 | Enveloppe globale dupliquée (NULL), aucun verrou | 🟡 | `apps/finance/models.py:97`, `apps/finance/demandes.py:152` | Contrainte + verrou | À faire |
 | AUD-15 | M5-11 | Pages contenant les codes sans `Cache-Control: no-store` | 🟡 | `apps/missions/views.py` (fiche mission) | `no-store` | À faire |
