@@ -36,6 +36,7 @@ from apps.drivers.models import Chauffeur, Copilote, StatutChauffeur
 from apps.fleet import services as fleet_services
 from apps.fleet.exceptions import FlotteError
 from apps.fleet.models import StatutVehicule
+from apps.core.classeurs import ClasseurSuspect, exiger_classeur_raisonnable
 from apps.hr import services as hr_services
 from apps.hr.exceptions import PersonnelError
 from apps.hr.models import POSTES_COURANTS, Departement, Personnel
@@ -377,6 +378,10 @@ def importer_classeur(fichier, acteur, *, simulation: bool = False) -> Rapport:
     """Importe les feuilles reconnues du classeur. Tout ou rien ; ``simulation`` vérifie sans rien enregistrer."""
     if acteur.role_effectif not in permissions.IMPORT_DONNEES:
         raise ImportInvalide("Seul l'administrateur peut importer des données.")
+    try:
+        exiger_classeur_raisonnable(fichier)  # archive piégée refusée avant ouverture (audit AV-16)
+    except ClasseurSuspect as erreur:
+        raise ImportInvalide(str(erreur)) from erreur
     try:
         classeur = openpyxl.load_workbook(fichier, data_only=True, read_only=True)
     except Exception as erreur:  # fichier corrompu, mauvais format, archive illisible...

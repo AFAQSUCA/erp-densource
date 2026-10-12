@@ -19,6 +19,7 @@ from django.db.models import Count, F, Q, QuerySet, Sum
 from django.utils import timezone
 
 from apps.accounts.models import Role, User
+from apps.core.classeurs import ClasseurSuspect, exiger_classeur_raisonnable
 from apps.core.search import filtrer_par_texte, normaliser
 from apps.core.services import prochain_numero
 from apps.parametres import services as parametres_services
@@ -247,6 +248,10 @@ def importer_personnel(fichier) -> ResultatImportPersonnel:
     Réimporter le même fichier ne crée pas de doublon : un employé déjà présent (même nom et prénom, comme
     l'import général) est listé dans ``deja_presents`` et laissé tel quel (audit M11-08, AV-17).
     """
+    try:
+        exiger_classeur_raisonnable(fichier)  # archive piégée refusée avant ouverture (audit AV-16)
+    except ClasseurSuspect as erreur:
+        raise ImportPersonnelError([str(erreur)]) from erreur
     try:
         classeur = openpyxl.load_workbook(fichier, data_only=True)
     except Exception as erreur:  # fichier corrompu, renommé en .xlsx, archive illisible...
