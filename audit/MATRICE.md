@@ -14,7 +14,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 
 ## Bilan
 
-**440 exigences : 387 ✅, 33 🟡, 7 ❌, 10 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **92,3 %**.
+**440 exigences : 393 ✅, 28 🟡, 6 ❌, 10 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **93,1 %**.
 
 | Bloc | Lignes | ✅ | 🟡 | ❌ | ❓ | ⚪ |
 |---|---|---|---|---|---|---|
@@ -32,8 +32,8 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M12 Tableaux de bord | 28 | 26 | 0 | 0 | 0 | 2 |
 | Technique | 87 | 63 | 14 | 1 | 8 | 1 |
 | Recette | 7 | 7 | 0 | 0 | 0 | 0 |
-| Avenants | 17 | 3 | 9 | 5 | 0 | 0 |
-| Écarts d'audit | 22 | 9 | 10 | 1 | 2 | 0 |
+| Avenants | 17 | 8 | 5 | 4 | 0 | 0 |
+| Écarts d'audit | 22 | 10 | 9 | 1 | 2 | 0 |
 
 **Reprise à TECH-18** (première ligne non terminée, dans l'ordre des ID).
 
@@ -527,11 +527,11 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | AV-02 | R8 §2 | RH = FINANCES partout (dont frais de mission) | ✅ | `apps/missions/permissions.py` (RH dans `FRAIS_CONSULTATION` et `FRAIS_VALIDATION_FINANCES`), décision du 12/10/2026, note datée dans l'avenant R8 § 2 | Fait (`d1456ed`) | Fait |
 | AV-03 | R2 | Dépassement d'enveloppe validé : la dépense suivante n'est plus bloquée | 🟡 | `apps/finance/demandes.py:165-175` : chaque dépense suivante rouvre une demande | Relever le plafond du montant validé | À faire |
 | AV-04 | Compta P3 | Reclassement du mode de paiement d'une dépense : écriture correcte | ✅ | `apps/accounting/services.py:421-455` (débit de l'ancien compte, crédit du nouveau, pièce de la dépense) ; reprise `apps/accounting/services.py:461,479` + commande `corriger_reclassements_inverses` ; tests `apps/accounting/tests/test_receivers.py:224,238`, `apps/accounting/tests/test_reprise_reclassements.py` (8 tests) ; couverture 99 % ; avenant P3 corrigé | Corrigé (`595cb83`, `ed05eec`, `50497cc`) ; lancer la commande en production | Fait |
-| AV-05 | Compta P1/F | Comptes utilisés par le code non désactivables | ❌ | **Élevée** : `apps/accounting/services.py:102` ; désactiver 411000 bloque la facturation | Interdire leur désactivation | À faire |
-| AV-06 | Compta P1 | Écritures validées immuables | 🟡 | `update()`/`delete()` en masse possibles ; pas de trigger | `AppendOnlyQuerySet` + trigger | À faire |
-| AV-07 | Compta P6 | Grand livre et balance d'une période : solde d'ouverture | 🟡 | `apps/accounting/services.py:672` repart de 0 | Ligne « solde au début de période » | À faire |
-| AV-08 | Compta F | Plan comptable : numéro et nature cohérents | 🟡 | `apps/accounting/services.py:83` accepte « abc » en passif, 706999 en charge | Contrôle classe ↔ nature | À faire |
-| AV-09 | Compta P4 | Saisie manuelle : sens contrôlé, comptes actifs revérifiés | 🟡 | `ajouter_ligne_manuelle` sans contrôle du sens | Contrôler au service | À faire |
+| AV-05 | Compta P1/F | Comptes utilisés par le code non désactivables | ✅ | `apps/accounting/constants.py:64` (`COMPTES_UTILISES_PAR_LE_CODE`) ; refus au service `apps/accounting/services.py:133,138`, case grisée à l'écran, lecture seule et suppression interdite dans l'admin ; tests `apps/accounting/tests/test_comptes_proteges.py` (5 tests) ; vérifié dans le navigateur | Fait (`1c53252`) | Fait |
+| AV-06 | Compta P1 | Écritures validées immuables | ✅ | `apps/accounting/models.py:65,160` (`EcritureQuerySet`, `LigneQuerySet` : pas de modification ni suppression en masse) ; déclencheurs PostgreSQL (migration `0005_verrou_ecritures_validees`) ; tests `apps/accounting/tests/test_verrou_ecritures.py` (dont 2 sur PostgreSQL 16) | Fait (`a407692`) | Fait |
+| AV-07 | Compta P6 | Grand livre et balance d'une période : solde d'ouverture | ✅ | `apps/accounting/services.py:777` (`solde_ouverture`, clôtures passées comprises), `apps/accounting/services.py:814` (balance : colonnes d'ouverture) ; écran, impression, Excel ; tests `apps/accounting/tests/test_soldes_ouverture.py` (6 tests) ; vérifié dans le navigateur | Fait (`f69eb5d`) | Fait |
+| AV-08 | Compta F | Plan comptable : numéro et nature cohérents | ✅ | `apps/accounting/services.py:88,100` : 2 à 10 chiffres, nature permise par la classe SYSCOHADA (1 passif ; 2-3 actif ; 4-5 actif/passif ; 6 charge ; 7 produit ; 8 charge/produit ; 9 libre) ; tests `apps/accounting/tests/test_plan_comptable_coherence.py` (27 tests) | Fait (`fc3b649`) | Fait |
+| AV-09 | Compta P4 | Saisie manuelle : sens contrôlé, comptes actifs revérifiés | ✅ | `apps/accounting/services.py:692` (sens débit/crédit), `apps/accounting/services.py:727` (comptes revérifiés à la validation) ; tests `apps/accounting/tests/test_saisie_manuelle_controles.py` | Fait (`83f0cb1`) | Fait |
 | AV-10 | Compta P4/G | OD sur un compte de trésorerie | 🟡 | Écart non détecté avec `soldes_par_compte` | Interdire ou signaler | Décision |
 | AV-11 | Compta (CDC l.340) | Avoir / annulation d'une facture émise | ❌ | NON TROUVÉ | Écran d'avoir DIRECTION | Décision |
 | AV-12 | Compta C | Annulation / correction d'une dépense | ❌ | NON TROUVÉ (`apps/billing/urls.py`) | Annulation avec contre-passation | Décision |
@@ -566,4 +566,4 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | AUD-19 | TECH-43 | Tables de sessions et de jetons jamais purgées | 🟡 | Aucune planification de `clearsessions` / `flushexpiredtokens` | Tâche planifiée | À faire |
 | AUD-20 | architecture | `architecture.md` ne reflète plus les dépendances réelles | 🟡 | `apps/notifications` importe 12 apps | Mettre à jour le schéma | À faire |
 | AUD-21 | M9-10 | Modification d'un devis : TVA écrite « 18,00 » (format français), refusée par le champ numérique qui reste vide | ✅ | `apps/billing/templates/billing/proforma_modifier.html:22,42` (`unlocalize`) ; test `apps/billing/tests/test_proforma_views.py:257` | Fait (`7942790`) | Fait |
-| AUD-22 | AV-06 | Pièce d'une écriture limitée à 30 caractères, référence d'une dépense ou d'un mouvement à 100 : erreur 500 sur PostgreSQL au-delà de 30 | 🟡 | `apps/accounting/models.py:75` contre `apps/billing/models.py:394`, `apps/finance/models.py:42,184` ; utilisé `apps/accounting/services.py:411,532` | Aligner les longueurs (migration) ou contrôler à la saisie | À faire |
+| AUD-22 | AV-06 | Pièce d'une écriture limitée à 30 caractères, référence d'une dépense ou d'un mouvement à 100 : erreur 500 sur PostgreSQL au-delà de 30 | ✅ | `apps/accounting/models.py:95` (100 caractères, migration `0004_piece_reference_100`) ; tests `apps/accounting/tests/test_longueur_piece.py` (alignement des longueurs) | Fait (`3e1454a`) | Fait |
