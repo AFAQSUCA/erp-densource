@@ -112,6 +112,10 @@ EMAIL_HOST_USER = env("EMAIL_HOST_USER", default="")
 EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="")
 EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=True)
 
+# Le service `sauvegarde` tourne à côté de l'application (docker-compose.yml) : l'ADMIN est alerté si la dernière
+# sauvegarde réussie a plus de 26 h (apps/sauvegardes).
+SAUVEGARDES_SURVEILLEES = env.bool("SAUVEGARDES_SURVEILLEES", default=True)
+
 # Supervision des erreurs (cahier-des-charges.md:297, architecture.md §8 « Observabilité »). Inactif
 # tant que SENTRY_DSN n'est pas défini : un environnement de démonstration n'a pas besoin de compte
 # Sentry pour démarrer. Prometheus/Grafana (mentionné au même endroit) n'est volontairement pas

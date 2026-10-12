@@ -1,0 +1,7 @@
+{# Cellule d'un fichier de sauvegarde : {% include "sauvegardes/_fichier.html" with fichier=essai.base %} #}
+<td class="px-4 py-2 text-slate-700">
+  {% if fichier %}
+    {{ fichier.taille|filesizeformat }}
+    <span class="block break-all font-mono text-xs text-slate-600" title="Empreinte SHA-256 : à comparer avant une restauration">{{ fichier.sha256|truncatechars:17 }}</span>
+  {% else %}—{% endif %}
+</td>

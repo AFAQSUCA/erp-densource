@@ -47,6 +47,8 @@ from apps.inventory import services as inventory_services
 from apps.missions import services as missions_services
 from apps.missions.models import StatutMission
 from apps.parametres import services as parametres_services
+from apps.sauvegardes import permissions as sauvegardes_permissions
+from apps.sauvegardes import services as sauvegardes_services
 
 LIGNES_PAR_ALERTE = 5
 JOURS_ALERTES_CARBURANT = 30
@@ -440,6 +442,21 @@ def _alertes_conges():
     )
 
 
+def _alertes_sauvegardes():
+    """Sauvegarde trop ancienne ou en échec (ADMIN, audit M1-14) : une seule ligne au plus."""
+    probleme = sauvegardes_services.alerte()
+    lignes = (
+        [{"libelle": "Sauvegardes", "detail": probleme["detail"], "etat": probleme["niveau"],
+          "url": reverse("sauvegardes:liste")}]
+        if probleme
+        else []
+    )
+    return _alerte(
+        "sauvegardes", "Sauvegardes", "fa-database", lignes,
+        niveau=probleme["niveau"] if probleme else "ATTENTION", voir_tout=reverse("sauvegardes:liste"),
+    )
+
+
 def centre_alertes(role: str, *, aujourd_hui: date | None = None) -> list[dict] | None:
     """Groupes d'alertes non vides visibles pour ce rôle ; ``None`` si le rôle n'en a aucun.
 
@@ -463,6 +480,8 @@ def centre_alertes(role: str, *, aujourd_hui: date | None = None) -> list[dict] 
         constructeurs.append(_alertes_conges)
     if role in billing_permissions.CONSULTATION:
         constructeurs.append(lambda: _alertes_factures(aujourd_hui))
+    if role in sauvegardes_permissions.CONSULTATION:
+        constructeurs.append(_alertes_sauvegardes)
     if not constructeurs:
         return None
     groupes = [construire() for construire in constructeurs]
