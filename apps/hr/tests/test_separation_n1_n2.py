@@ -113,3 +113,16 @@ def test_la_direction_qui_a_remplace_le_n1_ne_remplace_pas_aussi_le_n2():
     with pytest.raises(ActionNonAutorisee):
         services.valider_n2(conge, direction)
     services.valider_n2(conge, UserFactory(role=Role.DIRECTION))  # une autre personne de la Direction le peut
+
+
+def test_la_relance_du_n2_en_retard_ne_va_pas_au_compte_du_n1():
+    from apps.notifications.taches import relancer_validations_en_retard
+
+    conge, chef_rh = _valide_n1_par_un_chef_rh()
+    autre_rh = UserFactory(role=Role.RH)
+    Conge.objects.filter(pk=conge.pk).update(date_limite_n2=timezone.now() - timedelta(hours=1))
+
+    relancer_validations_en_retard()
+
+    relances = Notification.objects.filter(titre__startswith="Validation N2 en retard")
+    assert set(relances.values_list("destinataire", flat=True)) == {autre_rh.pk}

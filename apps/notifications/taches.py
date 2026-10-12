@@ -119,7 +119,7 @@ def relancer_validations_en_retard(*, maintenant: datetime | None = None) -> int
     ):
         crees += len(
             notifier(
-                hr_services.comptes_rh(sauf=conge.employe),
+                hr_services.validateurs_n2(conge),  # jamais le compte du N1 (audit M11-11)
                 categorie=CategorieNotification.CONGE,
                 niveau=NiveauNotification.URGENT,
                 titre=f"Validation N2 en retard : {conge.employe.prenom} {conge.employe.nom}",
