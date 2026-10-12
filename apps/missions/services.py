@@ -26,7 +26,7 @@ from apps.customers.models import Client
 from apps.drivers import services as drivers_services
 from apps.drivers.models import Chauffeur, Copilote, StatutChauffeur
 from apps.fleet import services as fleet_services
-from apps.fleet.models import StatutVehicule, Vehicule
+from apps.fleet.models import DocumentReglementaire, StatutVehicule, TypeDocument, Vehicule
 from apps.parametres import services as parametres_services
 
 from .exceptions import (
@@ -412,6 +412,7 @@ def _verifier_vehicule(vehicule: Vehicule, poids_t: Decimal, sauf: Mission | Non
         raise AffectationImpossible(
             f"Le camion {vehicule.immatriculation} est déjà réservé par une autre mission."
         )
+    _exiger_vehicule_en_regle(vehicule, AffectationImpossible)
     _verifier_capacite(vehicule, poids_t)
 
 
@@ -425,7 +426,7 @@ def _verifier_capacite(vehicule: Vehicule, poids_t: Decimal) -> None:
 
 def documents_expires_du_chauffeur(chauffeur: Chauffeur, *, aujourd_hui: date | None = None) -> list[str]:
     """Libellés (« permis », « visite médicale ») des documents du chauffeur dont la date est dépassée. Une date
-    non renseignée n'est pas une expiration : l'alerte ``MANQUANT`` la signale, mais elle ne bloque pas."""
+    non renseignée n'est pas une expiration : elle est traitée par :func:`documents_manquants_du_chauffeur`."""
     expires = []
     for libelle, echeance in (
         ("permis de conduire", chauffeur.date_expiration_permis),
@@ -437,12 +438,51 @@ def documents_expires_du_chauffeur(chauffeur: Chauffeur, *, aujourd_hui: date | 
     return expires
 
 
+CATEGORIES_POIDS_LOURD = {"C", "E"}  # porteur (C) ou ensemble articulé (E) : cahier-des-charges.md:110
+
+
+def documents_manquants_du_chauffeur(chauffeur: Chauffeur) -> list[str]:
+    """Ce qui manque à la fiche pour conduire un poids lourd : n° et date du permis, catégorie C ou E, date de
+    la visite médicale (décision du 12/10/2026, audit M5-04 : bloquant à l'affectation)."""
+    manquants = []
+    if not (chauffeur.numero_permis or "").strip():
+        manquants.append("n° de permis non renseigné")
+    if not CATEGORIES_POIDS_LOURD & set(chauffeur.categories_permis or []):
+        manquants.append("ni catégorie C ni catégorie E au permis")
+    if chauffeur.date_expiration_permis is None:
+        manquants.append("date d'expiration du permis non renseignée")
+    if chauffeur.date_expiration_visite_medicale is None:
+        manquants.append("visite médicale non renseignée")
+    return manquants
+
+
 def _exiger_documents_valides(chauffeur: Chauffeur, erreur: type[MissionError]) -> None:
-    """Un chauffeur au permis ou à la visite médicale expiré ne peut pas conduire, donc pas être affecté
-    (règle annoncée par l'alerte de ``notifications.taches.alerter_echeances_chauffeurs``)."""
-    expires = documents_expires_du_chauffeur(chauffeur)
-    if expires:
-        raise erreur(f"Le chauffeur {chauffeur} ne peut pas conduire : {' et '.join(expires)}.")
+    """Un chauffeur au permis ou à la visite médicale expiré ou non renseigné, ou sans catégorie poids lourd, ne
+    peut pas conduire, donc pas être affecté ni partir (audit M5-04)."""
+    problemes = documents_expires_du_chauffeur(chauffeur) + documents_manquants_du_chauffeur(chauffeur)
+    if problemes:
+        raise erreur(f"Le chauffeur {chauffeur} ne peut pas conduire : {' ; '.join(problemes)}.")
+
+
+def documents_non_valides_du_vehicule(vehicule: Vehicule, *, aujourd_hui: date | None = None) -> list[str]:
+    """Documents réglementaires du camion expirés ou jamais enregistrés (décision du 12/10/2026, audit AUD-12 :
+    bloquant à l'affectation et au départ)."""
+    aujourd_hui = aujourd_hui or timezone.localdate()
+    documents = {d.type_document: d for d in DocumentReglementaire.objects.filter(vehicule=vehicule)}
+    problemes = []
+    for code, libelle in TypeDocument.choices:
+        document = documents.get(code)
+        if document is None:
+            problemes.append(f"{libelle.lower()} non enregistrée")  # les 4 documents sont féminins
+        elif document.date_expiration < aujourd_hui:
+            problemes.append(f"{libelle.lower()} expirée le {document.date_expiration:%d/%m/%Y}")
+    return problemes
+
+
+def _exiger_vehicule_en_regle(vehicule: Vehicule, erreur: type[MissionError]) -> None:
+    problemes = documents_non_valides_du_vehicule(vehicule)
+    if problemes:
+        raise erreur(f"Le camion {vehicule.immatriculation} ne peut pas rouler : {' ; '.join(problemes)}.")
 
 
 def _verifier_chauffeur(chauffeur: Chauffeur, sauf: Mission | None = None) -> None:
@@ -537,6 +577,7 @@ def demarrer_mission(mission: Mission) -> Mission:
             f"({chauffeur.get_statut_display()})."
         )
     _exiger_documents_valides(chauffeur, DemarrageImpossible)  # un document a pu expirer depuis l'affectation
+    _exiger_vehicule_en_regle(vehicule, DemarrageImpossible)
     copilote = _recharger(mission.copilote) if mission.copilote_id else None
     if copilote is not None and copilote.statut != StatutChauffeur.DISPONIBLE:
         raise DemarrageImpossible(

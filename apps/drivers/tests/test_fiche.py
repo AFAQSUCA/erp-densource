@@ -9,7 +9,7 @@ from apps.drivers import services
 from apps.drivers.exceptions import CategorieInvalide, StatutNonModifiable
 from apps.drivers.models import StatutChauffeur
 
-from .factories import ChauffeurFactory
+from .factories import ChauffeurFactory, chauffeur_sans_permis
 
 pytestmark = pytest.mark.django_db
 
@@ -101,7 +101,7 @@ def test_etat_echeances_couvre_permis_et_visite_medicale():
 
 
 def test_etat_echeances_signale_les_dates_non_renseignees():
-    fiche = ChauffeurFactory()
+    fiche = chauffeur_sans_permis()
 
     assert [e["etat"] for e in services.etat_echeances(fiche, aujourd_hui=AUJOURDHUI)] == [
         "MANQUANT",

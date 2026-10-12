@@ -8,7 +8,7 @@ import pytest
 from apps.audit.models import AuditLog
 from apps.fleet.models import StatutVehicule
 from apps.fleet.services import definir_statut
-from apps.fleet.tests.factories import VehiculeFactory
+from apps.fleet.tests.factories import VehiculeEnRegleFactory
 from apps.garage import services
 from apps.garage.exceptions import CoutInvalide, TransitionOrInterdite
 from apps.garage.models import LieuReparation, StatutOr, TypeOr
@@ -22,7 +22,7 @@ def _ouvrir(vehicule=None, **surcharges):
         type_or=TypeOr.CURATIF, lieu=LieuReparation.INTERNE, motif="Fuite d'huile"
     )
     donnees.update(surcharges)
-    return services.ouvrir_or(vehicule or VehiculeFactory(), **donnees)
+    return services.ouvrir_or(vehicule or VehiculeEnRegleFactory(), **donnees)
 
 
 def _statut(vehicule):
@@ -34,7 +34,7 @@ def _statut(vehicule):
 
 
 def test_ouvrir_cree_un_or_ouvert_numerote_et_passe_le_camion_en_maintenance():
-    camion = VehiculeFactory()
+    camion = VehiculeEnRegleFactory()
 
     ordre = _ouvrir(camion, type_or=TypeOr.PNEUMATIQUES, lieu=LieuReparation.EXTERNE)
 
@@ -95,7 +95,7 @@ def test_cloturer_refuse_un_or_deja_cloture():
 
 
 def test_cloturer_refuse_une_main_d_oeuvre_negative_et_laisse_l_or_ouvert():
-    camion = VehiculeFactory()
+    camion = VehiculeEnRegleFactory()
     ordre = _ouvrir(camion)
 
     with pytest.raises(CoutInvalide):
@@ -110,7 +110,7 @@ def test_cloturer_refuse_une_main_d_oeuvre_negative_et_laisse_l_or_ouvert():
 
 
 def test_regle_4_aucun_autre_or_ni_mission_le_camion_redevient_disponible():
-    camion = VehiculeFactory()
+    camion = VehiculeEnRegleFactory()
     ordre = _ouvrir(camion)
 
     services.cloturer_or(ordre)
@@ -119,7 +119,7 @@ def test_regle_4_aucun_autre_or_ni_mission_le_camion_redevient_disponible():
 
 
 def test_regle_1_un_autre_or_ouvert_maintient_le_camion_en_maintenance():
-    camion = VehiculeFactory()
+    camion = VehiculeEnRegleFactory()
     premier = _ouvrir(camion)
     second = _ouvrir(camion)
 
@@ -152,7 +152,7 @@ def test_regle_2_panne_en_cours_de_mission_le_camion_repasse_en_mission():
     "statut", [StatutVehicule.IMMOBILISE, StatutVehicule.HORS_SERVICE]
 )
 def test_regle_3_immobilise_ou_hors_service_pose_pendant_l_or_est_conserve(statut):
-    camion = VehiculeFactory()
+    camion = VehiculeEnRegleFactory()
     ordre = _ouvrir(camion)
     definir_statut(camion, statut)
 
@@ -174,7 +174,7 @@ def test_regle_1_prime_sur_les_regles_2_et_3():
 
 
 def test_la_cloture_d_un_or_ne_touche_pas_les_autres_camions():
-    autre = VehiculeFactory()
+    autre = VehiculeEnRegleFactory()
     _ouvrir(autre)
     ordre = _ouvrir()
 
@@ -187,7 +187,7 @@ def test_la_cloture_d_un_or_ne_touche_pas_les_autres_camions():
 
 
 def test_vehicule_a_or_ouvert():
-    camion = VehiculeFactory()
+    camion = VehiculeEnRegleFactory()
     assert services.vehicule_a_or_ouvert(camion) is False
 
     ordre = _ouvrir(camion)

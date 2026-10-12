@@ -30,6 +30,16 @@ class DocumentReglementaireFactory(factory.django.DjangoModelFactory):
     date_expiration = date(2027, 1, 1)
 
 
+class VehiculeEnRegleFactory(VehiculeFactory):
+    """Camion avec ses 4 documents réglementaires valides : sans eux, l'affectation et le départ d'une mission
+    sont refusés (audit AUD-12). Les tests qui portent sur un document précis gardent ``VehiculeFactory``."""
+
+    @factory.post_generation
+    def documents(obj, create, extracted, **kwargs):
+        if create:
+            completer_documents(obj)
+
+
 def completer_documents(vehicule, *, expiration=date(2099, 1, 1)):
     """Ajoute les documents réglementaires qui manquent au camion, valides longtemps : un test qui porte sur un
     seul document n'est pas parasité par l'alerte « document manquant » des trois autres (audit M2-22)."""

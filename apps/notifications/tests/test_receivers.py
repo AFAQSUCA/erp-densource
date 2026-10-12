@@ -12,7 +12,7 @@ from apps.accounts.models import Role
 from apps.accounts.tests.factories import UserFactory
 from apps.customers.tests.factories import ClientFactory
 from apps.drivers.tests.factories import ChauffeurFactory
-from apps.fleet.tests.factories import VehiculeFactory
+from apps.fleet.tests.factories import VehiculeEnRegleFactory
 from apps.fuel import services as fuel
 from apps.hr import services as hr
 from apps.hr.tests.factories import PersonnelFactory
@@ -270,7 +270,7 @@ def test_le_stock_bas_n_est_signale_qu_au_franchissement_du_seuil():
 
 
 def _serie_pleins(consommations):
-    camion, chauffeur = VehiculeFactory(), ChauffeurFactory()
+    camion, chauffeur = VehiculeEnRegleFactory(), ChauffeurFactory()
     jour = timezone.localdate() - timedelta(days=40)
     km = 1000
     fuel.enregistrer_plein(
@@ -348,7 +348,7 @@ def _mission_affectee(client):
     )
     missions.planifier_mission(mission)
     return missions.affecter_mission(
-        mission, vehicule=VehiculeFactory(), chauffeur=ChauffeurFactory()
+        mission, vehicule=VehiculeEnRegleFactory(), chauffeur=ChauffeurFactory()
     )
 
 

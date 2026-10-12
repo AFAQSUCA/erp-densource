@@ -7,7 +7,7 @@ import pytest
 from django.utils import timezone
 
 from apps.drivers.tests.factories import ChauffeurFactory
-from apps.fleet.tests.factories import VehiculeFactory
+from apps.fleet.tests.factories import VehiculeEnRegleFactory
 from apps.fuel.exceptions import KilometrageInvalide, SaisieSuspecte
 from apps.garage.exceptions import ChecklistDejaRemplie, IncidentInvalide
 from apps.garage.models import GraviteIncident, TypeIncident
@@ -102,7 +102,7 @@ def test_un_code_faux_ou_un_statut_incorrect_est_refuse_par_le_metier():
 
 def test_le_camion_courant_suit_la_mission_en_cours_puis_la_prochaine_puis_l_habituel():
     moi, _ = chauffeur_avec_compte()
-    habituel = VehiculeFactory(chauffeur_habituel=moi)
+    habituel = VehiculeEnRegleFactory(chauffeur_habituel=moi)
     assert services.vehicule_courant(moi) == habituel
 
     prochaine = mission_de(moi, date_depart_prevue=date(2026, 10, 1))
@@ -141,7 +141,7 @@ def test_pas_de_plein_sans_camion_ni_sur_le_camion_d_un_autre():
         _plein(moi)
 
     mission_de(moi)
-    camion_d_un_autre = VehiculeFactory()
+    camion_d_un_autre = VehiculeEnRegleFactory()
     with pytest.raises(AucunCamion, match="n'est pas le vôtre"):
         _plein(moi, vehicule_id=camion_d_un_autre.pk)
 
@@ -149,7 +149,7 @@ def test_pas_de_plein_sans_camion_ni_sur_le_camion_d_un_autre():
 def test_le_chauffeur_peut_designer_son_camion_explicitement():
     moi, _ = chauffeur_avec_compte()
     mission = mission_de(moi)
-    habituel = VehiculeFactory(chauffeur_habituel=moi)
+    habituel = VehiculeEnRegleFactory(chauffeur_habituel=moi)
 
     assert _plein(moi, vehicule_id=habituel.pk, numero_ticket="T-9").vehicule == habituel
     assert _plein(moi, vehicule_id=mission.vehicule.pk, numero_ticket="T-8").vehicule == mission.vehicule
@@ -214,7 +214,7 @@ def test_un_incident_sur_la_mission_reprend_son_camion():
 
 def test_un_incident_sans_mission_prend_le_camion_courant_et_refuse_un_camion_etranger():
     moi, _ = chauffeur_avec_compte()
-    habituel = VehiculeFactory(chauffeur_habituel=moi)
+    habituel = VehiculeEnRegleFactory(chauffeur_habituel=moi)
 
     incident = services.declarer_incident(
         moi, type_incident=TypeIncident.AUTRE, gravite=GraviteIncident.FAIBLE, description="Rétro cassé"
@@ -223,7 +223,7 @@ def test_un_incident_sans_mission_prend_le_camion_courant_et_refuse_un_camion_et
     with pytest.raises(AucunCamion):
         services.declarer_incident(
             moi, type_incident=TypeIncident.AUTRE, gravite=GraviteIncident.FAIBLE,
-            description="x", vehicule_id=VehiculeFactory().pk,
+            description="x", vehicule_id=VehiculeEnRegleFactory().pk,
         )
     with pytest.raises(IncidentInvalide):
         services.declarer_incident(moi, type_incident="AUTRE", gravite="FAIBLE", description=" ")
@@ -232,8 +232,8 @@ def test_un_incident_sans_mission_prend_le_camion_courant_et_refuse_un_camion_et
 def test_le_chauffeur_ne_voit_que_ses_incidents_et_ses_pleins():
     moi, _ = chauffeur_avec_compte()
     autre, _ = chauffeur_avec_compte()
-    VehiculeFactory(chauffeur_habituel=moi)
-    VehiculeFactory(chauffeur_habituel=autre)
+    VehiculeEnRegleFactory(chauffeur_habituel=moi)
+    VehiculeEnRegleFactory(chauffeur_habituel=autre)
     services.declarer_incident(moi, type_incident="AUTRE", gravite="FAIBLE", description="A")
     services.declarer_incident(autre, type_incident="AUTRE", gravite="FAIBLE", description="B")
 

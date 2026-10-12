@@ -9,7 +9,8 @@ import pytest
 from django.utils import timezone
 
 from apps.drivers.tests.factories import ChauffeurFactory
-from apps.fleet.tests.factories import VehiculeFactory
+from apps.fleet.models import DocumentReglementaire, TypeDocument
+from apps.fleet.tests.factories import VehiculeEnRegleFactory, VehiculeFactory
 from apps.missions import services
 from apps.missions.exceptions import AffectationImpossible, DemarrageImpossible
 
@@ -30,7 +31,7 @@ def test_un_permis_expire_bloque_l_affectation():
     chauffeur = ChauffeurFactory(date_expiration_permis=HIER)
 
     with pytest.raises(AffectationImpossible, match=r"permis de conduire \(expiré le"):
-        services.affecter_mission(mission, vehicule=VehiculeFactory(), chauffeur=chauffeur)
+        services.affecter_mission(mission, vehicule=VehiculeEnRegleFactory(), chauffeur=chauffeur)
 
 
 def test_une_visite_medicale_expiree_bloque_l_affectation():
@@ -38,25 +39,100 @@ def test_une_visite_medicale_expiree_bloque_l_affectation():
     chauffeur = ChauffeurFactory(date_expiration_visite_medicale=HIER)
 
     with pytest.raises(AffectationImpossible, match="visite médicale"):
-        services.affecter_mission(mission, vehicule=VehiculeFactory(), chauffeur=chauffeur)
+        services.affecter_mission(mission, vehicule=VehiculeEnRegleFactory(), chauffeur=chauffeur)
 
 
 def test_les_deux_documents_expires_sont_nommes():
     mission = _planifiee()
     chauffeur = ChauffeurFactory(date_expiration_permis=HIER, date_expiration_visite_medicale=HIER)
 
-    with pytest.raises(AffectationImpossible, match="permis de conduire.* et visite médicale"):
-        services.affecter_mission(mission, vehicule=VehiculeFactory(), chauffeur=chauffeur)
+    with pytest.raises(AffectationImpossible, match="permis de conduire.* ; visite médicale"):
+        services.affecter_mission(mission, vehicule=VehiculeEnRegleFactory(), chauffeur=chauffeur)
 
 
-def test_l_expiration_aujourd_hui_ne_bloque_pas_encore_et_les_dates_absentes_non_plus():
+def test_l_expiration_aujourd_hui_ne_bloque_pas_encore():
     aujourd_hui = timezone.localdate()
-    ok = ChauffeurFactory(date_expiration_permis=aujourd_hui, date_expiration_visite_medicale=DEMAIN)
-    sans_date = ChauffeurFactory()  # dates non renseignées : signalées par l'alerte, pas bloquantes
+    chauffeur = ChauffeurFactory(date_expiration_permis=aujourd_hui, date_expiration_visite_medicale=DEMAIN)
 
-    for chauffeur in (ok, sans_date):
-        mission = services.affecter_mission(_planifiee(), vehicule=VehiculeFactory(), chauffeur=chauffeur)
-        assert mission.chauffeur == chauffeur
+    mission = services.affecter_mission(_planifiee(), vehicule=VehiculeEnRegleFactory(), chauffeur=chauffeur)
+
+    assert mission.chauffeur == chauffeur
+
+
+# --- fiche permis incomplète : bloquante depuis la décision du 12/10/2026 (audit M5-04) ---
+
+
+@pytest.mark.parametrize(
+    ("champs", "message"),
+    [
+        ({"numero_permis": ""}, "n° de permis non renseigné"),
+        ({"categories_permis": []}, "ni catégorie C ni catégorie E"),
+        ({"date_expiration_permis": None}, "date d'expiration du permis non renseignée"),
+        ({"date_expiration_visite_medicale": None}, "visite médicale non renseignée"),
+    ],
+)
+def test_une_fiche_permis_incomplete_bloque_l_affectation(champs, message):
+    chauffeur = ChauffeurFactory(**champs)
+
+    with pytest.raises(AffectationImpossible, match=message):
+        services.affecter_mission(_planifiee(), vehicule=VehiculeEnRegleFactory(), chauffeur=chauffeur)
+
+
+@pytest.mark.parametrize("categories", [["C"], ["E"], ["C", "E"]])
+def test_la_categorie_c_ou_e_suffit(categories):
+    chauffeur = ChauffeurFactory(categories_permis=categories)
+
+    mission = services.affecter_mission(_planifiee(), vehicule=VehiculeEnRegleFactory(), chauffeur=chauffeur)
+
+    assert mission.chauffeur == chauffeur
+
+
+def test_tous_les_manques_sont_nommes_ensemble():
+    chauffeur = ChauffeurFactory(numero_permis="", date_expiration_visite_medicale=None)
+
+    with pytest.raises(AffectationImpossible, match="n° de permis non renseigné ; visite médicale non renseignée"):
+        services.affecter_mission(_planifiee(), vehicule=VehiculeEnRegleFactory(), chauffeur=chauffeur)
+
+
+# --- documents du camion : bloquants s'ils sont expirés ou manquants (audit AUD-12) ---
+
+
+def test_un_camion_sans_assurance_n_est_pas_affectable():
+    camion = VehiculeEnRegleFactory()
+    DocumentReglementaire.objects.filter(vehicule=camion, type_document=TypeDocument.ASSURANCE).delete()
+
+    with pytest.raises(AffectationImpossible, match=r"ne peut pas rouler : assurance non enregistrée"):
+        services.affecter_mission(_planifiee(), vehicule=camion, chauffeur=ChauffeurFactory())
+
+
+def test_un_camion_a_la_visite_technique_expiree_n_est_pas_affectable():
+    camion = VehiculeEnRegleFactory()
+    DocumentReglementaire.objects.filter(vehicule=camion, type_document=TypeDocument.VISITE_TECHNIQUE).update(
+        date_expiration=HIER
+    )
+
+    with pytest.raises(AffectationImpossible, match="visite technique expirée le"):
+        services.affecter_mission(_planifiee(), vehicule=camion, chauffeur=ChauffeurFactory())
+
+
+def test_un_camion_sans_aucun_document_les_nomme_tous():
+    camion = VehiculeFactory()
+
+    with pytest.raises(AffectationImpossible) as erreur:
+        services.affecter_mission(_planifiee(), vehicule=camion, chauffeur=ChauffeurFactory())
+
+    for libelle in ("carte grise", "assurance", "visite technique", "patente"):
+        assert f"{libelle} non enregistrée" in str(erreur.value)
+
+
+def test_un_document_du_camion_expire_depuis_l_affectation_bloque_le_depart():
+    mission = _affectee()
+    DocumentReglementaire.objects.filter(vehicule=mission.vehicule, type_document=TypeDocument.ASSURANCE).update(
+        date_expiration=HIER
+    )
+
+    with pytest.raises(DemarrageImpossible, match="assurance expirée le"):
+        services.demarrer_mission(mission)
 
 
 def test_le_depart_est_refuse_si_un_document_a_expire_depuis_l_affectation():
@@ -83,7 +159,7 @@ def test_reaffecter_vers_un_chauffeur_au_permis_expire_est_refuse():
 
 def test_changer_seulement_le_camion_garde_le_chauffeur():
     mission = _affectee()
-    chauffeur, nouveau = mission.chauffeur, VehiculeFactory()
+    chauffeur, nouveau = mission.chauffeur, VehiculeEnRegleFactory()
 
     modifiee = services.modifier_mission(mission, **_champs(mission), vehicule=nouveau, chauffeur=chauffeur)
 

@@ -11,7 +11,7 @@ from apps.accounts.tests.factories import UserFactory
 from apps.drivers import services as drivers_services
 from apps.drivers.models import Chauffeur, Copilote, StatutChauffeur
 from apps.drivers.tests.factories import ChauffeurFactory, CopiloteFactory
-from apps.fleet.tests.factories import VehiculeFactory
+from apps.fleet.tests.factories import VehiculeEnRegleFactory
 from apps.hr import sorties
 from apps.hr.exceptions import SortieImpossible
 from apps.hr.models import MotifSortie, SortiePersonnel
@@ -33,7 +33,7 @@ def _sortir(personnel, *, le=AUJOURD_HUI):
 
 
 def _mission(statut, chauffeur, copilote=None):
-    return MissionFactory(statut=statut, vehicule=VehiculeFactory(), chauffeur=chauffeur, copilote=copilote)
+    return MissionFactory(statut=statut, vehicule=VehiculeEnRegleFactory(), chauffeur=chauffeur, copilote=copilote)
 
 
 @pytest.mark.parametrize("statut", [StatutMission.EN_COURS_DEPART, StatutMission.EN_COURS_COLIS_RECUPERE])

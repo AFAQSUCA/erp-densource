@@ -13,7 +13,7 @@ from django.utils import timezone
 from apps.accounts.models import Role
 from apps.accounts.tests.factories import UserFactory
 from apps.drivers.tests.factories import ChauffeurFactory
-from apps.fleet.tests.factories import VehiculeFactory
+from apps.fleet.tests.factories import VehiculeEnRegleFactory
 from apps.garage.models import ChecklistVehicule, Incident
 from apps.missions.models import StatutMission
 from apps.mobile_api import services
@@ -418,7 +418,7 @@ def test_signalement_d_un_incident_depuis_le_telephone(client, chauffeur):
 
 def test_incident_sans_mission_sur_le_camion_courant(client, chauffeur):
     fiche, _ = chauffeur
-    habituel = VehiculeFactory(chauffeur_habituel=fiche)
+    habituel = VehiculeEnRegleFactory(chauffeur_habituel=fiche)
 
     client.post(reverse("chauffeur:incident"), _incident())
 
@@ -450,7 +450,7 @@ def test_incident_invalide_ou_sur_la_mission_d_un_autre(client, chauffeur):
 
 def test_les_textes_de_l_incident_sont_echappes(client, chauffeur):
     fiche, _ = chauffeur
-    VehiculeFactory(chauffeur_habituel=fiche)
+    VehiculeEnRegleFactory(chauffeur_habituel=fiche)
     client.post(reverse("chauffeur:incident"), _incident(description="<script>alert(1)</script>"))
 
     texte = client.get(reverse("chauffeur:incident")).content.decode()

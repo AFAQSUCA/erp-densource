@@ -12,7 +12,7 @@ from apps.accounts.tests.factories import UserFactory
 from apps.drivers.models import StatutChauffeur
 from apps.parametres import services as parametres_services
 
-from .factories import ChauffeurFactory
+from .factories import ChauffeurFactory, chauffeur_sans_permis
 
 pytestmark = pytest.mark.django_db
 
@@ -192,7 +192,7 @@ def test_la_fiche_affiche_l_identite_les_contacts_et_les_echeances(client):
 
 def test_la_fiche_signale_les_informations_manquantes(client):
     _connecte(client, Role.DIRECTION)
-    fiche = ChauffeurFactory()
+    fiche = chauffeur_sans_permis()
 
     contenu = client.get(reverse("drivers:detail", args=[fiche.pk])).content.decode()
 
@@ -248,7 +248,7 @@ def test_modifier_une_fiche(client):
 
 def test_modifier_avec_une_categorie_inconnue_est_refuse_par_le_formulaire(client):
     _connecte(client, Role.RH)
-    fiche = ChauffeurFactory()
+    fiche = chauffeur_sans_permis()
 
     reponse = client.post(
         reverse("drivers:modifier", args=[fiche.pk]), _donnees(categories_permis=["C", "Z"])
@@ -262,7 +262,7 @@ def test_modifier_avec_une_categorie_inconnue_est_refuse_par_le_formulaire(clien
 
 def test_modifier_avec_une_date_invalide_est_refuse(client):
     _connecte(client, Role.RH)
-    fiche = ChauffeurFactory()
+    fiche = chauffeur_sans_permis()
 
     reponse = client.post(
         reverse("drivers:modifier", args=[fiche.pk]), _donnees(date_expiration_permis="31/02/2029")
@@ -327,7 +327,7 @@ def test_le_changement_de_statut_refuse_le_get(client):
 
 def test_un_chauffeur_suspendu_ne_peut_plus_etre_affecte_a_une_mission():
     """Lien avec les missions : l'affectation exige un chauffeur « Disponible »."""
-    from apps.fleet.tests.factories import VehiculeFactory
+    from apps.fleet.tests.factories import VehiculeEnRegleFactory
     from apps.missions import services as missions_services
     from apps.missions.exceptions import AffectationImpossible
     from apps.missions.tests.test_services import _planifiee
@@ -338,14 +338,14 @@ def test_un_chauffeur_suspendu_ne_peut_plus_etre_affecte_a_une_mission():
 
     with pytest.raises(AffectationImpossible, match="chauffeur"):
         missions_services.affecter_mission(
-            _planifiee(), vehicule=VehiculeFactory(), chauffeur=fiche
+            _planifiee(), vehicule=VehiculeEnRegleFactory(), chauffeur=fiche
         )
 
 
 def test_les_formulaires_des_chauffeurs_sont_proteges_par_csrf():
     client = Client(enforce_csrf_checks=True)
     client.force_login(UserFactory(role=Role.DIRECTION))
-    fiche = ChauffeurFactory()
+    fiche = chauffeur_sans_permis()
 
     assert client.post(reverse("drivers:modifier", args=[fiche.pk]), _donnees()).status_code == 403
     assert client.post(reverse("drivers:statut", args=[fiche.pk]), {"statut": "SUSPENDU"}).status_code == 403
