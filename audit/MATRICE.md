@@ -14,13 +14,13 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 
 ## Bilan
 
-**440 exigences : 366 ✅, 49 🟡, 10 ❌, 12 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **89,4 %**.
+**440 exigences : 367 ✅, 48 🟡, 10 ❌, 12 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **89,5 %**.
 
 | Bloc | Lignes | ✅ | 🟡 | ❌ | ❓ | ⚪ |
 |---|---|---|---|---|---|---|
 | M1 Sécurité & audit | 77 | 77 | 0 | 0 | 0 | 0 |
 | M2 Flotte | 26 | 26 | 0 | 0 | 0 | 0 |
-| M3 Chauffeurs | 18 | 17 | 1 | 0 | 0 | 0 |
+| M3 Chauffeurs | 18 | 18 | 0 | 0 | 0 | 0 |
 | M4 Clients | 15 | 14 | 1 | 0 | 0 | 0 |
 | M5 Missions | 31 | 30 | 1 | 0 | 0 | 0 |
 | M6 Carburant | 17 | 16 | 1 | 0 | 0 | 0 |
@@ -35,7 +35,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | Avenants | 17 | 2 | 10 | 5 | 0 | 0 |
 | Écarts d'audit | 22 | 2 | 14 | 2 | 4 | 0 |
 
-**Reprise à M3-04** (première ligne non terminée, dans l'ordre des ID).
+**Reprise à M4-02** (première ligne non terminée, dans l'ordre des ID).
 
 ## Contradictions entre sources (règle 1)
 
@@ -168,7 +168,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M3-01 | M3 l.106 | Chauffeur = extension de la fiche personnel | ✅ | `apps/drivers/models.py:32` | — | Fait |
 | M3-02 | M3 l.107 | Matricule unique (source : Personnel) | ✅ | `apps/hr/models.py:54` | — | Fait |
 | M3-03 | M3 l.108 | Poste « Chauffeur » → fiche créée automatiquement | ✅ | `apps/drivers/signals.py:11` | — | Fait |
-| M3-04 | M3 l.106 | La fiche suit le personnel (poste changé, personnel supprimé) | 🟡 | Sortie du personnel : fiche « Inactif » (`apps/drivers/signals.py:57`, audit M1-22). Reste : poste changé ou fiche supprimée ne désactivent pas la fiche chauffeur/copilote (`apps/drivers/signals.py:11-30`) | Passer la fiche en Inactif dans ces deux cas | À faire |
+| M3-04 | M3 l.106 | La fiche suit le personnel (poste changé, personnel supprimé) | ✅ | `apps/drivers/signals.py` (`creer_fiche_chauffeur`, `creer_fiche_copilote`) et `apps/drivers/services.py` (`desactiver_fiche_chauffeur/copilote`) : poste quitté ou fiche supprimée → « Inactif » ; changement refusé pendant une mission ; sortie du personnel (M1-22) ; tests `apps/drivers/tests/test_suivi_personnel.py` | Fait | Fait |
 | M3-05 | M3 l.109 | Fiche : matricule | ✅ | `apps/drivers/models.py:66` | — | Fait |
 | M3-06 | M3 l.109 | Fiche : nom | ✅ | `apps/drivers/models.py:70` | — | Fait |
 | M3-07 | M3 l.109 | Fiche : prénom | ✅ | `apps/drivers/models.py:74` | — | Fait |
