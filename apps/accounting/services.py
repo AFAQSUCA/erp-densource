@@ -83,6 +83,33 @@ def _exiger_brouillon(ecriture: EcritureComptable, action: str) -> None:
         raise EcritureVerrouillee(f"Impossible de {action} : l'écriture est « {ecriture.get_statut_display()} ».")
 
 
+# Classes du plan SYSCOHADA révisé -> natures possibles (audit AV-08). La classe 9 (engagements hors bilan,
+# comptabilité analytique) reste libre ; le plan reste à valider par un expert-comptable (constants.py).
+CLASSES_SYSCOHADA = {
+    "1": ("capitaux", {NatureCompte.PASSIF}),
+    "2": ("immobilisations", {NatureCompte.ACTIF}),
+    "3": ("stocks", {NatureCompte.ACTIF}),
+    "4": ("tiers", {NatureCompte.ACTIF, NatureCompte.PASSIF}),
+    "5": ("trésorerie", {NatureCompte.ACTIF, NatureCompte.PASSIF}),
+    "6": ("charges", {NatureCompte.CHARGE}),
+    "7": ("produits", {NatureCompte.PRODUIT}),
+    "8": ("hors activités ordinaires", {NatureCompte.CHARGE, NatureCompte.PRODUIT}),
+}
+
+
+def _exiger_classe_coherente(numero: str, nature: str) -> None:
+    """Numéro de 2 à 10 chiffres, de classe 1 à 9, et nature permise par sa classe : le bilan et le compte de
+    résultat classent les comptes par nature (audit AV-08)."""
+    if not (numero.isascii() and numero.isdigit() and 2 <= len(numero) <= 10) or numero[0] == "0":
+        raise CompteInconnu("Le numéro de compte s'écrit avec 2 à 10 chiffres, le premier étant la classe (1 à 9).")
+    classe = CLASSES_SYSCOHADA.get(numero[0])
+    if classe is not None and nature not in classe[1]:
+        permises = " ou ".join(sorted(str(NatureCompte(n).label) for n in classe[1]))
+        raise CompteInconnu(
+            f"Un compte de classe {numero[0]} ({classe[0]}) est de nature {permises} dans le plan SYSCOHADA."
+        )
+
+
 def creer_compte(acteur, *, numero: str, libelle: str, nature: str) -> Compte:
     """Ajoute un compte au plan comptable (avenant-comptabilite-autonomie.md § Lot F). Le numéro
     et la nature ne se modifient plus ensuite (:func:`modifier_compte`) : seuls le libellé et
@@ -99,6 +126,7 @@ def creer_compte(acteur, *, numero: str, libelle: str, nature: str) -> Compte:
         raise CompteInconnu("Le libellé est obligatoire.")
     if nature not in NatureCompte.values:
         raise CompteInconnu("Nature de compte inconnue.")
+    _exiger_classe_coherente(numero, nature)
     return Compte.objects.create(numero=numero, libelle=libelle, nature=nature)
 
 
