@@ -13,6 +13,9 @@ Règles de congés :
   (48 h en N1, 24 h en N2) est dépassé, la DIRECTION peut valider ou refuser à la place du validateur habituel
   (`services._direction_remplace`), sauf sur sa propre demande ; sans cela, l'alerte « validation en retard » qui
   lui est adressée n'aurait aucune suite. Avant l'échéance, la hiérarchie reste seule décideuse.
+- **Un même compte ne valide jamais N1 et N2** (audit M11-11, décision du 12/10/2026) : quand le supérieur direct
+  est un compte RH, le N2 revient à un autre compte RH ; s'il était le seul, la DIRECTION décide du N2 sans attendre
+  le délai (`services.validateurs_n2`, `_peut_decider_n2`), et c'est elle qui est notifiée.
 - Droit annuel **26 jours ouvrés** (`DROIT_ANNUEL_JOURS`, avenant-separation-des-taches.md § R7 —
   remplace les 12 jours ouvrables du cahier-des-charges.md:219-221 d'origine), calculé par
   `droits_conges` (jamais stocké) : droit + exceptions RH − congés approuvés, en cours ou terminés de
@@ -36,9 +39,11 @@ Services (`services.py`) : `recruter`, `demander_conge`, `valider_n1`,
 `synchroniser_statuts_conges` (à planifier chaque jour par Celery Beat, étape 5),
 `initialiser_jours_feries`.
 
-Jours fériés : `python manage.py initialiser_jours_feries 2026` crée les fêtes
-fixes et chrétiennes ; les fêtes musulmanes (fixées par décret) se saisissent
-dans l'admin.
+Jours fériés (audit M11-26) : écran `/rh/jours-feries/` (menu « Jours fériés », RH, DIRECTION, ADMIN) pour
+saisir les fêtes musulmanes (fixées par décret), générer les fêtes fixes et chrétiennes d'une année ou supprimer
+un jour. La tâche quotidienne génère celles de l'année en cours et de la suivante ; un jour supprimé n'est pas
+recréé. `python manage.py initialiser_jours_feries 2026` fait la même génération à la main. Les congés déjà
+demandés ne sont pas recalculés.
 
 Points en attente d'autres apps :
 - Notifications et rappels d'échéance (`date_limite_n1/n2`) : `notifications` (étape 5).
@@ -81,7 +86,6 @@ par `manage.py taches_quotidiennes` ; une sortie retenue est réessayée chaque 
 Annulation avec motif (rien n'est réactivé automatiquement). Liste du personnel : présents par défaut ;
 l'effectif du tableau de bord ne compte plus le personnel sorti.
 
-Pas encore d'écran : jours fériés (à saisir dans l'admin, notamment les fêtes musulmanes).
 
 Événements (`signals.py`) : `conge_soumis`, `conge_valide_n1`, `conge_decide` (approuvé, refusé
 ou annulé) sont émis par les services ; `notifications` s'y abonne. Lectures du tableau de bord :

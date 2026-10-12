@@ -216,3 +216,10 @@ class ImportPersonnelForm(StyleTailwindMixin, forms.Form):
         if not fichier.name.lower().endswith(".xlsx"):
             raise forms.ValidationError("Le fichier doit être un classeur Excel (.xlsx).")
         return fichier
+
+
+class JourFerieForm(StyleTailwindMixin, forms.Form):
+    """Saisie d'un jour férié (fêtes musulmanes fixées chaque année par décret, jour férié exceptionnel)."""
+
+    date = forms.DateField(label="Date", widget=forms.DateInput(attrs={"type": "date"}))
+    libelle = forms.CharField(label="Libellé", max_length=100)

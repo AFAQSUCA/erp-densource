@@ -42,7 +42,7 @@ def _connecte(client, role):
 
 
 def test_importer_cree_les_fiches_valides():
-    crees = services.importer_personnel(_classeur([LIGNE_VALIDE]))
+    crees = services.importer_personnel(_classeur([LIGNE_VALIDE])).crees
 
     assert len(crees) == 1
     employe = Personnel.objects.get()
@@ -63,7 +63,7 @@ def test_importer_accepte_le_departement_par_code_ou_par_libelle():
 def test_importer_ignore_les_lignes_vides():
     lignes = [LIGNE_VALIDE, [None] * 7, ["", "", "", "", "", "", ""]]
 
-    crees = services.importer_personnel(_classeur(lignes))
+    crees = services.importer_personnel(_classeur(lignes)).crees
 
     assert len(crees) == 1
 
@@ -126,6 +126,40 @@ def test_importer_accepte_une_date_deja_au_format_date():
     assert Personnel.objects.get().date_embauche == date(2026, 9, 1)
 
 
+def test_reimporter_le_meme_fichier_ne_cree_pas_de_doublon():
+    """Audit M11-08 / AV-17 : comme l'import général, un employé déjà présent (même nom et prénom) est signalé,
+    pas recréé."""
+    services.importer_personnel(_classeur([LIGNE_VALIDE]))
+
+    resultat = services.importer_personnel(_classeur([LIGNE_VALIDE]))
+
+    assert Personnel.objects.count() == 1
+    assert resultat.crees == [] and resultat.deja_presents == ["Traoré Awa"]
+
+
+def test_un_employe_deja_present_est_reconnu_sans_tenir_compte_des_accents_ni_des_majuscules():
+    services.importer_personnel(_classeur([LIGNE_VALIDE]))
+    ligne = ["TRAORE", "awa"] + LIGNE_VALIDE[2:]
+
+    resultat = services.importer_personnel(_classeur([ligne, ["Kone", "Ali"] + LIGNE_VALIDE[2:]]))
+
+    assert [p.nom for p in resultat.crees] == ["Kone"] and resultat.deja_presents == ["TRAORE awa"]
+
+
+def test_un_employe_en_double_dans_le_fichier_n_est_cree_qu_une_fois():
+    resultat = services.importer_personnel(_classeur([LIGNE_VALIDE, LIGNE_VALIDE]))
+
+    assert len(resultat.crees) == 1 and resultat.deja_presents == ["Traoré Awa"]
+    assert Personnel.objects.count() == 1
+
+
+def test_un_fichier_xlsx_illisible_est_refuse_proprement():
+    with pytest.raises(ImportPersonnelError) as exc:
+        services.importer_personnel(io.BytesIO(b"ceci n'est pas un classeur"))
+
+    assert "n'est pas un classeur Excel (.xlsx) lisible" in exc.value.erreurs[0]
+
+
 # --- écran ---
 
 
@@ -186,3 +220,24 @@ def test_le_modele_se_telecharge(client):
     classeur = openpyxl.load_workbook(io.BytesIO(reponse.content))
     premiere_ligne = next(classeur.active.iter_rows(min_row=1, max_row=1, values_only=True))
     assert list(premiere_ligne) == services.COLONNES_IMPORT
+
+
+def test_un_xlsx_corrompu_affiche_une_erreur_au_lieu_d_une_erreur_500(client):
+    _connecte(client, Role.RH)
+    fichier = SimpleUploadedFile("personnel.xlsx", b"pas un classeur", content_type="application/octet-stream")
+
+    reponse = client.post(reverse("hr:personnel_importer"), {"fichier": fichier})
+
+    assert reponse.status_code == 200
+    assert "classeur Excel (.xlsx) lisible" in reponse.content.decode()
+
+
+def test_le_message_signale_les_employes_deja_presents(client):
+    _connecte(client, Role.RH)
+    services.importer_personnel(_classeur([LIGNE_VALIDE]))
+    fichier = SimpleUploadedFile("personnel.xlsx", _classeur([LIGNE_VALIDE]).read())
+
+    reponse = client.post(reverse("hr:personnel_importer"), {"fichier": fichier}, follow=True)
+
+    message = " ".join(str(m) for m in reponse.context["messages"])
+    assert "0 employé(s) importé(s)" in message and "déjà présent(s), non recréé(s) : Traoré Awa" in message

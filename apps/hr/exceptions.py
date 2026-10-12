@@ -26,6 +26,10 @@ class SortieImpossible(PersonnelError, ErreurMetier):
     y compris quand elle est refusée par une autre app (``missions``) à travers le signal de vérification."""
 
 
+class JourFerieInvalide(ErreurMetier):
+    """Saisie d'un jour férié refusée (droits, date déjà fériée, libellé manquant) : message affichable."""
+
+
 class ImportPersonnelError(Exception):
     """Fichier Excel de recrutement en masse invalide : tout ou rien, aucune fiche créée.
 

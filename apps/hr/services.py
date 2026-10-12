@@ -9,6 +9,7 @@ Statuts : DEMANDE → VALIDATION_N1 → APPROUVE → EN_COURS → TERMINE
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
@@ -18,15 +19,16 @@ from django.db.models import Count, F, Q, QuerySet, Sum
 from django.utils import timezone
 
 from apps.accounts.models import Role, User
-from apps.core.search import filtrer_par_texte
+from apps.core.search import filtrer_par_texte, normaliser
 from apps.core.services import prochain_numero
 from apps.parametres import services as parametres_services
 
-from . import signals, sorties
+from . import permissions, signals, sorties
 from .exceptions import (
     ActionNonAutorisee,
     CongeError,
     ImportPersonnelError,
+    JourFerieInvalide,
     PersonnelError,
     SoldeInsuffisant,
     TransitionInterdite,
@@ -219,16 +221,33 @@ departement_importe = _departement_importe
 date_importee = _date_importee
 
 
+@dataclass
+class ResultatImportPersonnel:
+    crees: list[Personnel] = field(default_factory=list)
+    deja_presents: list[str] = field(default_factory=list)  # « Nom Prénom » tels qu'écrits dans le fichier
+
+
+def _cle_nom(nom: str, prenom: str) -> tuple[str, str]:
+    """Même clé que l'import général (``apps.importation``) : sans accents, sans majuscules, espaces réduits."""
+    return " ".join(normaliser(nom).split()), " ".join(normaliser(prenom).split())
+
+
 @transaction.atomic
-def importer_personnel(fichier) -> list[Personnel]:
+def importer_personnel(fichier) -> ResultatImportPersonnel:
     """Recrutement en masse depuis un classeur Excel (colonnes : voir ``COLONNES_IMPORT``).
 
     Tout ou rien (aucune saisie individuelle du poste ou du département à corriger dans
     l'urgence après coup) : la moindre ligne invalide fait échouer tout l'import
     (``ImportPersonnelError``, un message par ligne fautive) — aucune fiche n'est créée tant
     que le fichier entier n'est pas correct.
+
+    Réimporter le même fichier ne crée pas de doublon : un employé déjà présent (même nom et prénom, comme
+    l'import général) est listé dans ``deja_presents`` et laissé tel quel (audit M11-08, AV-17).
     """
-    classeur = openpyxl.load_workbook(fichier, data_only=True)
+    try:
+        classeur = openpyxl.load_workbook(fichier, data_only=True)
+    except Exception as erreur:  # fichier corrompu, renommé en .xlsx, archive illisible...
+        raise ImportPersonnelError(["Ce fichier n'est pas un classeur Excel (.xlsx) lisible."]) from erreur
     feuille = classeur.active
 
     en_tete = next(feuille.iter_rows(min_row=1, max_row=1, values_only=True), None)
@@ -241,6 +260,8 @@ def importer_personnel(fichier) -> list[Personnel]:
 
     erreurs: list[str] = []
     a_creer: list[dict] = []
+    resultat = ResultatImportPersonnel()
+    connus = {_cle_nom(p.nom, p.prenom) for p in Personnel.objects.all()}
     for numero, ligne in enumerate(feuille.iter_rows(min_row=2, values_only=True), start=2):
         if not ligne or all(cellule in (None, "") for cellule in ligne):
             continue  # ligne vide (fin de tableau…) : ignorée, ce n'est pas une erreur
@@ -253,6 +274,11 @@ def importer_personnel(fichier) -> list[Personnel]:
             erreurs.append(f"Ligne {numero} : le nom est obligatoire.")
         if not prenom:
             erreurs.append(f"Ligne {numero} : le prénom est obligatoire.")
+        if nom and prenom:
+            if _cle_nom(nom, prenom) in connus:
+                resultat.deja_presents.append(f"{nom} {prenom}")
+                continue
+            connus.add(_cle_nom(nom, prenom))
 
         poste = _poste_importe(poste_brut)
         if poste is None:
@@ -295,7 +321,8 @@ def importer_personnel(fichier) -> list[Personnel]:
     if erreurs:
         raise ImportPersonnelError(erreurs)
 
-    return [recruter(**champs) for champs in a_creer]
+    resultat.crees = [recruter(**champs) for champs in a_creer]
+    return resultat
 
 
 # --- droits des validateurs ---
@@ -461,6 +488,54 @@ def comptes_rh(*, sauf: Personnel | None = None) -> QuerySet[User]:
     return comptes
 
 
+def _validateur_n1_du(conge: Conge) -> int | None:
+    """Compte qui a approuvé le N1 de ce congé (``None`` tant qu'il n'est pas validé N1)."""
+    return (
+        conge.validations.filter(niveau=NiveauValidation.N1, decision=DecisionConge.APPROUVE)
+        .order_by("-created_at")
+        .values_list("validateur_id", flat=True)
+        .first()
+    )
+
+
+def _ids_rh_actifs() -> set[int]:
+    return set(comptes_rh().values_list("pk", flat=True))
+
+
+def _direction_sans_attendre(conge: Conge, n1: int | None, ids_rh: set[int]) -> bool:
+    """Le N1 a été validé par le seul compte RH disponible : la Direction décide du N2 sans attendre le délai
+    (audit M11-11, décision du 12/10/2026). Sans aucun compte RH, la règle reste celle du délai dépassé."""
+    return n1 in ids_rh and not ids_rh - {n1, conge.employe.utilisateur_id}
+
+
+def validateurs_n2(conge: Conge) -> QuerySet[User]:
+    """Comptes qui décident du N2 sans attendre le délai : la RH, sauf l'employé lui-même et le compte qui a
+    validé le N1 (un même compte ne valide pas les deux niveaux) ; si ce compte était le seul RH, la Direction."""
+    n1, ids_rh = _validateur_n1_du(conge), _ids_rh_actifs()
+    if _direction_sans_attendre(conge, n1, ids_rh):
+        comptes = User.objects.filter(role=Role.DIRECTION, is_active=True)
+    else:
+        comptes = User.objects.filter(pk__in=ids_rh)
+    return comptes.exclude(pk=n1).exclude(pk=conge.employe.utilisateur_id)
+
+
+def _peut_decider_n2(acteur, conge: Conge, *, n1: int | None = None, ids_rh: set[int] | None = None) -> bool:
+    """Valider ou refuser le N2 : la RH ou, à défaut (:func:`_direction_sans_attendre`), la Direction, ou la
+    Direction qui remplace une RH en retard ; jamais l'employé lui-même ni le compte qui a validé le N1.
+    ``n1`` et ``ids_rh`` évitent de relire la base pour chaque congé d'une liste."""
+    if acteur is None:
+        return False
+    n1 = _validateur_n1_du(conge) if n1 is None else n1
+    if acteur.pk in (n1, conge.employe.utilisateur_id):
+        return False
+    if acteur.role == Role.RH:
+        return acteur.is_active
+    if acteur.role == Role.DIRECTION:
+        ids_rh = _ids_rh_actifs() if ids_rh is None else ids_rh
+        return _direction_sans_attendre(conge, n1, ids_rh) or _direction_remplace(acteur, conge)
+    return False
+
+
 def fiche_personnel(acteur) -> Personnel | None:
     """Fiche de l'employé rattachée au compte, ou ``None``."""
     return _fiche_de(acteur)
@@ -485,13 +560,19 @@ def conges_a_valider(acteur) -> QuerySet[Conge]:
         n1 |= Q(employe__superieur__isnull=True, employe__utilisateur=acteur)
     conditions = Q(statut=StatutConge.DEMANDE) & n1
     fiche = _fiche_de(acteur)
-    if acteur.role == Role.RH:
-        conditions |= Q(statut=StatutConge.VALIDATION_N1)
+    if acteur.role in (Role.RH, Role.DIRECTION):
+        # Une seule lecture pour tous les congés en attente de N2 et leur validateur N1 (liste à requêtes constantes).
+        validations_n1 = ValidationConge.objects.filter(
+            conge__statut=StatutConge.VALIDATION_N1, niveau=NiveauValidation.N1, decision=DecisionConge.APPROUVE
+        ).select_related("conge__employe").order_by("created_at")
+        en_n2 = {v.conge_id: (v.conge, v.validateur_id) for v in validations_n1}
+        ids_rh = _ids_rh_actifs() if acteur.role == Role.DIRECTION else set()
+        a_decider_n2 = [
+            pk for pk, (conge, n1) in en_n2.items() if _peut_decider_n2(acteur, conge, n1=n1, ids_rh=ids_rh)
+        ]
+        conditions |= Q(pk__in=a_decider_n2)
     if acteur.role == Role.DIRECTION:
-        maintenant = timezone.now()
-        en_retard = Q(statut=StatutConge.DEMANDE, date_limite_n1__lt=maintenant) | Q(
-            statut=StatutConge.VALIDATION_N1, date_limite_n2__lt=maintenant
-        )
+        en_retard = Q(statut=StatutConge.DEMANDE, date_limite_n1__lt=timezone.now())
         if fiche is not None:
             en_retard &= ~Q(employe=fiche)
         conditions |= en_retard
@@ -519,13 +600,10 @@ def actions_disponibles(conge: Conge, acteur) -> frozenset[str]:
         _est_superieur_de(acteur, conge.employe) or _direction_remplace(acteur, conge)
     ):
         return frozenset({ACTION_VALIDER, ACTION_REFUSER})
-    if conge.statut == StatutConge.VALIDATION_N1 and _direction_remplace(acteur, conge):
+    if conge.statut == StatutConge.VALIDATION_N1 and _peut_decider_n2(acteur, conge):
         return frozenset({ACTION_VALIDER, ACTION_REFUSER})
-    if _est_rh_pour(acteur, conge.employe):
-        if conge.statut == StatutConge.VALIDATION_N1:
-            return frozenset({ACTION_VALIDER, ACTION_REFUSER})
-        if conge.statut == StatutConge.APPROUVE:
-            return frozenset({ACTION_ANNULER})
+    if conge.statut == StatutConge.APPROUVE and _est_rh_pour(acteur, conge.employe):
+        return frozenset({ACTION_ANNULER})
     return frozenset()
 
 
@@ -720,8 +798,11 @@ def valider_n2(conge: Conge, acteur, *, commentaire: str = "") -> Conge:
     _recharger(conge)
     if conge.statut != StatutConge.VALIDATION_N1:
         raise TransitionInterdite("Seul un congé validé N1 peut être validé en N2.")
-    if not (_est_rh_pour(acteur, conge.employe) or _direction_remplace(acteur, conge)):
-        raise ActionNonAutorisee("Validation N2 réservée à la RH (ou à la Direction une fois le délai dépassé).")
+    if not _peut_decider_n2(acteur, conge):
+        raise ActionNonAutorisee(
+            "Validation N2 réservée à la RH, par un autre compte que celui qui a validé le N1 (à défaut d'autre "
+            "compte RH, à la Direction ; sinon à la Direction une fois le délai dépassé)."
+        )
 
     _exiger_solde(_verrouiller_employe(conge.employe), conge.date_debut.year, conge.jours)
 
@@ -750,7 +831,7 @@ def refuser(conge: Conge, acteur, *, commentaire: str = "") -> Conge:
         autorise = _est_superieur_de(acteur, conge.employe) or _direction_remplace(acteur, conge)
     elif conge.statut == StatutConge.VALIDATION_N1:
         niveau = NiveauValidation.N2
-        autorise = _est_rh_pour(acteur, conge.employe) or _direction_remplace(acteur, conge)
+        autorise = _peut_decider_n2(acteur, conge)
     else:
         raise TransitionInterdite("Ce congé n'est plus en attente de validation.")
     if not autorise:
@@ -991,10 +1072,12 @@ def initialiser_jours_feries(annee: int) -> int:
     """Crée les jours fériés fixes et chrétiens manquants ; retourne le nombre créé.
 
     Idempotent : ne recrée pas un jour déjà présent (et ne touche pas aux fêtes
-    musulmanes saisies à la main).
+    musulmanes saisies à la main). Un jour **supprimé** par la RH (par exemple un férié
+    qui ne l'est pas cette année-là) n'est pas recréé non plus : la tâche quotidienne
+    appelle cette fonction (audit M11-26).
     """
     existants = set(
-        JourFerie.objects.filter(date__year=annee).values_list("date", flat=True)
+        JourFerie.all_objects.filter(date__year=annee).values_list("date", flat=True)
     )
     a_creer = [
         JourFerie(date=jour, libelle=libelle)
@@ -1003,3 +1086,35 @@ def initialiser_jours_feries(annee: int) -> int:
     ]
     JourFerie.objects.bulk_create(a_creer)
     return len(a_creer)
+
+
+# --- jours fériés entretenus par la RH (audit M11-26) ---
+
+
+def jours_feries_de(annee: int) -> QuerySet[JourFerie]:
+    return JourFerie.objects.filter(date__year=annee)
+
+
+def _exiger_gestion_jours_feries(acteur) -> None:
+    if acteur is None or acteur.role_effectif not in permissions.PERSONNEL_MODIFICATION:
+        raise JourFerieInvalide("Seules la RH, la Direction et l'administrateur gèrent les jours fériés.")
+
+
+@transaction.atomic
+def ajouter_jour_ferie(acteur, *, jour: date, libelle: str) -> JourFerie:
+    """Saisie d'un jour férié, en particulier des fêtes musulmanes fixées chaque année par décret. Les congés
+    demandés ensuite l'excluent de leur décompte ; ceux déjà demandés ne sont pas recalculés."""
+    _exiger_gestion_jours_feries(acteur)
+    libelle = (libelle or "").strip()
+    if not libelle:
+        raise JourFerieInvalide("Le libellé est obligatoire (par exemple « Tabaski »).")
+    if JourFerie.objects.filter(date=jour).exists():
+        raise JourFerieInvalide(f"Le {jour:%d/%m/%Y} est déjà un jour férié.")
+    return JourFerie.objects.create(date=jour, libelle=libelle[:100])
+
+
+@transaction.atomic
+def supprimer_jour_ferie(acteur, jour_ferie: JourFerie) -> None:
+    """Suppression (douce, journalisée) : la génération automatique ne le recrée pas."""
+    _exiger_gestion_jours_feries(acteur)
+    jour_ferie.delete(deleted_by=acteur)
