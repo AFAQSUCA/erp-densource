@@ -11,7 +11,7 @@ class BillingConfig(AppConfig):
         from apps.audit.registry import audit_model
 
         from . import permissions
-        from .models import Depense, Facture, Proforma, Reglement
+        from .models import Depense, Facture, LigneFacture, Proforma, Reglement
 
         audit_model(
             Facture,
@@ -20,6 +20,7 @@ class BillingConfig(AppConfig):
             auto_validation=("cree_par", ("validee_par",)),
         )
         audit_model(Reglement, module="FINANCES")
+        audit_model(LigneFacture, module="FINANCES")  # audit M1-67 : lignes d'une facture en préparation
         audit_model(Depense, module="FINANCES")
         audit_model(
             Proforma,
