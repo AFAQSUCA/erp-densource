@@ -39,6 +39,16 @@
           </tr>
         </thead>
         <tbody class="divide-y divide-slate-100">
+          {% if ouverture %}
+            <tr class="bg-slate-50">
+              <td class="whitespace-nowrap px-4 py-3 text-slate-700">{{ ouverture.date|date:"d/m/Y" }}</td>
+              <td class="px-4 py-3"></td>
+              <td class="px-4 py-3 font-medium text-slate-900">Solde au {{ ouverture.date|date:"d/m/Y" }}</td>
+              <td class="px-4 py-3"></td>
+              <td class="px-4 py-3"></td>
+              <td class="whitespace-nowrap px-4 py-3 text-right font-semibold text-slate-900">{{ ouverture.solde|floatformat:0|intcomma }}</td>
+            </tr>
+          {% endif %}
           {% for entree in lignes %}
             <tr class="hover:bg-slate-50">
               <td class="whitespace-nowrap px-4 py-3 text-slate-700">{{ entree.ligne.ecriture.date_ecriture|date:"d/m/Y" }}</td>

@@ -767,13 +767,31 @@ def grand_livre(
     return lignes.order_by("ecriture__date_ecriture", "pk")
 
 
+def _lignes_avant(avant: date) -> QuerySet[LigneEcriture]:
+    """Lignes validées antérieures à ``avant``, **écritures de clôture comprises** : la clôture d'un exercice
+    passé solde ses charges et produits et vire le résultat en 120000 ; sans elle, les charges de l'année
+    précédente pèseraient sur l'ouverture de la suivante."""
+    return LigneEcriture.objects.filter(ecriture__statut=StatutEcriture.VALIDEE, ecriture__date_ecriture__lt=avant)
+
+
+def solde_ouverture(compte: Compte, *, avant: date) -> Decimal:
+    """Solde du compte (débit - crédit) avant ``avant`` : point de départ d'un grand livre ou d'une balance sur
+    une période (audit AV-07)."""
+    totaux = _lignes_avant(avant).filter(compte=compte).aggregate(
+        debit=Coalesce(Sum("montant", filter=Q(sens=SensEcriture.DEBIT)), Value(ZERO)),
+        credit=Coalesce(Sum("montant", filter=Q(sens=SensEcriture.CREDIT)), Value(ZERO)),
+    )
+    return totaux["debit"] - totaux["credit"]
+
+
 def grand_livre_avec_solde(
     compte: Compte, *, debut: date | None = None, fin: date | None = None
 ) -> list[dict]:
     """Lignes du compte avec leur solde cumulé (débit augmente le solde, crédit le diminue —
     convention SYSCOHADA, valable pour un compte d'actif/charge ; un compte de passif/produit se
-    lit alors en négatif, ce qui reste correct pour vérifier l'équilibre ligne à ligne)."""
-    solde = ZERO
+    lit alors en négatif, ce qui reste correct pour vérifier l'équilibre ligne à ligne). Sur une période,
+    le cumul part du solde au début de la période (:func:`solde_ouverture`, audit AV-07)."""
+    solde = solde_ouverture(compte, avant=debut) if debut is not None else ZERO
     resultat = []
     for ligne in grand_livre(compte, debut=debut, fin=fin):
         solde += ligne.montant if ligne.sens == SensEcriture.DEBIT else -ligne.montant
@@ -801,7 +819,11 @@ def balance(
     VALIDEE comptent — un brouillon d'opération diverse ne doit jamais fausser la balance
     officielle avant l'approbation de la DIRECTION. Les écritures de clôture sont écartées par
     défaut (balance avant clôture : les charges et produits d'un exercice clôturé restent
-    lisibles) ; elles sont équilibrées, le total débit = total crédit tient dans les deux cas."""
+    lisibles) ; elles sont équilibrées, le total débit = total crédit tient dans les deux cas.
+
+    Avec ``debut`` : chaque compte reprend son **solde d'ouverture** (tout ce qui précède, clôtures des
+    exercices passés comprises), même sans mouvement dans la période, et le solde final cumule ouverture et
+    mouvements (audit AV-07). Sans ``debut``, l'ouverture est nulle."""
     lignes = LigneEcriture.objects.filter(ecriture__statut=StatutEcriture.VALIDEE)
     if not avec_cloture:
         lignes = lignes.exclude(ecriture__origine=ORIGINE_CLOTURE)
@@ -809,12 +831,25 @@ def balance(
         lignes = lignes.filter(ecriture__date_ecriture__gte=debut)
     if fin is not None:
         lignes = lignes.filter(ecriture__date_ecriture__lte=fin)
+    par_compte = {ligne["compte__numero"]: ligne for ligne in _agreger_par_compte(lignes)}
+    ouvertures = {}
+    if debut is not None:
+        for ligne in _agreger_par_compte(_lignes_avant(debut)):
+            solde = ligne["total_debit"] - ligne["total_credit"]
+            if solde:
+                ouvertures[ligne["compte__numero"]] = solde
+                par_compte.setdefault(
+                    ligne["compte__numero"], {**ligne, "total_debit": ZERO, "total_credit": ZERO}
+                )
     resultat = []
-    for ligne in _agreger_par_compte(lignes):
-        solde = ligne["total_debit"] - ligne["total_credit"]
+    for numero in sorted(par_compte):
+        ligne, ouverture = par_compte[numero], ouvertures.get(numero, ZERO)
+        solde = ouverture + ligne["total_debit"] - ligne["total_credit"]
         resultat.append(
             {
                 **ligne,
+                "solde_ouverture_debiteur": ouverture if ouverture > 0 else ZERO,
+                "solde_ouverture_crediteur": -ouverture if ouverture < 0 else ZERO,
                 "solde_debiteur": solde if solde > 0 else ZERO,
                 "solde_crediteur": -solde if solde < 0 else ZERO,
             }

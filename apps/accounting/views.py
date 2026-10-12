@@ -286,6 +286,13 @@ class CompteModifierView(RoleRequiredMixin, FormView):
         return redirect("accounting:plan_comptable")
 
 
+def _ouverture(compte, debut) -> dict | None:
+    """Ligne « Solde au … » d'un grand livre sur une période (audit AV-07) ; ``None`` sans date de début."""
+    if debut is None:
+        return None
+    return {"date": debut, "solde": services.solde_ouverture(compte, avant=debut)}
+
+
 class GrandLivreView(RoleRequiredMixin, TemplateView):
     roles = permissions.CONSULTATION
     template_name = "accounting/grand_livre.html"
@@ -293,14 +300,12 @@ class GrandLivreView(RoleRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         contexte = super().get_context_data(**kwargs)
         form = GrandLivreForm(self.request.GET or None)
-        lignes = None
+        lignes = ouverture = None
         if form.is_valid() and form.cleaned_data.get("compte"):
-            lignes = services.grand_livre_avec_solde(
-                form.cleaned_data["compte"],
-                debut=form.cleaned_data.get("debut"),
-                fin=form.cleaned_data.get("fin"),
-            )
-        contexte.update(form=form, lignes=lignes)
+            compte, debut = form.cleaned_data["compte"], form.cleaned_data.get("debut")
+            lignes = services.grand_livre_avec_solde(compte, debut=debut, fin=form.cleaned_data.get("fin"))
+            ouverture = _ouverture(compte, debut)
+        contexte.update(form=form, lignes=lignes, ouverture=ouverture)
         return contexte
 
 
@@ -311,12 +316,13 @@ class GrandLivreImprimerView(RoleRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         contexte = super().get_context_data(**kwargs)
         form = GrandLivreForm(self.request.GET or None)
-        compte = lignes = None
+        compte = lignes = ouverture = None
         morceaux = []
         if form.is_valid() and form.cleaned_data.get("compte"):
             compte = form.cleaned_data["compte"]
             debut, fin = form.cleaned_data.get("debut"), form.cleaned_data.get("fin")
             lignes = services.grand_livre_avec_solde(compte, debut=debut, fin=fin)
+            ouverture = _ouverture(compte, debut)
             morceaux.append(f"{compte.numero} — {compte.libelle}")
             if debut or fin:
                 debut_texte = f"{debut:%d/%m/%Y}" if debut else "l'origine"
@@ -325,7 +331,7 @@ class GrandLivreImprimerView(RoleRequiredMixin, TemplateView):
         rapport = contexte_rapport(self.request, titre="Grand livre", sous_titre=" · ".join(morceaux))
         if compte is not None:  # sans compte choisi, il n'y a rien à mettre en PDF
             rapport["url_pdf"] = url_pdf(self.request, reverse("accounting:grand_livre_xlsx"))
-        contexte.update(rapport, compte=compte, lignes=lignes)
+        contexte.update(rapport, compte=compte, lignes=lignes, ouverture=ouverture)
         return contexte
 
 
@@ -344,7 +350,7 @@ class BalanceView(RoleRequiredMixin, TemplateView):
             "debit": sum((l["total_debit"] for l in lignes), start=0),
             "credit": sum((l["total_credit"] for l in lignes), start=0),
         }
-        contexte.update(form=form, lignes=lignes, totaux=totaux)
+        contexte.update(form=form, lignes=lignes, totaux=totaux, avec_ouverture=debut is not None)
         return contexte
 
 
@@ -371,7 +377,7 @@ class BalanceImprimerView(RoleRequiredMixin, TemplateView):
         }
         rapport = contexte_rapport(self.request, titre="Balance générale", sous_titre=sous_titre)
         rapport["url_pdf"] = url_pdf(self.request, reverse("accounting:balance_xlsx"))
-        contexte.update(rapport, lignes=lignes, totaux=totaux)
+        contexte.update(rapport, lignes=lignes, totaux=totaux, avec_ouverture=debut is not None)
         return contexte
 
 
@@ -426,10 +432,9 @@ class GrandLivreXlsxView(RoleRequiredMixin, View):
         form = GrandLivreForm(request.GET or None)
         if not (form.is_valid() and form.cleaned_data.get("compte")):
             raise Http404("Choisissez un compte.")
-        compte = form.cleaned_data["compte"]
-        lignes = services.grand_livre_avec_solde(
-            compte, debut=form.cleaned_data.get("debut"), fin=form.cleaned_data.get("fin")
-        )
+        compte, debut = form.cleaned_data["compte"], form.cleaned_data.get("debut")
+        lignes = services.grand_livre_avec_solde(compte, debut=debut, fin=form.cleaned_data.get("fin"))
+        ouverture = _ouverture(compte, debut)
         feuille = {
             "titre": f"Grand livre {compte.numero}",
             "sous_titre": f"{compte.numero} — {compte.libelle}",
@@ -445,6 +450,10 @@ class GrandLivreXlsxView(RoleRequiredMixin, View):
                 for l in lignes
             ],
         }
+        if ouverture is not None:
+            feuille["lignes"].insert(
+                0, [ouverture["date"], "", "", f"Solde au {ouverture['date']:%d/%m/%Y}", None, None, ouverture["solde"]]
+            )
         return reponse_rapport(
             request, f"grand_livre_{compte.numero}", [feuille], titre="Grand livre", sous_titre=feuille["sous_titre"]
         )
@@ -479,6 +488,14 @@ class BalanceXlsxView(RoleRequiredMixin, View):
                 sum((l["solde_debiteur"] for l in lignes), 0), sum((l["solde_crediteur"] for l in lignes), 0),
             ],
         }
+        if debut is not None:  # soldes d'ouverture avant les mouvements de la période (audit AV-07)
+            feuille["entetes"][2:2] = ["Ouverture débiteur", "Ouverture créditeur"]
+            for ligne, l in zip(feuille["lignes"], lignes):
+                ligne[2:2] = [l["solde_ouverture_debiteur"], l["solde_ouverture_crediteur"]]
+            feuille["pied"][2:2] = [
+                sum((l["solde_ouverture_debiteur"] for l in lignes), 0),
+                sum((l["solde_ouverture_crediteur"] for l in lignes), 0),
+            ]
         return reponse_rapport(request, "balance", [feuille], titre="Balance générale", sous_titre=periode)
 
 

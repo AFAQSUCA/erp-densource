@@ -13,6 +13,10 @@
     <thead>
       <tr>
         <th>Compte</th>
+        {% if avec_ouverture %}
+          <th class="droite">Ouverture débiteur</th>
+          <th class="droite">Ouverture créditeur</th>
+        {% endif %}
         <th class="droite">Total débit</th>
         <th class="droite">Total crédit</th>
         <th class="droite">Solde débiteur</th>
@@ -23,19 +27,24 @@
       {% for l in lignes %}
         <tr>
           <td>{{ l.compte__numero }} — {{ l.compte__libelle }}</td>
+          {% if avec_ouverture %}
+            <td class="droite">{% if l.solde_ouverture_debiteur %}{{ l.solde_ouverture_debiteur|floatformat:0|intcomma }}{% endif %}</td>
+            <td class="droite">{% if l.solde_ouverture_crediteur %}{{ l.solde_ouverture_crediteur|floatformat:0|intcomma }}{% endif %}</td>
+          {% endif %}
           <td class="droite">{{ l.total_debit|floatformat:0|intcomma }}</td>
           <td class="droite">{{ l.total_credit|floatformat:0|intcomma }}</td>
           <td class="droite">{% if l.solde_debiteur %}{{ l.solde_debiteur|floatformat:0|intcomma }}{% endif %}</td>
           <td class="droite">{% if l.solde_crediteur %}{{ l.solde_crediteur|floatformat:0|intcomma }}{% endif %}</td>
         </tr>
       {% empty %}
-        <tr><td colspan="5">Aucun compte mouvementé sur cette période.</td></tr>
+        <tr><td colspan="{% if avec_ouverture %}7{% else %}5{% endif %}">Aucun compte mouvementé sur cette période.</td></tr>
       {% endfor %}
     </tbody>
     {% if lignes %}
       <tfoot>
         <tr>
           <td><strong>Total</strong></td>
+          {% if avec_ouverture %}<td></td><td></td>{% endif %}
           <td class="droite"><strong>{{ totaux.debit|floatformat:0|intcomma }}</strong></td>
           <td class="droite"><strong>{{ totaux.credit|floatformat:0|intcomma }}</strong></td>
           <td></td>
