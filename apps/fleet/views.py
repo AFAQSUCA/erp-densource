@@ -11,6 +11,7 @@ from django.views.generic import DetailView, FormView, ListView
 
 from apps.accounts.mixins import RoleRequiredMixin
 from apps.core.views import ImpressionListeMixin, PaginationTolerante
+from apps.parametres import services as parametres_services
 
 from . import permissions, sections, services
 from .exceptions import FlotteError
@@ -78,8 +79,10 @@ class VehiculeDetailView(RoleRequiredMixin, DetailView):
         contexte = super().get_context_data(**kwargs)
         peut_modifier = self.request.user.role_effectif in permissions.MODIFICATION
         type_choisi = self.request.GET.get("document")
+        jours = parametres_services.delai_alerte()
         contexte.update(
-            documents=services.etat_documents(self.object),
+            documents=services.etat_documents(self.object, jours=jours),
+            delai_alerte=jours,
             sections=sections.DETAIL_VEHICULE.sections(self.object, self.request.user),
             peut_modifier=peut_modifier,
             form_compteur=(

@@ -12,6 +12,7 @@ from apps.accounts.models import Role
 from apps.accounts.tests.factories import UserFactory
 from apps.drivers.tests.factories import ChauffeurFactory
 from apps.fleet.models import DocumentReglementaire, StatutVehicule, TypeDocument, Vehicule
+from apps.parametres import services as parametres_services
 
 from .factories import DocumentReglementaireFactory, VehiculeFactory
 
@@ -431,3 +432,19 @@ def test_les_formulaires_de_la_flotte_sont_proteges_par_csrf():
 
     assert client.post(reverse("fleet:creer"), _donnees_formulaire()).status_code == 403
     assert Vehicule.objects.count() == 0
+
+
+def test_la_fiche_annonce_le_delai_d_alerte_des_parametres(client):
+    parametres_services.modifier_parametres(UserFactory(role=Role.ADMIN), delai_alerte_jours=60)
+    camion = VehiculeFactory()
+    DocumentReglementaireFactory(
+        vehicule=camion, type_document=TypeDocument.ASSURANCE,
+        date_expiration=timezone.localdate() + timedelta(days=45),
+    )
+    _connecte(client, Role.PARCAUTO)
+
+    reponse = client.get(reverse("fleet:detail", args=[camion.pk]))
+
+    assert "Une alerte apparaît 60 jours avant l'expiration." in reponse.content.decode()
+    assurance = next(d for d in reponse.context["documents"] if d["code"] == TypeDocument.ASSURANCE)
+    assert assurance["etat"] == "A_RENOUVELER"

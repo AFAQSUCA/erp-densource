@@ -8,10 +8,10 @@ from django.db import transaction
 from django.db.models import Q, QuerySet
 from django.utils import timezone
 
-from apps.core.constants import DELAI_ALERTE_JOURS
 from apps.core.search import filtrer_par_texte
 from apps.core.services import etat_echeance
 from apps.hr.models import Conge, Personnel, StatutConge
+from apps.parametres import services as parametres_services
 
 from .exceptions import CategorieInvalide, StatutNonModifiable
 from .models import CategoriePermis, Chauffeur, Copilote, StatutChauffeur
@@ -154,14 +154,15 @@ def rappeler_copilote_de_conge(copilote: Copilote) -> Copilote:
 
 
 def chauffeurs_a_renouveler(
-    *, aujourd_hui: date | None = None, jours: int = DELAI_ALERTE_JOURS
+    *, aujourd_hui: date | None = None, jours: int | None = None
 ) -> QuerySet[Chauffeur]:
-    """Chauffeurs dont permis OU visite médicale expire d'ici ``jours`` jours.
+    """Chauffeurs dont permis OU visite médicale expire d'ici ``jours`` jours (par défaut le délai d'alerte des
+    paramètres).
 
-    Inclut les documents déjà expirés (alerte préventive à 30 jours,
+    Inclut les documents déjà expirés (alerte préventive, 30 jours dans le
     cahier-des-charges.md:95 et glossaire-metier.md:10-11).
     """
-    limite = (aujourd_hui or timezone.localdate()) + timedelta(days=jours)
+    limite = (aujourd_hui or timezone.localdate()) + timedelta(days=parametres_services.delai_alerte(jours))
     return Chauffeur.objects.select_related("personnel").filter(
         Q(date_expiration_permis__lte=limite)
         | Q(date_expiration_visite_medicale__lte=limite)
@@ -210,7 +211,7 @@ def rechercher_chauffeurs(
 
 
 def chauffeurs_avec_echeance_proche(
-    *, aujourd_hui: date | None = None, jours: int = DELAI_ALERTE_JOURS
+    *, aujourd_hui: date | None = None, jours: int | None = None
 ) -> set[int]:
     """Identifiants des chauffeurs dont le permis ou la visite médicale expire."""
     return set(
@@ -221,9 +222,11 @@ def chauffeurs_avec_echeance_proche(
 
 
 def etat_echeances(
-    chauffeur: Chauffeur, *, aujourd_hui: date | None = None, jours: int = DELAI_ALERTE_JOURS
+    chauffeur: Chauffeur, *, aujourd_hui: date | None = None, jours: int | None = None
 ) -> list[dict]:
-    """Situation du permis et de la visite médicale (cahier-des-charges.md:110-111)."""
+    """Situation du permis et de la visite médicale (cahier-des-charges.md:110-111). Pour une liste, passer
+    ``jours`` (lu une fois) plutôt que de relire le paramètre pour chaque chauffeur."""
+    jours = parametres_services.delai_alerte(jours)
     lignes = []
     for libelle, expiration in (
         ("Permis de conduire", chauffeur.date_expiration_permis),

@@ -22,6 +22,7 @@ from apps.drivers.models import StatutChauffeur
 from apps.fleet import services as fleet_services
 from apps.hr import services as hr_services
 from apps.hr.models import Conge, StatutConge
+from apps.parametres import services as parametres_services
 
 from .models import CategorieNotification, NiveauNotification
 from .services import notifier, utilisateurs_du_role
@@ -36,12 +37,13 @@ def _phrase_echeance(etat: str, restants: int | None, expiration: date) -> tuple
 
 
 def alerter_documents_vehicules(*, aujourd_hui: date | None = None) -> int:
-    """Documents réglementaires des camions à renouveler (30 jours) ou expirés."""
+    """Documents réglementaires des camions à renouveler (délai d'alerte des paramètres) ou expirés."""
     aujourd_hui = aujourd_hui or timezone.localdate()
+    jours = parametres_services.delai_alerte()
     destinataires = list(utilisateurs_du_role(Role.PARCAUTO))
     crees = 0
-    for document in fleet_services.documents_a_renouveler(aujourd_hui=aujourd_hui):
-        etat, restants = etat_echeance(document.date_expiration, aujourd_hui=aujourd_hui)
+    for document in fleet_services.documents_a_renouveler(aujourd_hui=aujourd_hui, jours=jours):
+        etat, restants = etat_echeance(document.date_expiration, aujourd_hui=aujourd_hui, jours=jours)
         phrase, niveau = _phrase_echeance(etat, restants, document.date_expiration)
         vehicule = document.vehicule
         crees += len(
@@ -61,9 +63,10 @@ def alerter_documents_vehicules(*, aujourd_hui: date | None = None) -> int:
 def alerter_echeances_chauffeurs(*, aujourd_hui: date | None = None) -> int:
     """Permis et visites médicales des chauffeurs à renouveler ou expirés."""
     aujourd_hui = aujourd_hui or timezone.localdate()
+    jours = parametres_services.delai_alerte()
     destinataires = list(utilisateurs_du_role(Role.RH, Role.DIRECTION))
     crees = 0
-    chauffeurs = drivers_services.chauffeurs_a_renouveler(aujourd_hui=aujourd_hui).exclude(
+    chauffeurs = drivers_services.chauffeurs_a_renouveler(aujourd_hui=aujourd_hui, jours=jours).exclude(
         statut=StatutChauffeur.INACTIF
     )
     for chauffeur in chauffeurs:
@@ -73,7 +76,7 @@ def alerter_echeances_chauffeurs(*, aujourd_hui: date | None = None) -> int:
         ):
             if echeance is None:
                 continue
-            etat, restants = etat_echeance(echeance, aujourd_hui=aujourd_hui)
+            etat, restants = etat_echeance(echeance, aujourd_hui=aujourd_hui, jours=jours)
             if etat not in ("A_RENOUVELER", "EXPIRE"):
                 continue
             phrase, niveau = _phrase_echeance(etat, restants, echeance)

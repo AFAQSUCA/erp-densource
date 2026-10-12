@@ -2,9 +2,12 @@ from datetime import date
 
 import pytest
 
+from apps.accounts.models import Role
+from apps.accounts.tests.factories import UserFactory
 from apps.drivers import services
 from apps.drivers.models import Chauffeur, StatutChauffeur
 from apps.hr.tests.factories import PersonnelFactory
+from apps.parametres import services as parametres_services
 
 from .factories import ChauffeurFactory
 
@@ -148,3 +151,11 @@ def test_chauffeurs_disponibles_exclut_les_autres_statuts():
     ChauffeurFactory(statut=StatutChauffeur.EN_MISSION)
 
     assert list(services.chauffeurs_disponibles()) == [libre]
+
+
+def test_un_delai_d_alerte_raccourci_dans_les_parametres_ecarte_un_permis_encore_lointain():
+    parametres_services.modifier_parametres(UserFactory(role=Role.ADMIN), delai_alerte_jours=10)
+    chauffeur = ChauffeurFactory(date_expiration_permis=date(2026, 10, 10))
+
+    assert chauffeur not in services.chauffeurs_a_renouveler(aujourd_hui=date(2026, 9, 20))
+    assert services.etat_echeances(chauffeur, aujourd_hui=date(2026, 9, 20))[0]["etat"] == "VALIDE"

@@ -23,6 +23,7 @@ from apps.hr.tests.factories import PersonnelFactory
 from apps.inventory.tests.factories import ArticleFactory
 from apps.missions.models import StatutMission
 from apps.missions.tests.factories import MissionFactory
+from apps.parametres import services as parametres_services
 
 pytestmark = pytest.mark.django_db
 
@@ -602,3 +603,16 @@ def test_le_graphique_des_clients_renvoie_a_la_fiche_client(client):
     ligne = reponse.context["clientele"]["graphique_clients"]["lignes"][0]
     assert ligne["url"] == reverse("customers:detail", args=[gros.pk]) and ligne["detail"] == "1 mission"
     assert ligne["url"] in reponse.content.decode()
+
+
+def test_le_delai_d_alerte_des_parametres_s_applique_aux_documents_et_aux_chauffeurs():
+    # Audit M1-10 : délai porté à 60 jours par l'écran « Paramètres ».
+    parametres_services.modifier_parametres(UserFactory(role=Role.ADMIN), delai_alerte_jours=60)
+    DocumentReglementaireFactory(date_expiration=AUJOURD_HUI + timedelta(days=45))
+    ChauffeurFactory(date_expiration_permis=AUJOURD_HUI + timedelta(days=45))
+
+    documents = _groupes(Role.PARCAUTO)["documents"]
+    chauffeurs = _groupes(Role.RH)["chauffeurs"]
+
+    assert documents["nombre"] == 1 and documents["lignes"][0]["detail"] == "expire dans 45 j"
+    assert chauffeurs["nombre"] == 1 and chauffeurs["lignes"][0]["detail"] == "expire dans 45 j"

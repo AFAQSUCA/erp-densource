@@ -10,6 +10,7 @@ from django.utils import timezone
 from apps.accounts.models import Role
 from apps.accounts.tests.factories import UserFactory
 from apps.drivers.models import StatutChauffeur
+from apps.parametres import services as parametres_services
 
 from .factories import ChauffeurFactory
 
@@ -350,3 +351,16 @@ def test_les_formulaires_des_chauffeurs_sont_proteges_par_csrf():
     assert client.post(reverse("drivers:statut", args=[fiche.pk]), {"statut": "SUSPENDU"}).status_code == 403
     fiche.refresh_from_db()
     assert fiche.statut == StatutChauffeur.DISPONIBLE and fiche.numero_permis == ""
+
+
+def test_la_fiche_et_la_liste_appliquent_le_delai_d_alerte_des_parametres(client):
+    parametres_services.modifier_parametres(UserFactory(role=Role.ADMIN), delai_alerte_jours=60)
+    chauffeur = ChauffeurFactory(date_expiration_permis=timezone.localdate() + timedelta(days=45))
+    _connecte(client, Role.RH)
+
+    fiche = client.get(reverse("drivers:detail", args=[chauffeur.pk]))
+    liste = client.get(reverse("drivers:liste"))
+
+    assert "Une alerte apparaît 60 jours avant l'expiration." in fiche.content.decode()
+    assert fiche.context["echeances"][0]["etat"] == "A_RENOUVELER"
+    assert liste.context["lignes"][0]["echeances"][0]["etat"] == "A_RENOUVELER"

@@ -12,11 +12,11 @@ from django.utils import timezone
 
 from apps.audit import services as audit_services
 from apps.audit.models import ActionChoices
-from apps.core.constants import DELAI_ALERTE_JOURS
 from apps.core.search import filtrer_par_texte
 from apps.core.services import etat_echeance
 
 from apps.drivers.models import Chauffeur
+from apps.parametres import services as parametres_services
 
 from . import permissions
 from .exceptions import (
@@ -139,14 +139,14 @@ def corriger_kilometrage(vehicule: Vehicule, acteur, *, kilometrage: int, motif:
 
 
 def documents_a_renouveler(
-    *, aujourd_hui: date | None = None, jours: int = DELAI_ALERTE_JOURS
+    *, aujourd_hui: date | None = None, jours: int | None = None
 ) -> QuerySet[DocumentReglementaire]:
-    """Documents expirant d'ici ``jours`` jours, ou déjà expirés.
+    """Documents expirant d'ici ``jours`` jours (par défaut le délai d'alerte des paramètres), ou déjà expirés.
 
-    Alimente l'alerte préventive à 30 jours (cahier-des-charges.md:95) et le
+    Alimente l'alerte préventive (30 jours dans le cahier-des-charges.md:95) et le
     centre d'alertes du tableau de bord (cahier-des-charges.md:231-232).
     """
-    limite = (aujourd_hui or timezone.localdate()) + timedelta(days=jours)
+    limite = (aujourd_hui or timezone.localdate()) + timedelta(days=parametres_services.delai_alerte(jours))
     return DocumentReglementaire.objects.select_related("vehicule").filter(
         date_expiration__lte=limite
     )
@@ -300,7 +300,7 @@ def repartition_statuts() -> dict[str, int]:
 
 
 def vehicules_avec_documents_a_renouveler(
-    *, aujourd_hui: date | None = None, jours: int = DELAI_ALERTE_JOURS
+    *, aujourd_hui: date | None = None, jours: int | None = None
 ) -> set[int]:
     """Identifiants des camions ayant au moins un document expiré ou expirant."""
     return set(
@@ -347,7 +347,7 @@ def enregistrer_document(
 
 
 def etat_documents(
-    vehicule: Vehicule, *, aujourd_hui: date | None = None, jours: int = DELAI_ALERTE_JOURS
+    vehicule: Vehicule, *, aujourd_hui: date | None = None, jours: int | None = None
 ) -> list[dict]:
     """Situation des 4 documents réglementaires d'un camion, dans l'ordre du CDC.
 
@@ -355,6 +355,7 @@ def etat_documents(
     jours ou moins), VALIDE, MANQUANT (jamais enregistré).
     """
     aujourd_hui = aujourd_hui or timezone.localdate()
+    jours = parametres_services.delai_alerte(jours)
     existants = {
         d.type_document: d
         for d in DocumentReglementaire.objects.filter(vehicule=vehicule)
