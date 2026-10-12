@@ -1,5 +1,3 @@
-from decimal import Decimal
-
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -8,9 +6,8 @@ from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from apps.core.models import BaseModel
-
-TVA_DEFAUT = Decimal("18.00")
-DELAI_PAIEMENT_DEFAUT = 30  # jours ; échéance d'une facture = émission + délai du client
+# Valeurs du cahier des charges (défauts des colonnes) ; un nouveau client reçoit celles des paramètres.
+from apps.parametres.models import DELAI_PAIEMENT_DEFAUT, TVA_DEFAUT  # noqa: F401 (réexportées)
 
 
 class MotifExoneration(models.TextChoices):

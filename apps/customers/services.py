@@ -16,7 +16,9 @@ from apps.accounts.models import Role, User
 from apps.core.search import filtrer_par_texte
 
 from .exceptions import ClientError
-from .models import DELAI_PAIEMENT_DEFAUT, TVA_DEFAUT, Client, Interaction, TypeInteraction
+from apps.parametres import services as parametres_services
+
+from .models import Client, Interaction, TypeInteraction
 
 CHAMPS_MODIFIABLES = (
     "raison_sociale",
@@ -85,7 +87,7 @@ def _controler(champs: dict, *, client: Client | None = None) -> dict:
         raise ClientError("Le taux de TVA doit être compris entre 0 et 100 %.")
     if taux == 0 and not champs.get("motif_exoneration"):
         raise ClientError("Un motif d'exonération est obligatoire quand la TVA est à 0 %.")
-    delai = champs.get("delai_paiement_jours", DELAI_PAIEMENT_DEFAUT)
+    delai = champs["delai_paiement_jours"]
     if not 1 <= delai <= 365:
         raise ClientError("Le délai de paiement doit être compris entre 1 et 365 jours.")
     resultat = dict(champs, taux_tva=taux, delai_paiement_jours=delai)
@@ -107,8 +109,11 @@ def _controler(champs: dict, *, client: Client | None = None) -> dict:
 
 @transaction.atomic
 def creer_client(**champs) -> Client:
-    """Crée un client. TVA à 18 % par défaut ; à 0 %, le motif d'exonération est obligatoire."""
-    champs.setdefault("taux_tva", TVA_DEFAUT)
+    """Crée un client. Taux de TVA et délai de paiement non fournis : ceux des paramètres (18 % et 30 jours dans
+    le cahier des charges) ; à 0 %, le motif d'exonération est obligatoire."""
+    reglages = parametres_services.parametres()
+    champs.setdefault("taux_tva", reglages.tva_defaut)
+    champs.setdefault("delai_paiement_jours", reglages.delai_paiement_defaut_jours)
     champs.setdefault("charge_clientele", None)
     champs.setdefault("motif_exoneration", "")
     champs.setdefault("email", "")
