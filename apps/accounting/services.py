@@ -412,10 +412,15 @@ def comptabiliser_une_depense_automatique(depense) -> EcritureComptable:
     )
 
 
+LIBELLE_RECLASSEMENT = "Reclassement du mode de paiement — "
+
+
 def reclasser_mode_depense(depense, ancien_mode: str) -> EcritureComptable | None:
     """Corrige le compte de trésorerie d'une dépense automatique après coup (Finance corrige le
-    mode réel via ``billing.services.changer_mode_depense``) : contre-passe l'ancien compte,
-    impute le nouveau, plutôt que de modifier l'écriture d'origine (append-only). Ne crée rien si
+    mode réel via ``billing.services.changer_mode_depense``) : l'écriture d'origine a crédité
+    l'ancien compte de trésorerie (sortie d'argent) ; le reclassement le **débite** (on lui rend la
+    somme) et **crédite** le nouveau (c'est lui qui a payé), plutôt que de modifier l'écriture
+    d'origine (append-only). Ne crée rien si
     l'ancien et le nouveau mode partagent le même compte de trésorerie (ex. virement → chèque,
     tous deux Banque).
 
@@ -428,12 +433,12 @@ def reclasser_mode_depense(depense, ancien_mode: str) -> EcritureComptable | Non
         return None
     lignes = [
         LigneSaisie(
-            compte=COMPTE_TRESORERIE_VERS_COMPTE[nouveau_compte_tresorerie],
+            compte=COMPTE_TRESORERIE_VERS_COMPTE[ancien_compte_tresorerie],
             sens=SensEcriture.DEBIT,
             montant=depense.montant,
         ),
         LigneSaisie(
-            compte=COMPTE_TRESORERIE_VERS_COMPTE[ancien_compte_tresorerie],
+            compte=COMPTE_TRESORERIE_VERS_COMPTE[nouveau_compte_tresorerie],
             sens=SensEcriture.CREDIT,
             montant=depense.montant,
         ),
@@ -441,8 +446,9 @@ def reclasser_mode_depense(depense, ancien_mode: str) -> EcritureComptable | Non
     return passer_ecriture(
         journal=Journal.OPERATIONS_DIVERSES,
         date_ecriture=timezone.localdate(),
-        libelle=f"Reclassement du mode de paiement — {depense.libelle}",
+        libelle=f"{LIBELLE_RECLASSEMENT}{depense.libelle}"[:255],
         lignes=lignes,
+        piece_reference=depense.reference,
     )
 
 
