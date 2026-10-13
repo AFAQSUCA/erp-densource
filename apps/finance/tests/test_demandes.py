@@ -335,3 +335,50 @@ def test_un_ordre_deja_execute_ne_se_reexecute_pas():
 
     with pytest.raises(TransitionFactureInterdite):
         services.executer_ordre(ordre, _finances(), mode_paiement=ModePaiement.ESPECES, montant_reel=Decimal("200000"))
+
+
+# --- une seule enveloppe globale par catégorie et par mois (audit AUD-14) ---
+
+
+def test_deux_enveloppes_globales_identiques_sont_refusees_par_la_base():
+    from django.db import IntegrityError, transaction
+
+    from apps.finance.models import EnveloppeDepense
+
+    services.definir_enveloppe(_direction(), categorie=CategorieDepense.CARBURANT, annee=2026, mois=9, montant_plafond=Decimal("300000"))
+
+    with pytest.raises(IntegrityError), transaction.atomic():
+        EnveloppeDepense.objects.create(
+            categorie=CategorieDepense.CARBURANT, annee=2026, mois=9, montant_plafond=Decimal("1")
+        )
+
+
+def test_redefinir_l_enveloppe_globale_la_met_a_jour_sans_doublon():
+    from apps.finance.models import EnveloppeDepense
+
+    services.definir_enveloppe(_direction(), categorie=CategorieDepense.CARBURANT, annee=2026, mois=9, montant_plafond=Decimal("300000"))
+    services.definir_enveloppe(_direction(), categorie=CategorieDepense.CARBURANT, annee=2026, mois=9, montant_plafond=Decimal("500000"))
+
+    assert list(EnveloppeDepense.objects.filter(vehicule=None).values_list("montant_plafond", flat=True)) == [500000]
+
+
+def test_la_migration_supprime_les_doublons_globaux_en_gardant_le_plus_recent():
+    import importlib
+
+    from django.db import connection
+    from django.db.migrations.executor import MigrationExecutor
+
+    from apps.finance.models import EnveloppeDepense
+
+    migration = importlib.import_module("apps.finance.migrations.0006_enveloppe_globale_unique")
+    # Les modèles « historiques » d'une migration, comme en vrai : leur suppression est physique.
+    registre = MigrationExecutor(connection).loader.project_state(("finance", "0005_index_dates")).apps
+    with connection.cursor() as curseur:  # simule une base d'avant la contrainte (annulé à la fin du test)
+        curseur.execute("DROP INDEX IF EXISTS enveloppe_globale_unique_par_mois")
+    ancienne = EnveloppeDepense.objects.create(categorie=CategorieDepense.CARBURANT, annee=2026, mois=9, montant_plafond=Decimal("1"))
+    recente = EnveloppeDepense.objects.create(categorie=CategorieDepense.CARBURANT, annee=2026, mois=9, montant_plafond=Decimal("2"))
+
+    migration.supprimer_les_enveloppes_globales_en_double(registre, None)
+
+    restantes = list(EnveloppeDepense.all_objects.order_by("pk").values_list("pk", flat=True))
+    assert restantes == [recente.pk] and ancienne.pk not in restantes

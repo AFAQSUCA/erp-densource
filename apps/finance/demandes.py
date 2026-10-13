@@ -153,6 +153,9 @@ def comptabiliser_avec_controle_enveloppe(
     annee, mois = date_depense.year, date_depense.month
     enveloppe = _enveloppe_applicable(categorie, vehicule, annee, mois)
     if enveloppe is not None:
+        # Deux dépenses simultanées sur la même enveloppe passent l'une après l'autre : sans ce verrou, chacune
+        # pouvait constater le dépassement et ouvrir sa propre demande (audit AUD-14).
+        EnveloppeDepense.objects.select_for_update().filter(pk=enveloppe.pk).first()
         en_attente = _demande_en_attente(categorie, enveloppe.vehicule)
         if en_attente is not None:
             raise TransitionFactureInterdite(
