@@ -122,6 +122,12 @@ factures échues apparaissent au tableau de bord. Mentions de l'émetteur sur la
   celery -A config beat -l info
   ```
 
+- **PDF en tâche de fond** (audit TECH-70) : en production (`PDF_EN_TACHE_DE_FOND`, actif par défaut dans
+  `config/settings/prod.py`), « Télécharger en PDF » confie la mise en page au worker et affiche une page
+  « Préparation de votre PDF » qui lance le téléchargement dès que le fichier est prêt. Le worker doit donc partager
+  le dossier `media/` avec l'application (volume `media_data` dans `docker-compose.yml`). Les fichiers sont réservés
+  au demandeur et effacés au bout de 24 heures. Sans worker (développement), le PDF est rendu dans la requête.
+
 ## Sécurité de la connexion
 
 - **Double authentification** obligatoire pour l'ADMIN et la DIRECTION : à la première connexion, scanner le

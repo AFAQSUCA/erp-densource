@@ -10,7 +10,7 @@ adresse, NCC) et un pied « Généré le … par … — Page N », comme les ra
 from __future__ import annotations
 
 import io
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
 from xml.sax.saxutils import escape
@@ -222,9 +222,53 @@ def blocs_depuis_feuilles(feuilles: list[dict]) -> list:
     return blocs
 
 
+def nom_fichier_pdf(titre: str) -> str:
+    """``<titre>-<date>.pdf``."""
+    return f"{slugify(titre) or 'rapport'}-{timezone.localdate():%Y-%m-%d}.pdf"
+
+
 def reponse_pdf(contenu: bytes, titre: str) -> HttpResponse:
     """Réponse de téléchargement : ``<titre>-<date>.pdf``."""
     reponse = HttpResponse(contenu, content_type="application/pdf")
-    nom = f"{slugify(titre) or 'rapport'}-{timezone.localdate():%Y-%m-%d}.pdf"
-    reponse["Content-Disposition"] = f'attachment; filename="{nom}"'
+    reponse["Content-Disposition"] = f'attachment; filename="{nom_fichier_pdf(titre)}"'
     return reponse
+
+
+# --- blocs transmis à la tâche Celery (apps.core.documents_pdf, audit TECH-70) ---
+
+_TYPES_DE_BLOCS = {classe.__name__: classe for classe in (Tableau, Section, Texte, Rubriques)}
+
+
+def _valeur_json(valeur):
+    """Contenu d'une cellule en texte : le PDF l'affiche de toute façon avec ``str`` (montant, date...)."""
+    return None if valeur is None else str(valeur)
+
+
+def blocs_vers_donnees(blocs: list) -> list[dict]:
+    """Blocs d'un rapport en données JSON, pour la tâche Celery (qui ne transporte que du JSON)."""
+    donnees = []
+    for bloc in blocs:
+        champs = asdict(bloc)
+        if isinstance(bloc, Tableau):
+            champs["lignes"] = [[_valeur_json(v) for v in ligne] for ligne in bloc.lignes]
+            champs["entetes"] = [_valeur_json(e) for e in bloc.entetes]
+            champs["total"] = None if bloc.total is None else [_valeur_json(v) for v in bloc.total]
+            champs["alignes_a_droite"] = sorted(bloc.alignes_a_droite)
+        elif isinstance(bloc, Rubriques):
+            champs["paires"] = [[_valeur_json(libelle), _valeur_json(valeur)] for libelle, valeur in bloc.paires]
+        donnees.append({"type": type(bloc).__name__, **champs})
+    return donnees
+
+
+def blocs_depuis_donnees(donnees: list[dict]) -> list:
+    """Inverse de :func:`blocs_vers_donnees` ; un type inconnu est refusé (``KeyError``)."""
+    blocs = []
+    for champs in donnees:
+        champs = dict(champs)
+        classe = _TYPES_DE_BLOCS[champs.pop("type")]
+        if classe is Tableau:
+            champs["alignes_a_droite"] = set(champs["alignes_a_droite"])
+        elif classe is Rubriques:
+            champs["paires"] = [tuple(paire) for paire in champs["paires"]]
+        blocs.append(classe(**champs))
+    return blocs
