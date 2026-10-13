@@ -14,7 +14,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 
 ## Bilan
 
-**441 exigences : 430 ✅, 0 🟡, 1 ❌, 4 ❓, 6 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **98,9 %**.
+**441 exigences : 431 ✅, 0 🟡, 0 ❌, 4 ❓, 6 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **99,1 %**.
 
 | Bloc | Lignes | ✅ | 🟡 | ❌ | ❓ | ⚪ |
 |---|---|---|---|---|---|---|
@@ -30,12 +30,12 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M10 Finances | 13 | 13 | 0 | 0 | 0 | 0 |
 | M11 RH | 30 | 30 | 0 | 0 | 0 | 0 |
 | M12 Tableaux de bord | 28 | 26 | 0 | 0 | 0 | 2 |
-| Technique | 87 | 78 | 0 | 1 | 4 | 4 |
+| Technique | 87 | 79 | 0 | 0 | 4 | 4 |
 | Recette | 7 | 7 | 0 | 0 | 0 | 0 |
 | Avenants | 17 | 17 | 0 | 0 | 0 | 0 |
 | Écarts d'audit | 23 | 23 | 0 | 0 | 0 | 0 |
 
-**Reprise à TECH-24** (première ligne non terminée, dans l'ordre des ID).
+**Reprise à TECH-74** (première ligne non terminée, dans l'ordre des ID).
 
 ## Contradictions entre sources (règle 1)
 
@@ -442,7 +442,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | TECH-21 | §4 l.255 | Docker | ✅ | `Dockerfile` | `certs/` copié dans l'image (TECH-49) | Fait |
 | TECH-22 | §4 l.255 | Docker Compose | ✅ | `docker-compose.yml` | — | Fait |
 | TECH-23 | §4 l.256 | Sentry | ✅ | `config/settings/prod.py:125` | — | Fait |
-| TECH-24 | §4 l.256 | Prometheus | ❌ | Décision du 13/10/2026 : à mettre en place (`avenant-decisions-audit.md`) | Exposer les mesures | À faire |
+| TECH-24 | §4 l.256 | Prometheus | ✅ | Décision du 13/10/2026 (`avenant-decisions-audit.md`), sans dépendance : `apps/core/mesures.py` (`MesuresMiddleware` en tête de `MIDDLEWARE`, requêtes et temps de réponse par écran, histogramme, jauges base/cache/Celery/PDF, âge de la sauvegarde via `apps/sauvegardes/apps.py`) ; `/metriques/` protégé par `METRIQUES_JETON`, refusé par Nginx depuis Internet ; service `prometheus` de `docker-compose.yml` (127.0.0.1:9090), `ops/prometheus.yml`, alertes `ops/prometheus-alertes.yml` ; `GUIDE-DEPLOIEMENT.md` § 10 bis ; tests `apps/core/tests/test_mesures.py` (16 tests) | Fait (`cb06108`) | Fait |
 | TECH-25 | §4 l.259 | Les 17 apps | ✅ | `config/settings/base.py` (`INSTALLED_APPS`) | — | Fait |
 | TECH-26 | §4 l.262 | views → serializers → services → models | ✅ | Les 7 lectures directes passent par des services (`accounting.services.ecritures_manuelles`, `exercices`, `plan_comptable` ; `finance.demandes.ordre_de` ; `hr.services.attributions_de`) ; restent seulement les `get_object_or_404` de l'objet de la page | Fait (`616403e`) | Fait |
 | TECH-27 | §4 l.263 | Logique métier dans services.py | ✅ | Aucun calcul métier dans les vues | — | Fait |
