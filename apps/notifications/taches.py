@@ -98,8 +98,28 @@ def alerter_echeances_chauffeurs(*, aujourd_hui: date | None = None) -> int:
     return crees
 
 
+def _prevenir_la_direction(conge, niveau: str, delai: str) -> int:
+    """La Direction peut décider à la place d'un validateur en retard (``hr.services._direction_remplace``) : elle
+    est prévenue une fois, sauf pour sa propre demande (audit AUD-16)."""
+    direction = utilisateurs_du_role(Role.DIRECTION)
+    if conge.employe.utilisateur_id:
+        direction = direction.exclude(pk=conge.employe.utilisateur_id)
+    return len(
+        notifier(
+            direction,
+            categorie=CategorieNotification.CONGE,
+            niveau=NiveauNotification.ATTENTION,
+            titre=f"Congé en retard de validation {niveau} : {conge.employe.prenom} {conge.employe.nom}",
+            message=f"Le délai de {delai} est dépassé : la Direction peut valider ou refuser à la place du validateur.",
+            url=reverse("hr:conges_detail", args=[conge.pk]),
+            cle=f"conge-retard:{conge.pk}:{niveau}:direction",
+        )
+    )
+
+
 def relancer_validations_en_retard(*, maintenant: datetime | None = None) -> int:
-    """Rappel au validateur dont le délai (48 h en N1, 24 h en N2) est dépassé."""
+    """Rappel au validateur dont le délai (48 h en N1, 24 h en N2) est dépassé ; la Direction, qui peut alors
+    décider à sa place, est prévenue aussi (audit AUD-16). Renvoie le nombre de rappels aux validateurs."""
     maintenant = maintenant or timezone.now()
     crees = 0
     en_retard = Conge.objects.select_related("employe__superieur", "employe__utilisateur")
@@ -115,6 +135,7 @@ def relancer_validations_en_retard(*, maintenant: datetime | None = None) -> int
                 cle=f"conge-retard:{conge.pk}:N1",
             )
         )
+        _prevenir_la_direction(conge, "N1", "48 h")
     for conge in en_retard.filter(
         statut=StatutConge.VALIDATION_N1, date_limite_n2__lt=maintenant
     ):
@@ -129,6 +150,7 @@ def relancer_validations_en_retard(*, maintenant: datetime | None = None) -> int
                 cle=f"conge-retard:{conge.pk}:N2",
             )
         )
+        _prevenir_la_direction(conge, "N2", "24 h")
     return crees
 
 
