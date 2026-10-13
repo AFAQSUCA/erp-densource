@@ -49,6 +49,7 @@ class MouvementManuel(BaseModel):
         verbose_name = _("mouvement de trésorerie")
         verbose_name_plural = _("mouvements de trésorerie")
         ordering = ["-date_mouvement", "-pk"]
+        indexes = [models.Index(fields=["date_mouvement"])]  # audit TECH-67 : filtres, tris et alertes par date
         constraints = [
             models.CheckConstraint(condition=Q(montant__gt=0), name="mouvement_montant_positif"),
         ]

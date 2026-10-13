@@ -116,7 +116,7 @@ class Facture(BaseModel):
         verbose_name = _("facture")
         verbose_name_plural = _("factures")
         ordering = ["-date_emission", "-created_at", "-pk"]
-        indexes = [models.Index(fields=["statut", "date_echeance"])]
+        indexes = [models.Index(fields=["statut", "date_echeance"]), models.Index(fields=["date_emission"])]  # audit TECH-67 : filtres, tris et alertes par date
         constraints = [
             models.UniqueConstraint(
                 fields=["numero"], condition=~Q(numero=""), name="facture_numero_unique"
@@ -204,6 +204,7 @@ class Reglement(BaseModel):
         verbose_name = _("règlement")
         verbose_name_plural = _("règlements")
         ordering = ["-date_reglement", "-pk"]
+        indexes = [models.Index(fields=["date_reglement"])]  # audit TECH-67 : filtres, tris et alertes par date
         constraints = [
             models.CheckConstraint(condition=Q(montant__gt=0), name="reglement_montant_positif"),
         ]
@@ -426,6 +427,7 @@ class Depense(BaseModel):
         verbose_name = _("dépense")
         verbose_name_plural = _("dépenses")
         ordering = ["-date_depense", "-pk"]
+        indexes = [models.Index(fields=["date_depense"]), models.Index(fields=["categorie", "date_depense"])]  # audit TECH-67 : filtres, tris et alertes par date
         constraints = [
             models.CheckConstraint(condition=Q(montant__gt=0), name="depense_montant_positif"),
             models.CheckConstraint(condition=Q(montant_tva__gte=0), name="depense_montant_tva_non_negatif"),

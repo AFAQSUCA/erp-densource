@@ -58,6 +58,10 @@ class Chauffeur(BaseModel):
         verbose_name = _("chauffeur")
         verbose_name_plural = _("chauffeurs")
         ordering = ["personnel__matricule"]
+        indexes = [
+            models.Index(fields=["date_expiration_permis"]),
+            models.Index(fields=["date_expiration_visite_medicale"]),
+        ]  # audit TECH-67 : filtres, tris et alertes par date
 
     def __str__(self):
         return str(self.personnel)

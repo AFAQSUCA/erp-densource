@@ -89,7 +89,7 @@ class Plein(BaseModel):
         verbose_name = _("plein")
         verbose_name_plural = _("pleins")
         ordering = ["-date_plein", "-pk"]
-        indexes = [models.Index(fields=["vehicule", "date_plein"])]
+        indexes = [models.Index(fields=["vehicule", "date_plein"]), models.Index(fields=["date_plein"])]  # audit TECH-67 : filtres, tris et alertes par date
         constraints = [
             models.CheckConstraint(
                 condition=Q(quantite_litres__gt=0), name="plein_quantite_positive"

@@ -106,6 +106,7 @@ class DocumentReglementaire(BaseModel):
         verbose_name = _("document réglementaire")
         verbose_name_plural = _("documents réglementaires")
         ordering = ["date_expiration"]
+        indexes = [models.Index(fields=["date_expiration"])]  # audit TECH-67 : filtres, tris et alertes par date
         constraints = [
             models.UniqueConstraint(
                 fields=["vehicule", "type_document"],
