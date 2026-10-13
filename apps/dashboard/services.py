@@ -12,6 +12,7 @@ Les indicateurs globaux (exploitation, clientèle) peuvent être mis en cache
 
 from __future__ import annotations
 
+import logging
 from datetime import date, timedelta
 
 from django.conf import settings
@@ -50,6 +51,8 @@ from apps.parametres import services as parametres_services
 from apps.sauvegardes import permissions as sauvegardes_permissions
 from apps.sauvegardes import services as sauvegardes_services
 
+logger = logging.getLogger(__name__)
+
 LIGNES_PAR_ALERTE = 5
 JOURS_ALERTES_CARBURANT = 30
 MOIS_HISTORIQUE = 6
@@ -63,10 +66,16 @@ ROLES_FINANCES = billing_permissions.CONSULTATION
 
 
 def _en_cache(cle: str, calcul):
+    """Indicateur gardé ``DASHBOARD_CACHE_SECONDS`` en cache. Redis en panne : calcul direct (plus lent mais juste)
+    plutôt qu'un tableau de bord en erreur 500 (audit TECH-65)."""
     secondes = settings.DASHBOARD_CACHE_SECONDS
     if not secondes:
         return calcul()
-    return cache.get_or_set(f"dashboard:{cle}", calcul, secondes)
+    try:
+        return cache.get_or_set(f"dashboard:{cle}", calcul, secondes)
+    except Exception:  # serveur de cache injoignable (ConnectionError de redis-py, délai dépassé...)
+        logger.warning("Cache indisponible : indicateur « %s » calculé sans cache.", cle, exc_info=True)
+        return calcul()
 
 
 def _depenses(categorie: str) -> str:
