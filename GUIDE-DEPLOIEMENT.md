@@ -89,7 +89,7 @@ cp .env.example .env
 | `DOMAINE` | le même domaine, ex. `erp.densourcegroup.ci` — Nginx et le certificat HTTPS en dépendent (défaut : `densource.tech`) |
 | `CSRF_TRUSTED_ORIGINS` | `https://` + le même domaine |
 | `POSTGRES_PASSWORD` | un mot de passe long, différent de celui de `.env.example` — **obligatoire** : `docker compose` refuse de démarrer sans lui (aucun mot de passe par défaut) |
-| `TRUSTED_PROXY_COUNT` | inutile avec `docker-compose.yml`, qui le fixe à `1` (Nginx est l'unique proxy devant l'application) ; à changer seulement si un autre proxy (CDN, répartiteur) est ajouté devant Nginx |
+| `TRUSTED_PROXY_COUNT` | inutile avec `docker-compose.yml`, qui le fixe à `1` (Nginx est l'unique proxy devant l'application) ; à garder à `1` derrière Cloudflare, dont Nginx lit déjà la vraie adresse du visiteur (§ 8 bis) ; à changer seulement si un autre répartiteur est ajouté devant Nginx |
 | `SAUVEGARDE_PASSPHRASE` | une phrase de passe longue, **à conserver ailleurs que sur ce serveur** (étape 9) — **obligatoire** : `docker compose` refuse de démarrer sans elle |
 
 `DATABASE_URL` et `REDIS_URL` n'ont **pas** à être renseignées dans `.env` pour ces quatre services :
@@ -185,6 +185,67 @@ dans `nginx/nginx.conf` ni dans `docker-compose.yml` : le domaine vient de `DOMA
    ```cron
    0 3 1 * * cd /chemin/vers/erp-densource && docker compose run --rm certbot renew --webroot -w /var/www/certbot && docker compose restart nginx
    ```
+
+## 8 bis. Passer derrière Cloudflare (CDN)
+
+Décision du 13/10/2026 (`avenant-decisions-audit.md`, audit TECH-71 ; `cahier-des-charges.md:295`). Cloudflare
+se place entre les visiteurs et le serveur : il garde une copie des fichiers statiques (styles, icônes, scripts)
+près des utilisateurs, absorbe les attaques par saturation et cache l'adresse du serveur. **Le compte Cloudflare
+et le DNS sont gérés par l'entreprise** ; côté application, tout est déjà prêt :
+
+- **vraie adresse du visiteur** : `nginx/cloudflare-ips.conf` (inclus par `nginx/nginx.conf`) remplace l'adresse
+  du serveur Cloudflare par celle du visiteur (en-tête `CF-Connecting-IP`), seulement pour les requêtes venues des
+  plages de Cloudflare. Le journal d'audit et les limites anti force brute restent donc par visiteur ;
+  `TRUSTED_PROXY_COUNT` reste à `1` ;
+- **cache** : seuls `/static/` sont déclarés publics (`Cache-Control: public, immutable`, noms versionnés) ; toutes
+  les réponses de l'application portent `Cache-Control: private` (ou `no-store` pour les fichiers et PDF), qu'aucun
+  cache partagé ne garde ;
+- **renouvellement du certificat** : le défi Let's Encrypt est aussi servi en HTTPS.
+
+Faire d'abord les étapes 5 à 8 (site en HTTPS avec le vrai certificat), puis, dans le tableau de bord Cloudflare :
+
+1. **Ajouter le domaine** et, chez le registraire (Hostinger...), remplacer les serveurs DNS par les deux que
+   Cloudflare indique. Compter jusqu'à 24 h de propagation.
+2. **DNS** : enregistrements `A` du domaine (et `www` s'il existe) vers l'adresse IP du serveur, **nuage orange**
+   (« Proxied »).
+3. **SSL/TLS → Overview** : mode **Full (strict)**. Jamais « Flexible » : Cloudflare parlerait au serveur en HTTP,
+   que Nginx redirige vers HTTPS, et le site tournerait en boucle (« trop de redirections »).
+4. **SSL/TLS → Edge Certificates** : « Always Use HTTPS » activé, « Minimum TLS Version » 1.2. Laisser HSTS
+   désactivé ici : l'application l'envoie déjà (`config/settings/prod.py`).
+5. **Caching → Configuration** : « Browser Cache TTL » sur **Respect Existing Headers**. Puis **Caching → Cache
+   Rules** : une règle « Bypass cache » pour tout ce dont le chemin **ne commence pas** par `/static/`
+   (`not starts_with(http.request.uri.path, "/static/")`). Cloudflare met par défaut en cache certains types de
+   fichiers (`.pdf`, `.png`...) : la règle garantit qu'aucun justificatif téléversé ne l'est, en plus des en-têtes
+   `private` de l'application.
+6. **Speed → Optimization** : désactiver **Rocket Loader** et, dans **Scrape Shield**, **Email Address
+   Obfuscation** : tous deux ajoutent des scripts dans les pages, que la politique de sécurité du contenu (CSP)
+   bloque ; certains écrans cesseraient de fonctionner. La compression Brotli peut rester active.
+7. **Network** : « WebSockets » activé (suivi des missions en direct).
+8. **Security** : ne pas activer « Bot Fight Mode » : il soumet à un défi les appels de l'application mobile des
+   chauffeurs (`/api/v1/`), qui ne peut pas y répondre.
+
+**Vérifier** (remplacer le domaine) :
+
+```bash
+curl -sI https://erp.densourcegroup.ci/connexion/ | grep -iE "^(server|cf-cache-status|cache-control)"
+```
+
+doit montrer `server: cloudflare`, `cf-cache-status: DYNAMIC` (ou `BYPASS`) et `cache-control: private`. Une feuille
+de style (adresse lue dans le code source de la page, `/static/css/tailwind.….css`) demandée deux fois doit montrer
+`cf-cache-status: HIT`. Enfin, après une connexion, le **journal d'audit** doit afficher l'adresse réelle de votre
+poste, pas une adresse de Cloudflare (`104.x`, `172.6x`, `162.15x`...).
+
+**Mettre à jour la liste des adresses de Cloudflare** (elle change rarement ; une fois par an, ou si les adresses
+du journal d'audit redeviennent celles de Cloudflare) :
+
+```bash
+sh nginx/maj-ips-cloudflare.sh
+docker compose up -d --build nginx
+```
+
+**Facultatif, protéger le serveur lui-même** : une fois le site validé derrière Cloudflare, n'ouvrir les ports 80
+et 443 qu'aux plages de Cloudflare (pare-feu `ufw` du serveur ou de l'hébergeur), pour que personne ne contourne
+Cloudflare en appelant directement l'adresse IP. Garder le port SSH ouvert.
 
 ## 9. Sauvegardes chiffrées (service `sauvegarde`)
 
