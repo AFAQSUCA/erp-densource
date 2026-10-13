@@ -25,7 +25,7 @@ from apps.core.xlsx import reponse_rapport
 from . import permissions, services
 from .exceptions import AccountingError, CompteDejaExistant
 from .forms import CompteForm, CompteModifierForm, EcritureManuelleForm, GrandLivreForm, LigneManuelleForm, PeriodeForm
-from .models import Compte, EcritureComptable, ExerciceComptable, Journal, LigneEcriture, SensEcriture, StatutEcriture
+from .models import Compte, ExerciceComptable, LigneEcriture, SensEcriture, StatutEcriture
 
 
 def _erreurs_en_messages(request, form):
@@ -35,7 +35,7 @@ def _erreurs_en_messages(request, form):
 
 
 def _ecritures_manuelles_queryset():
-    return EcritureComptable.objects.filter(journal=Journal.OPERATIONS_DIVERSES)
+    return services.ecritures_manuelles()
 
 
 class EcritureManuelleListView(PaginationTolerante, RoleRequiredMixin, ListView):
@@ -198,7 +198,7 @@ class ExerciceListView(PaginationTolerante, RoleRequiredMixin, ListView):
     paginate_by = 20  # audit TECH-66
 
     def get_queryset(self):
-        return ExerciceComptable.objects.all()
+        return services.exercices()
 
     def get_context_data(self, **kwargs):
         contexte = super().get_context_data(**kwargs)
@@ -228,7 +228,7 @@ class PlanComptableListView(PaginationTolerante, RoleRequiredMixin, ListView):
     paginate_by = 50  # audit TECH-66
 
     def get_queryset(self):
-        return Compte.objects.all()
+        return services.plan_comptable()
 
     def get_context_data(self, **kwargs):
         contexte = super().get_context_data(**kwargs)
@@ -522,7 +522,7 @@ class _RapportExerciceXlsxView(RoleRequiredMixin, View):
     roles = permissions.CONSULTATION
 
     def exercice(self, request):
-        exercices = ExerciceComptable.objects.order_by("-annee")
+        exercices = services.exercices()
         annee = request.GET.get("exercice")
         exercice = (exercices.filter(annee=annee).first() if annee else None) or exercices.first()
         if exercice is None:
@@ -606,7 +606,7 @@ class _RapportExerciceView(RoleRequiredMixin, TemplateView):
     roles = permissions.CONSULTATION
 
     def get_exercice(self):
-        exercices = ExerciceComptable.objects.order_by("-annee")
+        exercices = services.exercices()
         annee = self.request.GET.get("exercice")
         if annee:
             exercice = exercices.filter(annee=annee).first()

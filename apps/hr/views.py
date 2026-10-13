@@ -35,7 +35,7 @@ from .forms import (
     ReportForm,
     SortieForm,
 )
-from .models import AttributionConge, Departement, JourFerie, ReportConge, SortiePersonnel, StatutConge
+from .models import Departement, JourFerie, ReportConge, SortiePersonnel, StatutConge
 
 VUE_MES, VUE_A_VALIDER, VUE_TOUS = "mes", "a_valider", "tous"
 
@@ -432,9 +432,7 @@ class PersonnelDetailView(RoleRequiredMixin, DetailView):
             annee=annee,
             droits=services.droits_conges(employe, annee),
             conges=services.conges_de(employe)[:10],
-            attributions=AttributionConge.objects.filter(employe=employe).select_related(
-                "accorde_par"
-            ),
+            attributions=services.attributions_de(employe),
             subordonnes=employe.subordonnes.order_by("nom", "prenom"),
             peut_modifier=utilisateur.role_effectif in permissions.PERSONNEL_MODIFICATION,
             **self._contexte_sortie(employe, utilisateur),

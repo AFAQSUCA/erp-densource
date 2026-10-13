@@ -1135,3 +1135,8 @@ def supprimer_jour_ferie(acteur, jour_ferie: JourFerie) -> None:
     """Suppression (douce, journalisée) : la génération automatique ne le recrée pas."""
     _exiger_gestion_jours_feries(acteur)
     jour_ferie.delete(deleted_by=acteur)
+
+
+def attributions_de(employe: Personnel) -> QuerySet[AttributionConge]:
+    """Jours de congé exceptionnels accordés à l'employé (audit TECH-26 : lus par l'écran via ce service)."""
+    return AttributionConge.objects.filter(employe=employe).select_related("accorde_par")

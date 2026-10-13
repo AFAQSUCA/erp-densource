@@ -298,7 +298,7 @@ class DemandeDetailView(RoleRequiredMixin, DetailView):
         contexte = super().get_context_data(**kwargs)
         demande = self.object
         role = self.request.user.role
-        ordre = OrdreDecaissement.objects.filter(demande=demande).select_related("execute_par").first()
+        ordre = demandes_services.ordre_de(demande)
         peut_decider = role in permissions.DEMANDE_VALIDATION and demande.statut == StatutDemandeDepense.SOUMISE
         peut_executer = (
             role in permissions.ORDRE_EXECUTION

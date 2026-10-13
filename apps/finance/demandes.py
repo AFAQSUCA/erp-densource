@@ -325,3 +325,8 @@ def revalider_ordre(ordre: OrdreDecaissement, acteur, *, montant_valide: Decimal
     ordre.statut = StatutOrdreDecaissement.A_EXECUTER
     ordre.save(update_fields=["montant_valide", "statut", "updated_at"])
     return ordre
+
+
+def ordre_de(demande: DemandeDepense) -> OrdreDecaissement | None:
+    """L'ordre de décaissement né de cette demande, s'il y en a un (audit TECH-26 : lu par l'écran via ce service)."""
+    return OrdreDecaissement.objects.filter(demande=demande).select_related("execute_par").first()

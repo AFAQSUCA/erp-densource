@@ -955,3 +955,20 @@ def bilan(exercice: ExerciceComptable) -> dict:
         "resultat_net": resultat_net,
         "total_passif_avec_resultat": total_passif + resultat_net,
     }
+
+
+# --- lectures pour les écrans (audit TECH-26 : les vues ne lisent pas les modèles directement) ---
+
+
+def ecritures_manuelles() -> QuerySet[EcritureComptable]:
+    """Écritures du journal des opérations diverses (saisie manuelle), brouillons compris."""
+    return EcritureComptable.objects.filter(journal=Journal.OPERATIONS_DIVERSES)
+
+
+def exercices() -> QuerySet[ExerciceComptable]:
+    """Exercices comptables, le plus récent d'abord."""
+    return ExerciceComptable.objects.order_by("-annee")
+
+
+def plan_comptable() -> QuerySet[Compte]:
+    return Compte.objects.all()
