@@ -4,6 +4,8 @@ Inventaire de toutes les exigences, une ligne par exigence, extraites de `cahier
 12, §4 (technique) et §6 (recette), de `audit-checklist.md`, et des avenants qui modifient le CDC
 (`avenant-separation-des-taches.md`, `avenant-comptabilite-syscohada.md`, `avenant-comptabilite-autonomie.md`).
 
+**CDC de référence** : version 2 du 13/10/2026, qui intègre les avenants et décisions sans décaler les numéros de ligne cités ici (`cahier-des-charges.md` § 7).
+
 **Date de l'état initial** : 12/10/2026, sur `main` (commit `6755e65`). Verdicts issus du 3e audit global (six revues
 indépendantes avec scénarios de reproduction) et relus contre le code ; preuve = `fichier:ligne`.
 
@@ -41,12 +43,12 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 
 | # | Sujet | CDC | Autre source | État |
 |---|---|---|---|---|
-| C1 | Qui valide une facture | §3 M1, ligne 53 : FINANCES « Validation factures » | Code et `architecture.md:446` : la DIRECTION valide, la FINANCES prépare (`apps/billing/permissions.py:18`) | Tranché le 12/10/2026 : DIRECTION valide (`avenant-validation-factures.md`) |
-| C2 | Largeur de la DIRECTION | §3 M1, ligne 49 : « lecture seule sur RH/Clientèle/Parc Auto » | Avenant R8 §1 : la DIRECTION a la même largeur que l'ADMIN pour la saisie | Tranché par l'avenant R8 |
-| C3 | Accès financier de la RH | §3 M1, ligne 50 : « Pas d'accès financier » | Avenant R8 §2 : « la RH fait tout ce que fait la FINANCES » | Tranché par l'avenant R8 |
-| C4 | Droit annuel de congé | §3 M11, ligne 219 : 12 jours ouvrables | Avenant R7 : 26 jours ouvrés, hors samedi | Tranché par l'avenant R7 |
-| C5 | « Accès total » de l'ADMIN | §3 M1, ligne 48 | Avenants R2/R8 : jamais l'ADMIN à la place d'un validateur strict | Tranché par les avenants |
-| C6 | « Suppression » d'utilisateurs | §3 M1, ligne 48 | §4 sécurité « soft delete » : désactivation, jamais de suppression physique | Tranché par le CDC §4 |
+| C1 | Qui valide une facture | §3 M1, ligne 53 : FINANCES « Validation factures » | Code et `architecture.md:446` : la DIRECTION valide, la FINANCES prépare (`apps/billing/permissions.py:18`) | Tranché le 12/10/2026 : DIRECTION valide (`avenant-validation-factures.md`) ; intégré au CDC v2 du 13/10/2026 |
+| C2 | Largeur de la DIRECTION | §3 M1, ligne 49 : « lecture seule sur RH/Clientèle/Parc Auto » | Avenant R8 §1 : la DIRECTION a la même largeur que l'ADMIN pour la saisie | Tranché par l'avenant R8 ; intégré au CDC v2 du 13/10/2026 |
+| C3 | Accès financier de la RH | §3 M1, ligne 50 : « Pas d'accès financier » | Avenant R8 §2 : « la RH fait tout ce que fait la FINANCES » | Tranché par l'avenant R8 ; intégré au CDC v2 du 13/10/2026 |
+| C4 | Droit annuel de congé | §3 M11, ligne 219 : 12 jours ouvrables | Avenant R7 : 26 jours ouvrés, hors samedi | Tranché par l'avenant R7 ; intégré au CDC v2 du 13/10/2026 |
+| C5 | « Accès total » de l'ADMIN | §3 M1, ligne 48 | Avenants R2/R8 : jamais l'ADMIN à la place d'un validateur strict | Tranché par les avenants ; intégré au CDC v2 du 13/10/2026 |
+| C6 | « Suppression » d'utilisateurs | §3 M1, ligne 48 | §4 sécurité « soft delete » : désactivation, jamais de suppression physique | Tranché par le CDC §4 ; intégré au CDC v2 du 13/10/2026 |
 
 ## Module 1 — Authentification & Sécurité (CDC §3 M1, lignes 42-82)
 
