@@ -14,7 +14,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 
 ## Bilan
 
-**441 exigences : 394 ✅, 28 🟡, 6 ❌, 10 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **93,2 %**.
+**441 exigences : 398 ✅, 26 🟡, 4 ❌, 10 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **93,8 %**.
 
 | Bloc | Lignes | ✅ | 🟡 | ❌ | ❓ | ⚪ |
 |---|---|---|---|---|---|---|
@@ -32,7 +32,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M12 Tableaux de bord | 28 | 26 | 0 | 0 | 0 | 2 |
 | Technique | 87 | 63 | 14 | 1 | 8 | 1 |
 | Recette | 7 | 7 | 0 | 0 | 0 | 0 |
-| Avenants | 17 | 8 | 5 | 4 | 0 | 0 |
+| Avenants | 17 | 12 | 3 | 2 | 0 | 0 |
 | Écarts d'audit | 23 | 11 | 9 | 1 | 2 | 0 |
 
 **Reprise à TECH-18** (première ligne non terminée, dans l'ordre des ID).
@@ -535,10 +535,10 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | AV-10 | Compta P4/G | OD sur un compte de trésorerie | 🟡 | Écart non détecté avec `soldes_par_compte` | Interdire ou signaler | Décision |
 | AV-11 | Compta (CDC l.340) | Avoir / annulation d'une facture émise | ❌ | NON TROUVÉ | Écran d'avoir DIRECTION | Décision |
 | AV-12 | Compta C | Annulation / correction d'une dépense | ❌ | NON TROUVÉ (`apps/billing/urls.py`) | Annulation avec contre-passation | Décision |
-| AV-13 | Import | Valeurs non finies (NaN, Infinity, nombre énorme) | ❌ | `apps/importation/services.py:113-127` → erreur 500 | Erreur de ligne | À faire |
-| AV-14 | Import | Fichier à dimension fausse | ❌ | Lignes perdues sans erreur (`apps/importation/services.py:385`) | `reset_dimensions()` | À faire |
-| AV-15 | Import | Enregistrements supprimés logiquement | 🟡 | Personnel supprimé recréé en doublon ; client/camion supprimés comptés « déjà présents » | Aligner les règles | À faire |
-| AV-16 | Import | Archives piégées (zip bomb) | 🟡 | Aucun contrôle de la taille décompressée ; import RH sans `read_only` ni limite | Contrôler avant ouverture | À faire |
+| AV-13 | Import | Valeurs non finies (NaN, Infinity, nombre énorme) | ✅ | `apps/importation/services.py` (`_nombre_fini`, `_entier`, `_decimal` : nombre fini et borné à la capacité du champ en base) ; import RH : `apps/hr/services.py` (`SALAIRE_MAX`) ; tests `apps/importation/tests/test_fichiers_pieges.py` ; vérifié sur PostgreSQL 16 | Fait (`ec4190e`) | Fait |
+| AV-14 | Import | Fichier à dimension fausse | ✅ | `apps/importation/services.py` (`reset_dimensions()` avant lecture) ; test `test_une_dimension_fausse_ne_fait_perdre_aucune_ligne` | Fait (`ec4190e`) | Fait |
+| AV-15 | Import | Enregistrements supprimés logiquement | ✅ | Décision du 12/10/2026 : erreur de ligne « restaurez la fiche ou retirez la ligne » pour employé, client, camion et import RH (`apps/importation/services.py`, `apps/hr/services.py`) ; règle dans `apps/importation/README.md` ; tests `apps/importation/tests/test_fichiers_pieges.py` | Fait (`e75f07f`) | Fait |
+| AV-16 | Import | Archives piégées (zip bomb) | ✅ | `apps/core/classeurs.py` : sommaire de l'archive lu avant ouverture, refus au-delà de 50 Mo décompressés ou 500 éléments ; import général et import RH (limite de 5 Mo ajoutée au formulaire RH) ; tests `apps/core/tests/test_classeurs.py` | Fait (`83bce63`) | Fait |
 | AV-17 | Import RH | Import du personnel idempotent et robuste | ✅ | `apps/hr/services.py:236` : un employé déjà présent (même nom et prénom, sans accents ni majuscules, comme `apps/importation`) est signalé et non recréé ; fichier illisible refusé avec un message au lieu d'une 500 ; tests `apps/hr/tests/test_import_personnel.py` (6 nouveaux) | Fait (`0b38030`) | Fait |
 
 ## Écarts d'audit sans exigence écrite (qualité, sécurité, cohérence)

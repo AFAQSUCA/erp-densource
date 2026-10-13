@@ -7,6 +7,7 @@ from . import services, sorties
 from .models import Departement, MotifSortie, Personnel, POSTES_COURANTS
 
 POSTE_AUTRE = "AUTRE"
+TAILLE_IMPORT_MAX = 5 * 1024 * 1024  # 5 Mo : un classeur de recrutement pèse quelques dizaines de ko
 
 
 class CongeForm(StyleTailwindMixin, forms.Form):
@@ -215,6 +216,8 @@ class ImportPersonnelForm(StyleTailwindMixin, forms.Form):
         fichier = self.cleaned_data["fichier"]
         if not fichier.name.lower().endswith(".xlsx"):
             raise forms.ValidationError("Le fichier doit être un classeur Excel (.xlsx).")
+        if fichier.size > TAILLE_IMPORT_MAX:  # même limite que l'import général (audit AV-16)
+            raise forms.ValidationError("Le fichier dépasse 5 Mo : ce n'est pas un classeur de recrutement.")
         return fichier
 
 

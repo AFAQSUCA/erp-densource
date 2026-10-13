@@ -36,6 +36,7 @@ from apps.drivers.models import Chauffeur, Copilote, StatutChauffeur
 from apps.fleet import services as fleet_services
 from apps.fleet.exceptions import FlotteError
 from apps.fleet.models import StatutVehicule
+from apps.core.classeurs import ClasseurSuspect, exiger_classeur_raisonnable
 from apps.hr import services as hr_services
 from apps.hr.exceptions import PersonnelError
 from apps.hr.models import POSTES_COURANTS, Departement, Personnel
@@ -110,21 +111,42 @@ def _date(valeur, libelle: str, *, obligatoire: bool = False) -> date | None:
     return resultat
 
 
-def _entier(valeur, libelle: str) -> int:
+# Plus grandes valeurs que la base accepte (audit AV-13) : au-delà, PostgreSQL refusait l'enregistrement (erreur
+# 500) au lieu d'une erreur de ligne. Petit entier : année, délai ; entier : kilométrage, réservoir.
+PETIT_ENTIER_MAX = 32_767
+ENTIER_MAX = 2_147_483_647
+
+
+def _nombre_fini(valeur, libelle: str, attendu: str) -> Decimal:
+    """``Decimal`` lu dans la cellule ; « NaN », « Infinity » et tout texte non numérique sont des erreurs de ligne
+    (audit AV-13 : ils passaient la conversion puis faisaient échouer la première comparaison, erreur 500)."""
     try:
         nombre = Decimal(_texte(valeur).replace(" ", "").replace(",", "."))
     except InvalidOperation:
-        raise _Ligne(f"{libelle} « {valeur} » invalide (nombre entier attendu).") from None
+        raise _Ligne(f"{libelle} « {valeur} » invalide ({attendu} attendu).") from None
+    if not nombre.is_finite():
+        raise _Ligne(f"{libelle} « {valeur} » invalide ({attendu} attendu).")
+    return nombre
+
+
+def _exiger_maximum(nombre: Decimal, valeur, libelle: str, maximum) -> None:
+    if nombre > maximum:
+        raise _Ligne(f"{libelle} « {valeur} » trop grand (au plus {maximum}).")
+
+
+def _entier(valeur, libelle: str, *, maximum: int = ENTIER_MAX) -> int:
+    nombre = _nombre_fini(valeur, libelle, "nombre entier")
     if nombre != nombre.to_integral_value() or nombre < 0:
         raise _Ligne(f"{libelle} « {valeur} » invalide (nombre entier positif attendu).")
+    _exiger_maximum(nombre, valeur, libelle, maximum)
     return int(nombre)
 
 
-def _decimal(valeur, libelle: str) -> Decimal:
-    try:
-        return Decimal(_texte(valeur).replace(" ", "").replace(",", "."))
-    except InvalidOperation:
-        raise _Ligne(f"{libelle} « {valeur} » invalide (nombre attendu).") from None
+def _decimal(valeur, libelle: str, *, maximum: Decimal) -> Decimal:
+    """``maximum`` : la plus grande valeur que le champ accepte en base (``max_digits`` / ``decimal_places``)."""
+    nombre = _nombre_fini(valeur, libelle, "nombre")
+    _exiger_maximum(nombre, valeur, libelle, maximum)
+    return nombre
 
 
 def _obligatoire(valeur, libelle: str) -> str:
@@ -156,6 +178,15 @@ def _index_personnel() -> dict[tuple[str, str], list[Personnel]]:
     return index
 
 
+def _index_personnel_supprime() -> set[tuple[str, str]]:
+    """Fiches du personnel supprimées : une ligne qui y correspond est une erreur, ni recréée ni ignorée (audit AV-15,
+    décision du 12/10/2026)."""
+    return {_cle_nom(p.nom, p.prenom) for p in Personnel.all_objects.filter(is_deleted=True)}
+
+
+RESTAURER = "restaurez la fiche (administration) ou retirez la ligne."
+
+
 def _personne(index, nom: str, prenom: str) -> Personnel:
     trouvees = index.get(_cle_nom(nom, prenom), [])
     if not trouvees:
@@ -173,6 +204,8 @@ def _personnel(ligne: list, ctx: dict) -> str:
     nom, prenom = _obligatoire(nom, "Le nom"), _obligatoire(prenom, "Le prénom")
     if ctx["index"].get(_cle_nom(nom, prenom)):
         return "present"
+    if _cle_nom(nom, prenom) in ctx["supprimes"]:
+        raise _Ligne(f"{nom} {prenom} a été supprimé(e) de l'ERP : {RESTAURER}")
     poste = hr_services.poste_importe(poste_brut)
     if poste is None:
         raise _Ligne(f"poste « {poste_brut} » inconnu. Postes acceptés : {', '.join(POSTES_COURANTS)}.")
@@ -182,7 +215,7 @@ def _personnel(ligne: list, ctx: dict) -> str:
             f"département « {dept_brut} » inconnu. Acceptés : {', '.join(str(l) for _, l in Departement.choices)}."
         )
     date_embauche = _date(date_brut, "La date d'embauche", obligatoire=True)
-    salaire = _decimal(salaire_brut, "Le salaire de base")
+    salaire = _decimal(salaire_brut, "Le salaire de base", maximum=hr_services.SALAIRE_MAX)
     if salaire < 0:
         raise _Ligne(f"le salaire de base « {salaire_brut} » ne peut pas être négatif.")
     personne = hr_services.recruter(
@@ -239,11 +272,14 @@ def _copilote(ligne: list, ctx: dict) -> str:
 def _client(ligne: list, ctx: dict) -> str:
     raison, ncc, contact, telephone, email, adresse, taux_brut, motif_brut, delai_brut = ligne[:9]
     raison, ncc = _obligatoire(raison, "La raison sociale"), _obligatoire(ncc, "Le NCC / NIF")
-    if clients_services.client_par_ncc(ncc) is not None:  # même comparaison qu'à la saisie (audit M4-02)
+    existant = clients_services.client_par_ncc(ncc)  # même comparaison qu'à la saisie (audit M4-02)
+    if existant is not None:
+        if existant.is_deleted:  # audit AV-15 : ni compté « présent » ni recréé
+            raise _Ligne(f"le client au NCC / NIF « {ncc} » a été supprimé de l'ERP : {RESTAURER}")
         return "present"
     motifs = {normaliser(str(libelle)): code for code, libelle in MotifExoneration.choices}
     motifs.update({normaliser(code): code for code, _ in MotifExoneration.choices})
-    taux = _decimal(taux_brut, "Le taux de TVA") if _texte(taux_brut) else None
+    taux = _decimal(taux_brut, "Le taux de TVA", maximum=Decimal("999.99")) if _texte(taux_brut) else None
     kwargs = dict(
         raison_sociale=raison, ncc_nif=ncc, contact_principal=_obligatoire(contact, "Le contact principal"),
         telephone=_obligatoire(telephone, "Le téléphone"), email=_texte(email), adresse=_obligatoire(adresse, "L'adresse"),
@@ -252,7 +288,7 @@ def _client(ligne: list, ctx: dict) -> str:
     if taux is not None:
         kwargs["taux_tva"] = taux
     if _texte(delai_brut):
-        kwargs["delai_paiement_jours"] = _entier(delai_brut, "Le délai de paiement")
+        kwargs["delai_paiement_jours"] = _entier(delai_brut, "Le délai de paiement", maximum=PETIT_ENTIER_MAX)
     clients_services.creer_client(**kwargs)
     return "cree"
 
@@ -261,7 +297,10 @@ def _vehicule(ligne: list, ctx: dict) -> str:
     immat, marque, mod, annee, vin, km, capacite, reservoir, statut_brut, habituel = ligne[:10]
     immat = _obligatoire(immat, "L'immatriculation")
     # Même comparaison qu'à la saisie (sans séparateur) : « AB-123-CD » retrouve « AB 123 CD » (audit M2-02).
-    if fleet_services.vehicule_par_immatriculation(immat) is not None:
+    existant = fleet_services.vehicule_par_immatriculation(immat)
+    if existant is not None:
+        if existant.is_deleted:  # audit AV-15 : ni compté « présent » ni recréé
+            raise _Ligne(f"le camion {immat} a été supprimé de l'ERP : {RESTAURER}")
         return "present"
     statuts = {
         normaliser(str(StatutVehicule(code).label)): code
@@ -281,9 +320,10 @@ def _vehicule(ligne: list, ctx: dict) -> str:
         documents.append((type_document, delivrance or _un_an_avant(expiration), expiration))
     vehicule = fleet_services.creer_vehicule(
         immatriculation=immat, marque=_obligatoire(marque, "La marque"), modele=_obligatoire(mod, "Le modèle"),
-        annee=_entier(annee, "L'année"), vin=_obligatoire(vin, "Le n° de châssis (VIN)"),
+        annee=_entier(annee, "L'année", maximum=PETIT_ENTIER_MAX), vin=_obligatoire(vin, "Le n° de châssis (VIN)"),
         kilometrage=_entier(km, "Le kilométrage") if _texte(km) else 0,
-        capacite_charge_t=_decimal(capacite, "La capacité de charge"), reservoir_l=_entier(reservoir, "Le réservoir"),
+        capacite_charge_t=_decimal(capacite, "La capacité de charge", maximum=Decimal("9999.99")),
+        reservoir_l=_entier(reservoir, "Le réservoir"),
         chauffeur_habituel=chauffeur,
     )
     if statut != vehicule.statut:
@@ -356,10 +396,18 @@ def importer_classeur(fichier, acteur, *, simulation: bool = False) -> Rapport:
     if acteur.role_effectif not in permissions.IMPORT_DONNEES:
         raise ImportInvalide("Seul l'administrateur peut importer des données.")
     try:
+        exiger_classeur_raisonnable(fichier)  # archive piégée refusée avant ouverture (audit AV-16)
+    except ClasseurSuspect as erreur:
+        raise ImportInvalide(str(erreur)) from erreur
+    try:
         classeur = openpyxl.load_workbook(fichier, data_only=True, read_only=True)
     except Exception as erreur:  # fichier corrompu, mauvais format, archive illisible...
         raise ImportInvalide("Ce fichier n'est pas un classeur Excel (.xlsx) lisible.") from erreur
     feuilles = _feuilles_du_classeur(classeur)
+    for feuille in feuilles.values():
+        # En lecture rapide, openpyxl s'arrête à la dimension annoncée par le fichier ; un logiciel qui l'écrit mal
+        # (« A1:A1 ») faisait perdre toutes les lignes sans erreur. On lit le contenu réel (audit AV-14).
+        feuille.reset_dimensions()
     if not feuilles:
         raise ImportInvalide(
             "Aucune feuille reconnue : le classeur doit contenir au moins une feuille « Personnel », « Véhicules », "
@@ -368,7 +416,7 @@ def importer_classeur(fichier, acteur, *, simulation: bool = False) -> Rapport:
 
     resultats = [ResultatFeuille(cle=cle, titre=modele.TITRES[cle], presente=cle in feuilles) for cle in modele.ORDRE]
     with transaction.atomic():
-        ctx = {"index": _index_personnel()}
+        ctx = {"index": _index_personnel(), "supprimes": _index_personnel_supprime()}
         for resultat in resultats:
             if not resultat.presente:
                 continue

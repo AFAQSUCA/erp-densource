@@ -19,6 +19,7 @@ from django.db.models import Count, F, Q, QuerySet, Sum
 from django.utils import timezone
 
 from apps.accounts.models import Role, User
+from apps.core.classeurs import ClasseurSuspect, exiger_classeur_raisonnable
 from apps.core.search import filtrer_par_texte, normaliser
 from apps.core.services import prochain_numero
 from apps.parametres import services as parametres_services
@@ -180,6 +181,9 @@ def modifier_personnel(
 # Ordre et intitulés attendus dans le fichier (ligne 1) — voir modele_import_personnel (views.py) et
 # templates/hr/personnel_import.html. Le matricule (généré), le supérieur et le compte utilisateur
 # ne se règlent pas depuis le fichier : à compléter ensuite fiche par fiche si besoin.
+# Plus grand salaire que la base accepte (``Personnel.salaire_base`` : 12 chiffres dont 2 décimales).
+SALAIRE_MAX = Decimal("9999999999")
+
 COLONNES_IMPORT = [
     "Nom", "Prénom", "Poste", "Département", "Type de contrat", "Date d'embauche", "Salaire de base",
 ]
@@ -245,6 +249,10 @@ def importer_personnel(fichier) -> ResultatImportPersonnel:
     l'import général) est listé dans ``deja_presents`` et laissé tel quel (audit M11-08, AV-17).
     """
     try:
+        exiger_classeur_raisonnable(fichier)  # archive piégée refusée avant ouverture (audit AV-16)
+    except ClasseurSuspect as erreur:
+        raise ImportPersonnelError([str(erreur)]) from erreur
+    try:
         classeur = openpyxl.load_workbook(fichier, data_only=True)
     except Exception as erreur:  # fichier corrompu, renommé en .xlsx, archive illisible...
         raise ImportPersonnelError(["Ce fichier n'est pas un classeur Excel (.xlsx) lisible."]) from erreur
@@ -262,6 +270,8 @@ def importer_personnel(fichier) -> ResultatImportPersonnel:
     a_creer: list[dict] = []
     resultat = ResultatImportPersonnel()
     connus = {_cle_nom(p.nom, p.prenom) for p in Personnel.objects.all()}
+    # Fiche supprimée : erreur de ligne, ni recréée ni ignorée (audit AV-15, décision du 12/10/2026).
+    supprimes = {_cle_nom(p.nom, p.prenom) for p in Personnel.all_objects.filter(is_deleted=True)}
     for numero, ligne in enumerate(feuille.iter_rows(min_row=2, values_only=True), start=2):
         if not ligne or all(cellule in (None, "") for cellule in ligne):
             continue  # ligne vide (fin de tableau…) : ignorée, ce n'est pas une erreur
@@ -275,6 +285,12 @@ def importer_personnel(fichier) -> ResultatImportPersonnel:
         if not prenom:
             erreurs.append(f"Ligne {numero} : le prénom est obligatoire.")
         if nom and prenom:
+            if _cle_nom(nom, prenom) in supprimes and _cle_nom(nom, prenom) not in connus:
+                erreurs.append(
+                    f"Ligne {numero} : {nom} {prenom} a été supprimé(e) de l'ERP : restaurez la fiche "
+                    "(administration) ou retirez la ligne."
+                )
+                continue
             if _cle_nom(nom, prenom) in connus:
                 resultat.deja_presents.append(f"{nom} {prenom}")
                 continue
@@ -302,7 +318,8 @@ def importer_personnel(fichier) -> ResultatImportPersonnel:
 
         try:
             salaire_base = Decimal(str(salaire_brut))
-            if salaire_base < 0:
+            # NaN, Infinity ou montant que la base refuserait : erreur de ligne, pas erreur 500 (audit AV-13).
+            if not salaire_base.is_finite() or not 0 <= salaire_base <= SALAIRE_MAX:
                 raise InvalidOperation
         except (TypeError, InvalidOperation):
             salaire_base = None
