@@ -141,6 +141,11 @@ class DemandeDepense(BaseModel):
         on_delete=models.PROTECT, related_name="demandes_depense",
     )
     origine = models.CharField(_("origine"), max_length=21, choices=OrigineDemande.choices)
+    # Dépassement d'enveloppe : l'enveloppe dépassée, dont la validation relève le plafond (audit AV-03).
+    enveloppe = models.ForeignKey(
+        EnveloppeDepense, verbose_name=_("enveloppe dépassée"), null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="demandes_depassement",
+    )
     montant_estime = models.DecimalField(_("montant estimé (FCFA)"), max_digits=14, decimal_places=2)
     motif = models.TextField(_("motif"))
     fournisseur = models.CharField(_("fournisseur"), max_length=200, blank=True)

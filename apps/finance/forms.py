@@ -143,7 +143,8 @@ class DecisionDemandeForm(StyleTailwindMixin, forms.Form):
     )
     montant_valide = forms.DecimalField(
         label="Montant validé (FCFA)", min_value=0, decimal_places=2, max_digits=14, required=False,
-        help_text="Laissez vide pour valider le montant estimé tel quel.",
+        help_text="Laissez vide pour valider le montant estimé tel quel. Dépassement d'enveloppe : le plafond du mois "
+        "est relevé de ce montant.",
     )
     motif_refus = forms.CharField(
         label="Motif du refus", widget=forms.Textarea(attrs={"rows": 2}), required=False

@@ -382,3 +382,32 @@ def test_la_migration_supprime_les_doublons_globaux_en_gardant_le_plus_recent():
 
     restantes = list(EnveloppeDepense.all_objects.order_by("pk").values_list("pk", flat=True))
     assert restantes == [recente.pk] and ancienne.pk not in restantes
+
+
+# --- un dépassement validé relève le plafond (décision du 13/10/2026, audit AV-03) ---
+
+
+def test_valider_un_depassement_releve_le_plafond_du_montant_valide():
+    """Avant, le plafond ne bougeait pas : chaque dépense suivante du mois rouvrait une demande."""
+    from apps.finance.models import EnveloppeDepense
+
+    services.definir_enveloppe(_direction(), categorie=CategorieDepense.CARBURANT, annee=2026, mois=9, montant_plafond=Decimal("50000"))
+    _plein(litres="100", prix="655", jour=JOUR, ticket="T-1")  # 65 500 : dépasse de 15 500
+    demande = DemandeDepense.objects.get()
+
+    services.valider_demande(demande, _direction(), montant_valide=Decimal("50000"))
+    _plein(litres="10", prix="655", jour=JOUR, ticket="T-2")  # 72 050 au total, sous le nouveau plafond
+
+    assert EnveloppeDepense.objects.get().montant_plafond == Decimal("100000")
+    assert DemandeDepense.objects.count() == 1  # aucune nouvelle demande
+
+
+def test_sans_montant_saisi_le_plafond_est_releve_du_depassement_constate():
+    from apps.finance.models import EnveloppeDepense
+
+    services.definir_enveloppe(_direction(), categorie=CategorieDepense.CARBURANT, annee=2026, mois=9, montant_plafond=Decimal("50000"))
+    _plein(litres="100", prix="655", jour=JOUR, ticket="T-1")
+
+    services.valider_demande(DemandeDepense.objects.get(), _direction())
+
+    assert EnveloppeDepense.objects.get().montant_plafond == Decimal("65500")
