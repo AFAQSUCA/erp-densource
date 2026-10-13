@@ -504,6 +504,29 @@ class DepenseModeView(RoleRequiredMixin, View):
         return redirect("billing:depenses")
 
 
+class DepenseAnnulerView(RoleRequiredMixin, View):
+    """Annule une dépense saisie à la main, avec un motif (décision du 13/10/2026, audit AV-12)."""
+
+    roles = permissions.SAISIE
+    http_method_names = ["post"]
+
+    def post(self, request, pk):
+        depense = get_object_or_404(Depense, pk=pk)
+        form = MotifForm(request.POST)
+        if not form.is_valid():
+            messages.error(request, "Le motif de l'annulation est obligatoire.")
+            return redirect("billing:depenses")
+        try:
+            services.annuler_depense(depense, request.user, motif=form.cleaned_data["motif"])
+        except BillingError as erreur:
+            messages.error(request, str(erreur))
+        else:
+            messages.success(
+                request, f"Dépense « {depense.libelle} » annulée ; son écriture comptable a été contre-passée."
+            )
+        return redirect("billing:depenses")
+
+
 # --- devis (R5) ---
 
 
