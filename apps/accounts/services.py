@@ -18,6 +18,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import QuerySet
+from django.utils import timezone
 
 from apps.core.exceptions import ErreurMetier
 from apps.core.search import filtrer_par_texte
@@ -131,3 +132,21 @@ def definir_actif(acteur, utilisateur: User, actif: bool) -> User:
         utilisateur.is_active = actif
         utilisateur.save(update_fields=["is_active"])
     return utilisateur
+
+
+# --- purge quotidienne (audit AUD-19) ---
+
+
+def purger_sessions_et_jetons_expires(maintenant=None) -> dict[str, int]:
+    """Supprime les sessions et les jetons API (refresh) expirés : sans purge, ces tables grossissent sans fin.
+    Lancée chaque nuit par ``notifications.taches.executer_taches_quotidiennes`` (équivaut à ``clearsessions`` et
+    ``flushexpiredtokens``)."""
+    from django.contrib.sessions.models import Session
+    from rest_framework_simplejwt.token_blacklist.models import OutstandingToken
+
+    maintenant = maintenant or timezone.now()
+    sessions, _ = Session.objects.filter(expire_date__lt=maintenant).delete()
+    jetons = OutstandingToken.objects.filter(expires_at__lt=maintenant)
+    nombre_jetons = jetons.count()
+    jetons.delete()  # leurs mises en liste noire partent avec eux (cascade)
+    return {"sessions": sessions, "jetons": nombre_jetons}

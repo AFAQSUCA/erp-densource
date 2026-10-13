@@ -256,9 +256,8 @@ class CompteModifierView(RoleRequiredMixin, FormView):
     form_class = CompteModifierForm
     template_name = "accounting/compte_modifier_form.html"
 
-    def dispatch(self, request, *args, **kwargs):
+    def charger_objet(self, request, *args, **kwargs):
         self.compte = get_object_or_404(Compte, pk=kwargs["pk"])
-        return super().dispatch(request, *args, **kwargs)
 
     def get_initial(self):
         return {"libelle": self.compte.libelle, "actif": self.compte.actif}

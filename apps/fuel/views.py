@@ -155,9 +155,8 @@ class PleinAnnulerView(RoleRequiredMixin, FormView):
     form_class = AnnulationPleinForm
     template_name = "fuel/plein_annuler.html"
 
-    def dispatch(self, request, *args, **kwargs):
+    def charger_objet(self, request, *args, **kwargs):
         self.plein = get_object_or_404(Plein.objects.select_related("vehicule", "chauffeur__personnel"), pk=kwargs["pk"])
-        return super().dispatch(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
         return super().get_context_data(plein=self.plein, **kwargs)

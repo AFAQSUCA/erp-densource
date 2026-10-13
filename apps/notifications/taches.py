@@ -13,6 +13,7 @@ from datetime import date, datetime
 from django.urls import reverse
 from django.utils import timezone
 
+from apps.accounts import services as accounts_services
 from apps.accounts.models import Role
 from apps.billing import services as billing_services
 from apps.core.formats import nombre
@@ -205,4 +206,6 @@ def executer_taches_quotidiennes(*, aujourd_hui: date | None = None) -> dict[str
     conges = hr_services.synchroniser_statuts_conges(aujourd_hui=aujourd_hui)
     resultat["conges_demarres"] = conges["demarres"]
     resultat["conges_termines"] = conges["termines"]
+    purge = accounts_services.purger_sessions_et_jetons_expires()  # audit AUD-19
+    resultat["sessions_purgees"], resultat["jetons_purges"] = purge["sessions"], purge["jetons"]
     return resultat

@@ -209,9 +209,8 @@ class VersementConfirmerView(RoleRequiredMixin, FormView):
     form_class = ReglementForm
     template_name = "finance/versement_confirmer.html"
 
-    def dispatch(self, request, *args, **kwargs):
+    def charger_objet(self, request, *args, **kwargs):
         self.facture = get_object_or_404(billing_services.factures_queryset(), pk=kwargs["pk"])
-        return super().dispatch(request, *args, **kwargs)
 
     def get(self, request, *args, **kwargs):
         if self.facture.statut not in STATUTS_A_RECOUVRER:

@@ -14,7 +14,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 
 ## Bilan
 
-**441 exigences : 402 ✅, 23 🟡, 3 ❌, 10 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **94,4 %**.
+**441 exigences : 409 ✅, 16 🟡, 3 ❌, 10 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **95,2 %**.
 
 | Bloc | Lignes | ✅ | 🟡 | ❌ | ❓ | ⚪ |
 |---|---|---|---|---|---|---|
@@ -30,10 +30,10 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M10 Finances | 13 | 13 | 0 | 0 | 0 | 0 |
 | M11 RH | 30 | 30 | 0 | 0 | 0 | 0 |
 | M12 Tableaux de bord | 28 | 26 | 0 | 0 | 0 | 2 |
-| Technique | 87 | 64 | 13 | 1 | 8 | 1 |
+| Technique | 87 | 68 | 9 | 1 | 8 | 1 |
 | Recette | 7 | 7 | 0 | 0 | 0 | 0 |
 | Avenants | 17 | 12 | 3 | 2 | 0 | 0 |
-| Écarts d'audit | 23 | 14 | 7 | 0 | 2 | 0 |
+| Écarts d'audit | 23 | 17 | 4 | 0 | 2 | 0 |
 
 **Reprise à TECH-18** (première ligne non terminée, dans l'ordre des ID).
 
@@ -452,7 +452,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | TECH-31 | §4 l.265 | Transactions atomiques : factures | ✅ | `apps/billing/services.py` | — | Fait |
 | TECH-32 | §4 l.265 | Transactions atomiques : OR | ✅ | `apps/garage/services.py` | `corriger_kilometrage` et `expirer_proformas` non atomiques | Fait |
 | TECH-33 | §4 l.266 | Permissions par rôle | ✅ | `apps/accounts/mixins.py`, `apps/*/permissions.py` | — | Fait |
-| TECH-34 | §4 l.266 | Permissions par objet | 🟡 | Ponctuel (`apps/mobile_api/services.py:54`, `apps/hr/views.py:194`) ; 6 vues cherchent l'objet avant le rôle | Contrôler le rôle avant l'objet | À faire |
+| TECH-34 | §4 l.266 | Permissions par objet | ✅ | `apps/accounts/mixins.py` (`charger_objet` après les contrôles de connexion et de rôle) ; 7 vues converties ; test `apps/accounts/tests/test_role_avant_objet.py` (403 pour un identifiant inexistant, toutes vues retrouvées automatiquement) ; objets propres à l'utilisateur : `apps/mobile_api/services.py:54`, `apps/hr/views.py` | Fait (`113e40d`) | Fait |
 | TECH-35 | §4 l.267 | API versionnée /api/v1/ | ✅ | `config/urls.py` | — | Fait |
 | TECH-36 | §4 l.268 | Couverture ≥ 70 % des services critiques | ✅ | Mesurée : 95 à 100 % sur tous les `services.py` | — | Fait |
 | TECH-37 | §4 l.271 | Injection SQL via ORM | ✅ | Aucun `.raw(`, `cursor()`, `.extra(` dans `apps/` | — | Fait |
@@ -465,9 +465,9 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | TECH-44 | §4 l.276 | MFA obligatoire ADMIN | ✅ | `config/settings/base.py:269`, `apps/accounts/middleware.py:30` | — | Fait |
 | TECH-45 | §4 l.276 | MFA obligatoire DIRECTION | ✅ | Idem, et API `apps/api/auth.py:39` | — | Fait |
 | TECH-46 | §4 l.277 | Rate limiting anti force brute | 🟡 | `apps/accounts/throttle.py` ; l'API contourne le verrou de compte ; aucun quota sur « mot de passe oublié » ; aucun `limit_req` Nginx | Appliquer le verrou à l'API, quota de réinitialisation | À faire |
-| TECH-47 | §4 l.278 | Secrets via .env | 🟡 | `config/settings/prod.py:22` ; `wsgi/asgi/celery/manage` retombent sur `dev` (DEBUG) si la variable manque | Défaut sûr | À faire |
+| TECH-47 | §4 l.278 | Secrets via .env | ✅ | `config/settings/prod.py` exige ses secrets ; `config/wsgi.py`, `config/asgi.py`, `config/celery.py` partent sur la production par défaut (jamais DEBUG par oubli) ; `manage.py` garde le développement ; test `apps/core/tests/test_deploiement.py` | Fait (`1995788`) | Fait |
 | TECH-48 | §4 l.279 | RBAC rôle | ✅ | Voir TECH-33 | — | Fait |
-| TECH-49 | §4 l.279 | RBAC objet | 🟡 | Voir TECH-34 ; `certs/` non exclu de l'image (`.dockerignore`) | `.dockerignore` | À faire |
+| TECH-49 | §4 l.279 | RBAC objet | ✅ | Voir TECH-34 ; `.dockerignore` exclut `certs/`, `*.pem`, `*.key`, `COMPTES-ESSAI.md` ; test `apps/core/tests/test_deploiement.py` | Fait (`1995788`, `113e40d`) | Fait |
 | TECH-50 | §4 l.280 | HSTS | ✅ | `config/settings/prod.py:84` | — | Fait |
 | TECH-51 | §4 l.280 | X-Frame-Options | ✅ | `config/settings/prod.py:88` | — | Fait |
 | TECH-52 | §4 l.280 | X-Content-Type-Options | ✅ | `config/settings/prod.py:87` | — | Fait |
@@ -485,7 +485,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | TECH-64 | §4 l.290 | only / defer | ✅ | Requêtes constantes, volumes modestes | — | Fait |
 | TECH-65 | §4 l.291 | Cache Redis des KPI | 🟡 | `apps/dashboard/services.py:62` ; TTL seul ; Redis sans tolérance de panne | Tolérer la panne de Redis | À faire |
 | TECH-66 | §4 l.292 | Pagination obligatoire | 🟡 | Grand livre et journal de trésorerie chargés en mémoire ; plan comptable, exercices, enveloppes non paginés | Paginer ou borner | À faire |
-| TECH-67 | §4 l.293 | Index BDD sur colonnes de recherche | 🟡 | Aucun index sur `date_emission`, `date_reglement`, `date_depense`, `date_expiration` | Ajouter les index | À faire |
+| TECH-67 | §4 l.293 | Index BDD sur colonnes de recherche | ✅ | Index sur `date_emission`, `date_reglement`, `date_depense` (+ catégorie), `date_mouvement`, `date_plein`, `date_expiration` (documents), dates d'expiration du permis et de la visite médicale (migrations `*_index_dates`, appliquées sur PostgreSQL 16) | Fait (`dd05e33`) | Fait |
 | TECH-68 | §4 l.294 | Celery : notifications | ✅ | `apps/notifications/tasks.py` | — | Fait |
 | TECH-69 | §4 l.294 | Celery : alertes | ✅ | `config/settings/base.py` (beat quotidien) | — | Fait |
 | TECH-70 | §4 l.294 | Celery : PDF | 🟡 | PDF générés dans la requête (`apps/missions/documents.py`, `apps/hr/documents.py`) | Acceptable (PDF légers) : faire acter | Décision |
@@ -559,11 +559,11 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | AUD-12 | M2 | Camion aux documents expirés affectable | ✅ | Bloquant si expiré ou manquant (décision du 12/10/2026) : `apps/missions/services.py` (`documents_non_valides_du_vehicule`, `_exiger_vehicule_en_regle`), affectation et départ ; tests `test_documents_et_reaffectation.py` | Fait (`65c73ed`) | Fait |
 | AUD-13 | M6-08 | N° de ticket unique globalement (pas par station) | 🟡 | `apps/fuel/models.py:99-103` | Unicité (station, ticket) | Décision |
 | AUD-14 | AV-03 | Enveloppe globale dupliquée (NULL), aucun verrou | 🟡 | `apps/finance/models.py:97`, `apps/finance/demandes.py:152` | Contrainte + verrou | À faire |
-| AUD-15 | M5-11 | Pages contenant les codes sans `Cache-Control: no-store` | 🟡 | `apps/missions/views.py` (fiche mission) | `no-store` | À faire |
+| AUD-15 | M5-11 | Pages contenant les codes sans `Cache-Control: no-store` | ✅ | `apps/missions/views.py` (`MissionDetailView.get` : `no-store, private`, comme le PDF et le QR) ; test `apps/missions/tests/test_documents.py` | Fait (`18d12c2`) | Fait |
 | AUD-16 | M11-13 | DIRECTION jamais prévenue des validations de congé en retard | 🟡 | `apps/notifications/taches.py:96-127` | Notifier la DIRECTION | À faire |
-| AUD-17 | TECH-46 | Identifiant mal saisi journalisé en clair à l'échec de connexion | 🟡 | `apps/audit/services.py:90` | Tronquer / masquer | À faire |
+| AUD-17 | TECH-46 | Identifiant mal saisi journalisé en clair à l'échec de connexion | ✅ | `apps/audit/services.py` (`identifiant_journalise` : compte existant en entier, identifiant inconnu masqué) ; tests `apps/audit/tests/test_services.py` | Fait (`3cbe348`) | Fait |
 | AUD-18 | TECH-55 | Mot de passe de la base dans les arguments de `pg_dump` | ✅ | `ops/fonctions-sauvegarde.sh:30` (URL sans mot de passe, `.pgpass` temporaire 600) ; tests `apps/sauvegardes/tests/test_scripts.py` | Fait (`b042d06`) | Fait |
-| AUD-19 | TECH-43 | Tables de sessions et de jetons jamais purgées | 🟡 | Aucune planification de `clearsessions` / `flushexpiredtokens` | Tâche planifiée | À faire |
+| AUD-19 | TECH-43 | Tables de sessions et de jetons jamais purgées | ✅ | `apps/accounts/services.py` (`purger_sessions_et_jetons_expires`), lancée par la tâche quotidienne (`apps/notifications/taches.py`) ; tests `apps/accounts/tests/test_purge.py` | Fait (`5d5d6ac`) | Fait |
 | AUD-20 | architecture | `architecture.md` ne reflète plus les dépendances réelles | 🟡 | `apps/notifications` importe 12 apps | Mettre à jour le schéma | À faire |
 | AUD-21 | M9-10 | Modification d'un devis : TVA écrite « 18,00 » (format français), refusée par le champ numérique qui reste vide | ✅ | `apps/billing/templates/billing/proforma_modifier.html:22,42` (`unlocalize`) ; test `apps/billing/tests/test_proforma_views.py:257` | Fait (`7942790`) | Fait |
 | AUD-22 | AV-06 | Pièce d'une écriture limitée à 30 caractères, référence d'une dépense ou d'un mouvement à 100 : erreur 500 sur PostgreSQL au-delà de 30 | ✅ | `apps/accounting/models.py:95` (100 caractères, migration `0004_piece_reference_100`) ; tests `apps/accounting/tests/test_longueur_piece.py` (alignement des longueurs) | Fait (`3e1454a`) | Fait |
