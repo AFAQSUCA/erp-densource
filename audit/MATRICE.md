@@ -14,7 +14,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 
 ## Bilan
 
-**441 exigences : 420 ✅, 5 🟡, 3 ❌, 10 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **96,5 %**.
+**441 exigences : 421 ✅, 3 🟡, 5 ❌, 6 ❓, 6 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **97,1 %**.
 
 | Bloc | Lignes | ✅ | 🟡 | ❌ | ❓ | ⚪ |
 |---|---|---|---|---|---|---|
@@ -30,12 +30,12 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M10 Finances | 13 | 13 | 0 | 0 | 0 | 0 |
 | M11 RH | 30 | 30 | 0 | 0 | 0 | 0 |
 | M12 Tableaux de bord | 28 | 26 | 0 | 0 | 0 | 2 |
-| Technique | 87 | 76 | 1 | 1 | 8 | 1 |
+| Technique | 87 | 76 | 0 | 3 | 4 | 4 |
 | Recette | 7 | 7 | 0 | 0 | 0 | 0 |
 | Avenants | 17 | 12 | 3 | 2 | 0 | 0 |
-| Écarts d'audit | 23 | 20 | 1 | 0 | 2 | 0 |
+| Écarts d'audit | 23 | 21 | 0 | 0 | 2 | 0 |
 
-**Reprise à TECH-18** (première ligne non terminée, dans l'ordre des ID).
+**Reprise à TECH-24** (première ligne non terminée, dans l'ordre des ID).
 
 ## Contradictions entre sources (règle 1)
 
@@ -436,13 +436,13 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | TECH-15 | §4 l.251 | Celery 5.4+ | ✅ | `requirements/base.txt:19` | — | Fait |
 | TECH-16 | §4 l.252 | PDF (WeasyPrint / ReportLab) | ✅ | `requirements/base.txt:24` | — | Fait |
 | TECH-17 | §4 l.252 | QR : qrcode + Pillow | ✅ | `requirements/base.txt:10-11` | — | Fait |
-| TECH-18 | §4 l.253 | Notifications SMS (Twilio) | ❓ | NON TROUVÉ ; écarté selon le tutoriel, sans décision écrite dans le CDC | Faire acter la décision | Décision |
-| TECH-19 | §4 l.253 | Notifications push (Firebase) | ❓ | NON TROUVÉ ; idem | Faire acter la décision | Décision |
-| TECH-20 | §4 l.254 | Stockage S3 / MinIO | ❌ | NON TROUVÉ (volume local `media_data`) | Décision ou intégration `django-storages` | Décision |
+| TECH-18 | §4 l.253 | Notifications SMS (Twilio) | ⚪ | Écarté le 13/10/2026 : alertes dans l'application et par e-mail (`avenant-decisions-audit.md`) | — | — |
+| TECH-19 | §4 l.253 | Notifications push (Firebase) | ⚪ | Écarté le 13/10/2026 : espace chauffeur en page web (`avenant-decisions-audit.md`) | — | — |
+| TECH-20 | §4 l.254 | Stockage S3 / MinIO | ⚪ | Écarté le 13/10/2026 : disque du serveur, chiffré dans la sauvegarde nocturne (`avenant-decisions-audit.md`) | — | — |
 | TECH-21 | §4 l.255 | Docker | ✅ | `Dockerfile` | `certs/` copié dans l'image (TECH-49) | Fait |
 | TECH-22 | §4 l.255 | Docker Compose | ✅ | `docker-compose.yml` | — | Fait |
 | TECH-23 | §4 l.256 | Sentry | ✅ | `config/settings/prod.py:125` | — | Fait |
-| TECH-24 | §4 l.256 | Prometheus | ❓ | Écarté en commentaire (`config/settings/prod.py:117`), pas dans le CDC | Faire acter la décision | Décision |
+| TECH-24 | §4 l.256 | Prometheus | ❌ | Décision du 13/10/2026 : à mettre en place (`avenant-decisions-audit.md`) | Exposer les mesures | À faire |
 | TECH-25 | §4 l.259 | Les 17 apps | ✅ | `config/settings/base.py` (`INSTALLED_APPS`) | — | Fait |
 | TECH-26 | §4 l.262 | views → serializers → services → models | ✅ | Les 7 lectures directes passent par des services (`accounting.services.ecritures_manuelles`, `exercices`, `plan_comptable` ; `finance.demandes.ordre_de` ; `hr.services.attributions_de`) ; restent seulement les `get_object_or_404` de l'objet de la page | Fait (`616403e`) | Fait |
 | TECH-27 | §4 l.263 | Logique métier dans services.py | ✅ | Aucun calcul métier dans les vues | — | Fait |
@@ -488,8 +488,8 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | TECH-67 | §4 l.293 | Index BDD sur colonnes de recherche | ✅ | Index sur `date_emission`, `date_reglement`, `date_depense` (+ catégorie), `date_mouvement`, `date_plein`, `date_expiration` (documents), dates d'expiration du permis et de la visite médicale (migrations `*_index_dates`, appliquées sur PostgreSQL 16) | Fait (`dd05e33`) | Fait |
 | TECH-68 | §4 l.294 | Celery : notifications | ✅ | `apps/notifications/tasks.py` | — | Fait |
 | TECH-69 | §4 l.294 | Celery : alertes | ✅ | `config/settings/base.py` (beat quotidien) | — | Fait |
-| TECH-70 | §4 l.294 | Celery : PDF | 🟡 | PDF générés dans la requête (`apps/missions/documents.py`, `apps/hr/documents.py`) | Acceptable (PDF légers) : faire acter | Décision |
-| TECH-71 | §4 l.295 | CDN Cloudflare | ❓ | `GUIDE-DEPLOIEMENT.md:5` (« pas de CDN »), décision hors CDC | Faire acter la décision | Décision |
+| TECH-70 | §4 l.294 | Celery : PDF | ❌ | Décision du 13/10/2026 : PDF générés par Celery (`avenant-decisions-audit.md`) ; aujourd'hui dans la requête | Génération en tâche de fond | À faire |
+| TECH-71 | §4 l.295 | CDN Cloudflare | ❌ | Décision du 13/10/2026 : derrière Cloudflare (`avenant-decisions-audit.md`) | Réglages + guide | À faire |
 | TECH-72 | §4 l.296 | Compression gzip | ✅ | `nginx/nginx.conf:26` | — | Fait |
 | TECH-73 | §4 l.297 | Monitoring Sentry | ✅ | `config/settings/prod.py:125` | — | Fait |
 | TECH-74 | §4 l.300 | Chrome (2 dernières versions) | ❓ | Aucun test navigateur réel | Recette manuelle | Hors code |
@@ -557,7 +557,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | AUD-10 | M5-04 | Chauffeur sans permis / visite / catégorie C-E affectable | ✅ | Bloquant (décision du 12/10/2026) : voir M5-04 | Fait (`65c73ed`) | Fait |
 | AUD-11 | M1-67 | Imprévu ou avance acceptés sur une mission clôturée | ✅ | `apps/missions/terrain.py:82` (`_exiger_mission_non_cloturee`, appelé par `declarer_imprevu` et `planifier_frais`) ; une mission livrée non clôturée accepte encore un imprévu (trajet retour) ; tests `apps/missions/tests/test_frais_mission.py` | Fait (`af062ba`) | Fait |
 | AUD-12 | M2 | Camion aux documents expirés affectable | ✅ | Bloquant si expiré ou manquant (décision du 12/10/2026) : `apps/missions/services.py` (`documents_non_valides_du_vehicule`, `_exiger_vehicule_en_regle`), affectation et départ ; tests `test_documents_et_reaffectation.py` | Fait (`65c73ed`) | Fait |
-| AUD-13 | M6-08 | N° de ticket unique globalement (pas par station) | 🟡 | `apps/fuel/models.py:99-103` | Unicité (station, ticket) | Décision |
+| AUD-13 | M6-08 | N° de ticket unique globalement (pas par station) | ✅ | Décision du 13/10/2026 : règle conservée, unique dans toute l'entreprise (`avenant-decisions-audit.md`) ; `apps/fuel/models.py` (contrainte `plein_ticket_unique`) | Décidé | Fait |
 | AUD-14 | AV-03 | Enveloppe globale dupliquée (NULL), aucun verrou | ✅ | Contrainte `enveloppe_globale_unique_par_mois` (`apps/finance/models.py`, migration `0006` qui supprime d'abord les doublons) ; verrou de l'enveloppe au contrôle (`apps/finance/demandes.py`) ; tests `apps/finance/tests/test_demandes.py`, verts sur PostgreSQL 16 | Fait (`9392dac`) | Fait |
 | AUD-15 | M5-11 | Pages contenant les codes sans `Cache-Control: no-store` | ✅ | `apps/missions/views.py` (`MissionDetailView.get` : `no-store, private`, comme le PDF et le QR) ; test `apps/missions/tests/test_documents.py` | Fait (`18d12c2`) | Fait |
 | AUD-16 | M11-13 | DIRECTION jamais prévenue des validations de congé en retard | ✅ | `apps/notifications/taches.py` (`_prevenir_la_direction` : une fois par congé et par niveau, jamais pour sa propre demande) ; tests `apps/notifications/tests/test_taches.py` | Fait (`831beaf`) | Fait |
