@@ -14,7 +14,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 
 ## Bilan
 
-**441 exigences : 398 ✅, 26 🟡, 4 ❌, 10 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **93,8 %**.
+**441 exigences : 400 ✅, 24 🟡, 4 ❌, 10 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **94,1 %**.
 
 | Bloc | Lignes | ✅ | 🟡 | ❌ | ❓ | ⚪ |
 |---|---|---|---|---|---|---|
@@ -30,10 +30,10 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M10 Finances | 13 | 13 | 0 | 0 | 0 | 0 |
 | M11 RH | 30 | 30 | 0 | 0 | 0 | 0 |
 | M12 Tableaux de bord | 28 | 26 | 0 | 0 | 0 | 2 |
-| Technique | 87 | 63 | 14 | 1 | 8 | 1 |
+| Technique | 87 | 64 | 13 | 1 | 8 | 1 |
 | Recette | 7 | 7 | 0 | 0 | 0 | 0 |
 | Avenants | 17 | 12 | 3 | 2 | 0 | 0 |
-| Écarts d'audit | 23 | 11 | 9 | 1 | 2 | 0 |
+| Écarts d'audit | 23 | 12 | 8 | 1 | 2 | 0 |
 
 **Reprise à TECH-18** (première ligne non terminée, dans l'ordre des ID).
 
@@ -475,7 +475,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | TECH-54 | §4 l.281 | CORS restreint | ✅ | `config/settings/base.py:217` | — | Fait |
 | TECH-55 | §4 l.282 | Sauvegardes chiffrées | ✅ | `ops/sauvegarde.sh` (GPG AES256) | — | Fait |
 | TECH-56 | §4 l.282 | Sauvegardes testées | ✅ | Restauration base et fichiers jouée le 12/10/2026 (GUIDE-DEPLOIEMENT.md § 9 et § vérifications) ; procédure mensuelle depuis le service ; rappel sur l'écran « Sauvegardes » | Essai mensuel à faire en production | Fait |
-| TECH-57 | §4 l.283 | Soft delete sur données sensibles | 🟡 | `apps/core/models.py` ; l'action groupée de l'admin Django supprime physiquement pleins, missions, OR, articles | `has_delete_permission = False` | À faire |
+| TECH-57 | §4 l.283 | Soft delete sur données sensibles | ✅ | `apps/core/models.py` ; admin : `apps/core/admin.py` (`SansSuppressionAdmin` pour plein, mission, OR, article, congé ; `SuppressionLogiqueAdmin` avec restauration pour les fiches de référence) ; voir AUD-04 | Fait (`1c7a72f`) | Fait |
 | TECH-58 | §4 l.284 | Journal d'audit append-only | ✅ | Voir M1-65 | — | Fait |
 | TECH-59 | §4 l.285 | Session 15 min mobile | ✅ | `config/settings/base.py:221` | — | Fait |
 | TECH-60 | §4 l.285 | Session 30 min desktop | ✅ | `config/settings/base.py:91` | — | Fait |
@@ -548,7 +548,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | AUD-01 | TECH-86 | 3 tests à dates codées en dur échouent depuis le 08/10/2026 | ✅ | `apps/notifications/tests/test_receivers.py` (jour du report fixé) ; 18 autres tests datés corrigés avant d'échouer : `apps/hr/tests/test_report_conge.py` (fixture « aujourd'hui »), `apps/finance/tests/test_demandes.py`, `apps/hr/tests/test_recrutement.py`, `apps/api/tests/test_v1.py` | Fait (`1c87fbb`) | Fait |
 | AUD-02 | M5 | Mission sans issue : ni annulation ni transfert (panne définitive) | ❓ | `apps/missions/services.py` (aucune transition de sortie) | Statut « Annulée » et/ou transfert | Décision |
 | AUD-03 | M6-07 | Pas d'annulation ni de correction d'un plein | ❌ | `apps/fuel/urls.py` | Annulation avec contre-passation de la dépense | À faire |
-| AUD-04 | TECH-57 | Suppression physique via l'admin Django | 🟡 | `apps/fuel/admin.py`, `apps/missions/admin.py`, `apps/garage/admin.py`, `apps/accounting/admin.py:29` (comptes) | Interdire | À faire |
+| AUD-04 | TECH-57 | Suppression physique via l'admin Django | ✅ | `apps/core/admin.py` appliqué à `apps/fuel/admin.py`, `apps/missions/admin.py`, `apps/garage/admin.py`, `apps/inventory/admin.py`, `apps/hr/admin.py`, `apps/customers/admin.py`, `apps/fleet/admin.py`, `apps/drivers/admin.py`, `apps/notifications/admin.py` ; comptes : `apps/accounting/admin.py` (AV-05) ; test `apps/core/tests/test_admin_suppression.py` (tout admin `BaseModel` vérifié) | Fait (`1c7a72f`) | Fait |
 | AUD-05 | M9-16 | Centimes acceptés (règlements, dépenses, mouvements) | ✅ | Refusés, jamais arrondis : `apps/core/montants.py` (`exiger_montant_entier`), appelé par billing, finance, missions, garage, inventory, fuel, accounting ; décision du 12/10/2026 (`avenant-montants-fcfa.md`) ; tests `apps/core/tests/test_montants.py` (13 tests) | Fait (`d621d1e`) | Fait |
 | AUD-06 | M9-16 | Double soumission non protégée (règlement, dépense, mouvement, imprévu) | ✅ | Navigateur : un formulaire POST envoyé une fois (`static/js/app.js:27`) ; serveur : enregistrement identique de moins d'une minute refusé (`apps/core/doublons.py`, `apps/billing/services.py:469,661`, `apps/finance/services.py:85`, `apps/missions/terrain.py:98,128`) ; tests `apps/core/tests/test_doublons.py` (6 tests) | Fait (`762f616`) | Fait |
 | AUD-07 | M11-11 | Même compte en N1 et N2 | ✅ | `apps/hr/services.py:511,522` ; voir M11-11 ; tests `apps/hr/tests/test_separation_n1_n2.py` | Fait (`a1a8ddf`, `ab285ae`) | Fait |
