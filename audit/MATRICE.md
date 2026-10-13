@@ -492,10 +492,10 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | TECH-71 | §4 l.295 | CDN Cloudflare | ✅ | Décision du 13/10/2026 (`avenant-decisions-audit.md`) : vraie adresse du visiteur crue seulement depuis les plages de Cloudflare `nginx/cloudflare-ips.conf` (inclus avant `limit_req`, `nginx/nginx.conf`, embarqué par `nginx/Dockerfile`), mise à jour `nginx/maj-ips-cloudflare.sh` ; `/static/` public et immutable, toute autre réponse `Cache-Control: private` (`apps/core/middleware.py`, `SecurityHeadersMiddleware`) ; défi Let's Encrypt aussi en HTTPS ; réglages du tableau de bord `GUIDE-DEPLOIEMENT.md` § 8 bis ; tests `apps/core/tests/test_cloudflare.py` (8 tests), script essayé (liste valide, page d'erreur) ; compte et DNS Cloudflare fournis par l'entreprise | Fait (`a6619f4`) | Fait |
 | TECH-72 | §4 l.296 | Compression gzip | ✅ | `nginx/nginx.conf:26` | — | Fait |
 | TECH-73 | §4 l.297 | Monitoring Sentry | ✅ | `config/settings/prod.py:125` | — | Fait |
-| TECH-74 | §4 l.300 | Chrome (2 dernières versions) | ❓ | Aucun test navigateur réel | Recette manuelle | Hors code |
-| TECH-75 | §4 l.300 | Edge | ❓ | Idem | Recette manuelle | Hors code |
-| TECH-76 | §4 l.300 | Safari | ❓ | Idem | Recette manuelle | Hors code |
-| TECH-77 | §4 l.300 | Firefox | ❓ | Idem | Recette manuelle | Hors code |
+| TECH-74 | §4 l.300 | Chrome (2 dernières versions) | ❓ | Aucun test navigateur réel | Recette manuelle : fiche `RECETTE-NAVIGATEURS.md` (à remplir par l'entreprise) | Hors code |
+| TECH-75 | §4 l.300 | Edge | ❓ | Idem | Recette manuelle : fiche `RECETTE-NAVIGATEURS.md` (à remplir par l'entreprise) | Hors code |
+| TECH-76 | §4 l.300 | Safari | ❓ | Idem | Recette manuelle : fiche `RECETTE-NAVIGATEURS.md` (à remplir par l'entreprise) | Hors code |
+| TECH-77 | §4 l.300 | Firefox | ❓ | Idem | Recette manuelle : fiche `RECETTE-NAVIGATEURS.md` (à remplir par l'entreprise) | Hors code |
 | TECH-78 | §4 l.301 | Responsive mobile-first | ✅ | `templates/base.html:5`, `apps/mobile_api/templates/mobile/base.html:5` | — | Fait |
 | TECH-79 | §4 l.302 | PWA espace chauffeur | ✅ | `apps/mobile_api/views_web.py:388` | — | Fait |
 | TECH-80 | §4 l.303 | Hors ligne + sync différée | ⚪ | Écarté le 29/09/2026 (CDC l.303) | — | — |
