@@ -75,6 +75,27 @@ def connexion_reinitialiser(request, identifiant: str) -> None:
     cache.delete(_cle_compte(request, identifiant))
 
 
+# --- mot de passe oublié (audit TECH-46) ---
+
+
+def _cles_reinitialisation(request, email: str) -> list[tuple[str, int]]:
+    return [
+        (f"throttle:reset-ip:{get_client_ip(request)}", settings.REINITIALISATION_MAX_PAR_ADRESSE),
+        (f"throttle:reset-email:{_empreinte(email or '')}", settings.REINITIALISATION_MAX_PAR_EMAIL),
+    ]
+
+
+def reinitialisation_secondes_restantes(request, email: str) -> int:
+    """Secondes avant de pouvoir redemander un lien ; 0 si la demande est permise. Chaque demande compte, que
+    l'adresse ait un compte ou non (la réponse ne doit jamais le révéler)."""
+    return max(_secondes_restantes(cle, plafond) for cle, plafond in _cles_reinitialisation(request, email))
+
+
+def reinitialisation_enregistrer(request, email: str) -> None:
+    for cle, _plafond in _cles_reinitialisation(request, email):
+        _incrementer(cle, settings.REINITIALISATION_FENETRE)
+
+
 # --- double authentification ---
 
 

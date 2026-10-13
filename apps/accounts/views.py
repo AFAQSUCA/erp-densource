@@ -66,6 +66,18 @@ class ReinitialiserMotDePasseView(PasswordResetView):
     subject_template_name = "registration/password_reset_subject.txt"
     success_url = reverse_lazy("accounts:password_reset_done")
 
+    def post(self, request, *args, **kwargs):
+        """Demandes limitées par adresse IP et par adresse e-mail (audit TECH-46) : au-delà, aucun e-mail."""
+        email = request.POST.get("email", "")
+        restant = throttle.reinitialisation_secondes_restantes(request, email)
+        if restant:
+            blocage = f"Trop de demandes. Réessayez dans {throttle.phrase_attente(restant)}."
+            reponse = self.render_to_response(self.get_context_data(form=self.get_form(), blocage=blocage))
+            reponse.status_code = 429
+            return reponse
+        throttle.reinitialisation_enregistrer(request, email)
+        return super().post(request, *args, **kwargs)
+
 
 class ReinitialiserMotDePasseEnvoyeView(PasswordResetDoneView):
     template_name = "registration/password_reset_done.html"

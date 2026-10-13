@@ -84,11 +84,20 @@ class ConnexionView(TokenObtainPairView):
     throttle_scope = "connexion"
 
     def post(self, request, *args, **kwargs):
+        # Même verrou que le site (audit TECH-46) : un identifiant bloqué après trop d'échecs l'est aussi ici, même
+        # avec le bon mot de passe, qui n'est alors pas vérifié ; sans cela, la force brute passait par l'API.
+        identifiant = str(request.data.get("username", ""))
+        restant = throttle.connexion_secondes_restantes(request, identifiant)
+        if restant:
+            raise exceptions.Throttled(
+                wait=restant, detail=f"Trop de tentatives échouées. Réessayez dans {throttle.phrase_attente(restant)}."
+            )
         # Un échec est déjà signalé par ``django.contrib.auth.authenticate`` (signal
-        # ``user_login_failed``, donc inscrit à l'audit) : on n'ajoute que la réussite.
+        # ``user_login_failed``, donc inscrit à l'audit et au compteur) : on n'ajoute que la réussite.
         reponse = super().post(request, *args, **kwargs)
         utilisateur = getattr(getattr(self, "serializer", None), "user", None)
         if utilisateur is not None:
+            throttle.connexion_reinitialiser(request, identifiant)
             user_logged_in.send(sender=type(utilisateur), request=request, user=utilisateur)
         return reponse
 

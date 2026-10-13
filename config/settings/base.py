@@ -288,6 +288,11 @@ MFA_FENETRE = 10 * 60  # ... par fenêtre de 10 minutes, puis blocage jusqu'à l
 LOGIN_MAX_ECHECS_COMPTE = 5
 LOGIN_MAX_ECHECS_ADRESSE = 20
 LOGIN_FENETRE = 15 * 60
+# « Mot de passe oublié » (audit TECH-46) : par adresse IP et par adresse e-mail, sur une heure ; sans cela, on
+# pouvait inonder de courriels la boîte d'un employé.
+REINITIALISATION_MAX_PAR_ADRESSE = 5
+REINITIALISATION_MAX_PAR_EMAIL = 3
+REINITIALISATION_FENETRE = 60 * 60
 
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
