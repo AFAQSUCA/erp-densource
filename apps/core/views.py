@@ -1,6 +1,6 @@
 """Aides communes aux vues."""
 
-from . import pdf
+from . import documents_pdf, pdf
 from .rapports import contexte_rapport, url_pdf
 
 
@@ -44,11 +44,10 @@ class TelechargementPdfMixin:
         if hasattr(self, "get_object"):
             self.object = self.get_object()
         contexte = self.get_context_data(**kwargs)
-        contenu = pdf.generer_pdf(
-            titre=contexte["titre"], sous_titre=contexte.get("sous_titre", ""), blocs=self.blocs_pdf(contexte),
+        return documents_pdf.telecharger(
+            request, titre=contexte["titre"], sous_titre=contexte.get("sous_titre", ""), blocs=self.blocs_pdf(contexte),
             entreprise=contexte["entreprise"], genere_par=contexte["genere_par"], genere_le=contexte["genere_le"],
         )
-        return pdf.reponse_pdf(contenu, contexte["titre"])
 
     def get_context_data(self, **kwargs):
         return {**super().get_context_data(**kwargs), "url_pdf": url_pdf(self.request)}
@@ -105,12 +104,11 @@ class ImpressionListeMixin:
         resume = f"{nombre} ligne{'s' if nombre > 1 else ''}"
         if contexte["tronque"]:
             resume += f" — limité aux {nombre} premières ; affinez la recherche pour voir le reste"
-        contenu = pdf.generer_pdf(
-            titre=contexte["titre"], sous_titre=contexte["sous_titre"], entreprise=contexte["entreprise"],
+        return documents_pdf.telecharger(
+            request, titre=contexte["titre"], sous_titre=contexte["sous_titre"], entreprise=contexte["entreprise"],
             genere_par=contexte["genere_par"], genere_le=contexte["genere_le"],
             blocs=[pdf.Texte(resume, discret=True), pdf.Tableau(entetes=contexte["entetes"], lignes=contexte["lignes"])],
         )
-        return pdf.reponse_pdf(contenu, contexte["titre"])
 
     def get_context_data(self, **kwargs):
         objets = list(self.get_queryset()[: self.limite_impression + 1])

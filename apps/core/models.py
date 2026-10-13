@@ -1,3 +1,5 @@
+import uuid
+
 from django.conf import settings
 from django.db import models
 from django.utils import timezone
@@ -91,3 +93,47 @@ class CompteurNumero(models.Model):
 
     def __str__(self):
         return f"{self.prefixe}-{self.annee} : {self.dernier}"
+
+
+class StatutDocumentPdf(models.TextChoices):
+    EN_ATTENTE = "EN_ATTENTE", _("En préparation")
+    PRET = "PRET", _("Prêt")
+    ECHEC = "ECHEC", _("Échec")
+
+
+def _chemin_document_pdf(document, nom):
+    # Nom imprévisible (la clé) : le fichier n'est de toute façon servi qu'au demandeur (core.documents_pdf).
+    return f"pdf-generes/{document.cle}.pdf"
+
+
+class DocumentPdf(models.Model):
+    """PDF préparé en tâche de fond par Celery (cahier-des-charges.md:294 ; audit TECH-70).
+
+    Table technique, sans suppression logique : un fichier temporaire, réservé au demandeur et effacé après
+    ``PDF_CONSERVATION_HEURES`` par les tâches quotidiennes. ``parametres`` porte les données du rapport le temps
+    de la génération, puis est vidé.
+    """
+
+    cle = models.UUIDField(_("clé"), default=uuid.uuid4, unique=True, editable=False)
+    demande_par = models.ForeignKey(
+        settings.AUTH_USER_MODEL, verbose_name=_("demandé par"), on_delete=models.CASCADE, related_name="+"
+    )
+    titre = models.CharField(_("titre"), max_length=200)
+    nom_fichier = models.CharField(_("nom du fichier"), max_length=255)
+    url_retour = models.CharField(_("page d'origine"), max_length=500, blank=True)
+    parametres = models.JSONField(_("données du rapport"), default=dict, blank=True)
+    statut = models.CharField(
+        _("statut"), max_length=12, choices=StatutDocumentPdf.choices, default=StatutDocumentPdf.EN_ATTENTE
+    )
+    fichier = models.FileField(_("fichier"), upload_to=_chemin_document_pdf, blank=True)
+    erreur = models.TextField(_("erreur"), blank=True)
+    created_at = models.DateTimeField(_("demandé le"), auto_now_add=True)
+    termine_le = models.DateTimeField(_("terminé le"), null=True, blank=True)
+
+    class Meta:
+        verbose_name = _("document PDF")
+        verbose_name_plural = _("documents PDF")
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.titre} ({self.get_statut_display()})"

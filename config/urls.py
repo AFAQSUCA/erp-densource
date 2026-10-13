@@ -9,6 +9,7 @@ from django.contrib import admin
 from django.urls import include, path
 from django.views.generic import RedirectView
 
+from apps.core.documents_pdf import DocumentPdfTelechargerView, DocumentPdfView
 from apps.core.medias import MediaProtegeView
 from apps.dashboard.views import DashboardImprimerView, DashboardView
 
@@ -18,6 +19,9 @@ urlpatterns = [
     # Les navigateurs (et l'administration Django) réclament /favicon.ico : on renvoie vers l'icône du site.
     path("favicon.ico", RedirectView.as_view(url=settings.STATIC_URL + "img/favicon.png", permanent=True)),
     path("medias/<path:chemin>", MediaProtegeView.as_view(), name="media"),
+    # PDF préparés en tâche de fond (audit TECH-70) : page d'attente, puis téléchargement par le seul demandeur.
+    path("documents-pdf/<uuid:cle>/", DocumentPdfView.as_view(), name="document_pdf"),
+    path("documents-pdf/<uuid:cle>/telecharger/", DocumentPdfTelechargerView.as_view(), name="document_pdf_telecharger"),
     path("", include("apps.accounts.urls")),
     path("missions/", include("apps.missions.urls")),
     path("clients/", include("apps.customers.urls")),

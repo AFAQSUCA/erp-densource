@@ -103,6 +103,9 @@ services:
       DATABASE_URL: postgres://erp_densource:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD doit être défini dans .env}@db:5432/erp_densource
       REDIS_URL: redis://redis:6379/0
     command: ["celery", "-A", "config", "worker", "-l", "info"]
+    volumes:
+      # Le worker dépose les PDF générés (audit TECH-70) là où `web` et Nginx les lisent.
+      - media_data:/app/media
     depends_on:
       # Attend `web` en bonne santé, pas seulement démarré : ses migrations (ops/entrypoint.sh)
       # doivent être appliquées avant qu'un worker n'interroge la base.

@@ -256,6 +256,10 @@ ENTREPRISE_NCC = env("ENTREPRISE_NCC", default="")
 # courtier — même comportement qu'un appel de fonction. La production (config/settings/prod.py)
 # désactive ce mode : un vrai courtier Redis et un processus « celery worker » deviennent nécessaires.
 CELERY_TASK_ALWAYS_EAGER = env.bool("CELERY_TASK_ALWAYS_EAGER", default=True)
+# PDF des rapports, factures, devis (cahier-des-charges.md:294, audit TECH-70) : préparés par le worker plutôt que
+# dans la requête. Désactivé sans worker (développement, tests) : le PDF est rendu dans la requête, comme avant.
+PDF_EN_TACHE_DE_FOND = env.bool("PDF_EN_TACHE_DE_FOND", default=False)
+PDF_CONSERVATION_HEURES = 24  # puis le fichier est effacé (tâches quotidiennes)
 CELERY_TASK_EAGER_PROPAGATES = True
 CELERY_BROKER_URL = env("REDIS_URL", default="redis://localhost:6379/0")
 CELERY_TIMEZONE = TIME_ZONE

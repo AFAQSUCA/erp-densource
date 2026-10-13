@@ -118,15 +118,14 @@ def reponse_rapport(request, nom_fichier: str, feuilles: list[dict], *, titre: s
     chiffres dans les deux formats ; avenant-export-pdf.md)."""
     if request.GET.get("format") != "pdf":
         return reponse_classeur(nom_fichier, feuilles)
-    from . import pdf
+    from . import documents_pdf, pdf
     from .rapports import contexte_rapport
 
     contexte = contexte_rapport(request, titre=titre, sous_titre=sous_titre)
-    contenu = pdf.generer_pdf(
-        titre=titre, sous_titre=sous_titre, blocs=pdf.blocs_depuis_feuilles(feuilles),
+    return documents_pdf.telecharger(
+        request, titre=titre, sous_titre=sous_titre, blocs=pdf.blocs_depuis_feuilles(feuilles),
         entreprise=contexte["entreprise"], genere_par=contexte["genere_par"], genere_le=contexte["genere_le"],
     )
-    return pdf.reponse_pdf(contenu, titre)
 
 
 class ExportXlsxMixin:

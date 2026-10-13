@@ -73,6 +73,8 @@ CHANNEL_LAYERS = {
 # la planification) doit tourner à côté de l'application — voir README « Lancer en production ».
 CELERY_TASK_ALWAYS_EAGER = False
 CELERY_BROKER_URL = env("REDIS_URL")
+# Les PDF passent par ce worker (audit TECH-70) ; il dépose les fichiers dans le volume media partagé avec `web`.
+PDF_EN_TACHE_DE_FOND = env.bool("PDF_EN_TACHE_DE_FOND", default=True)
 
 # Nginx envoie les fichiers téléversés sur ordre de Django (X-Accel-Redirect), après contrôle du rôle.
 MEDIA_ACCEL_REDIRECT = True

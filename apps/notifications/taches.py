@@ -16,6 +16,7 @@ from django.utils import timezone
 from apps.accounts import services as accounts_services
 from apps.accounts.models import Role
 from apps.billing import services as billing_services
+from apps.core import documents_pdf
 from apps.core.formats import nombre
 from apps.core.services import etat_echeance
 from apps.drivers import services as drivers_services
@@ -230,4 +231,5 @@ def executer_taches_quotidiennes(*, aujourd_hui: date | None = None) -> dict[str
     resultat["conges_termines"] = conges["termines"]
     purge = accounts_services.purger_sessions_et_jetons_expires()  # audit AUD-19
     resultat["sessions_purgees"], resultat["jetons_purges"] = purge["sessions"], purge["jetons"]
+    resultat["pdf_purges"] = documents_pdf.purger()  # PDF préparés en tâche de fond (audit TECH-70)
     return resultat
