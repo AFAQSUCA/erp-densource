@@ -338,3 +338,32 @@ def test_une_erreur_du_recepteur_annule_la_confirmation():
 
     frais.refresh_from_db()
     assert frais.statut == StatutFraisMission.PREVU  # la transaction a été annulée
+
+
+# --- mission clôturée (audit AUD-11) ---
+
+
+def test_ni_imprevu_ni_avance_sur_une_mission_cloturee():
+    """Une mission « Clôturée et validée » a ses comptes arrêtés : plus aucun frais ne s'y ajoute."""
+    chauffeur = _chauffeur()
+    mission = _mission_affectee(chauffeur)
+    mission.statut = StatutMission.CLOTUREE
+    mission.save(update_fields=["statut"])
+
+    with pytest.raises(FraisInvalide, match="clôturée"):
+        services.declarer_imprevu(mission, chauffeur, montant=Decimal("15000"), justificatif=_preuve())
+    with pytest.raises(FraisInvalide, match="clôturée"):
+        services.planifier_frais(mission, _parcauto(), type_frais=TypeFraisMission.AVANCE_ROUTE, montant=Decimal("5000"))
+
+    assert not mission.frais.exists()
+
+
+def test_un_imprevu_reste_possible_sur_une_mission_livree_pas_encore_cloturee():
+    chauffeur = _chauffeur()
+    mission = _mission_affectee(chauffeur)
+    mission.statut = StatutMission.LIVREE
+    mission.save(update_fields=["statut"])
+
+    services.declarer_imprevu(mission, chauffeur, montant=Decimal("15000"), justificatif=_preuve())
+
+    assert mission.frais.count() == 1

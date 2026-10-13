@@ -1,5 +1,7 @@
 from django.contrib import admin
 
+from apps.core.admin import SuppressionLogiqueAdmin
+
 from .models import DocumentReglementaire, Vehicule
 
 
@@ -12,11 +14,9 @@ class DocumentInline(admin.TabularInline):
 
 
 @admin.register(Vehicule)
-class VehiculeAdmin(admin.ModelAdmin):
+class VehiculeAdmin(SuppressionLogiqueAdmin):
     list_display = ("immatriculation", "marque", "modele", "statut", "kilometrage")
     list_filter = ("statut", "marque")
     search_fields = ("immatriculation", "vin")
     inlines = [DocumentInline]
 
-    def get_queryset(self, request):
-        return Vehicule.objects.all()

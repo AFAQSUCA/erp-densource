@@ -24,7 +24,7 @@ from apps.drivers.models import Chauffeur
 
 from . import permissions, signals
 from .exceptions import ActionFraisNonAutorisee, FraisInvalide
-from .models import FraisMission, Mission, StatutFraisMission, TypeFraisMission
+from .models import FraisMission, Mission, StatutFraisMission, StatutMission, TypeFraisMission
 
 TYPES_PLANIFIABLES = (TypeFraisMission.AVANCE_ROUTE, TypeFraisMission.DEPENSE_PREVUE)
 
@@ -79,6 +79,13 @@ def totaux(mission: Mission) -> dict:
 # --- déclaration (chauffeur) et planification (Parc Auto) ---
 
 
+def _exiger_mission_non_cloturee(mission: Mission) -> None:
+    """Une mission « Clôturée et validée » a ses comptes arrêtés : plus aucun frais ne s'y ajoute (audit AUD-11).
+    Une mission livrée mais pas encore clôturée accepte encore un imprévu (trajet retour)."""
+    if mission.statut == StatutMission.CLOTUREE:
+        raise FraisInvalide("Cette mission est clôturée : plus aucun frais ne peut y être ajouté.")
+
+
 @transaction.atomic
 def declarer_imprevu(
     mission: Mission, chauffeur: Chauffeur, *, montant: Decimal, justificatif: File, description: str = ""
@@ -89,6 +96,7 @@ def declarer_imprevu(
     """
     if mission.chauffeur_id != chauffeur.pk:
         raise ActionFraisNonAutorisee("Cette mission n'est pas affectée à ce chauffeur.")
+    _exiger_mission_non_cloturee(mission)
     montant = Decimal(montant)
     if montant <= 0:
         raise FraisInvalide("Le montant doit être strictement positif.")
@@ -121,6 +129,7 @@ def planifier_frais(
     _exiger_role(acteur, permissions.FRAIS_SAISIE_PREVISION, "planifier un frais de mission")
     if type_frais not in TYPES_PLANIFIABLES:
         raise FraisInvalide("Seules une avance de route ou une dépense prévue se planifient ainsi.")
+    _exiger_mission_non_cloturee(mission)
     montant = Decimal(montant)
     if montant <= 0:
         raise FraisInvalide("Le montant doit être strictement positif.")

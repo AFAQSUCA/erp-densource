@@ -1,10 +1,12 @@
 from django.contrib import admin
 
+from apps.core.admin import SansSuppressionAdmin
+
 from .models import Mission
 
 
 @admin.register(Mission)
-class MissionAdmin(admin.ModelAdmin):
+class MissionAdmin(SansSuppressionAdmin):
     """Lecture seule : le cycle de vie passe par apps/missions/services.py."""
 
     list_display = ("numero", "client", "vehicule", "chauffeur", "statut", "prix_convenu")
