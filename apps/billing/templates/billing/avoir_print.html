@@ -1,0 +1,37 @@
+{% load humanize static %}<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ avoir.numero|default:"Projet d'avoir" }} · {{ avoir.facture.client.raison_sociale }}</title>
+  {% include "rapports/_style_impression.html" %}
+  <style>
+    .totaux { margin-left: auto; width: 320px; margin-top: 1rem; }
+    .totaux div { display: flex; justify-content: space-between; padding: .25rem 0; }
+    .total { border-top: 2px solid #111; font-weight: bold; font-size: 1.1rem; }
+    .filigrane { color: #b91c1c; border: 2px solid #b91c1c; display: inline-block; padding: .2rem .8rem; font-weight: bold; margin-top: .5rem; }
+  </style>
+</head>
+<body>
+  {% include "rapports/_entete_impression.html" %}
+  <div style="text-align:right">
+    {% if avoir.date_avoir %}<div class="petit">Établi le {{ avoir.date_avoir|date:"d/m/Y" }}</div>{% else %}<div class="filigrane">NON VALIDÉ</div>{% endif %}
+  </div>
+
+  <p style="margin-top:1.5rem">
+    <strong>{{ avoir.facture.client.raison_sociale }}</strong><br>
+    <span class="petit">{{ avoir.facture.client.adresse|linebreaksbr }}<br>NCC / NIF {{ avoir.facture.client.ncc_nif }}</span>
+  </p>
+  <p>Avoir sur la facture <strong>{{ avoir.facture.numero }}</strong> du {{ avoir.facture.date_emission|date:"d/m/Y" }}
+    ({{ avoir.facture.montant_ttc|floatformat:0|intcomma }} FCFA TTC).</p>
+  <p><strong>Motif :</strong> {{ avoir.motif|linebreaksbr }}</p>
+
+  <div class="totaux">
+    <div><span>Montant HT</span><span>{{ avoir.montant_ht|floatformat:0|intcomma }} FCFA</span></div>
+    <div><span>TVA {% if avoir.facture.taux_tva == 0 %}(exonérée){% else %}({{ avoir.facture.taux_tva|floatformat:"-2" }} %){% endif %}</span><span>{{ avoir.montant_tva|floatformat:0|intcomma }} FCFA</span></div>
+    <div class="total"><span>Montant TTC de l'avoir</span><span>{{ avoir.montant_ttc|floatformat:0|intcomma }} FCFA</span></div>
+  </div>
+  {% include "rapports/_pied_impression.html" %}
+  <script src="{% static 'js/app.js' %}" defer></script>
+</body>
+</html>

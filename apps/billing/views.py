@@ -22,6 +22,7 @@ from apps.missions.exceptions import MissionError
 from . import permissions, services
 from .exceptions import BillingError
 from .forms import (
+    AvoirForm,
     ConditionsForm,
     DecisionClientProformaForm,
     DepenseForm,
@@ -36,6 +37,7 @@ from .forms import (
     ReglementForm,
 )
 from .models import (
+    Avoir,
     CategorieDepense,
     Depense,
     Facture,
@@ -43,6 +45,7 @@ from .models import (
     ModePaiement,
     Proforma,
     Reglement,
+    StatutAvoir,
     StatutFacture,
     StatutProforma,
     STATUTS_A_RECOUVRER,
@@ -180,6 +183,12 @@ class FactureDetailView(RoleRequiredMixin, DetailView):
             peut_valider=validation and a_valider,
             peut_regler=saisie and facture.statut in STATUTS_A_RECOUVRER,
             peut_annuler_reglement=saisie and facture.est_emise,
+            avoirs=facture.avoirs.select_related("cree_par", "valide_par"),
+            montant_avoirs=facture.montant_avoirs,
+            peut_decider_avoir=validation,
+            form_avoir=AvoirForm()
+            if saisie and facture.est_emise and not facture.avoirs.filter(statut=StatutAvoir.A_VALIDER).exists()
+            else None,
             form_ligne=LigneForm() if saisie and brouillon else None,
             form_conditions=ConditionsForm(
                 initial={
@@ -243,7 +252,10 @@ class FacturePrintView(TelechargementPdfMixin, RoleRequiredMixin, DetailView):
         ))
         totaux = _totaux_tva(facture)
         if facture.est_emise:
-            totaux += [("Déjà réglé", fcfa(facture.montant_regle)), ("Reste à payer", fcfa(facture.reste))]
+            totaux += [("Déjà réglé", fcfa(facture.montant_regle))]
+            if facture.montant_avoirs:
+                totaux += [("Avoirs", fcfa(facture.montant_avoirs))]
+            totaux += [("Reste à payer", fcfa(facture.reste))]
         blocs.append(pdf.Rubriques(totaux))
         if contexte["reglements"]:
             blocs.append(pdf.Texte("Règlements reçus : " + " ; ".join(
@@ -392,6 +404,77 @@ class ReglementAnnulerView(_Saisie):
 
     def post(self, request, pk, reglement_pk):
         return super().post(request, pk, reglement_pk=reglement_pk)
+
+
+# --- avoirs (décision du 13/10/2026, audit AV-11) ---
+
+
+class AvoirAjouterView(_Saisie):
+    form_class = AvoirForm
+
+    def executer(self, request, facture, donnees):
+        avoir = services.creer_avoir(facture, request.user, montant_ht=donnees["montant_ht"], motif=donnees["motif"])
+        return f"Avoir de {nombre(avoir.montant_ttc)} FCFA TTC envoyé à la Direction pour validation."
+
+
+class _DecisionAvoir(_ActionFacture):
+    roles = permissions.VALIDATION
+
+    def post(self, request, pk, avoir_pk):
+        return super().post(request, pk, avoir_pk=avoir_pk)
+
+
+class AvoirValiderView(_DecisionAvoir):
+    def executer(self, request, facture, donnees, avoir_pk):
+        avoir = services.valider_avoir(get_object_or_404(Avoir, pk=avoir_pk, facture=facture), request.user)
+        return f"Avoir {avoir.numero} validé : le reste à recouvrer est réduit de {nombre(avoir.montant_ttc)} FCFA."
+
+
+class AvoirRefuserView(_DecisionAvoir):
+    form_class = MotifForm
+
+    def executer(self, request, facture, donnees, avoir_pk):
+        services.refuser_avoir(get_object_or_404(Avoir, pk=avoir_pk, facture=facture), request.user, motif=donnees["motif"])
+        return "Avoir refusé."
+
+
+class AvoirPrintView(TelechargementPdfMixin, RoleRequiredMixin, DetailView):
+    """Document d'avoir à remettre au client, imprimable et en PDF (``?format=pdf``)."""
+
+    roles = permissions.CONSULTATION
+    template_name = "billing/avoir_print.html"
+    context_object_name = "avoir"
+
+    def get_object(self, queryset=None):
+        return get_object_or_404(
+            Avoir.objects.select_related("facture__client"), pk=self.kwargs["avoir_pk"], facture_id=self.kwargs["pk"]
+        )
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        avoir = self.object
+        titre = f"AVOIR {avoir.numero}" if avoir.numero else "PROJET D'AVOIR"
+        contexte.update(contexte_rapport(self.request, titre=titre))
+        return contexte
+
+    def blocs_pdf(self, contexte):
+        avoir, facture = self.object, self.object.facture
+        blocs = []
+        if avoir.date_avoir:
+            blocs.append(pdf.Texte(f"Établi le {avoir.date_avoir:%d/%m/%Y}"))
+        else:
+            blocs.append(pdf.Texte("NON VALIDÉ : projet d'avoir, sans valeur avant sa validation par la Direction."))
+        blocs += _blocs_client(facture.client)
+        blocs.append(pdf.Texte(
+            f"Avoir sur la facture {facture.numero} du {facture.date_emission:%d/%m/%Y} ({fcfa(facture.montant_ttc)} TTC)."
+        ))
+        blocs.append(pdf.Texte(f"Motif : {avoir.motif}"))
+        taux = "exonérée" if facture.taux_tva == 0 else f"{pdf.cellule(facture.taux_tva)} %"
+        blocs.append(pdf.Rubriques([
+            ("Montant HT", fcfa(avoir.montant_ht)), (f"TVA ({taux})", fcfa(avoir.montant_tva)),
+            ("Montant TTC de l'avoir", fcfa(avoir.montant_ttc)),
+        ]))
+        return blocs
 
 
 # --- dépenses ---

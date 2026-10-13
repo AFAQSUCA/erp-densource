@@ -16,6 +16,7 @@ from apps.billing.signals import (
     depense_mode_a_reclasser,
     facture_a_comptabiliser,
     reglement_a_comptabiliser,
+    avoir_a_comptabiliser,
     depense_annulee,
     reglement_annule,
 )
@@ -62,3 +63,8 @@ def contre_passer_un_mouvement_annule(sender, mouvement, **kwargs) -> None:
 @receiver(depense_annulee)
 def contre_passer_une_depense_annulee(sender, depense, **kwargs) -> None:
     services.contre_passer_origine("DEPENSE", depense.pk, motif=depense.motif_annulation)
+
+
+@receiver(avoir_a_comptabiliser)
+def comptabiliser_un_avoir_valide(sender, avoir, **kwargs) -> None:
+    services.comptabiliser_avoir(avoir)

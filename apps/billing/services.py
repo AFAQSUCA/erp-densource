@@ -13,7 +13,7 @@ from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
 from django.db import IntegrityError, transaction
-from django.db.models import F, Q, QuerySet, Sum, Value
+from django.db.models import DecimalField, F, OuterRef, Q, QuerySet, Subquery, Sum, Value
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 
@@ -41,6 +41,7 @@ from .models import (
     STATUTS_EMIS,
     STATUTS_PROFORMA_MODIFIABLES,
     CATEGORIES_AUTOMATIQUES,
+    Avoir,
     CategorieDepense,
     Depense,
     Facture,
@@ -48,6 +49,7 @@ from .models import (
     ModePaiement,
     Proforma,
     Reglement,
+    StatutAvoir,
     StatutFacture,
     StatutProforma,
 )
@@ -83,13 +85,29 @@ def _exiger_statut(facture: Facture, attendus: tuple, action: str) -> None:
 # --- lecture ---
 
 
+def _avoirs_valides_ttc():
+    """Sous-requête : total TTC des avoirs validés d'une facture (sous-requête, pour ne pas multiplier les lignes
+    de la jointure des règlements)."""
+    return Coalesce(
+        Subquery(
+            Avoir.objects.filter(facture=OuterRef("pk"), statut=StatutAvoir.VALIDE)
+            .values("facture")
+            .annotate(total=Sum("montant_ttc"))
+            .values("total"),
+            output_field=DecimalField(max_digits=14, decimal_places=2),
+        ),
+        Value(ZERO),
+    )
+
+
 def _regle_annote(queryset):
     return queryset.annotate(
         montant_regle=Coalesce(
             Sum("reglements__montant", filter=Q(reglements__is_deleted=False)),
             Value(ZERO),
-        )
-    ).annotate(reste=F("montant_ttc") - F("montant_regle"))
+        ),
+        montant_avoirs=_avoirs_valides_ttc(),
+    ).annotate(reste=F("montant_ttc") - F("montant_regle") - F("montant_avoirs"))
 
 
 def factures_queryset() -> QuerySet[Facture]:
@@ -114,9 +132,14 @@ def montant_regle(facture: Facture) -> Decimal:
     return sum((r.montant for r in facture.reglements.all()), ZERO)
 
 
+def montant_avoirs(facture: Facture) -> Decimal:
+    """Total TTC des avoirs validés de la facture (audit AV-11)."""
+    return sum((a.montant_ttc for a in facture.avoirs.filter(statut=StatutAvoir.VALIDE)), ZERO)
+
+
 def reste_a_recouvrer(facture: Facture) -> Decimal:
-    """Total TTC moins les règlements enregistrés (cahier-des-charges.md:191)."""
-    return facture.montant_ttc - montant_regle(facture)
+    """Total TTC moins les règlements enregistrés (cahier-des-charges.md:191) et les avoirs validés."""
+    return facture.montant_ttc - montant_regle(facture) - montant_avoirs(facture)
 
 
 def factures_echues(aujourd_hui: date | None = None) -> QuerySet[Facture]:
@@ -173,19 +196,29 @@ def missions_facturables() -> QuerySet[Mission]:
 
 
 def chiffre_affaires(debut: date, fin: date) -> Decimal:
-    """Total HT des factures émises entre ces deux dates (bornes incluses)."""
-    return Facture.objects.filter(
+    """Total HT des factures émises entre ces deux dates (bornes incluses), moins les avoirs validés de la période."""
+    factures = Facture.objects.filter(
         statut__in=STATUTS_EMIS, date_emission__range=(debut, fin)
     ).aggregate(total=Sum("montant_ht"))["total"] or ZERO
+    avoirs = Avoir.objects.filter(
+        statut=StatutAvoir.VALIDE, date_avoir__range=(debut, fin)
+    ).aggregate(total=Sum("montant_ht"))["total"] or ZERO
+    return factures - avoirs
 
 
 def chiffre_affaires_par_mois(debut: date, fin: date) -> dict[tuple[int, int], Decimal]:
-    """CA HT des factures émises, par mois (``(année, mois)``), sur la période, en une requête."""
-    return total_par_mois(
+    """CA HT des factures émises, par mois (``(année, mois)``), sur la période, moins les avoirs validés du mois."""
+    par_mois = total_par_mois(
         Facture.objects.filter(statut__in=STATUTS_EMIS, date_emission__range=(debut, fin)),
         "date_emission",
         "montant_ht",
     )
+    avoirs = total_par_mois(
+        Avoir.objects.filter(statut=StatutAvoir.VALIDE, date_avoir__range=(debut, fin)), "date_avoir", "montant_ht"
+    )
+    for mois, montant in avoirs.items():
+        par_mois[mois] = par_mois.get(mois, ZERO) - montant
+    return par_mois
 
 
 def encaissements_par_mois(debut: date, fin: date) -> dict[tuple[int, int], Decimal]:
@@ -499,6 +532,92 @@ def annuler_reglement(reglement: Reglement, acteur, *, motif: str) -> Facture:
     facture.save(update_fields=["statut", "updated_at"])
     signals.reglement_annule.send(sender=Reglement, reglement=reglement)
     return facture
+
+
+# --- avoirs (décision du 13/10/2026, audit AV-11) ---
+
+
+def _plafond_avoir(facture: Facture) -> Decimal:
+    """Ce qu'un avoir peut encore retirer (TTC) : le reste à recouvrer. Au-delà, il faudrait rembourser le client,
+    ce que l'ERP ne gère pas."""
+    return reste_a_recouvrer(facture)
+
+
+@transaction.atomic
+def creer_avoir(facture: Facture, acteur, *, montant_ht: Decimal, motif: str) -> Avoir:
+    """La Finance saisit un avoir (total ou partiel) sur une facture émise, avec un motif ; la Direction le validera.
+    Un seul avoir en attente à la fois par facture. TVA au taux de la facture, arrondie au franc."""
+    _exiger_role(acteur, permissions.SAISIE, "saisir un avoir")
+    _verrouiller(facture)
+    if facture.statut not in STATUTS_EMIS:
+        raise TransitionFactureInterdite("Un avoir ne corrige qu'une facture émise.")
+    if facture.avoirs.filter(statut=StatutAvoir.A_VALIDER).exists():
+        raise TransitionFactureInterdite("Un avoir attend déjà la validation de la Direction sur cette facture.")
+    motif = motif.strip()
+    if not motif:
+        raise MontantInvalide("Le motif de l'avoir est obligatoire.")
+    montant_ht = Decimal(montant_ht)
+    if montant_ht <= 0:
+        raise MontantInvalide("Le montant de l'avoir doit être strictement positif.")
+    exiger_montant_entier(montant_ht, libelle="Le montant HT de l'avoir", erreur=MontantInvalide)
+    tva = arrondir_franc(montant_ht * facture.taux_tva / 100)
+    plafond = _plafond_avoir(facture)
+    if montant_ht + tva > plafond:
+        raise MontantInvalide(
+            f"L'avoir ({arrondir_franc(montant_ht + tva)} FCFA TTC) dépasse le reste à recouvrer ({arrondir_franc(plafond)} "
+            "FCFA) : la part déjà réglée par le client devrait lui être remboursée, ce que l'ERP ne gère pas."
+        )
+    avoir = Avoir.objects.create(
+        facture=facture, motif=motif, montant_ht=montant_ht, montant_tva=tva, montant_ttc=montant_ht + tva,
+        cree_par=acteur,
+    )
+    signals.emettre(signals.avoir_a_valider, avoir=avoir)
+    return avoir
+
+
+@transaction.atomic
+def valider_avoir(avoir: Avoir, acteur, *, aujourd_hui: date | None = None) -> Avoir:
+    """La Direction valide l'avoir (contrôle strict, comme une facture) : numéro ``AV-AAAA-XXXX``, reste à recouvrer
+    et chiffre d'affaires réduits, écriture comptable inverse."""
+    _exiger_role(acteur, permissions.VALIDATION, "valider un avoir", strict=True)
+    facture = _verrouiller(avoir.facture)
+    _verrouiller(avoir)
+    if avoir.statut != StatutAvoir.A_VALIDER:
+        raise TransitionFactureInterdite(f"Cet avoir est « {avoir.get_statut_display()} », déjà décidé.")
+    if avoir.montant_ttc > _plafond_avoir(facture):
+        raise MontantInvalide(
+            "Depuis la saisie de l'avoir, des règlements ont réduit le reste à recouvrer : l'avoir le dépasse. "
+            "Refusez-le et faites-en saisir un nouveau."
+        )
+    aujourd_hui = aujourd_hui or timezone.localdate()
+    avoir.numero = prochain_numero("AV", aujourd_hui.year)
+    avoir.statut = StatutAvoir.VALIDE
+    avoir.date_avoir = aujourd_hui
+    avoir.valide_par = acteur
+    avoir.date_decision = timezone.now()
+    avoir.save(update_fields=["numero", "statut", "date_avoir", "valide_par", "date_decision", "updated_at"])
+    facture.statut = _statut_selon_reste(facture)
+    facture.save(update_fields=["statut", "updated_at"])
+    signals.emettre(signals.avoir_decide, avoir=avoir, decision="VALIDE")
+    signals.avoir_a_comptabiliser.send(sender=Avoir, avoir=avoir)
+    return avoir
+
+
+@transaction.atomic
+def refuser_avoir(avoir: Avoir, acteur, *, motif: str) -> Avoir:
+    _exiger_role(acteur, permissions.VALIDATION, "refuser un avoir", strict=True)
+    _verrouiller(avoir)
+    if avoir.statut != StatutAvoir.A_VALIDER:
+        raise TransitionFactureInterdite(f"Cet avoir est « {avoir.get_statut_display()} », déjà décidé.")
+    if not motif.strip():
+        raise MontantInvalide("Le motif du refus est obligatoire.")
+    avoir.statut = StatutAvoir.REFUSE
+    avoir.motif_refus = motif.strip()
+    avoir.valide_par = acteur
+    avoir.date_decision = timezone.now()
+    avoir.save(update_fields=["statut", "motif_refus", "valide_par", "date_decision", "updated_at"])
+    signals.emettre(signals.avoir_decide, avoir=avoir, decision="REFUSE")
+    return avoir
 
 
 # --- dépenses ---

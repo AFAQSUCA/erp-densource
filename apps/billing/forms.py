@@ -268,3 +268,13 @@ class FiltreProformasForm(StyleTailwindMixin, forms.Form):
             "statut": donnees.get("statut") or "",
             "client": donnees.get("client"),
         }
+
+
+class AvoirForm(StyleTailwindMixin, forms.Form):
+    """Saisie d'un avoir (audit AV-11) : montant HT, la TVA suit le taux de la facture."""
+
+    montant_ht = forms.DecimalField(
+        label="Montant HT de l'avoir (FCFA)", min_value=1, decimal_places=2, max_digits=14,
+        help_text="La TVA est calculée au taux de la facture ; l'avoir ne peut pas dépasser le reste à recouvrer.",
+    )
+    motif = forms.CharField(label="Motif", widget=forms.Textarea(attrs={"rows": 2}))

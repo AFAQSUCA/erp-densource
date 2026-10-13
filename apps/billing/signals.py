@@ -67,6 +67,13 @@ depense_mode_a_reclasser = Signal()
 # défait (``finance``). ``send()`` brut. Argument : ``depense`` (supprimée logiquement, avec son motif).
 depense_annulee = Signal()
 
+# Avoirs (décision du 13/10/2026, audit AV-11). ``avoir_a_valider`` et ``avoir_decide`` (``emettre``, sans propager) :
+# notifications. ``avoir_a_comptabiliser`` (``send()`` brut, comme la facture) : l'écriture inverse, qui annule la
+# validation si elle échoue. Argument : ``avoir`` (et ``decision`` pour ``avoir_decide`` : « VALIDE » ou « REFUSE »).
+avoir_a_valider = Signal()
+avoir_decide = Signal()
+avoir_a_comptabiliser = Signal()
+
 
 def emettre(signal: Signal, *, sender: type | None = None, **arguments) -> None:
     """Émet un signal en journalisant (sans propager) les erreurs des récepteurs."""

@@ -213,6 +213,59 @@ class Reglement(BaseModel):
         return f"{self.facture} : {self.montant} ({self.get_mode_display()})"
 
 
+class StatutAvoir(models.TextChoices):
+    A_VALIDER = "A_VALIDER", _("À valider")
+    VALIDE = "VALIDE", _("Validé")
+    REFUSE = "REFUSE", _("Refusé")
+
+
+class Avoir(BaseModel):
+    """Correction d'une facture émise, totale ou partielle — décision du 13/10/2026 (audit AV-11).
+
+    La facture d'origine n'est jamais modifiée (obligation légale) : l'avoir la corrige. Saisi par la Finance avec un
+    motif, il est validé par la Direction ; il reçoit alors son numéro ``AV-AAAA-XXXX``, réduit le reste à recouvrer
+    et le chiffre d'affaires, et passe l'écriture comptable inverse. Montants au taux de TVA de la facture.
+    """
+
+    numero = models.CharField(_("numéro"), max_length=20, blank=True)
+    facture = models.ForeignKey(Facture, verbose_name=_("facture"), on_delete=models.PROTECT, related_name="avoirs")
+    statut = models.CharField(_("statut"), max_length=10, choices=StatutAvoir.choices, default=StatutAvoir.A_VALIDER)
+    motif = models.TextField(_("motif"))
+    montant_ht = models.DecimalField(_("montant HT (FCFA)"), max_digits=14, decimal_places=2)
+    montant_tva = models.DecimalField(_("TVA (FCFA)"), max_digits=14, decimal_places=2)
+    montant_ttc = models.DecimalField(_("montant TTC (FCFA)"), max_digits=14, decimal_places=2)
+    date_avoir = models.DateField(_("date de l'avoir"), null=True, blank=True)
+    cree_par = models.ForeignKey(
+        settings.AUTH_USER_MODEL, verbose_name=_("saisi par"), null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="+",
+    )
+    valide_par = models.ForeignKey(
+        settings.AUTH_USER_MODEL, verbose_name=_("décidé par"), null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="+",
+    )
+    date_decision = models.DateTimeField(_("décidé le"), null=True, blank=True)
+    motif_refus = models.TextField(_("motif du refus"), blank=True)
+
+    class Meta:
+        verbose_name = _("avoir")
+        verbose_name_plural = _("avoirs")
+        ordering = ["-created_at", "-pk"]
+        constraints = [
+            models.UniqueConstraint(fields=["numero"], condition=~Q(numero=""), name="avoir_numero_unique"),
+            models.CheckConstraint(condition=Q(montant_ht__gt=0), name="avoir_montant_positif"),
+            models.CheckConstraint(
+                condition=Q(montant_ttc=F("montant_ht") + F("montant_tva")), name="avoir_ttc_egal_ht_plus_tva"
+            ),
+            models.CheckConstraint(
+                condition=~Q(statut="VALIDE") | (~Q(numero="") & Q(date_avoir__isnull=False)),
+                name="avoir_valide_a_numero_et_date",
+            ),
+        ]
+
+    def __str__(self):
+        return self.numero or f"Avoir à valider sur {self.facture}"
+
+
 class StatutProforma(models.TextChoices):
     """Cycle de vie du devis — avenant-separation-des-taches.md (R5).
 
