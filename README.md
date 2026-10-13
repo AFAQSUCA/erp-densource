@@ -45,7 +45,8 @@ Identité visuelle : couleurs du logo DEN Source Group (bordeaux `#8B0319`, oran
 
 - `config/settings/` : `base.py` / `dev.py` / `test.py` / `prod.py`
 - `apps/` : une app Django par domaine métier (cahier-des-charges.md:259-261)
-- `requirements/` : dépendances par environnement
+- `requirements/` : dépendances par environnement ; `prod.lock` fige les versions exactes de la production
+  (regénéré par `outils/verrouiller_dependances.py` après une mise à jour des paquets dans `.venv`)
 
 ## Avancement (phases CDC §5)
 
