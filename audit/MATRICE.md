@@ -14,7 +14,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 
 ## Bilan
 
-**441 exigences : 427 ✅, 0 🟡, 3 ❌, 5 ❓, 6 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **98,2 %**.
+**441 exigences : 428 ✅, 0 🟡, 3 ❌, 4 ❓, 6 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **98,4 %**.
 
 | Bloc | Lignes | ✅ | 🟡 | ❌ | ❓ | ⚪ |
 |---|---|---|---|---|---|---|
@@ -33,7 +33,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | Technique | 87 | 76 | 0 | 3 | 4 | 4 |
 | Recette | 7 | 7 | 0 | 0 | 0 | 0 |
 | Avenants | 17 | 17 | 0 | 0 | 0 | 0 |
-| Écarts d'audit | 23 | 22 | 0 | 0 | 1 | 0 |
+| Écarts d'audit | 23 | 23 | 0 | 0 | 0 | 0 |
 
 **Reprise à TECH-24** (première ligne non terminée, dans l'ordre des ID).
 
@@ -546,7 +546,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | ID | Rattachement | Écart | Verdict | Preuve | Action | Statut |
 |---|---|---|---|---|---|---|
 | AUD-01 | TECH-86 | 3 tests à dates codées en dur échouent depuis le 08/10/2026 | ✅ | `apps/notifications/tests/test_receivers.py` (jour du report fixé) ; 18 autres tests datés corrigés avant d'échouer : `apps/hr/tests/test_report_conge.py` (fixture « aujourd'hui »), `apps/finance/tests/test_demandes.py`, `apps/hr/tests/test_recrutement.py`, `apps/api/tests/test_v1.py` | Fait (`1c87fbb`) | Fait |
-| AUD-02 | M5 | Mission sans issue : ni annulation ni transfert (panne définitive) | ❓ | `apps/missions/services.py` (aucune transition de sortie) | Statut « Annulée » et/ou transfert | Décision |
+| AUD-02 | M5 | Mission sans issue : ni annulation ni transfert (panne définitive) | ✅ | Décision du 13/10/2026 : `apps/missions/services.py` (`annuler_mission` avant le départ, `transferer_mission` en route, historique `TransfertMission`) ; devis annulé (`apps/billing/receivers.py`) ; écrans : « Annuler la mission » sur la fiche, page de transfert ; notifications ; tests `apps/missions/tests/test_annulation_transfert.py` (12 tests) ; vérifié dans le navigateur (formulaire d'annulation) | Fait (`16be438`) | Fait |
 | AUD-03 | M6-07 | Pas d'annulation ni de correction d'un plein | ✅ | Décision du 13/10/2026 : `apps/fuel/services.py` (`annuler_plein`, `peut_annuler` : Parc Auto, Direction, admin ; motif ; dernier plein du camion seulement) ; dépense annulée (`apps/billing/services.py`, `annuler_depense_automatique`), écriture contre-passée, pointage défait (signaux `plein_annule`, `depense_annulee`) ; écran `/carburant/<id>/annuler/` ; tests `apps/fuel/tests/test_annulation_plein.py` ; vérifié dans le navigateur | Fait (`a8d15ac`) | Fait |
 | AUD-04 | TECH-57 | Suppression physique via l'admin Django | ✅ | `apps/core/admin.py` appliqué à `apps/fuel/admin.py`, `apps/missions/admin.py`, `apps/garage/admin.py`, `apps/inventory/admin.py`, `apps/hr/admin.py`, `apps/customers/admin.py`, `apps/fleet/admin.py`, `apps/drivers/admin.py`, `apps/notifications/admin.py` ; comptes : `apps/accounting/admin.py` (AV-05) ; test `apps/core/tests/test_admin_suppression.py` (tout admin `BaseModel` vérifié) | Fait (`1c7a72f`) | Fait |
 | AUD-05 | M9-16 | Centimes acceptés (règlements, dépenses, mouvements) | ✅ | Refusés, jamais arrondis : `apps/core/montants.py` (`exiger_montant_entier`), appelé par billing, finance, missions, garage, inventory, fuel, accounting ; décision du 12/10/2026 (`avenant-montants-fcfa.md`) ; tests `apps/core/tests/test_montants.py` (13 tests) | Fait (`d621d1e`) | Fait |
