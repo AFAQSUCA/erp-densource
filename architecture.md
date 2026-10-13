@@ -92,102 +92,127 @@ C4Container
 
 ## 3. VUE COMPOSANTS (C4 Niveau 3) — par app Django
 
-Chaque app a une responsabilité unique. Voici les dépendances autorisées.
+Chaque app a une responsabilité unique. Le schéma ci-dessous est celui des **dépendances réelles** du code
+(un import ``apps.<autre>`` hors tests et migrations) : une flèche ``A --> B`` signifie que B dépend de A.
+Toutes les apps dépendent aussi du **socle** (``core``, ``accounts``, ``audit``, ``parametres``) : ces flèches-là ne
+sont pas tracées, pour la lisibilité.
 
 ```mermaid
 graph TD
-    subgraph Auth
-        ACC[accounts<br/>User, Role, Permission]
-    end
-
-    subgraph Transverse
-        CORE[core<br/>BaseModel, mixins, perms]
+    subgraph Socle
+        CORE[core<br/>BaseModel, mixins, montants, classeurs]
+        ACC[accounts<br/>User, rôles, MFA, anti force brute]
         AUDIT[audit<br/>AuditLog append-only]
-        NOTIF[notifications<br/>Email/SMS/Push]
-        DASH[dashboard<br/>KPIs, dashboards]
         PARAM[parametres<br/>Seuils d'alerte, valeurs par défaut]
         SAUV[sauvegardes<br/>Suivi des sauvegardes, ADMIN]
     end
 
     subgraph Référentiels
-        HR[hr<br/>Personnel, congés]
-        DRV[drivers<br/>Chauffeur]
+        HR[hr<br/>Personnel, congés, jours fériés]
+        DRV[drivers<br/>Chauffeur, copilote]
         CUST[customers<br/>Client, interactions]
         FLEET[fleet<br/>Véhicule, documents]
     end
 
     subgraph Exploitation
-        MISSION[missions<br/>Cycle de vie + QR]
+        MISSION[missions<br/>Cycle de vie + QR, frais]
         FUEL[fuel<br/>Plein, conso]
-        GARAGE[garage<br/>OR, coûts]
+        GARAGE[garage<br/>OR, incidents]
         INV[inventory<br/>Articles, PUMP]
     end
 
     subgraph Finance
-        BILL[billing<br/>Factures, TVA, règlements]
-        FIN[finance<br/>Trésorerie, rapprochement]
+        BILL[billing<br/>Devis, factures, TVA, règlements, dépenses]
+        FIN[finance<br/>Trésorerie, rapprochement, enveloppes]
     end
 
     subgraph Compta
         ACCT[accounting<br/>Plan comptable, journaux, grand livre]
     end
 
-    subgraph Reprise
+    subgraph Restitution
+        NOTIF[notifications<br/>Avis, alertes, tâches quotidiennes]
+        DASH[dashboard<br/>KPIs, alertes]
         IMPORT[importation<br/>Import Excel des données, ADMIN]
     end
 
     subgraph API
+        MOBAPI[mobile_api<br/>Espace chauffeur]
         APIV1[api/v1]
-        MOBAPI[mobile_api]
     end
 
-    ACC --> CORE
-    CORE --> AUDIT
-    AUDIT --> NOTIF
-    AUDIT --> PARAM
-    PARAM --> HR
-    PARAM --> DRV
-    PARAM --> CUST
-    PARAM --> FLEET
-    PARAM --> MISSION
-    PARAM --> FUEL
-    PARAM --> NOTIF
-    PARAM --> DASH
-    AUDIT --> SAUV
-    SAUV --> DASH
-    HR --> DRV
-    DRV --> MISSION
-    CUST --> MISSION
-    FLEET --> MISSION
-    MISSION --> FUEL
-    MISSION --> BILL
-    FUEL --> GARAGE
-    GARAGE --> INV
-    GARAGE --> FLEET
-    BILL --> FIN
+    ACCT --> APIV1
     BILL --> ACCT
-    HR --> IMPORT
-    DRV --> IMPORT
+    BILL --> APIV1
+    BILL --> DASH
+    BILL --> FIN
+    BILL --> MOBAPI
+    BILL --> NOTIF
+    CUST --> APIV1
+    CUST --> BILL
+    CUST --> DASH
     CUST --> IMPORT
-    FLEET --> IMPORT
+    CUST --> MISSION
+    DRV --> APIV1
+    DRV --> DASH
+    DRV --> FLEET
+    DRV --> FUEL
+    DRV --> GARAGE
+    DRV --> IMPORT
+    DRV --> MISSION
+    DRV --> MOBAPI
+    DRV --> NOTIF
     FIN --> ACCT
     FIN --> DASH
-    FUEL --> DASH
-    MISSION --> DASH
+    FIN --> NOTIF
+    FLEET --> APIV1
+    FLEET --> BILL
     FLEET --> DASH
+    FLEET --> FIN
+    FLEET --> FUEL
+    FLEET --> GARAGE
+    FLEET --> IMPORT
+    FLEET --> MISSION
+    FLEET --> MOBAPI
+    FLEET --> NOTIF
+    FUEL --> APIV1
+    FUEL --> DASH
+    FUEL --> FIN
+    FUEL --> MOBAPI
+    FUEL --> NOTIF
+    GARAGE --> APIV1
+    GARAGE --> DASH
+    GARAGE --> FIN
+    GARAGE --> INV
+    GARAGE --> MOBAPI
+    GARAGE --> NOTIF
+    HR --> APIV1
     HR --> DASH
-    CUST --> DASH
-    APIV1 --> MISSION
-    APIV1 --> BILL
-    APIV1 --> CUST
-    MOBAPI --> MISSION
-    MOBAPI --> FUEL
-    MOBAPI --> GARAGE
+    HR --> DRV
+    HR --> IMPORT
+    HR --> MISSION
+    HR --> MOBAPI
+    HR --> NOTIF
+    INV --> APIV1
+    INV --> DASH
+    INV --> FIN
+    INV --> NOTIF
+    MISSION --> APIV1
+    MISSION --> BILL
+    MISSION --> DASH
+    MISSION --> FIN
+    MISSION --> GARAGE
+    MISSION --> MOBAPI
+    MISSION --> NOTIF
+    MOBAPI --> APIV1
+    SAUV --> DASH
 ```
 
-**Règle de dépendance** : une app ne peut dépendre que des apps situées
-au-dessus d'elle dans ce graphe. Toute dépendance inverse est interdite
-(évite les cycles).
+**Règle de dépendance** : une app ne dépend que des apps situées au-dessus d'elle dans ce graphe (ou plus haut
+dans sa propre couche). Toute dépendance inverse est interdite : elle créerait un cycle. Quand une app « du
+dessous » doit réagir à une app « du dessus », elle passe par un **signal** (ex. ``fuel.plein_enregistre`` souscrit
+par ``finance``). Le test ``apps/core/tests/test_architecture.py`` refuse tout cycle et vérifie que ce schéma
+reste celui du code (audit AUD-20).
 
 ---
 
