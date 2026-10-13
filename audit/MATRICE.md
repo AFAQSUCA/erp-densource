@@ -14,7 +14,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 
 ## Bilan
 
-**441 exigences : 426 ✅, 0 🟡, 4 ❌, 5 ❓, 6 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **97,9 %**.
+**441 exigences : 427 ✅, 0 🟡, 3 ❌, 5 ❓, 6 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **98,2 %**.
 
 | Bloc | Lignes | ✅ | 🟡 | ❌ | ❓ | ⚪ |
 |---|---|---|---|---|---|---|
@@ -32,7 +32,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M12 Tableaux de bord | 28 | 26 | 0 | 0 | 0 | 2 |
 | Technique | 87 | 76 | 0 | 3 | 4 | 4 |
 | Recette | 7 | 7 | 0 | 0 | 0 | 0 |
-| Avenants | 17 | 16 | 0 | 1 | 0 | 0 |
+| Avenants | 17 | 17 | 0 | 0 | 0 | 0 |
 | Écarts d'audit | 23 | 22 | 0 | 0 | 1 | 0 |
 
 **Reprise à TECH-24** (première ligne non terminée, dans l'ordre des ID).
@@ -533,7 +533,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | AV-08 | Compta F | Plan comptable : numéro et nature cohérents | ✅ | `apps/accounting/services.py:88,100` : 2 à 10 chiffres, nature permise par la classe SYSCOHADA (1 passif ; 2-3 actif ; 4-5 actif/passif ; 6 charge ; 7 produit ; 8 charge/produit ; 9 libre) ; tests `apps/accounting/tests/test_plan_comptable_coherence.py` (27 tests) | Fait (`fc3b649`) | Fait |
 | AV-09 | Compta P4 | Saisie manuelle : sens contrôlé, comptes actifs revérifiés | ✅ | `apps/accounting/services.py:692` (sens débit/crédit), `apps/accounting/services.py:727` (comptes revérifiés à la validation) ; tests `apps/accounting/tests/test_saisie_manuelle_controles.py` | Fait (`83f0cb1`) | Fait |
 | AV-10 | Compta P4/G | OD sur un compte de trésorerie | ✅ | Décision du 13/10/2026 : interdit à l'ajout et à la validation (`apps/accounting/services.py`, `_exiger_hors_tresorerie`) ; tests `apps/accounting/tests/test_saisie_manuelle_controles.py` | Fait (`685a3c8`) | Fait |
-| AV-11 | Compta (CDC l.340) | Avoir / annulation d'une facture émise | ❌ | NON TROUVÉ | Écran d'avoir DIRECTION | Décision |
+| AV-11 | Compta (CDC l.340) | Avoir / annulation d'une facture émise | ✅ | Décision du 13/10/2026 : modèle `Avoir` (migration `billing.0008`) ; `apps/billing/services.py` (`creer_avoir`, `valider_avoir`, `refuser_avoir` ; reste à recouvrer et CA réduits) ; écriture inverse `apps/accounting/services.py` (`comptabiliser_avoir`) ; fiche facture (section Avoirs), document et PDF de l'avoir ; notifications ; tests `apps/billing/tests/test_avoirs.py` | Fait (`eda857c`) | Fait |
 | AV-12 | Compta C | Annulation / correction d'une dépense | ✅ | Décision du 13/10/2026 : `apps/billing/services.py` (`annuler_depense` : Finance, RH, Direction, admin ; motif ; dépense manuelle seulement) ; écriture contre-passée, pointage défait (`depense_annulee`) ; écran : lien « Annuler » dans la liste des dépenses ; tests `apps/billing/tests/test_annulation_depense.py` | Fait (`031ccd0`) | Fait |
 | AV-13 | Import | Valeurs non finies (NaN, Infinity, nombre énorme) | ✅ | `apps/importation/services.py` (`_nombre_fini`, `_entier`, `_decimal` : nombre fini et borné à la capacité du champ en base) ; import RH : `apps/hr/services.py` (`SALAIRE_MAX`) ; tests `apps/importation/tests/test_fichiers_pieges.py` ; vérifié sur PostgreSQL 16 | Fait (`ec4190e`) | Fait |
 | AV-14 | Import | Fichier à dimension fausse | ✅ | `apps/importation/services.py` (`reset_dimensions()` avant lecture) ; test `test_une_dimension_fausse_ne_fait_perdre_aucune_ligne` | Fait (`ec4190e`) | Fait |
