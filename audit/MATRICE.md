@@ -14,7 +14,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 
 ## Bilan
 
-**441 exigences : 400 ✅, 24 🟡, 4 ❌, 10 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **94,1 %**.
+**441 exigences : 401 ✅, 23 🟡, 4 ❌, 10 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **94,2 %**.
 
 | Bloc | Lignes | ✅ | 🟡 | ❌ | ❓ | ⚪ |
 |---|---|---|---|---|---|---|
@@ -33,7 +33,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | Technique | 87 | 64 | 13 | 1 | 8 | 1 |
 | Recette | 7 | 7 | 0 | 0 | 0 | 0 |
 | Avenants | 17 | 12 | 3 | 2 | 0 | 0 |
-| Écarts d'audit | 23 | 12 | 8 | 1 | 2 | 0 |
+| Écarts d'audit | 23 | 13 | 7 | 1 | 2 | 0 |
 
 **Reprise à TECH-18** (première ligne non terminée, dans l'ordre des ID).
 
@@ -555,7 +555,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | AUD-08 | TECH-46 | `TRUSTED_PROXY_COUNT` absent de `docker-compose.yml` | ✅ | `docker-compose.yml` (`web`, `realtime` : `${TRUSTED_PROXY_COUNT:-1}`) ; guide § variables mis à jour | Fait | Fait |
 | AUD-09 | M1-11 | L'ADMIN peut créer un compte DIRECTION et valider à sa place | ❓ | `apps/accounts/services.py:76-121` | Règle des deux personnes ? | Décision |
 | AUD-10 | M5-04 | Chauffeur sans permis / visite / catégorie C-E affectable | ✅ | Bloquant (décision du 12/10/2026) : voir M5-04 | Fait (`65c73ed`) | Fait |
-| AUD-11 | M1-67 | Imprévu ou avance acceptés sur une mission clôturée | 🟡 | `apps/missions/terrain.py:79-123` | Refuser hors statuts actifs | À faire |
+| AUD-11 | M1-67 | Imprévu ou avance acceptés sur une mission clôturée | ✅ | `apps/missions/terrain.py:82` (`_exiger_mission_non_cloturee`, appelé par `declarer_imprevu` et `planifier_frais`) ; une mission livrée non clôturée accepte encore un imprévu (trajet retour) ; tests `apps/missions/tests/test_frais_mission.py` | Fait (`af062ba`) | Fait |
 | AUD-12 | M2 | Camion aux documents expirés affectable | ✅ | Bloquant si expiré ou manquant (décision du 12/10/2026) : `apps/missions/services.py` (`documents_non_valides_du_vehicule`, `_exiger_vehicule_en_regle`), affectation et départ ; tests `test_documents_et_reaffectation.py` | Fait (`65c73ed`) | Fait |
 | AUD-13 | M6-08 | N° de ticket unique globalement (pas par station) | 🟡 | `apps/fuel/models.py:99-103` | Unicité (station, ticket) | Décision |
 | AUD-14 | AV-03 | Enveloppe globale dupliquée (NULL), aucun verrou | 🟡 | `apps/finance/models.py:97`, `apps/finance/demandes.py:152` | Contrainte + verrou | À faire |
