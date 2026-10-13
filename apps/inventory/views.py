@@ -13,6 +13,7 @@ from apps.accounts.mixins import RoleRequiredMixin
 from apps.core.exceptions import ErreurMetier
 from apps.core.formats import nombre
 from apps.core.views import ImpressionListeMixin, PaginationTolerante
+from apps.core.xlsx import ExportXlsxMixin
 from apps.garage import services as garage_services
 
 from . import permissions, services
@@ -270,3 +271,14 @@ class SortieOrView(RoleRequiredMixin, View):
             )
             _alerter_si_seuil_bas(request, article)
         return redirect("garage:detail", pk=ordre.pk)
+
+
+class ArticleExporterXlsxView(ExportXlsxMixin, ArticleImprimerView):
+    """Export Excel (mêmes droits et filtres que la liste), valeurs brutes — audit TECH-83."""
+
+    nom_fichier = "stock"
+    colonnes = (
+        ("Référence", "reference"), ("Désignation", "designation"), ("Catégorie", "categorie"),
+        ("Emplacement", "emplacement"), ("Quantité", lambda a: a.quantite), ("Seuil minimal", lambda a: a.seuil_minimal),
+        ("PUMP (FCFA)", lambda a: a.pump), ("Valeur en stock (FCFA)", lambda a: a.quantite * a.pump),
+    )

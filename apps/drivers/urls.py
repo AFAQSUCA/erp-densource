@@ -7,6 +7,7 @@ app_name = "drivers"
 urlpatterns = [
     path("", views.ChauffeurListView.as_view(), name="liste"),
     path("imprimer/", views.ChauffeurImprimerView.as_view(), name="imprimer"),
+    path("excel/", views.ChauffeurExporterXlsxView.as_view(), name="xlsx"),
     path("<int:pk>/", views.ChauffeurDetailView.as_view(), name="detail"),
     path("<int:pk>/modifier/", views.ChauffeurUpdateView.as_view(), name="modifier"),
     path("<int:pk>/statut/", views.StatutView.as_view(), name="statut"),

@@ -7,6 +7,7 @@ app_name = "garage"
 urlpatterns = [
     path("", views.OrListView.as_view(), name="liste"),
     path("imprimer/", views.OrImprimerView.as_view(), name="imprimer"),
+    path("excel/", views.OrExporterXlsxView.as_view(), name="xlsx"),
     path("nouveau/", views.OrCreateView.as_view(), name="creer"),
     path("<int:pk>/", views.OrDetailView.as_view(), name="detail"),
     path("<int:pk>/cloturer/", views.OrCloturerView.as_view(), name="cloturer"),

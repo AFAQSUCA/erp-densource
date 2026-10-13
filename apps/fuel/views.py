@@ -12,6 +12,7 @@ from django.views.generic import FormView, ListView, TemplateView
 from apps.accounts.mixins import RoleRequiredMixin
 from apps.core.formats import nombre, pourcentage_signe
 from apps.core.views import ImpressionListeMixin, PaginationTolerante
+from apps.core.xlsx import ExportXlsxMixin
 
 from . import permissions, services
 from .exceptions import CarburantError, SaisieSuspecte
@@ -173,3 +174,16 @@ class PleinAnnulerView(RoleRequiredMixin, FormView):
                 "écriture comptable ont été contre-passées.",
             )
         return redirect("fuel:liste")
+
+
+class PleinExporterXlsxView(ExportXlsxMixin, PleinImprimerView):
+    """Export Excel (mêmes droits et filtres que la liste), valeurs brutes — audit TECH-83."""
+
+    nom_fichier = "carburant"
+    colonnes = (
+        ("Date", lambda p: p.date_plein), ("Camion", "vehicule.immatriculation"),
+        ("Chauffeur", lambda p: f"{p.chauffeur.personnel.prenom} {p.chauffeur.personnel.nom}"),
+        ("Station", "station"), ("N° ticket", "numero_ticket"), ("Km compteur", lambda p: p.km_compteur),
+        ("Litres", lambda p: p.quantite_litres), ("Prix unitaire (FCFA)", lambda p: p.prix_unitaire),
+        ("Montant (FCFA)", lambda p: p.montant_total), ("Consommation (L/100 km)", lambda p: p.consommation),
+    )

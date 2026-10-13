@@ -18,6 +18,7 @@ from django.views.generic import DetailView, FormView, ListView
 from apps.accounts.mixins import RoleRequiredMixin
 from apps.core.formats import nombre
 from apps.core.views import ImpressionListeMixin, PaginationTolerante
+from apps.core.xlsx import ExportXlsxMixin
 from apps.parametres import services as parametres_services
 
 from . import documents, permissions, sections, services, sorties
@@ -693,3 +694,26 @@ class JoursFeriesView(RoleRequiredMixin, View):
         except JourFerieInvalide as erreur:
             messages.error(request, str(erreur))
         return redirect(f"{reverse('hr:jours_feries')}?annee={annee}")
+
+
+class CongeExporterXlsxView(ExportXlsxMixin, CongeImprimerView):
+    """Export Excel (mêmes droits et filtres que la liste), valeurs brutes — audit TECH-83."""
+
+    nom_fichier = "conges"
+    colonnes = (
+        ("Employé", lambda c: f"{c.employe.prenom} {c.employe.nom}"),
+        ("Du", lambda c: c.date_debut), ("Au", lambda c: c.date_fin), ("Jours", lambda c: c.jours),
+        ("Motif", "motif"), ("Statut", "get_statut_display"),
+    )
+
+
+class PersonnelExporterXlsxView(ExportXlsxMixin, PersonnelImprimerView):
+    """Export Excel (mêmes droits et filtres que la liste), valeurs brutes — audit TECH-83."""
+
+    nom_fichier = "personnel"
+    colonnes = (
+        ("Matricule", "matricule"), ("Nom", "nom"), ("Prénom", "prenom"), ("Poste", "poste"),
+        ("Département", "get_departement_display"), ("Type de contrat", "type_contrat"),
+        ("Date d'embauche", lambda p: p.date_embauche),
+        ("Supérieur", lambda p: f"{p.superieur.prenom} {p.superieur.nom}" if p.superieur_id and p.superieur_id != p.pk else ""),
+    )

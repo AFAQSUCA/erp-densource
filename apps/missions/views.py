@@ -19,6 +19,7 @@ from apps.core.formats import nombre
 from apps.core.rapports import contexte_rapport
 from apps.core import pdf
 from apps.core.views import ImpressionListeMixin, PaginationTolerante, TelechargementPdfMixin, fcfa
+from apps.core.xlsx import ExportXlsxMixin
 
 from . import documents, permissions, services
 from . import terrain as frais_terrain
@@ -532,3 +533,17 @@ class FraisRejeterView(_ActionFrais):
     def executer(self, request, frais, donnees):
         frais_terrain.rejeter(frais, request.user, motif=donnees["motif"])
         return "Frais rejeté."
+
+
+class MissionExporterXlsxView(ExportXlsxMixin, MissionImprimerView):
+    """Export Excel (mêmes droits et filtres que la liste), valeurs brutes — audit TECH-83."""
+
+    nom_fichier = "missions"
+    colonnes = (
+        ("N°", "numero"), ("Client", "client.raison_sociale"),
+        ("Chargement", "lieu_chargement"), ("Livraison", "lieu_livraison"),
+        ("Départ prévu", lambda m: m.date_depart_prevue),
+        ("Camion", lambda m: m.vehicule.immatriculation if m.vehicule_id else ""),
+        ("Chauffeur", lambda m: f"{m.chauffeur.personnel.prenom} {m.chauffeur.personnel.nom}" if m.chauffeur_id else ""),
+        ("Statut", "get_statut_display"), ("Prix convenu (FCFA)", lambda m: m.prix_convenu),
+    )

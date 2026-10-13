@@ -11,6 +11,7 @@ from django.views.generic import DetailView, FormView, ListView
 
 from apps.accounts.mixins import RoleRequiredMixin
 from apps.core.views import ImpressionListeMixin, PaginationTolerante
+from apps.core.xlsx import ExportXlsxMixin
 from apps.parametres import services as parametres_services
 
 from . import permissions, sections, services
@@ -219,3 +220,15 @@ class DocumentView(RoleRequiredMixin, View):
                 request, f"{document.get_type_document_display()} {action}."
             )
         return redirect("fleet:detail", pk=vehicule.pk)
+
+
+class VehiculeExporterXlsxView(ExportXlsxMixin, VehiculeImprimerView):
+    """Export Excel (mêmes droits et filtres que la liste), valeurs brutes — audit TECH-83."""
+
+    nom_fichier = "flotte"
+    colonnes = (
+        ("Immatriculation", "immatriculation"), ("Marque", "marque"), ("Modèle", "modele"),
+        ("Année", "annee"), ("Statut", "get_statut_display"), ("Kilométrage", lambda v: v.kilometrage),
+        ("Capacité (t)", lambda v: v.capacite_charge_t), ("Réservoir (L)", lambda v: v.reservoir_l),
+        ("Chauffeur habituel", lambda v: f"{v.chauffeur_habituel.prenom} {v.chauffeur_habituel.nom}" if v.chauffeur_habituel_id else ""),
+    )

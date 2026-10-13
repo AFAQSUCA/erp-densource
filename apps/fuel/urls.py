@@ -7,6 +7,7 @@ app_name = "fuel"
 urlpatterns = [
     path("", views.PleinListView.as_view(), name="liste"),
     path("imprimer/", views.PleinImprimerView.as_view(), name="imprimer"),
+    path("excel/", views.PleinExporterXlsxView.as_view(), name="xlsx"),
     path("nouveau/", views.PleinCreateView.as_view(), name="creer"),
     path("<int:pk>/annuler/", views.PleinAnnulerView.as_view(), name="annuler"),
     path("analyse/", views.AnalyseView.as_view(), name="analyse"),
