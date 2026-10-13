@@ -19,6 +19,10 @@ urlpatterns = [
     path("<int:pk>/valider/", views.ValiderView.as_view(), name="valider"),
     path("<int:pk>/refuser/", views.RefuserView.as_view(), name="refuser"),
     path("<int:pk>/reglements/", views.ReglementAjouterView.as_view(), name="reglement_ajouter"),
+    path("<int:pk>/avoirs/", views.AvoirAjouterView.as_view(), name="avoir_ajouter"),
+    path("<int:pk>/avoirs/<int:avoir_pk>/valider/", views.AvoirValiderView.as_view(), name="avoir_valider"),
+    path("<int:pk>/avoirs/<int:avoir_pk>/refuser/", views.AvoirRefuserView.as_view(), name="avoir_refuser"),
+    path("<int:pk>/avoirs/<int:avoir_pk>/imprimer/", views.AvoirPrintView.as_view(), name="avoir_imprimer"),
     path(
         "<int:pk>/reglements/<int:reglement_pk>/annuler/",
         views.ReglementAnnulerView.as_view(),

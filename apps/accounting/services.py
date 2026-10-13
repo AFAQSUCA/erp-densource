@@ -987,3 +987,30 @@ def exercices() -> QuerySet[ExerciceComptable]:
 
 def plan_comptable() -> QuerySet[Compte]:
     return Compte.objects.all()
+
+
+# --- avoirs (décision du 13/10/2026, audit AV-11) ---
+
+
+def comptabiliser_avoir(avoir) -> EcritureComptable:
+    """Écriture inverse de celle de la facture, pour le montant de l'avoir : débit des ventes (HT) et de la TVA
+    collectée, crédit du client (TTC). Idempotent par ``(AVOIR, avoir.pk)``."""
+    facture = avoir.facture
+    lignes = [
+        LigneSaisie(compte=COMPTE_VENTES_TRANSPORT, sens=SensEcriture.DEBIT, montant=avoir.montant_ht),
+        LigneSaisie(
+            compte=COMPTE_CLIENTS, sens=SensEcriture.CREDIT, montant=avoir.montant_ttc,
+            tiers_type="CLIENT", tiers_id=facture.client_id,
+        ),
+    ]
+    if avoir.montant_tva > 0:
+        lignes.append(LigneSaisie(compte=COMPTE_TVA_COLLECTEE, sens=SensEcriture.DEBIT, montant=avoir.montant_tva))
+    return passer_ecriture(
+        journal=Journal.VENTES,
+        date_ecriture=avoir.date_avoir,
+        libelle=f"Avoir {avoir.numero} sur facture {facture.numero} — {facture.client}",
+        lignes=lignes,
+        origine="AVOIR",
+        origine_id=avoir.pk,
+        piece_reference=avoir.numero,
+    )

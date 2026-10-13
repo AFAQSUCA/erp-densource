@@ -616,3 +616,39 @@ def prevenir_la_direction_d_un_nouveau_compte_direction(sender, utilisateur, **k
         ),
         url=reverse("accounts:utilisateurs"),
     )
+
+
+# --- avoirs (audit AV-11) ---
+
+
+@receiver(billing_signals.avoir_a_valider)
+def prevenir_la_direction_d_un_avoir(sender, avoir, **kwargs):
+    facture = avoir.facture
+    notifier(
+        utilisateurs_du_role(Role.DIRECTION),
+        categorie=CategorieNotification.FACTURE,
+        niveau=NiveauNotification.ATTENTION,
+        titre=f"Avoir à valider : {facture.client.raison_sociale}",
+        message=f"{nombre(avoir.montant_ttc)} FCFA TTC sur la facture {facture.numero}. Motif : {avoir.motif}",
+        url=reverse("billing:facture", args=[facture.pk]),
+        action="Examiner et valider",
+    )
+
+
+@receiver(billing_signals.avoir_decide)
+def prevenir_de_la_decision_sur_un_avoir(sender, avoir, decision, **kwargs):
+    if avoir.cree_par is None:
+        return
+    facture = avoir.facture
+    if decision == "VALIDE":
+        titre, message = f"Avoir {avoir.numero} validé", f"Facture {facture.numero} : reste à recouvrer réduit de {nombre(avoir.montant_ttc)} FCFA."
+    else:
+        titre, message = "Avoir refusé", f"Facture {facture.numero}. Motif : {avoir.motif_refus}"
+    notifier(
+        [avoir.cree_par],
+        categorie=CategorieNotification.FACTURE,
+        niveau=NiveauNotification.INFO,
+        titre=titre,
+        message=message,
+        url=reverse("billing:facture", args=[facture.pk]),
+    )

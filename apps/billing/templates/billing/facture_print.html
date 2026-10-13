@@ -40,6 +40,7 @@
     <div class="total"><span>Total TTC</span><span>{{ facture.montant_ttc|floatformat:0|intcomma }} FCFA</span></div>
     {% if facture.est_emise %}
       <div><span>Déjà réglé</span><span>{{ facture.montant_regle|floatformat:0|intcomma }} FCFA</span></div>
+      {% if facture.montant_avoirs %}<div><span>Avoirs</span><span>{{ facture.montant_avoirs|floatformat:0|intcomma }} FCFA</span></div>{% endif %}
       <div><strong>Reste à payer</strong><strong>{{ facture.reste|floatformat:0|intcomma }} FCFA</strong></div>
     {% endif %}
   </div>
