@@ -5,3 +5,7 @@ pytest>=8
 pytest-django>=4.9
 pytest-cov>=5
 factory_boy>=3.3
+
+# Recette automatisée dans de vrais navigateurs (recette_navigateurs/, audit TECH-74 à 77). Après installation :
+# python -m playwright install firefox webkit (Chrome et Edge : ceux du poste).
+playwright>=1.50

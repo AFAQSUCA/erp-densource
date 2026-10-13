@@ -8,6 +8,20 @@ après chaque changement important de l'interface.
 Comptez environ **45 minutes par navigateur**. Une seule personne peut tout faire, avec un ordinateur (Chrome, Edge,
 Firefox ; Safari sur un Mac) et un téléphone (Chrome sur Android, Safari sur iPhone) pour l'espace chauffeur.
 
+## Recette automatisée
+
+Les sections A à F sont aussi jouées automatiquement dans **Chrome, Edge, Firefox et WebKit** (le moteur de
+Safari), par Playwright, sur un serveur et une base de test :
+
+```bash
+python -m pytest recette_navigateurs -p no:cacheprovider
+```
+
+Le résultat, avec les versions testées, est écrit dans `recette_navigateurs/RESULTATS.md`. Pour Chrome, Edge et
+Firefox, ce passage remplace la recette manuelle. **Safari** n'existe que sur Mac et iPhone : WebKit en donne le
+moteur, pas le navigateur ; il reste donc à faire, à la main, la **section F sur un iPhone** (Safari) et la
+section A sur un Mac s'il y en a un (environ 15 minutes en tout).
+
 ## Avant de commencer
 
 - Faire la recette sur le **serveur de recette ou de production**, en HTTPS (`GUIDE-DEPLOIEMENT.md`), pas sur
