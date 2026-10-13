@@ -575,9 +575,8 @@ class ProformaModifierView(RoleRequiredMixin, FormView):
     form_class = ProformaModifierForm
     template_name = "billing/proforma_modifier.html"
 
-    def dispatch(self, request, *args, **kwargs):
+    def charger_objet(self, request, *args, **kwargs):
         self.proforma = get_object_or_404(Proforma, pk=kwargs["pk"])
-        return super().dispatch(request, *args, **kwargs)
 
     def get(self, request, *args, **kwargs):
         if not self.proforma.est_modifiable:

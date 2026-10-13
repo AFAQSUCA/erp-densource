@@ -287,9 +287,8 @@ class ReportCreateView(RoleRequiredMixin, FormView):
     form_class = ReportForm
     template_name = "hr/report_form.html"
 
-    def dispatch(self, request, *args, **kwargs):
+    def charger_objet(self, request, *args, **kwargs):
         self.conge = get_object_or_404(services.conges_queryset(), pk=kwargs["pk"])
-        return super().dispatch(request, *args, **kwargs)
 
     def get(self, request, *args, **kwargs):
         if not services.peut_demander_report(self.conge, request.user):

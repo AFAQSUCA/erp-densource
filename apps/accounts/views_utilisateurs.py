@@ -57,9 +57,8 @@ class UtilisateurUpdateView(RoleRequiredMixin, FormView):
     template_name = "accounts/utilisateur_form.html"
     form_class = UtilisateurModificationForm
 
-    def dispatch(self, request, *args, **kwargs):
+    def charger_objet(self, request, *args, **kwargs):
         self.compte = get_object_or_404(User, pk=kwargs["pk"])
-        return super().dispatch(request, *args, **kwargs)
 
     def get_initial(self):
         c = self.compte

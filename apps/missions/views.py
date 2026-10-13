@@ -168,9 +168,8 @@ class MissionUpdateView(RoleRequiredMixin, FormView):
     form_class = ModificationForm
     template_name = "missions/mission_modifier.html"
 
-    def dispatch(self, request, *args, **kwargs):
+    def charger_objet(self, request, *args, **kwargs):
         self.mission = get_object_or_404(services.missions_queryset(), pk=kwargs["pk"])
-        return super().dispatch(request, *args, **kwargs)
 
     def get(self, request, *args, **kwargs):
         if self.mission.statut not in STATUTS_MODIFIABLES:
