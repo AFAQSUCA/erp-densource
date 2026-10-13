@@ -9,6 +9,10 @@ class SaisieInvalide(CarburantError):
     """Quantité, prix ou n° de ticket invalide."""
 
 
+class ActionCarburantNonAutorisee(CarburantError):
+    """Le rôle de l'utilisateur ne permet pas cette action (annuler un plein...)."""
+
+
 class TicketDejaEnregistre(CarburantError):
     """Ce n° de ticket existe déjà : probable double saisie."""
 

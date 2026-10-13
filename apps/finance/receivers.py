@@ -16,9 +16,9 @@ from django.dispatch import receiver
 from django.utils import timezone
 
 from apps.billing import services as billing_services
-from apps.billing.models import COMPTE_DU_MODE, CategorieDepense, CompteTresorerie, OrigineDepense
-from apps.billing.signals import depense_mode_a_reclasser, reglement_annule, reglement_enregistre
-from apps.fuel.signals import plein_enregistre
+from apps.billing.models import COMPTE_DU_MODE, CategorieDepense, CompteTresorerie, Depense, OrigineDepense
+from apps.billing.signals import depense_annulee, depense_mode_a_reclasser, reglement_annule, reglement_enregistre
+from apps.fuel.signals import plein_annule, plein_enregistre
 from apps.garage.signals import or_cloture
 from apps.inventory.signals import entree_stock_enregistree
 from apps.missions import terrain as missions_terrain
@@ -125,3 +125,19 @@ def defaire_le_pointage_d_une_depense_sortie_de_la_banque(sender, depense, ancie
     changement qui reste en banque (virement → chèque) garde le pointage."""
     if COMPTE_DU_MODE[depense.mode] != CompteTresorerie.BANQUE:
         services.depointer_mouvement("DEPENSE", depense.pk)
+
+
+@receiver(plein_annule)
+def annuler_la_depense_d_un_plein_annule(sender, plein, acteur, **kwargs):
+    """Le plein annulé n'est plus une sortie d'argent : sa dépense est annulée avec lui (audit AUD-03). Un plein
+    saisi avant la comptabilisation automatique n'a pas de dépense : rien à faire."""
+    depense = Depense.objects.filter(origine=OrigineDepense.PLEIN, origine_id=plein.pk).first()
+    if depense is not None:
+        billing_services.annuler_depense_automatique(
+            depense, acteur, motif=f"Plein {plein.numero_ticket} annulé : {plein.motif_annulation}"
+        )
+
+
+@receiver(depense_annulee)
+def defaire_le_pointage_d_une_depense_annulee(sender, depense, **kwargs):
+    services.depointer_mouvement("DEPENSE", depense.pk)

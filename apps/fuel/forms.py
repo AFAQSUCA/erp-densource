@@ -119,3 +119,10 @@ class FiltrePleinsForm(StyleTailwindMixin, forms.Form):
             "date_fin": donnees.get("date_fin"),
             "alerte": donnees.get("alerte") or "",
         }
+
+
+class AnnulationPleinForm(StyleTailwindMixin, forms.Form):
+    motif = forms.CharField(
+        label="Motif de l'annulation", widget=forms.Textarea(attrs={"rows": 3}),
+        help_text="Par exemple : ticket saisi deux fois, mauvais camion, erreur de quantité.",
+    )

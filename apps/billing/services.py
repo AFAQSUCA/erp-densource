@@ -504,6 +504,19 @@ def annuler_reglement(reglement: Reglement, acteur, *, motif: str) -> Facture:
 # --- dépenses ---
 
 
+@transaction.atomic
+def annuler_depense_automatique(depense: Depense, acteur, *, motif: str) -> None:
+    """Annule la dépense née d'une opération elle-même annulée (un plein, audit AUD-03) : suppression logique avec
+    motif, puis ``depense_annulee`` (contre-passation de l'écriture, pointage bancaire défait). Les droits ont été
+    vérifiés par l'app d'origine. L'annulation d'une dépense saisie à la main reste à décider (audit AV-12)."""
+    if not depense.est_automatique:
+        raise ActionFactureNonAutorisee("Seule une dépense créée automatiquement s'annule avec son opération.")
+    depense.motif_annulation = motif.strip()
+    depense.save(update_fields=["motif_annulation", "updated_at"])
+    depense.delete(deleted_by=acteur)
+    signals.depense_annulee.send(sender=Depense, depense=depense)
+
+
 def depenses_queryset() -> QuerySet[Depense]:
     return Depense.objects.select_related("mission", "saisi_par")
 

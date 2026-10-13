@@ -43,6 +43,7 @@ class Plein(BaseModel):
     )
     km_compteur = models.PositiveIntegerField(_("km compteur"))
     numero_ticket = models.CharField(_("n° ticket / reçu"), max_length=50)
+    motif_annulation = models.TextField(_("motif d'annulation"), blank=True)
 
     km_precedent = models.PositiveIntegerField(
         _("km du plein précédent"), null=True, blank=True

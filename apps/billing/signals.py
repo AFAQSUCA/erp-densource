@@ -62,6 +62,11 @@ depense_a_comptabiliser = Signal()
 # ``send()`` brut. Arguments : ``depense`` (déjà sur le nouveau mode), ``ancien_mode``.
 depense_mode_a_reclasser = Signal()
 
+# Une dépense automatique vient d'être annulée avec l'opération qui l'avait créée (un plein annulé,
+# ``services.annuler_depense_automatique``) : son écriture est contre-passée (``accounting``), son pointage bancaire
+# défait (``finance``). ``send()`` brut. Argument : ``depense`` (supprimée logiquement, avec son motif).
+depense_annulee = Signal()
+
 
 def emettre(signal: Signal, *, sender: type | None = None, **arguments) -> None:
     """Émet un signal en journalisant (sans propager) les erreurs des récepteurs."""

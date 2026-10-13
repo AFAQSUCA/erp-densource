@@ -26,7 +26,9 @@ from apps.fleet.models import Vehicule
 from apps.parametres import services as parametres_services
 from apps.parametres.models import Parametres
 
+from . import permissions
 from .exceptions import (
+    ActionCarburantNonAutorisee,
     HorsChronologie,
     KilometrageInvalide,
     SaisieInvalide,
@@ -34,7 +36,7 @@ from .exceptions import (
     TicketDejaEnregistre,
 )
 from .models import NiveauAlerte, Plein
-from .signals import alerte_consommation, plein_enregistre
+from .signals import alerte_consommation, plein_annule, plein_enregistre
 
 CENTIME = Decimal("0.01")
 NB_PLEINS_REFERENCE = 3
@@ -380,3 +382,52 @@ def cout_carburant(debut: date, fin: date) -> Decimal:
         "quantite_litres", "prix_unitaire"
     )
     return sum((litres * prix for litres, prix in lignes), Decimal("0"))
+
+
+# --- annulation d'un plein saisi par erreur (audit AUD-03, décision du 13/10/2026) ---
+
+
+def _dernier_plein(vehicule: Vehicule) -> Plein | None:
+    return Plein.objects.filter(vehicule=vehicule).order_by("-date_plein", "-pk").first()
+
+
+def peut_annuler(plein: Plein, acteur) -> bool:
+    """Ceux qui saisissent les pleins (Parc Auto, Direction, administrateur), et seulement le dernier plein du
+    camion : la consommation d'un plein se calcule à partir du précédent."""
+    return acteur.role_effectif in permissions.MODIFICATION and _dernier_plein(plein.vehicule) == plein
+
+
+@transaction.atomic
+def annuler_plein(plein: Plein, acteur, *, motif: str) -> None:
+    """Annule (logiquement) le dernier plein d'un camion, saisi par erreur ; sa dépense est annulée et son écriture
+    contre-passée (``plein_annule``). Le compteur du camion n'est pas touché : s'il a été gonflé par une faute de
+    frappe, l'administrateur le corrige (``fleet.services.corriger_kilometrage``)."""
+    if acteur.role_effectif not in permissions.MODIFICATION:
+        raise ActionCarburantNonAutorisee("Vous n'avez pas le droit d'annuler un plein.")
+    motif = motif.strip()
+    if not motif:
+        raise SaisieInvalide("Le motif de l'annulation est obligatoire.")
+    type(plein.vehicule)._base_manager.select_for_update().filter(pk=plein.vehicule_id).first()
+    dernier = _dernier_plein(plein.vehicule)
+    if dernier != plein:
+        raise SaisieInvalide(
+            f"Seul le dernier plein du camion s'annule (ticket {dernier.numero_ticket} du "
+            f"{dernier.date_plein:%d/%m/%Y}) : annulez d'abord les pleins plus récents."
+            if dernier is not None else "Ce plein est déjà annulé."
+        )
+    plein.motif_annulation = motif
+    plein.save(update_fields=["motif_annulation", "updated_at"])
+    plein.delete(deleted_by=acteur)
+    plein_annule.send(sender=Plein, plein=plein, acteur=acteur)
+
+
+def derniers_pleins_ids(pleins) -> set[int]:
+    """Parmi ``pleins`` (une page de la liste), ceux qui sont le dernier plein de leur camion : seuls ceux-là
+    proposent « Annuler ». Une requête par page."""
+    vehicules = {plein.vehicule_id for plein in pleins}
+    derniers = {}
+    for plein in Plein.objects.filter(vehicule_id__in=vehicules).order_by("vehicule_id", "-date_plein", "-pk").only(
+        "pk", "vehicule_id"
+    ):
+        derniers.setdefault(plein.vehicule_id, plein.pk)
+    return set(derniers.values())

@@ -392,6 +392,7 @@ class Depense(BaseModel):
     )
     mode = models.CharField(_("mode de paiement"), max_length=14, choices=ModePaiement.choices)
     reference = models.CharField(_("n° de pièce"), max_length=100, blank=True)
+    motif_annulation = models.TextField(_("motif d'annulation"), blank=True)
     mission = models.ForeignKey(
         "missions.Mission",
         verbose_name=_("mission"),
