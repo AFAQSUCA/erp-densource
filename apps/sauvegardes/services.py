@@ -117,6 +117,17 @@ def derniere_reussie() -> dict | None:
     return next((e for e in _essais() if e["statut"] in STATUTS_REUSSIS), None)
 
 
+def age_derniere_sauvegarde(*, maintenant: datetime | None = None) -> float | None:
+    """Secondes écoulées depuis la dernière sauvegarde réussie, pour Prometheus (audit TECH-24) ; rien là où le
+    service de sauvegarde ne tourne pas (développement) ou s'il n'a encore rien réussi."""
+    if not settings.SAUVEGARDES_SURVEILLEES:
+        return None
+    derniere = derniere_reussie()
+    if derniere is None:
+        return None
+    return max(((maintenant or timezone.now()) - derniere["fin"]).total_seconds(), 0)
+
+
 def en_cours() -> dict | None:
     """La sauvegarde en cours d'exécution, s'il y en a une : ``{"debut", "declencheur"}``."""
     try:

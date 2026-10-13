@@ -94,6 +94,8 @@ SESSION_COOKIE_AGE = 30 * 60
 SESSION_SAVE_EVERY_REQUEST = True
 
 MIDDLEWARE = [
+    # En premier : chronomètre toute la chaîne et sert /metriques/ à Prometheus (audit TECH-24, apps/core/mesures.py).
+    "apps.core.mesures.MesuresMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "apps.core.middleware.SecurityHeadersMiddleware",
     "corsheaders.middleware.CorsMiddleware",
@@ -243,6 +245,10 @@ DASHBOARD_CACHE_SECONDS = env.int("DASHBOARD_CACHE_SECONDS", default=60)
 # service tourne (production), sinon l'alerte serait permanente.
 SAUVEGARDES_DIR = env.path("SAUVEGARDES_DIR", default=BASE_DIR / "sauvegardes")
 SAUVEGARDES_SURVEILLEES = env.bool("SAUVEGARDES_SURVEILLEES", default=False)
+
+# Mesures pour Prometheus (cahier-des-charges.md:256, audit TECH-24) : GET /metriques/ avec
+# « Authorization: Bearer <METRIQUES_JETON> ». Vide (par défaut) : l'adresse n'existe pas.
+METRIQUES_JETON = env("METRIQUES_JETON", default="")
 
 # Mentions de l'émetteur sur la facture imprimable (à renseigner par l'environnement).
 ENTREPRISE_NOM = env("ENTREPRISE_NOM", default="DEN Source Group")
