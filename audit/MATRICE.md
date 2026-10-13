@@ -14,7 +14,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 
 ## Bilan
 
-**441 exigences : 409 ✅, 16 🟡, 3 ❌, 10 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **95,2 %**.
+**441 exigences : 414 ✅, 11 🟡, 3 ❌, 10 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **95,8 %**.
 
 | Bloc | Lignes | ✅ | 🟡 | ❌ | ❓ | ⚪ |
 |---|---|---|---|---|---|---|
@@ -30,10 +30,10 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M10 Finances | 13 | 13 | 0 | 0 | 0 | 0 |
 | M11 RH | 30 | 30 | 0 | 0 | 0 | 0 |
 | M12 Tableaux de bord | 28 | 26 | 0 | 0 | 0 | 2 |
-| Technique | 87 | 68 | 9 | 1 | 8 | 1 |
+| Technique | 87 | 71 | 6 | 1 | 8 | 1 |
 | Recette | 7 | 7 | 0 | 0 | 0 | 0 |
 | Avenants | 17 | 12 | 3 | 2 | 0 | 0 |
-| Écarts d'audit | 23 | 17 | 4 | 0 | 2 | 0 |
+| Écarts d'audit | 23 | 19 | 2 | 0 | 2 | 0 |
 
 **Reprise à TECH-18** (première ligne non terminée, dans l'ordre des ID).
 
@@ -461,10 +461,10 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | TECH-40 | §4 l.273 | Mots de passe Argon2/PBKDF2 | ✅ | `config/settings/base.py:133` | Pas de changement de mot de passe une fois connecté (TECH-87) | Fait |
 | TECH-41 | §4 l.274 | HTTPS/TLS obligatoire | ✅ | `config/settings/prod.py:81`, `nginx/nginx.conf` | — | Fait |
 | TECH-42 | §4 l.275 | JWT : expiration courte | ✅ | `config/settings/base.py:194` | — | Fait |
-| TECH-43 | §4 l.275 | JWT : refresh | 🟡 | `config/settings/base.py:195` ; pas de révocation au changement de rôle ou de mot de passe, refresh sans durée absolue | Révoquer, plafonner | À faire |
+| TECH-43 | §4 l.275 | JWT : refresh | ✅ | `config/settings/base.py` (`JWT_SESSION_MAX` = 30 jours) ; `apps/api/auth.py` (`auth_time` à la connexion, `RenouvellementSerializer`) ; révocation au changement de mot de passe, de rôle ou d'activation : `apps/accounts/signals.py`, `apps/accounts/services.py` (`revoquer_jetons_api`) ; tests `apps/api/tests/test_revocation_jetons.py` (7 tests) | Fait (`67c17df`) | Fait |
 | TECH-44 | §4 l.276 | MFA obligatoire ADMIN | ✅ | `config/settings/base.py:269`, `apps/accounts/middleware.py:30` | — | Fait |
 | TECH-45 | §4 l.276 | MFA obligatoire DIRECTION | ✅ | Idem, et API `apps/api/auth.py:39` | — | Fait |
-| TECH-46 | §4 l.277 | Rate limiting anti force brute | 🟡 | `apps/accounts/throttle.py` ; l'API contourne le verrou de compte ; aucun quota sur « mot de passe oublié » ; aucun `limit_req` Nginx | Appliquer le verrou à l'API, quota de réinitialisation | À faire |
+| TECH-46 | §4 l.277 | Rate limiting anti force brute | ✅ | API : même verrou de compte que le site (`apps/api/auth.py`, `ConnexionView.post`) ; « mot de passe oublié » : 5 demandes/h par IP, 3 par e-mail (`apps/accounts/throttle.py`, `apps/accounts/views.py`) ; Nginx : `limit_req` sur /connexion/, /mot-de-passe/, /api/v1/auth/ (`nginx/nginx.conf`, validé par `nginx -t`) ; tests `apps/accounts/tests/test_force_brute_api_reinitialisation.py` | Fait (`91f55c2`) | Fait |
 | TECH-47 | §4 l.278 | Secrets via .env | ✅ | `config/settings/prod.py` exige ses secrets ; `config/wsgi.py`, `config/asgi.py`, `config/celery.py` partent sur la production par défaut (jamais DEBUG par oubli) ; `manage.py` garde le développement ; test `apps/core/tests/test_deploiement.py` | Fait (`1995788`) | Fait |
 | TECH-48 | §4 l.279 | RBAC rôle | ✅ | Voir TECH-33 | — | Fait |
 | TECH-49 | §4 l.279 | RBAC objet | ✅ | Voir TECH-34 ; `.dockerignore` exclut `certs/`, `*.pem`, `*.key`, `COMPTES-ESSAI.md` ; test `apps/core/tests/test_deploiement.py` | Fait (`1995788`, `113e40d`) | Fait |
@@ -483,7 +483,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | TECH-62 | §4 l.289 | < 2 s dashboards | ✅ | Mesuré 117 à 200 ms | — | Fait |
 | TECH-63 | §4 l.290 | select_related / prefetch_related | ✅ | Requêtes constantes sur 22 pages | — | Fait |
 | TECH-64 | §4 l.290 | only / defer | ✅ | Requêtes constantes, volumes modestes | — | Fait |
-| TECH-65 | §4 l.291 | Cache Redis des KPI | 🟡 | `apps/dashboard/services.py:62` ; TTL seul ; Redis sans tolérance de panne | Tolérer la panne de Redis | À faire |
+| TECH-65 | §4 l.291 | Cache Redis des KPI | ✅ | `apps/dashboard/services.py` (`_en_cache` : calcul direct si Redis tombe) ; `apps/accounts/throttle.py` (compteurs tolérants à la panne, Nginx limite toujours) ; panne signalée dans les journaux ; tests `apps/dashboard/tests/test_cache_en_panne.py` | Fait (`73befb0`) | Fait |
 | TECH-66 | §4 l.292 | Pagination obligatoire | 🟡 | Grand livre et journal de trésorerie chargés en mémoire ; plan comptable, exercices, enveloppes non paginés | Paginer ou borner | À faire |
 | TECH-67 | §4 l.293 | Index BDD sur colonnes de recherche | ✅ | Index sur `date_emission`, `date_reglement`, `date_depense` (+ catégorie), `date_mouvement`, `date_plein`, `date_expiration` (documents), dates d'expiration du permis et de la visite médicale (migrations `*_index_dates`, appliquées sur PostgreSQL 16) | Fait (`dd05e33`) | Fait |
 | TECH-68 | §4 l.294 | Celery : notifications | ✅ | `apps/notifications/tasks.py` | — | Fait |
@@ -558,9 +558,9 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | AUD-11 | M1-67 | Imprévu ou avance acceptés sur une mission clôturée | ✅ | `apps/missions/terrain.py:82` (`_exiger_mission_non_cloturee`, appelé par `declarer_imprevu` et `planifier_frais`) ; une mission livrée non clôturée accepte encore un imprévu (trajet retour) ; tests `apps/missions/tests/test_frais_mission.py` | Fait (`af062ba`) | Fait |
 | AUD-12 | M2 | Camion aux documents expirés affectable | ✅ | Bloquant si expiré ou manquant (décision du 12/10/2026) : `apps/missions/services.py` (`documents_non_valides_du_vehicule`, `_exiger_vehicule_en_regle`), affectation et départ ; tests `test_documents_et_reaffectation.py` | Fait (`65c73ed`) | Fait |
 | AUD-13 | M6-08 | N° de ticket unique globalement (pas par station) | 🟡 | `apps/fuel/models.py:99-103` | Unicité (station, ticket) | Décision |
-| AUD-14 | AV-03 | Enveloppe globale dupliquée (NULL), aucun verrou | 🟡 | `apps/finance/models.py:97`, `apps/finance/demandes.py:152` | Contrainte + verrou | À faire |
+| AUD-14 | AV-03 | Enveloppe globale dupliquée (NULL), aucun verrou | ✅ | Contrainte `enveloppe_globale_unique_par_mois` (`apps/finance/models.py`, migration `0006` qui supprime d'abord les doublons) ; verrou de l'enveloppe au contrôle (`apps/finance/demandes.py`) ; tests `apps/finance/tests/test_demandes.py`, verts sur PostgreSQL 16 | Fait (`9392dac`) | Fait |
 | AUD-15 | M5-11 | Pages contenant les codes sans `Cache-Control: no-store` | ✅ | `apps/missions/views.py` (`MissionDetailView.get` : `no-store, private`, comme le PDF et le QR) ; test `apps/missions/tests/test_documents.py` | Fait (`18d12c2`) | Fait |
-| AUD-16 | M11-13 | DIRECTION jamais prévenue des validations de congé en retard | 🟡 | `apps/notifications/taches.py:96-127` | Notifier la DIRECTION | À faire |
+| AUD-16 | M11-13 | DIRECTION jamais prévenue des validations de congé en retard | ✅ | `apps/notifications/taches.py` (`_prevenir_la_direction` : une fois par congé et par niveau, jamais pour sa propre demande) ; tests `apps/notifications/tests/test_taches.py` | Fait (`831beaf`) | Fait |
 | AUD-17 | TECH-46 | Identifiant mal saisi journalisé en clair à l'échec de connexion | ✅ | `apps/audit/services.py` (`identifiant_journalise` : compte existant en entier, identifiant inconnu masqué) ; tests `apps/audit/tests/test_services.py` | Fait (`3cbe348`) | Fait |
 | AUD-18 | TECH-55 | Mot de passe de la base dans les arguments de `pg_dump` | ✅ | `ops/fonctions-sauvegarde.sh:30` (URL sans mot de passe, `.pgpass` temporaire 600) ; tests `apps/sauvegardes/tests/test_scripts.py` | Fait (`b042d06`) | Fait |
 | AUD-19 | TECH-43 | Tables de sessions et de jetons jamais purgées | ✅ | `apps/accounts/services.py` (`purger_sessions_et_jetons_expires`), lancée par la tâche quotidienne (`apps/notifications/taches.py`) ; tests `apps/accounts/tests/test_purge.py` | Fait (`5d5d6ac`) | Fait |
