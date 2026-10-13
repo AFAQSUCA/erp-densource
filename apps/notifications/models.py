@@ -18,6 +18,7 @@ class CategorieNotification(models.TextChoices):
     DEMANDE_DEPENSE = "DEMANDE_DEPENSE", _("Demande de dépense")
     INCIDENT = "INCIDENT", _("Incident")
     PERSONNEL = "PERSONNEL", _("Personnel")
+    COMPTE = "COMPTE", _("Comptes et sécurité")
 
 
 class NiveauNotification(models.TextChoices):

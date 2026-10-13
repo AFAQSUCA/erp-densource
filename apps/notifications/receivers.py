@@ -18,7 +18,9 @@ from django.dispatch import receiver
 from django.urls import reverse
 from django.utils import timezone
 
+from apps.accounts import signals as accounts_signals
 from apps.accounts.models import Role
+from apps.core.middleware import get_current_user
 from apps.billing import signals as billing_signals
 from apps.billing.models import SEUIL_VALIDATION_DIRECTION
 from apps.core.formats import nombre, pourcentage_signe
@@ -593,4 +595,24 @@ def prevenir_la_direction_d_un_depassement(sender, ordre, **kwargs):
         ),
         url=_lien_demande(ordre.demande),
         action="Revalider",
+    )
+
+
+@receiver(accounts_signals.compte_direction_attribue)
+def prevenir_la_direction_d_un_nouveau_compte_direction(sender, utilisateur, **kwargs):
+    """L'administrateur peut créer un compte Direction ; la Direction existante en est prévenue aussitôt, pour qu'un
+    compte inattendu ne passe pas inaperçu (décision du 13/10/2026, audit AUD-09)."""
+    auteur = get_current_user()
+    nom = utilisateur.get_full_name() or utilisateur.username
+    par = f"par {auteur.get_full_name() or auteur.username}" if auteur is not None else "hors de l'application (commande)"
+    notifier(
+        utilisateurs_du_role(Role.DIRECTION).exclude(pk=utilisateur.pk),
+        categorie=CategorieNotification.COMPTE,
+        niveau=NiveauNotification.URGENT,
+        titre=f"Nouveau compte Direction : {nom}",
+        message=(
+            f"Le compte « {utilisateur.username} » a reçu le rôle Direction {par}. Si vous ne l'attendiez pas, "
+            "désactivez-le et consultez le journal d'audit."
+        ),
+        url=reverse("accounts:utilisateurs"),
     )

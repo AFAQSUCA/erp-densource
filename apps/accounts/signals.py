@@ -27,6 +27,10 @@ mot_de_passe_reinitialise = Signal()
 # providing_args : request, utilisateur
 mot_de_passe_change = Signal()
 
+# Un compte vient d'être créé avec le rôle DIRECTION, ou de recevoir ce rôle (admin Django compris) : la
+# Direction en est prévenue (``notifications``, décision du 13/10/2026, audit AUD-09). Argument : ``utilisateur``.
+compte_direction_attribue = Signal()
+
 
 @receiver(user_login_failed)
 def compter_echec_de_connexion(sender, credentials, request=None, **kwargs):
@@ -69,3 +73,15 @@ def revoquer_les_jetons_si_le_compte_change(sender, instance, created=False, **k
         from . import services
 
         services.revoquer_jetons_api(instance)
+
+
+@receiver(post_save, sender=settings.AUTH_USER_MODEL, dispatch_uid="accounts-compte-direction")
+def signaler_un_compte_direction(sender, instance, created=False, **kwargs):
+    """Création d'un compte DIRECTION ou attribution de ce rôle (audit AUD-09)."""
+    from .models import Role
+
+    if instance.role != Role.DIRECTION:
+        return
+    avant = getattr(instance, "_champs_sensibles_avant", None)
+    if created or (avant is not None and avant[CHAMPS_SENSIBLES.index("role")] != Role.DIRECTION):
+        compte_direction_attribue.send(sender=sender, utilisateur=instance)
