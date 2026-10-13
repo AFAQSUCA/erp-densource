@@ -106,6 +106,8 @@ COULEURS_STATUT = {
     "A_EXECUTER": "ambre",
     "EN_ATTENTE_REVALIDATION": "rouge",
     "EXECUTE": "vert",
+    # mission ou devis annulé (audit AUD-02)
+    "ANNULEE": "rouge",
 }
 
 

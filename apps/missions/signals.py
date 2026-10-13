@@ -19,6 +19,12 @@ mission_affectee = Signal()
 # Auto doit la réaffecter. Arguments : ``mission``, ``motif``.
 mission_desaffectee = Signal()
 
+# Annulation avant le départ et transfert en route (décision du 13/10/2026, audit AUD-02).
+# ``mission_annulee`` (``send`` brut : le devis d'origine est annulé dans la même transaction, par ``billing``) —
+# argument ``mission`` (avec son motif). ``mission_transferee`` (``emettre``) — argument ``transfert``.
+mission_annulee = Signal()
+mission_transferee = Signal()
+
 # Un imprévu vient d'être déclaré par le chauffeur, avec sa preuve. Argument : ``frais``.
 frais_mission_declare = Signal()
 # Le Parc Auto vient de valider un imprévu (première validation) : la Finance doit confirmer.

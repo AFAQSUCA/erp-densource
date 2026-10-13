@@ -38,9 +38,19 @@ from .exceptions import (
     MissionError,
     TransitionMissionInterdite,
 )
-from . import signals
-from .models import STATUTS_ACTIFS, STATUTS_MODIFIABLES, Mission, StatutMission
-from .signals import mission_affectee, mission_demarree, mission_desaffectee
+from . import permissions, signals
+from .models import (
+    STATUTS_ACTIFS,
+    STATUTS_ANNULABLES,
+    STATUTS_EN_ROUTE_TRANSFERABLES,
+    STATUTS_MODIFIABLES,
+    FraisMission,
+    Mission,
+    StatutFraisMission,
+    StatutMission,
+    TransfertMission,
+)
+from .signals import mission_affectee, mission_annulee, mission_demarree, mission_desaffectee, mission_transferee
 
 PREFIXE_NUMERO = "MIS"
 # Sans caractères ambigus (0/O, 1/I) : les codes se dictent au téléphone.
@@ -659,3 +669,122 @@ def cloturer_mission(mission: Mission) -> Mission:
     mission.statut = StatutMission.CLOTUREE
     mission.save(update_fields=["date_cloture", "statut", "updated_at"])
     return mission
+
+
+# --- annulation avant le départ et transfert en route (décision du 13/10/2026, audit AUD-02) ---
+
+
+def _exiger_role(acteur, roles, action: str) -> None:
+    if acteur.role_effectif not in roles:
+        raise TransitionMissionInterdite(f"Vous n'avez pas le droit de {action}.")
+
+
+@transaction.atomic
+def annuler_mission(mission: Mission, acteur, *, motif: str) -> Mission:
+    """Annule une mission pas encore partie (Brouillon, Planifiée, Affectée), avec un motif. Le camion et le
+    chauffeur ne sont plus réservés (une mission annulée n'est plus active) ; les frais encore prévus sont rejetés
+    (une avance déjà versée reste comptée : l'argent est sorti) ; le devis d'origine est annulé (``billing``)."""
+    _exiger_role(acteur, permissions.ANNULATION, "annuler une mission")
+    _recharger(mission)
+    if mission.statut not in STATUTS_ANNULABLES:
+        raise TransitionMissionInterdite(
+            f"La mission {mission.numero} est « {mission.get_statut_display()} » : seule une mission pas encore "
+            "partie s'annule ; en route, elle se transfère vers un autre camion ou chauffeur."
+        )
+    motif = motif.strip()
+    if not motif:
+        raise MissionError("Le motif de l'annulation est obligatoire.")
+    for frais in FraisMission.objects.select_for_update().filter(mission=mission, statut=StatutFraisMission.PREVU):
+        frais.statut = StatutFraisMission.REJETE
+        frais.motif_rejet = f"Mission annulée : {motif}"
+        frais.save(update_fields=["statut", "motif_rejet", "updated_at"])
+    mission.statut = StatutMission.ANNULEE
+    mission.motif_annulation = motif
+    mission.date_annulation = timezone.now()
+    mission.annulee_par = acteur
+    mission.save(update_fields=["statut", "motif_annulation", "date_annulation", "annulee_par", "updated_at"])
+    mission_annulee.send(sender=Mission, mission=mission)
+    return mission
+
+
+STATUTS_ANCIEN_CAMION = (StatutVehicule.EN_MAINTENANCE, StatutVehicule.IMMOBILISE, StatutVehicule.DISPONIBLE)
+
+
+@transaction.atomic
+def transferer_mission(
+    mission: Mission,
+    acteur,
+    *,
+    vehicule: Vehicule,
+    chauffeur: Chauffeur,
+    copilote: Copilote | None = None,
+    km_ancien_vehicule: int,
+    statut_ancien_vehicule: str,
+    motif: str,
+) -> TransfertMission:
+    """Transfère une mission en route vers un autre camion et/ou chauffeur (panne définitive, chauffeur
+    indisponible). Mêmes contrôles qu'à l'affectation pour ce qui change ; l'ancien camion reçoit son kilométrage
+    et le statut choisi (en maintenance, immobilisé ou disponible), l'ancien équipage est libéré, le nouveau part
+    « En mission ». La mission continue avec ses codes ; le nouveau tronçon part du compteur du nouveau camion."""
+    _exiger_role(acteur, permissions.TRANSFERT, "transférer une mission")
+    _recharger(mission)
+    if mission.statut not in STATUTS_EN_ROUTE_TRANSFERABLES:
+        raise TransitionMissionInterdite(
+            f"La mission {mission.numero} est « {mission.get_statut_display()} » : seule une mission en route se "
+            "transfère (avant le départ, on modifie son affectation)."
+        )
+    motif = motif.strip()
+    if not motif:
+        raise MissionError("Le motif du transfert est obligatoire.")
+    if statut_ancien_vehicule not in STATUTS_ANCIEN_CAMION:
+        raise MissionError("Statut de l'ancien camion inconnu.")
+    if vehicule.pk == mission.vehicule_id and chauffeur.pk == mission.chauffeur_id and (
+        (copilote.pk if copilote else None) == mission.copilote_id
+    ):
+        raise MissionError("Rien ne change : choisissez un autre camion, un autre chauffeur ou un autre copilote.")
+    ancien_vehicule = _recharger(mission.vehicule)
+    ancien_chauffeur = _recharger(mission.chauffeur)
+    ancien_copilote = _recharger(mission.copilote) if mission.copilote_id else None
+    nouveau_vehicule, nouveau_chauffeur = _recharger(vehicule), _recharger(chauffeur)
+    nouveau_copilote = _recharger(copilote) if copilote is not None else None
+
+    # Contrôles comme à l'affectation, pour ce qui change (le conservé est déjà engagé sur cette mission).
+    if nouveau_vehicule.pk != ancien_vehicule.pk:
+        _verifier_vehicule(nouveau_vehicule, mission.poids_t, sauf=mission)
+        if km_ancien_vehicule < ancien_vehicule.kilometrage:
+            raise KilometrageInvalide(
+                f"Le kilométrage de l'ancien camion ({km_ancien_vehicule}) est inférieur à son compteur "
+                f"({ancien_vehicule.kilometrage})."
+            )
+    if nouveau_chauffeur.pk != ancien_chauffeur.pk:
+        _verifier_chauffeur(nouveau_chauffeur, sauf=mission)
+    if nouveau_copilote is not None and (ancien_copilote is None or nouveau_copilote.pk != ancien_copilote.pk):
+        _verifier_copilote(nouveau_copilote, sauf=mission)
+
+    # L'ancien équipage descend, le nouveau monte.
+    if nouveau_vehicule.pk != ancien_vehicule.pk:
+        fleet_services.enregistrer_kilometrage(ancien_vehicule, km_ancien_vehicule)
+        fleet_services.definir_statut(ancien_vehicule, statut_ancien_vehicule)
+        _exiger_vehicule_en_regle(nouveau_vehicule, AffectationImpossible)
+        fleet_services.definir_statut(nouveau_vehicule, StatutVehicule.EN_MISSION)
+        mission.km_depart = nouveau_vehicule.kilometrage
+    if nouveau_chauffeur.pk != ancien_chauffeur.pk:
+        drivers_services.rappeler_de_mission(ancien_chauffeur)
+        drivers_services.mettre_en_mission(nouveau_chauffeur)
+    if ancien_copilote is not None and (nouveau_copilote is None or nouveau_copilote.pk != ancien_copilote.pk):
+        drivers_services.rappeler_copilote_de_mission(ancien_copilote)
+    if nouveau_copilote is not None and (ancien_copilote is None or nouveau_copilote.pk != ancien_copilote.pk):
+        drivers_services.mettre_en_mission_copilote(nouveau_copilote)
+
+    transfert = TransfertMission.objects.create(
+        mission=mission, ancien_vehicule=ancien_vehicule, nouveau_vehicule=nouveau_vehicule,
+        ancien_chauffeur=ancien_chauffeur, nouveau_chauffeur=nouveau_chauffeur,
+        km_ancien_vehicule=km_ancien_vehicule if nouveau_vehicule.pk != ancien_vehicule.pk else ancien_vehicule.kilometrage,
+        km_depart_nouveau=nouveau_vehicule.kilometrage,
+        statut_ancien_vehicule=statut_ancien_vehicule if nouveau_vehicule.pk != ancien_vehicule.pk else "",
+        motif=motif, transfere_par=acteur,
+    )
+    mission.vehicule, mission.chauffeur, mission.copilote = nouveau_vehicule, nouveau_chauffeur, nouveau_copilote
+    mission.save(update_fields=["vehicule", "chauffeur", "copilote", "km_depart", "updated_at"])
+    signals.emettre(mission_transferee, transfert=transfert)
+    return transfert

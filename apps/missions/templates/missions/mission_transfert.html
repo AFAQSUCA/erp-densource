@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block titre %}Transférer la mission {{ mission.numero }}{% endblock %}
+{% block entete %}Missions{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-2xl">
+  <nav aria-label="Fil d'Ariane" class="text-sm text-slate-600">
+    <a href="{% url 'missions:liste' %}" class="underline-offset-2 hover:underline">Missions</a>
+    <span aria-hidden="true">/</span>
+    <a href="{% url 'missions:detail' mission.pk %}" class="underline-offset-2 hover:underline">{{ mission.numero }}</a>
+    <span aria-hidden="true">/</span> Transférer
+  </nav>
+  <h1 class="mt-2 text-2xl font-bold text-slate-900">Transférer la mission {{ mission.numero }}</h1>
+  <p class="mt-1 text-sm text-slate-600">
+    En route : {{ mission.vehicule.immatriculation }}, chauffeur {{ mission.chauffeur }}. Choisissez le nouvel équipage
+    (gardez le camion ou le chauffeur actuel s'il continue) ; la mission garde ses codes.
+  </p>
+
+  <form method="post" novalidate class="mt-6 space-y-4 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+      <div role="alert" class="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">{% for erreur in form.non_field_errors %}<p>{{ erreur }}</p>{% endfor %}</div>
+    {% endif %}
+    {% include "components/_champ.html" with champ=form.vehicule %}
+    {% include "components/_champ.html" with champ=form.chauffeur %}
+    {% include "components/_champ.html" with champ=form.copilote %}
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      {% include "components/_champ.html" with champ=form.km_ancien_vehicule %}
+      {% include "components/_champ.html" with champ=form.statut_ancien_vehicule %}
+    </div>
+    {% include "components/_champ.html" with champ=form.motif %}
+    <div class="flex items-center justify-end gap-3 border-t border-slate-100 pt-5">
+      <a href="{% url 'missions:detail' mission.pk %}" class="rounded-lg px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Retour</a>
+      <button type="submit" class="rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">Transférer</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

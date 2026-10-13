@@ -220,7 +220,7 @@ def test_le_charge_clientele_peut_planifier_un_brouillon_mais_pas_affecter(clien
 
     assert _url("planifier", brouillon) in page_brouillon
     assert _url("affecter", planifiee) not in page_planifiee
-    assert "Aucune action disponible" in page_planifiee
+    assert _url("annuler", planifiee) in page_planifiee  # il peut l'annuler avant le départ (audit AUD-02)
 
 
 def test_la_direction_voit_le_formulaire_d_affectation_avec_les_seuls_camions_disponibles(client):

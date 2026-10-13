@@ -41,7 +41,9 @@ from apps.missions.signals import (
     frais_mission_valide_parcauto,
     mission_affectee,
     mission_demarree,
+    mission_annulee,
     mission_desaffectee,
+    mission_transferee,
 )
 
 from .models import CategorieNotification, NiveauNotification
@@ -651,4 +653,43 @@ def prevenir_de_la_decision_sur_un_avoir(sender, avoir, decision, **kwargs):
         titre=titre,
         message=message,
         url=reverse("billing:facture", args=[facture.pk]),
+    )
+
+
+# --- annulation et transfert de mission (audit AUD-02) ---
+
+
+@receiver(mission_annulee)
+def prevenir_d_une_mission_annulee(sender, mission, **kwargs):
+    """Le Parc Auto (qui affecte) et le chauffeur affecté, s'il y en avait un, sont prévenus."""
+    destinataires = list(utilisateurs_du_role(Role.PARCAUTO))
+    if mission.chauffeur_id and mission.chauffeur.personnel.utilisateur_id:
+        destinataires.append(mission.chauffeur.personnel.utilisateur)
+    notifier(
+        destinataires,
+        categorie=CategorieNotification.MISSION,
+        niveau=NiveauNotification.ATTENTION,
+        titre=f"Mission {mission.numero} annulée",
+        message=f"Motif : {mission.motif_annulation}. Le camion et le chauffeur ne sont plus réservés.",
+        url=reverse("missions:detail", args=[mission.pk]),
+    )
+
+
+@receiver(mission_transferee)
+def prevenir_d_un_transfert(sender, transfert, **kwargs):
+    """Le nouveau chauffeur reçoit la mission ; la Direction est informée."""
+    mission = transfert.mission
+    destinataires = list(utilisateurs_du_role(Role.DIRECTION))
+    if transfert.nouveau_chauffeur.personnel.utilisateur_id:
+        destinataires.append(transfert.nouveau_chauffeur.personnel.utilisateur)
+    notifier(
+        destinataires,
+        categorie=CategorieNotification.MISSION,
+        niveau=NiveauNotification.ATTENTION,
+        titre=f"Mission {mission.numero} transférée",
+        message=(
+            f"{transfert.ancien_vehicule.immatriculation} → {transfert.nouveau_vehicule.immatriculation}, "
+            f"chauffeur {transfert.nouveau_chauffeur}. Motif : {transfert.motif}"
+        ),
+        url=reverse("missions:detail", args=[mission.pk]),
     )

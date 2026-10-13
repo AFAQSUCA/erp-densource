@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from apps.accounts.models import Role
 
-from .models import Mission, StatutMission
+from .models import STATUTS_ANNULABLES, STATUTS_EN_ROUTE_TRANSFERABLES, Mission, StatutMission
 
 # Retour réunion (avenant) : c'est le Parc Auto qui affecte les missions (camion, chauffeur,
 # copilote) une fois que le chargé clientèle les a créées — il doit donc aussi pouvoir les
@@ -47,6 +47,9 @@ VOIR_CODES = frozenset({Role.ADMIN, Role.DIRECTION, Role.CHARGE_CLIENTELE})
 # figurent sur les mêmes rôles que ``CONSULTATION``.
 # La RH fait tout ce que fait la FINANCES, y compris confirmer (avenant R8 § 2) : oubliée ici jusqu'à l'audit
 # M1-27 (décision confirmée le 12/10/2026), alors qu'elle recevait déjà les notifications de ces frais.
+# Annulation avant le départ : ceux qui créent la mission ; transfert en route : ceux qui l'affectent (AUD-02).
+ANNULATION = frozenset({Role.ADMIN, Role.DIRECTION, Role.CHARGE_CLIENTELE})
+TRANSFERT = frozenset({Role.ADMIN, Role.DIRECTION, Role.PARCAUTO})
 FRAIS_CONSULTATION = frozenset({Role.ADMIN, Role.DIRECTION, Role.PARCAUTO, Role.FINANCES, Role.RH})
 FRAIS_SAISIE_PREVISION = frozenset({Role.ADMIN, Role.DIRECTION, Role.PARCAUTO})
 FRAIS_VALIDATION_PARCAUTO = frozenset({Role.PARCAUTO})
@@ -66,6 +69,8 @@ def actions_disponibles(utilisateur, mission: Mission) -> dict[str, bool]:
         "livraison": statut == StatutMission.EN_COURS_COLIS_RECUPERE
         and role in CODES_TERRAIN,
         "cloturer": statut == StatutMission.LIVREE and role in CLOTURE,
+        "annuler": statut in STATUTS_ANNULABLES and role in ANNULATION,
+        "transferer": statut in STATUTS_EN_ROUTE_TRANSFERABLES and role in TRANSFERT,
     }
 
 
