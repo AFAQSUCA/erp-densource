@@ -1,12 +1,16 @@
 """Authentification JWT : connexion, renouvellement, déconnexion, profil.
 
 Jeton d'accès de 15 minutes, jeton de renouvellement de 7 jours qui change à chaque usage et
-qui est révoqué à la déconnexion (cahier-des-charges.md:275, 285). La connexion est limitée à
+qui est révoqué à la déconnexion (cahier-des-charges.md:275, 285), et aussi quand le mot de passe, le rôle ou
+l'activation du compte changent ; une session ne se renouvelle plus au-delà de ``JWT_SESSION_MAX`` (30 jours)
+après la connexion (audit TECH-43). La connexion est limitée à
 10 essais par minute et par adresse (anti force brute). Les connexions réussies et échouées
 sont inscrites au journal d'audit, comme celles de l'interface web.
 """
 
+from django.conf import settings
 from django.contrib.auth.signals import user_logged_in, user_logged_out
+from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework import exceptions, serializers, status
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -14,7 +18,7 @@ from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
-from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer, TokenRefreshSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
@@ -31,6 +35,13 @@ class ConnexionSerializer(TokenObtainPairSerializer):
     """
 
     otp = serializers.CharField(required=False, allow_blank=True, write_only=True)
+
+    @classmethod
+    def get_token(cls, user):
+        jeton = super().get_token(user)
+        # Heure de la connexion : conservée à chaque renouvellement, elle plafonne la session (audit TECH-43).
+        jeton["auth_time"] = int(timezone.now().timestamp())
+        return jeton
 
     def validate(self, attrs):
         otp = attrs.pop("otp", "")
@@ -73,11 +84,20 @@ class ConnexionView(TokenObtainPairView):
     throttle_scope = "connexion"
 
     def post(self, request, *args, **kwargs):
+        # Même verrou que le site (audit TECH-46) : un identifiant bloqué après trop d'échecs l'est aussi ici, même
+        # avec le bon mot de passe, qui n'est alors pas vérifié ; sans cela, la force brute passait par l'API.
+        identifiant = str(request.data.get("username", ""))
+        restant = throttle.connexion_secondes_restantes(request, identifiant)
+        if restant:
+            raise exceptions.Throttled(
+                wait=restant, detail=f"Trop de tentatives échouées. Réessayez dans {throttle.phrase_attente(restant)}."
+            )
         # Un échec est déjà signalé par ``django.contrib.auth.authenticate`` (signal
-        # ``user_login_failed``, donc inscrit à l'audit) : on n'ajoute que la réussite.
+        # ``user_login_failed``, donc inscrit à l'audit et au compteur) : on n'ajoute que la réussite.
         reponse = super().post(request, *args, **kwargs)
         utilisateur = getattr(getattr(self, "serializer", None), "user", None)
         if utilisateur is not None:
+            throttle.connexion_reinitialiser(request, identifiant)
             user_logged_in.send(sender=type(utilisateur), request=request, user=utilisateur)
         return reponse
 
@@ -86,7 +106,24 @@ class ConnexionView(TokenObtainPairView):
         return self.serializer
 
 
+class RenouvellementSerializer(TokenRefreshSerializer):
+    """Refuse de renouveler une session ouverte depuis plus de ``JWT_SESSION_MAX`` (audit TECH-43). Un jeton émis
+    avant ce contrôle (sans ``auth_time``) se repère à sa date d'émission."""
+
+    def validate(self, attrs):
+        try:
+            jeton = RefreshToken(attrs["refresh"])
+        except TokenError as erreur:
+            raise InvalidToken(str(erreur)) from erreur
+        ouverte_le = jeton.get("auth_time", jeton.get("iat", 0))
+        if timezone.now().timestamp() - ouverte_le > settings.JWT_SESSION_MAX.total_seconds():
+            jeton.blacklist()
+            raise InvalidToken("Session trop ancienne : reconnectez-vous.")
+        return super().validate(attrs)
+
+
 class RenouvellementView(TokenRefreshView):
+    serializer_class = RenouvellementSerializer
     authentication_classes = []
     permission_classes = [AllowAny]
     throttle_classes = [ScopedRateThrottle]

@@ -201,6 +201,9 @@ SIMPLE_JWT = {
     "UPDATE_LAST_LOGIN": True,
     "AUTH_HEADER_TYPES": ("Bearer",),
 }
+# Durée maximale d'une session de l'API, connexion comprise : le renouvellement glisse de 7 jours à chaque usage,
+# sans plafond une session régulièrement utilisée ne finissait jamais (audit TECH-43). Au-delà, se reconnecter.
+JWT_SESSION_MAX = timedelta(days=30)
 
 SPECTACULAR_SETTINGS = {
     "TITLE": "ERP DEN Source Group : API",
@@ -285,6 +288,11 @@ MFA_FENETRE = 10 * 60  # ... par fenêtre de 10 minutes, puis blocage jusqu'à l
 LOGIN_MAX_ECHECS_COMPTE = 5
 LOGIN_MAX_ECHECS_ADRESSE = 20
 LOGIN_FENETRE = 15 * 60
+# « Mot de passe oublié » (audit TECH-46) : par adresse IP et par adresse e-mail, sur une heure ; sans cela, on
+# pouvait inonder de courriels la boîte d'un employé.
+REINITIALISATION_MAX_PAR_ADRESSE = 5
+REINITIALISATION_MAX_PAR_EMAIL = 3
+REINITIALISATION_FENETRE = 60 * 60
 
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"

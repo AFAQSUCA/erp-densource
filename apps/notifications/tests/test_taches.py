@@ -236,3 +236,28 @@ def test_le_delai_d_alerte_des_parametres_s_applique_aux_notifications():
 
     assert len(_de(parc)) == 1 and "expire dans 45 jours" in _de(parc)[0].titre
     assert len(_de(rh)) == 1 and "expire dans 45 jours" in _de(rh)[0].titre
+
+
+def test_la_direction_est_prevenue_une_fois_d_une_validation_en_retard():
+    """Audit AUD-16 : elle peut décider à la place du validateur en retard, encore faut-il qu'elle le sache."""
+    direction = UserFactory(role=Role.DIRECTION)
+    conge, _ = _demande()
+    apres_le_delai = MAINTENANT + timedelta(hours=49)
+
+    taches.relancer_validations_en_retard(maintenant=apres_le_delai)
+    taches.relancer_validations_en_retard(maintenant=apres_le_delai)
+
+    avis = [n for n in _de(direction) if n.titre.startswith("Congé en retard de validation N1")]
+    assert len(avis) == 1 and "à la place du validateur" in avis[0].message
+    assert avis[0].url == reverse("hr:conges_detail", args=[conge.pk])
+
+
+def test_la_direction_n_est_pas_prevenue_de_sa_propre_demande_en_retard():
+    compte = UserFactory(role=Role.DIRECTION)
+    superieur = PersonnelFactory(utilisateur=UserFactory(role=Role.PARCAUTO))
+    employe = PersonnelFactory(superieur=superieur, utilisateur=compte)
+    hr.demander_conge(employe, date_debut=date(2026, 10, 5), date_fin=date(2026, 10, 9), motif="x", maintenant=MAINTENANT)
+
+    taches.relancer_validations_en_retard(maintenant=MAINTENANT + timedelta(hours=49))
+
+    assert not [n for n in _de(compte) if n.titre.startswith("Congé en retard")]

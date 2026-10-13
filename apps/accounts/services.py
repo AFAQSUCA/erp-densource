@@ -150,3 +150,19 @@ def purger_sessions_et_jetons_expires(maintenant=None) -> dict[str, int]:
     nombre_jetons = jetons.count()
     jetons.delete()  # leurs mises en liste noire partent avec eux (cascade)
     return {"sessions": sessions, "jetons": nombre_jetons}
+
+
+def revoquer_jetons_api(utilisateur) -> int:
+    """Met en liste noire tous les jetons de renouvellement de l'API encore valides du compte : ses sessions mobiles
+    se ferment (le jeton d'accès en cours expire de lui-même en 15 minutes). Appelée quand le mot de passe, le rôle
+    ou l'activation du compte changent (``signals``, audit TECH-43). Renvoie le nombre de jetons révoqués."""
+    from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
+
+    a_revoquer = OutstandingToken.objects.filter(user=utilisateur, expires_at__gt=timezone.now()).exclude(
+        blacklistedtoken__isnull=False
+    )
+    nombre = 0
+    for jeton in a_revoquer:
+        BlacklistedToken.objects.get_or_create(token=jeton)
+        nombre += 1
+    return nombre

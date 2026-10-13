@@ -98,6 +98,13 @@ class EnveloppeDepense(BaseModel):
             models.UniqueConstraint(
                 fields=["categorie", "vehicule", "annee", "mois"], name="enveloppe_unique_par_scope_et_mois"
             ),
+            # La contrainte ci-dessus ne protège pas l'enveloppe globale : deux « camion vide » (NULL) y sont
+            # toujours différents. Une seule enveloppe globale par catégorie et par mois (audit AUD-14).
+            models.UniqueConstraint(
+                fields=["categorie", "annee", "mois"],
+                condition=Q(vehicule__isnull=True),
+                name="enveloppe_globale_unique_par_mois",
+            ),
             models.CheckConstraint(condition=Q(montant_plafond__gt=0), name="enveloppe_plafond_positif"),
             models.CheckConstraint(condition=Q(mois__gte=1) & Q(mois__lte=12), name="enveloppe_mois_valide"),
         ]
