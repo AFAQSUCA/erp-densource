@@ -292,7 +292,7 @@ class ReportConge(BaseModel):
     conge = models.ForeignKey(
         Conge, verbose_name=_("congé"), on_delete=models.PROTECT, related_name="reports"
     )
-    nouvelle_date_fin = models.DateField(_("reprise du travail le"))
+    date_reprise = models.DateField(_("reprise du travail le"))  # le congé s'arrête la veille (AV-01)
     jours_restants = models.PositiveIntegerField(_("jours restants reversés au solde"))
     motif = models.TextField(_("motif"))
     statut = models.CharField(
@@ -320,7 +320,7 @@ class ReportConge(BaseModel):
         ]
 
     def __str__(self):
-        return f"Report {self.conge} : {self.jours_restants} j à partir du {self.nouvelle_date_fin}"
+        return f"Report {self.conge} : {self.jours_restants} j à partir du {self.date_reprise}"
 
 
 # --- sortie du personnel (cahier-des-charges.md:50 « licenciement » ; avenant-sortie-personnel.md) ---

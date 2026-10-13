@@ -93,7 +93,7 @@ def test_demander_un_report_calcule_les_jours_ouvres_restants():
 
     # reprise le 26/10 (lun) : jours restants du 27/10 (mar) au 30/10 (ven) = 4 jours ouvrés
     report = services.demander_report(
-        conge, employe.utilisateur, nouvelle_date_fin=date(2026, 10, 26), motif="Fin des vacances"
+        conge, employe.utilisateur, date_reprise=date(2026, 10, 27), motif="Fin des vacances"
     )
 
     assert report.statut == StatutReport.DEMANDE
@@ -108,7 +108,7 @@ def test_refuse_hors_employe_concerne():
     _, superieur = hierarchie
 
     with pytest.raises(ActionNonAutorisee):
-        services.demander_report(conge, superieur, nouvelle_date_fin=date(2026, 10, 26), motif="x")
+        services.demander_report(conge, superieur, date_reprise=date(2026, 10, 27), motif="x")
 
 
 def test_refuse_si_le_conge_n_est_pas_en_cours():
@@ -117,18 +117,18 @@ def test_refuse_si_le_conge_n_est_pas_en_cours():
     employe = hierarchie[0]
 
     with pytest.raises(ActionNonAutorisee):
-        services.demander_report(conge, employe.utilisateur, nouvelle_date_fin=date(2026, 10, 26), motif="x")
+        services.demander_report(conge, employe.utilisateur, date_reprise=date(2026, 10, 27), motif="x")
 
 
 @pytest.mark.parametrize(
-    "nouvelle_date_fin",
+    "date_reprise",
     [
-        date(2026, 10, 4),  # avant le début du congé
-        date(2026, 10, 30),  # égale à la fin actuelle : rien à reporter
-        date(2026, 11, 2),  # après la fin actuelle
+        date(2026, 10, 5),  # le jour même du début : aucun jour de congé pris, ce n'est pas un report
+        date(2026, 10, 31),  # après la fin actuelle (le 30) : rien à reporter
+        date(2026, 11, 3),  # bien après la fin actuelle
     ],
 )
-def test_refuse_une_date_de_reprise_hors_de_la_periode(nouvelle_date_fin):
+def test_refuse_une_date_de_reprise_hors_de_la_periode(date_reprise):
     hierarchie = _hierarchie()
     conge = _en_cours(hierarchie)
     employe = hierarchie[0]
@@ -137,7 +137,7 @@ def test_refuse_une_date_de_reprise_hors_de_la_periode(nouvelle_date_fin):
         # « aujourd'hui » fixé avant le début du congé : sinon, dès que la date réelle dépasse le 04/10/2026, le premier
         # cas serait refusé comme « dans le passé » avant d'être jugé hors de la période.
         services.demander_report(
-            conge, employe.utilisateur, nouvelle_date_fin=nouvelle_date_fin, motif="x", aujourd_hui=date(2026, 10, 1)
+            conge, employe.utilisateur, date_reprise=date_reprise, motif="x", aujourd_hui=date(2026, 10, 1)
         )
 
 
@@ -148,7 +148,7 @@ def test_refuse_une_date_de_reprise_dans_le_passe():
 
     with pytest.raises(CongeError, match="passé"):
         services.demander_report(
-            conge, employe.utilisateur, nouvelle_date_fin=date(2026, 9, 22), motif="x",
+            conge, employe.utilisateur, date_reprise=date(2026, 9, 23), motif="x",
             aujourd_hui=date(2026, 9, 25),
         )
 
@@ -159,7 +159,7 @@ def test_refuse_sans_motif():
     employe = hierarchie[0]
 
     with pytest.raises(CongeError, match="motif"):
-        services.demander_report(conge, employe.utilisateur, nouvelle_date_fin=date(2026, 10, 26), motif="   ")
+        services.demander_report(conge, employe.utilisateur, date_reprise=date(2026, 10, 27), motif="   ")
 
 
 def test_refuse_si_aucun_jour_ouvre_a_reporter():
@@ -169,17 +169,17 @@ def test_refuse_si_aucun_jour_ouvre_a_reporter():
     employe = hierarchie[0]
 
     with pytest.raises(CongeError, match="Aucun jour ouvré"):
-        services.demander_report(conge, employe.utilisateur, nouvelle_date_fin=date(2026, 10, 23), motif="x")
+        services.demander_report(conge, employe.utilisateur, date_reprise=date(2026, 10, 24), motif="x")
 
 
 def test_refuse_une_deuxieme_demande_pendant_qu_une_est_en_attente():
     hierarchie = _hierarchie()
     conge = _en_cours(hierarchie)
     employe = hierarchie[0]
-    services.demander_report(conge, employe.utilisateur, nouvelle_date_fin=date(2026, 10, 26), motif="x")
+    services.demander_report(conge, employe.utilisateur, date_reprise=date(2026, 10, 27), motif="x")
 
     with pytest.raises(CongeError, match="déjà en attente"):
-        services.demander_report(conge, employe.utilisateur, nouvelle_date_fin=date(2026, 10, 27), motif="y")
+        services.demander_report(conge, employe.utilisateur, date_reprise=date(2026, 10, 28), motif="y")
 
 
 # --- approuver_report ---
@@ -191,7 +191,7 @@ def test_approuver_raccourcit_le_conge_et_libere_le_solde():
     employe = hierarchie[0]
     avant = services.droits_conges(employe, 2026)["disponible"]
     report = services.demander_report(
-        conge, employe.utilisateur, nouvelle_date_fin=date(2026, 10, 26), motif="Fin des vacances"
+        conge, employe.utilisateur, date_reprise=date(2026, 10, 27), motif="Fin des vacances"
     )
 
     services.approuver_report(report, _rh(), commentaire="Ok")
@@ -208,7 +208,7 @@ def test_approuver_termine_le_conge_si_la_reprise_est_deja_passee():
     conge = _en_cours(hierarchie, debut=date(2026, 9, 1), fin=date(2026, 9, 30))  # 22 jours ouvrés
     employe = hierarchie[0]
     report = services.demander_report(
-        conge, employe.utilisateur, nouvelle_date_fin=date(2026, 9, 21), motif="x", aujourd_hui=date(2026, 9, 21)
+        conge, employe.utilisateur, date_reprise=date(2026, 9, 22), motif="x", aujourd_hui=date(2026, 9, 21)
     )
 
     services.approuver_report(report, _rh(), aujourd_hui=date(2026, 9, 25))  # décidé quelques jours plus tard
@@ -221,7 +221,7 @@ def test_approuver_garde_en_cours_si_la_reprise_n_est_pas_encore_arrivee():
     hierarchie = _hierarchie()
     conge = _en_cours(hierarchie)  # 05/10 -> 30/10
     employe = hierarchie[0]
-    report = services.demander_report(conge, employe.utilisateur, nouvelle_date_fin=date(2026, 10, 26), motif="x")
+    report = services.demander_report(conge, employe.utilisateur, date_reprise=date(2026, 10, 27), motif="x")
 
     services.approuver_report(report, _rh(), aujourd_hui=date(2026, 9, 25))
 
@@ -233,7 +233,7 @@ def test_approuver_refuse_hors_rh():
     hierarchie = _hierarchie()
     conge = _en_cours(hierarchie)
     employe, superieur = hierarchie
-    report = services.demander_report(conge, employe.utilisateur, nouvelle_date_fin=date(2026, 10, 26), motif="x")
+    report = services.demander_report(conge, employe.utilisateur, date_reprise=date(2026, 10, 27), motif="x")
 
     with pytest.raises(ActionNonAutorisee):
         services.approuver_report(report, superieur)
@@ -244,7 +244,7 @@ def test_la_rh_ne_peut_pas_approuver_sa_propre_demande():
     superieur = PersonnelFactory(utilisateur=UserFactory(role=Role.PARCAUTO))
     fiche_rh = PersonnelFactory(utilisateur=compte_rh, superieur=superieur)
     conge = _en_cours((fiche_rh, superieur.utilisateur))
-    report = services.demander_report(conge, compte_rh, nouvelle_date_fin=date(2026, 10, 26), motif="x")
+    report = services.demander_report(conge, compte_rh, date_reprise=date(2026, 10, 27), motif="x")
 
     with pytest.raises(ActionNonAutorisee):
         services.approuver_report(report, compte_rh)
@@ -254,7 +254,7 @@ def test_approuver_refuse_si_deja_decide():
     hierarchie = _hierarchie()
     conge = _en_cours(hierarchie)
     employe = hierarchie[0]
-    report = services.demander_report(conge, employe.utilisateur, nouvelle_date_fin=date(2026, 10, 26), motif="x")
+    report = services.demander_report(conge, employe.utilisateur, date_reprise=date(2026, 10, 27), motif="x")
     services.approuver_report(report, _rh())
 
     with pytest.raises(TransitionInterdite):
@@ -268,7 +268,7 @@ def test_refuser_ne_change_rien_au_conge():
     hierarchie = _hierarchie()
     conge = _en_cours(hierarchie)
     employe = hierarchie[0]
-    report = services.demander_report(conge, employe.utilisateur, nouvelle_date_fin=date(2026, 10, 26), motif="x")
+    report = services.demander_report(conge, employe.utilisateur, date_reprise=date(2026, 10, 27), motif="x")
 
     services.refuser_report(report, _rh(), motif="Effectif insuffisant")
 
@@ -282,7 +282,7 @@ def test_refuser_exige_un_motif():
     hierarchie = _hierarchie()
     conge = _en_cours(hierarchie)
     employe = hierarchie[0]
-    report = services.demander_report(conge, employe.utilisateur, nouvelle_date_fin=date(2026, 10, 26), motif="x")
+    report = services.demander_report(conge, employe.utilisateur, date_reprise=date(2026, 10, 27), motif="x")
 
     with pytest.raises(CongeError, match="motif"):
         services.refuser_report(report, _rh(), motif="  ")
@@ -298,7 +298,7 @@ def test_report_en_attente_et_peut_decider():
 
     assert services.report_en_attente(conge) is None
 
-    report = services.demander_report(conge, employe.utilisateur, nouvelle_date_fin=date(2026, 10, 26), motif="x")
+    report = services.demander_report(conge, employe.utilisateur, date_reprise=date(2026, 10, 27), motif="x")
 
     assert services.report_en_attente(conge) == report
     assert services.peut_decider_report(report, _rh()) is True
@@ -319,7 +319,7 @@ def test_l_employe_demande_un_report_depuis_l_ecran(client):
 
     reponse = client.post(
         reverse("hr:conges_reporter", args=[conge.pk]),
-        {"nouvelle_date_fin": "2026-10-26", "motif": "Fin des vacances"},
+        {"date_reprise": "2026-10-27", "motif": "Fin des vacances"},
         follow=True,
     )
 
@@ -342,7 +342,7 @@ def test_la_rh_valide_le_report_depuis_l_ecran(client):
     hierarchie = _hierarchie()
     conge = _en_cours(hierarchie)
     employe = hierarchie[0]
-    report = services.demander_report(conge, employe.utilisateur, nouvelle_date_fin=date(2026, 10, 26), motif="x")
+    report = services.demander_report(conge, employe.utilisateur, date_reprise=date(2026, 10, 27), motif="x")
     _connecte(client, Role.RH)
 
     reponse = client.post(
@@ -358,7 +358,7 @@ def test_la_rh_refuse_le_report_avec_motif_obligatoire(client):
     hierarchie = _hierarchie()
     conge = _en_cours(hierarchie)
     employe = hierarchie[0]
-    report = services.demander_report(conge, employe.utilisateur, nouvelle_date_fin=date(2026, 10, 26), motif="x")
+    report = services.demander_report(conge, employe.utilisateur, date_reprise=date(2026, 10, 27), motif="x")
     _connecte(client, Role.RH)
 
     sans_motif = client.post(reverse("hr:conges_report_decision", args=[report.pk]), {"action": "refuser"})
@@ -436,3 +436,20 @@ def test_le_lien_pdf_apparait_une_fois_approuve(client):
     page = client.get(reverse("hr:conges_detail", args=[conge.pk])).content.decode()
 
     assert reverse("hr:conges_autorisation_pdf", args=[conge.pk]) in page
+
+
+def test_le_jour_de_reprise_n_est_pas_un_jour_de_conge():
+    """Décision du 13/10/2026 (audit AV-01) : l'employé saisit le jour où il revient ; ce jour-là lui est reversé et
+    le congé s'arrête la veille."""
+    hierarchie = _hierarchie()
+    conge = _en_cours(hierarchie, debut=date(2026, 10, 5), fin=date(2026, 10, 9))  # lundi-vendredi, 5 jours
+    employe = hierarchie[0]
+
+    report = services.demander_report(
+        conge, employe.utilisateur, date_reprise=date(2026, 10, 8), motif="Retour anticipé", aujourd_hui=date(2026, 10, 6)
+    )
+    services.approuver_report(report, _rh(), aujourd_hui=date(2026, 10, 6))
+
+    conge.refresh_from_db()
+    assert report.jours_restants == 2  # jeudi 8 et vendredi 9
+    assert conge.date_fin == date(2026, 10, 7) and conge.jours == 3  # dernier jour : mercredi 7

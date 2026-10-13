@@ -916,7 +916,7 @@ def peut_demander_report(conge: Conge, acteur) -> bool:
 
 @transaction.atomic
 def demander_report(
-    conge: Conge, acteur, *, nouvelle_date_fin: date, motif: str, aujourd_hui: date | None = None
+    conge: Conge, acteur, *, date_reprise: date, motif: str, aujourd_hui: date | None = None
 ) -> ReportConge:
     """L'employé en congé écourte son congé et demande à garder le solde non pris. Sans validation de
     la RH, la demande n'a aucun effet : le congé continue normalement jusqu'à sa fin initiale.
@@ -927,24 +927,26 @@ def demander_report(
             "Seul l'employé actuellement en congé peut en demander le report."
         )
     aujourd_hui = aujourd_hui or timezone.localdate()
-    if nouvelle_date_fin < aujourd_hui:
+    # ``date_reprise`` : le jour où l'employé revient au travail ; ce jour-là n'est plus un jour de congé (décision
+    # du 13/10/2026, audit AV-01). Le congé s'arrêtera la veille.
+    if date_reprise < aujourd_hui:
         raise CongeError("La date de reprise ne peut pas être dans le passé.")
-    if not (conge.date_debut <= nouvelle_date_fin < conge.date_fin):
+    if not (conge.date_debut < date_reprise <= conge.date_fin):
         raise CongeError(
-            "La date de reprise doit être comprise entre le début du congé et sa fin actuelle "
-            "(exclue : sans jour à reporter, ce n'est pas un report)."
+            "La date de reprise doit être comprise entre le lendemain du début du congé et sa fin actuelle "
+            f"(du {conge.date_debut + timedelta(days=1):%d/%m/%Y} au {conge.date_fin:%d/%m/%Y})."
         )
     if ReportConge.objects.filter(conge=conge, statut=StatutReport.DEMANDE).exists():
         raise CongeError("Une demande de report est déjà en attente pour ce congé.")
     if not motif.strip():
         raise CongeError("Un motif est obligatoire pour un report.")
 
-    jours_restants = calculer_jours(nouvelle_date_fin + timedelta(days=1), conge.date_fin)
+    jours_restants = calculer_jours(date_reprise, conge.date_fin)  # jour de reprise compris : il est reversé
     if jours_restants == 0:
         raise CongeError("Aucun jour ouvré à reporter avec cette date de reprise.")
 
     report = ReportConge.objects.create(
-        conge=conge, nouvelle_date_fin=nouvelle_date_fin, jours_restants=jours_restants, motif=motif.strip(),
+        conge=conge, date_reprise=date_reprise, jours_restants=jours_restants, motif=motif.strip(),
     )
     signals.emettre(signals.report_demande, report=report)
     return report
@@ -968,7 +970,7 @@ def approuver_report(
         )
 
     aujourd_hui = aujourd_hui or timezone.localdate()
-    conge.date_fin = report.nouvelle_date_fin
+    conge.date_fin = report.date_reprise - timedelta(days=1)  # dernier jour de congé : la veille de la reprise
     conge.jours = conge.jours - report.jours_restants
     conge.statut = StatutConge.TERMINE if conge.date_fin < aujourd_hui else StatutConge.EN_COURS
     conge.save(update_fields=["date_fin", "jours", "statut", "updated_at"])

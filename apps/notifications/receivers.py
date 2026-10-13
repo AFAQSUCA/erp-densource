@@ -155,7 +155,7 @@ def prevenir_la_rh_du_report(sender, report, **kwargs):
         niveau=NiveauNotification.ATTENTION,
         titre=f"Report de congé à valider : {employe.prenom} {employe.nom}",
         message=(
-            f"Reprise le {_jour(report.nouvelle_date_fin)} : {_jours(report.jours_restants)} à reverser "
+            f"Reprise le {_jour(report.date_reprise)} : {_jours(report.jours_restants)} à reverser "
             f"au solde. Motif : {report.motif}"
         ),
         url=reverse("hr:conges_detail", args=[report.conge_id]),
@@ -167,7 +167,7 @@ def prevenir_la_rh_du_report(sender, report, **kwargs):
 def prevenir_l_employe_du_report(sender, report, decision, **kwargs):
     if decision == hr_signals.DECISION_APPROUVE:
         titre = "Votre report de congé est validé"
-        message = f"{_jours(report.jours_restants).capitalize()} reversé(s) à votre solde. Vous reprenez le {_jour(report.nouvelle_date_fin)}."
+        message = f"{_jours(report.jours_restants).capitalize()} reversé(s) à votre solde. Vous reprenez le {_jour(report.date_reprise)}."
         niveau = NiveauNotification.INFO
     else:
         titre = "Votre demande de report est refusée"
