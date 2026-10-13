@@ -1,10 +1,12 @@
 from django.contrib import admin
 
+from apps.core.admin import SansSuppressionAdmin
+
 from .models import OrdreReparation
 
 
 @admin.register(OrdreReparation)
-class OrdreReparationAdmin(admin.ModelAdmin):
+class OrdreReparationAdmin(SansSuppressionAdmin):
     """Lecture seule : ouverture et clôture passent par apps/garage/services.py,
     seul moyen de garder le statut du camion cohérent."""
 

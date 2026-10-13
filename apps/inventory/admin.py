@@ -1,5 +1,7 @@
 from django.contrib import admin
 
+from apps.core.admin import SansSuppressionAdmin
+
 from .models import Article, MouvementStock
 
 
@@ -15,7 +17,7 @@ class MouvementLectureSeule(admin.ModelAdmin):
 
 
 @admin.register(Article)
-class ArticleAdmin(admin.ModelAdmin):
+class ArticleAdmin(SansSuppressionAdmin):
     """Fiche modifiable, sauf quantité et PUMP : ils ne bougent que par les
     mouvements de apps/inventory/services.py."""
 

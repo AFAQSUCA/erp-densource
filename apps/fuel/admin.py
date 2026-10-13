@@ -1,10 +1,12 @@
 from django.contrib import admin
 
+from apps.core.admin import SansSuppressionAdmin
+
 from .models import Plein
 
 
 @admin.register(Plein)
-class PleinAdmin(admin.ModelAdmin):
+class PleinAdmin(SansSuppressionAdmin):
     """Lecture seule : un plein se saisit par apps/fuel/services.py, qui calcule
     consommation et alertes à partir de l'historique."""
 

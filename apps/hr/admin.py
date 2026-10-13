@@ -1,16 +1,16 @@
 from django.contrib import admin
 
+from apps.core.admin import SansSuppressionAdmin, SuppressionLogiqueAdmin
+
 from .models import AttributionConge, Conge, JourFerie, Personnel, ValidationConge
 
 
 @admin.register(Personnel)
-class PersonnelAdmin(admin.ModelAdmin):
+class PersonnelAdmin(SuppressionLogiqueAdmin):
     list_display = ("matricule", "nom", "prenom", "poste", "departement", "superieur")
     list_filter = ("departement",)
     search_fields = ("matricule", "nom", "prenom")
 
-    def get_queryset(self, request):
-        return Personnel.objects.all()
 
 
 class ValidationInline(admin.TabularInline):
@@ -24,7 +24,7 @@ class ValidationInline(admin.TabularInline):
 
 
 @admin.register(Conge)
-class CongeAdmin(admin.ModelAdmin):
+class CongeAdmin(SansSuppressionAdmin):
     """Lecture seule : les transitions passent par apps/hr/services.py."""
 
     list_display = ("employe", "date_debut", "date_fin", "jours", "statut")
@@ -42,18 +42,16 @@ class CongeAdmin(admin.ModelAdmin):
 
 
 @admin.register(JourFerie)
-class JourFerieAdmin(admin.ModelAdmin):
+class JourFerieAdmin(SuppressionLogiqueAdmin):
     """Saisie des fêtes musulmanes fixées chaque année par décret."""
 
     list_display = ("date", "libelle")
     ordering = ("-date",)
 
-    def get_queryset(self, request):
-        return JourFerie.objects.all()
 
 
 @admin.register(AttributionConge)
-class AttributionCongeAdmin(admin.ModelAdmin):
+class AttributionCongeAdmin(SansSuppressionAdmin):
     """Lecture seule : une attribution se crée via services.accorder_jours_exceptionnels."""
 
     list_display = ("employe", "annee", "jours", "motif", "accorde_par")
