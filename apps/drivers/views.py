@@ -11,6 +11,7 @@ from django.views.generic import DetailView, FormView, ListView
 
 from apps.accounts.mixins import RoleRequiredMixin
 from apps.core.views import ImpressionListeMixin, PaginationTolerante
+from apps.core.xlsx import ExportXlsxMixin
 from apps.parametres import services as parametres_services
 
 from . import permissions, services
@@ -159,3 +160,16 @@ class StatutView(RoleRequiredMixin, View):
                 request, f"{chauffeur} est maintenant « {chauffeur.get_statut_display()} »."
             )
         return redirect("drivers:detail", pk=chauffeur.pk)
+
+
+class ChauffeurExporterXlsxView(ExportXlsxMixin, ChauffeurImprimerView):
+    """Export Excel (mêmes droits et filtres que la liste), valeurs brutes — audit TECH-83."""
+
+    nom_fichier = "chauffeurs"
+    colonnes = (
+        ("Nom", "personnel.nom"), ("Prénom", "personnel.prenom"), ("Téléphone", "telephone"),
+        ("N° de permis", "numero_permis"), ("Catégories", lambda c: ", ".join(c.categories_permis or [])),
+        ("Permis valide jusqu'au", lambda c: c.date_expiration_permis),
+        ("Visite médicale jusqu'au", lambda c: c.date_expiration_visite_medicale),
+        ("Statut", "get_statut_display"),
+    )

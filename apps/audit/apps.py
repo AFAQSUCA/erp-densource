@@ -10,6 +10,15 @@ class AuditConfig(AppConfig):
         from apps.accounts.navigation import EntreeMenu, enregistrer
 
         from . import permissions, signals  # noqa: F401
+        from .registry import audit_model
+
+        # Création de compte, changement de rôle, activation/désactivation, droits : la modification la
+        # plus sensible de l'ERP. ``last_login`` change à chaque connexion (bruit) ; le mot de passe
+        # n'est jamais écrit, seule son empreinte, pour qu'un changement reste visible. Branché ici et non dans
+        # ``accounts`` : ``audit`` dépend de ``accounts``, jamais l'inverse (audit AUD-20).
+        from apps.accounts.models import User
+
+        audit_model(User, module="UTILISATEURS", exclure=("last_login",), masquer=("password",))
 
         enregistrer(
             EntreeMenu(

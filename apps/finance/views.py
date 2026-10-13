@@ -298,7 +298,7 @@ class DemandeDetailView(RoleRequiredMixin, DetailView):
         contexte = super().get_context_data(**kwargs)
         demande = self.object
         role = self.request.user.role
-        ordre = OrdreDecaissement.objects.filter(demande=demande).select_related("execute_par").first()
+        ordre = demandes_services.ordre_de(demande)
         peut_decider = role in permissions.DEMANDE_VALIDATION and demande.statut == StatutDemandeDepense.SOUMISE
         peut_executer = (
             role in permissions.ORDRE_EXECUTION
@@ -385,10 +385,11 @@ class OrdreRevaliderView(RoleRequiredMixin, View):
         return redirect("finance:demande", pk=ordre.demande_id)
 
 
-class EnveloppeListView(RoleRequiredMixin, ListView):
+class EnveloppeListView(PaginationTolerante, RoleRequiredMixin, ListView):
     roles = permissions.ENVELOPPE_VALIDATION
     template_name = "finance/enveloppe_list.html"
     context_object_name = "enveloppes"
+    paginate_by = 24  # deux ans de mois, audit TECH-66
 
     def get_queryset(self):
         return demandes_services.enveloppes_queryset()

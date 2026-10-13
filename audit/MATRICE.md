@@ -14,7 +14,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 
 ## Bilan
 
-**441 exigences : 414 ✅, 11 🟡, 3 ❌, 10 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **95,8 %**.
+**441 exigences : 420 ✅, 5 🟡, 3 ❌, 10 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **96,5 %**.
 
 | Bloc | Lignes | ✅ | 🟡 | ❌ | ❓ | ⚪ |
 |---|---|---|---|---|---|---|
@@ -30,10 +30,10 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M10 Finances | 13 | 13 | 0 | 0 | 0 | 0 |
 | M11 RH | 30 | 30 | 0 | 0 | 0 | 0 |
 | M12 Tableaux de bord | 28 | 26 | 0 | 0 | 0 | 2 |
-| Technique | 87 | 71 | 6 | 1 | 8 | 1 |
+| Technique | 87 | 76 | 1 | 1 | 8 | 1 |
 | Recette | 7 | 7 | 0 | 0 | 0 | 0 |
 | Avenants | 17 | 12 | 3 | 2 | 0 | 0 |
-| Écarts d'audit | 23 | 19 | 2 | 0 | 2 | 0 |
+| Écarts d'audit | 23 | 20 | 1 | 0 | 2 | 0 |
 
 **Reprise à TECH-18** (première ligne non terminée, dans l'ordre des ID).
 
@@ -444,7 +444,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | TECH-23 | §4 l.256 | Sentry | ✅ | `config/settings/prod.py:125` | — | Fait |
 | TECH-24 | §4 l.256 | Prometheus | ❓ | Écarté en commentaire (`config/settings/prod.py:117`), pas dans le CDC | Faire acter la décision | Décision |
 | TECH-25 | §4 l.259 | Les 17 apps | ✅ | `config/settings/base.py` (`INSTALLED_APPS`) | — | Fait |
-| TECH-26 | §4 l.262 | views → serializers → services → models | 🟡 | 8 lectures ORM directes dans des vues (`apps/accounting/views.py:36`, `apps/finance/views.py:300`, `apps/hr/views.py:314`…) | Passer par des services | À faire |
+| TECH-26 | §4 l.262 | views → serializers → services → models | ✅ | Les 7 lectures directes passent par des services (`accounting.services.ecritures_manuelles`, `exercices`, `plan_comptable` ; `finance.demandes.ordre_de` ; `hr.services.attributions_de`) ; restent seulement les `get_object_or_404` de l'objet de la page | Fait (`616403e`) | Fait |
 | TECH-27 | §4 l.263 | Logique métier dans services.py | ✅ | Aucun calcul métier dans les vues | — | Fait |
 | TECH-28 | §4 l.264 | Signaux avec parcimonie | ✅ | `apps/*/signals.py` | — | Fait |
 | TECH-29 | §4 l.264 | post_save audit sur modèles sensibles | ✅ | Voir M1-67 (`apps/audit/tests/test_couverture.py`) | Fait | Fait |
@@ -484,7 +484,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | TECH-63 | §4 l.290 | select_related / prefetch_related | ✅ | Requêtes constantes sur 22 pages | — | Fait |
 | TECH-64 | §4 l.290 | only / defer | ✅ | Requêtes constantes, volumes modestes | — | Fait |
 | TECH-65 | §4 l.291 | Cache Redis des KPI | ✅ | `apps/dashboard/services.py` (`_en_cache` : calcul direct si Redis tombe) ; `apps/accounts/throttle.py` (compteurs tolérants à la panne, Nginx limite toujours) ; panne signalée dans les journaux ; tests `apps/dashboard/tests/test_cache_en_panne.py` | Fait (`73befb0`) | Fait |
-| TECH-66 | §4 l.292 | Pagination obligatoire | 🟡 | Grand livre et journal de trésorerie chargés en mémoire ; plan comptable, exercices, enveloppes non paginés | Paginer ou borner | À faire |
+| TECH-66 | §4 l.292 | Pagination obligatoire | ✅ | Grand livre par pages de 50 (cumul calculé sur toute la période, `apps/accounting/views.py`) ; plan comptable (50), exercices (20), enveloppes (24) paginés ; journal de trésorerie déjà paginé (25) ; test `apps/accounting/tests/test_soldes_ouverture.py` | Fait (`f07a706`) | Fait |
 | TECH-67 | §4 l.293 | Index BDD sur colonnes de recherche | ✅ | Index sur `date_emission`, `date_reglement`, `date_depense` (+ catégorie), `date_mouvement`, `date_plein`, `date_expiration` (documents), dates d'expiration du permis et de la visite médicale (migrations `*_index_dates`, appliquées sur PostgreSQL 16) | Fait (`dd05e33`) | Fait |
 | TECH-68 | §4 l.294 | Celery : notifications | ✅ | `apps/notifications/tasks.py` | — | Fait |
 | TECH-69 | §4 l.294 | Celery : alertes | ✅ | `config/settings/base.py` (beat quotidien) | — | Fait |
@@ -499,10 +499,10 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | TECH-78 | §4 l.301 | Responsive mobile-first | ✅ | `templates/base.html:5`, `apps/mobile_api/templates/mobile/base.html:5` | — | Fait |
 | TECH-79 | §4 l.302 | PWA espace chauffeur | ✅ | `apps/mobile_api/views_web.py:388` | — | Fait |
 | TECH-80 | §4 l.303 | Hors ligne + sync différée | ⚪ | Écarté le 29/09/2026 (CDC l.303) | — | — |
-| TECH-81 | §4 l.304 | Accessibilité WCAG 2.1 AA | 🟡 | Contraste bouton orange 3,19:1 (`apps/missions/templates/missions/mission_detail.html:170`), placeholders 2,56:1 (`apps/core/forms.py:5`), menu mobile fermé atteignable au clavier (`templates/base.html:20`), champ sans libellé (`apps/missions/templates/missions/frais_detail.html:80`) | Corriger ces 4 points | À faire |
+| TECH-81 | §4 l.304 | Accessibilité WCAG 2.1 AA | ✅ | Bouton des codes `bg-amber-700` (5,0:1) ; textes d'exemple `slate-500` (4,8:1, `apps/core/forms.py`, `apps/mobile_api/forms.py`) ; menu mobile fermé `max-lg:invisible` (hors tabulation, `templates/base.html`) ; « Motif du rejet » avec libellé ; feuille Tailwind recompilée ; vérifié dans le navigateur (téléphone fermé/ouvert, grand écran) | Fait (`5cc6445`) | Fait |
 | TECH-82 | §4 l.305 | Export PDF | ✅ | Vrai PDF serveur partout : 16 listes, 5 rapports comptables, trésorerie, facture, devis, frais de mission, tableau de bord (`apps/core/pdf.py`, `TelechargementPdfMixin`, `reponse_rapport`) ; `apps/core/tests/test_pdf.py` (43 tests) ; rendu contrôlé (personnel, bilan, facture) | Fait | Fait |
-| TECH-83 | §4 l.305 | Export Excel | 🟡 | Finance et comptabilité seulement ; pas pour missions, flotte, carburant, stock, clients, chauffeurs, congés | Brancher `ExportXlsxMixin` | À faire |
-| TECH-84 | checklist Technique | Dépendances reproductibles | 🟡 | `requirements/*.txt` en `>=`, sans fichier de verrouillage | Fichier de verrouillage | À faire |
+| TECH-83 | §4 l.305 | Export Excel | ✅ | Bouton « Excel » (`ExportXlsxMixin`, mêmes droits et filtres, valeurs brutes) sur missions, flotte, carburant, stock, clients, chauffeurs, congés, personnel et ordres de réparation, en plus de la finance et de la comptabilité ; tests `apps/core/tests/test_exports_excel.py` (13 tests) | Fait (`f7b49cc`) | Fait |
+| TECH-84 | checklist Technique | Dépendances reproductibles | ✅ | `requirements/prod.lock` (72 paquets, versions exactes pour Linux / Python 3.14), généré par `outils/verrouiller_dependances.py` ; appliqué en contrainte par le `Dockerfile` ; test `apps/core/tests/test_deploiement.py` | Fait (`0d16e6f`) | Fait |
 | TECH-85 | checklist Technique | Migrations à jour | ✅ | `manage.py makemigrations --check` : aucun changement | — | Fait |
 | TECH-86 | checklist Technique | Suite de tests verte | ✅ | 3 173 tests réussis, 0 échec ; suite rejouée avec l'horloge avancée d'un et de deux ans sans autre échec (seul un artefact du décalage) ; voir AUD-01 | Fait (`1c87fbb`) | Fait |
 | TECH-87 | §4 l.273 | Changement de mot de passe une fois connecté | ✅ | `apps/accounts/views.py:91` (`/mon-mot-de-passe/`, lien clé dans `templates/base.html`) : ancien mot de passe exigé, validateurs, session gardée, événement tracé (`apps/audit/signals.py`) ; tests `apps/accounts/tests/test_changer_mot_de_passe.py` (6 tests) ; vérifié dans le navigateur | Fait (`358b5c9`) | Fait |
@@ -564,7 +564,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | AUD-17 | TECH-46 | Identifiant mal saisi journalisé en clair à l'échec de connexion | ✅ | `apps/audit/services.py` (`identifiant_journalise` : compte existant en entier, identifiant inconnu masqué) ; tests `apps/audit/tests/test_services.py` | Fait (`3cbe348`) | Fait |
 | AUD-18 | TECH-55 | Mot de passe de la base dans les arguments de `pg_dump` | ✅ | `ops/fonctions-sauvegarde.sh:30` (URL sans mot de passe, `.pgpass` temporaire 600) ; tests `apps/sauvegardes/tests/test_scripts.py` | Fait (`b042d06`) | Fait |
 | AUD-19 | TECH-43 | Tables de sessions et de jetons jamais purgées | ✅ | `apps/accounts/services.py` (`purger_sessions_et_jetons_expires`), lancée par la tâche quotidienne (`apps/notifications/taches.py`) ; tests `apps/accounts/tests/test_purge.py` | Fait (`5d5d6ac`) | Fait |
-| AUD-20 | architecture | `architecture.md` ne reflète plus les dépendances réelles | 🟡 | `apps/notifications` importe 12 apps | Mettre à jour le schéma | À faire |
+| AUD-20 | architecture | `architecture.md` ne reflète plus les dépendances réelles | ✅ | § 3 régénéré depuis les imports réels ; 2 cycles supprimés (`accounts`↔`audit`, `missions`↔`billing`) et une dépendance remontante (`inventory`→`billing`) ; test `apps/core/tests/test_architecture.py` (aucun cycle, schéma conforme au code) | Fait (`db59ec2`) | Fait |
 | AUD-21 | M9-10 | Modification d'un devis : TVA écrite « 18,00 » (format français), refusée par le champ numérique qui reste vide | ✅ | `apps/billing/templates/billing/proforma_modifier.html:22,42` (`unlocalize`) ; test `apps/billing/tests/test_proforma_views.py:257` | Fait (`7942790`) | Fait |
 | AUD-22 | AV-06 | Pièce d'une écriture limitée à 30 caractères, référence d'une dépense ou d'un mouvement à 100 : erreur 500 sur PostgreSQL au-delà de 30 | ✅ | `apps/accounting/models.py:95` (100 caractères, migration `0004_piece_reference_100`) ; tests `apps/accounting/tests/test_longueur_piece.py` (alignement des longueurs) | Fait (`3e1454a`) | Fait |
 | AUD-23 | M11 (sortie du personnel) + TECH-86 | Sortie du personnel : erreur 500 sur PostgreSQL (verrou sur une jointure facultative), invisible sur SQLite | ✅ | `apps/hr/sorties.py:178,248` (`select_for_update(of=("self",))`) ; garde-fou `apps/core/tests/test_compatibilite_postgresql.py` ; suite complète rejouée sur PostgreSQL 16 : 3 232 tests réussis, 0 échec | Fait (`a80ee99`) | Fait |

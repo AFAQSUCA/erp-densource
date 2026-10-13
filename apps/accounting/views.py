@@ -9,6 +9,7 @@ Aucune règle métier ici : les vues contrôlent le rôle, lisent le formulaire 
 import calendar
 
 from django.contrib import messages
+from django.core.paginator import Paginator
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
@@ -24,7 +25,7 @@ from apps.core.xlsx import reponse_rapport
 from . import permissions, services
 from .exceptions import AccountingError, CompteDejaExistant
 from .forms import CompteForm, CompteModifierForm, EcritureManuelleForm, GrandLivreForm, LigneManuelleForm, PeriodeForm
-from .models import Compte, EcritureComptable, ExerciceComptable, Journal, LigneEcriture, SensEcriture, StatutEcriture
+from .models import Compte, ExerciceComptable, LigneEcriture, SensEcriture, StatutEcriture
 
 
 def _erreurs_en_messages(request, form):
@@ -34,7 +35,7 @@ def _erreurs_en_messages(request, form):
 
 
 def _ecritures_manuelles_queryset():
-    return EcritureComptable.objects.filter(journal=Journal.OPERATIONS_DIVERSES)
+    return services.ecritures_manuelles()
 
 
 class EcritureManuelleListView(PaginationTolerante, RoleRequiredMixin, ListView):
@@ -190,13 +191,14 @@ class EcritureManuelleAbandonnerView(RoleRequiredMixin, View):
         return redirect("accounting:ecritures_manuelles")
 
 
-class ExerciceListView(RoleRequiredMixin, ListView):
+class ExerciceListView(PaginationTolerante, RoleRequiredMixin, ListView):
     roles = permissions.CONSULTATION
     template_name = "accounting/exercice_list.html"
     context_object_name = "exercices"
+    paginate_by = 20  # audit TECH-66
 
     def get_queryset(self):
-        return ExerciceComptable.objects.all()
+        return services.exercices()
 
     def get_context_data(self, **kwargs):
         contexte = super().get_context_data(**kwargs)
@@ -219,13 +221,14 @@ class ExerciceCloturerView(RoleRequiredMixin, View):
         return redirect("accounting:exercices")
 
 
-class PlanComptableListView(RoleRequiredMixin, ListView):
+class PlanComptableListView(PaginationTolerante, RoleRequiredMixin, ListView):
     roles = permissions.CONSULTATION
     template_name = "accounting/plan_comptable_list.html"
     context_object_name = "comptes"
+    paginate_by = 50  # audit TECH-66
 
     def get_queryset(self):
-        return Compte.objects.all()
+        return services.plan_comptable()
 
     def get_context_data(self, **kwargs):
         contexte = super().get_context_data(**kwargs)
@@ -285,6 +288,19 @@ class CompteModifierView(RoleRequiredMixin, FormView):
         return redirect("accounting:plan_comptable")
 
 
+LIGNES_PAR_PAGE_GRAND_LIVRE = 50
+
+
+def _page(request, liste: list):
+    """Page demandée (``?page=``) d'une liste déjà calculée ; un numéro inutilisable ramène à une page existante."""
+    paginator = Paginator(liste, LIGNES_PAR_PAGE_GRAND_LIVRE)
+    try:
+        numero = int(request.GET.get("page", 1))
+    except ValueError:
+        numero = 1
+    return paginator.page(min(max(numero, 1), paginator.num_pages))
+
+
 def _ouverture(compte, debut) -> dict | None:
     """Ligne « Solde au … » d'un grand livre sur une période (audit AV-07) ; ``None`` sans date de début."""
     if debut is None:
@@ -299,12 +315,16 @@ class GrandLivreView(RoleRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         contexte = super().get_context_data(**kwargs)
         form = GrandLivreForm(self.request.GET or None)
-        lignes = ouverture = None
+        lignes = ouverture = page = None
         if form.is_valid() and form.cleaned_data.get("compte"):
             compte, debut = form.cleaned_data["compte"], form.cleaned_data.get("debut")
-            lignes = services.grand_livre_avec_solde(compte, debut=debut, fin=form.cleaned_data.get("fin"))
-            ouverture = _ouverture(compte, debut)
-        contexte.update(form=form, lignes=lignes, ouverture=ouverture)
+            # Le solde cumulé se calcule sur toute la période, puis l'écran n'en montre qu'une page (audit
+            # TECH-66) : le cumul reste juste d'une page à l'autre ; l'impression et l'export gardent tout.
+            page = _page(self.request, services.grand_livre_avec_solde(compte, debut=debut, fin=form.cleaned_data.get("fin")))
+            lignes = page.object_list
+            if page.number == 1:
+                ouverture = _ouverture(compte, debut)
+        contexte.update(form=form, lignes=lignes, ouverture=ouverture, page_obj=page)
         return contexte
 
 
@@ -502,7 +522,7 @@ class _RapportExerciceXlsxView(RoleRequiredMixin, View):
     roles = permissions.CONSULTATION
 
     def exercice(self, request):
-        exercices = ExerciceComptable.objects.order_by("-annee")
+        exercices = services.exercices()
         annee = request.GET.get("exercice")
         exercice = (exercices.filter(annee=annee).first() if annee else None) or exercices.first()
         if exercice is None:
@@ -586,7 +606,7 @@ class _RapportExerciceView(RoleRequiredMixin, TemplateView):
     roles = permissions.CONSULTATION
 
     def get_exercice(self):
-        exercices = ExerciceComptable.objects.order_by("-annee")
+        exercices = services.exercices()
         annee = self.request.GET.get("exercice")
         if annee:
             exercice = exercices.filter(annee=annee).first()

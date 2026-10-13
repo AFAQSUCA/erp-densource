@@ -12,6 +12,7 @@ from django.views.generic import DetailView, FormView, ListView
 from apps.accounts.mixins import RoleRequiredMixin
 from apps.accounts.models import Role
 from apps.core.views import ImpressionListeMixin, PaginationTolerante
+from apps.core.xlsx import ExportXlsxMixin
 
 from . import permissions, sections, services
 from .exceptions import ClientError
@@ -167,3 +168,15 @@ class InteractionCreateView(RoleRequiredMixin, View):
         else:
             messages.success(request, "Interaction ajoutée à l'historique.")
         return redirect("customers:detail", pk=client.pk)
+
+
+class ClientExporterXlsxView(ExportXlsxMixin, ClientImprimerView):
+    """Export Excel (mêmes droits et filtres que la liste), valeurs brutes — audit TECH-83."""
+
+    nom_fichier = "clients"
+    colonnes = (
+        ("Raison sociale", "raison_sociale"), ("NCC / NIF", "ncc_nif"), ("Contact", "contact_principal"),
+        ("Téléphone", "telephone"), ("Email", "email"),
+        ("Chargé clientèle", lambda c: (f"{c.charge_clientele.first_name} {c.charge_clientele.last_name}".strip() or c.charge_clientele.username) if c.charge_clientele_id else ""),
+        ("TVA (%)", lambda c: c.taux_tva), ("Délai de paiement (jours)", lambda c: c.delai_paiement_jours),
+    )

@@ -7,6 +7,7 @@ app_name = "missions"
 urlpatterns = [
     path("", views.MissionListView.as_view(), name="liste"),
     path("imprimer/", views.MissionImprimerView.as_view(), name="imprimer"),
+    path("excel/", views.MissionExporterXlsxView.as_view(), name="xlsx"),
     path("nouvelle/", views.MissionCreateView.as_view(), name="creer"),
     path("<int:pk>/", views.MissionDetailView.as_view(), name="detail"),
     path("<int:pk>/modifier/", views.MissionUpdateView.as_view(), name="modifier"),

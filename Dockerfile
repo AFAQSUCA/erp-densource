@@ -20,7 +20,9 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements/ requirements/
-RUN pip install -r requirements/prod.txt
+# Versions exactes figées par requirements/prod.lock (outils/verrouiller_dependances.py, audit TECH-84) : deux
+# constructions de l'image installent les mêmes paquets.
+RUN pip install -r requirements/prod.txt -c requirements/prod.lock
 
 COPY . .
 

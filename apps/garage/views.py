@@ -12,6 +12,7 @@ from django.views.generic import DetailView, FormView, ListView
 from apps.accounts.mixins import RoleRequiredMixin
 from apps.core.formats import nombre
 from apps.core.views import ImpressionListeMixin, PaginationTolerante
+from apps.core.xlsx import ExportXlsxMixin
 from apps.fleet import services as fleet_services
 
 from . import permissions, sections, services
@@ -181,3 +182,15 @@ class HorsServiceView(StatutVehiculeView):
 
 class RemiseEnServiceView(StatutVehiculeView):
     action = "remettre_en_service"
+
+
+class OrExporterXlsxView(ExportXlsxMixin, OrImprimerView):
+    """Export Excel (mêmes droits et filtres que la liste), valeurs brutes — audit TECH-83."""
+
+    nom_fichier = "ordres-reparation"
+    colonnes = (
+        ("N°", "numero"), ("Camion", "vehicule.immatriculation"), ("Type", "get_type_or_display"),
+        ("Lieu", "get_lieu_display"), ("Motif", "motif"), ("Ouvert le", lambda o: o.date_ouverture),
+        ("Clôturé le", lambda o: o.date_cloture), ("Statut", "get_statut_display"),
+        ("Main-d'œuvre (FCFA)", lambda o: o.cout_main_oeuvre),
+    )

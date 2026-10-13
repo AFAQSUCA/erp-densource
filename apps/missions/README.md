@@ -144,4 +144,4 @@ recontrôlée contre la capacité du camion conservé. Au retour (`livrer_missio
 de `fleet.services.ECART_KM_MAX` (5 000 km) du départ est refusé : une faute de frappe figerait le compteur du
 camion, qui ne recule jamais. L'alerte N1 des congés (`missions_du_personnel_sur_periode`) couvre aussi une
 mission déjà en cours qui déborde sur le congé et le copilote. Un règlement annulé retire son encaissement de la
-prévision de trésorerie (`FraisMission.reglement`, `rattacher_encaissements_missions [--dry-run]` pour l'existant).
+prévision de trésorerie (`FraisMission.reglement`, `rattacher_encaissements_missions [--dry-run]` pour l'existant, rangée dans `billing` car elle lit les règlements).

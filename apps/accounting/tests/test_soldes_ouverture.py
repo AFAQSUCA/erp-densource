@@ -97,3 +97,20 @@ def test_la_balance_et_les_exports_d_une_periode_montrent_l_ouverture(client):
         cellules = [c for ligne in openpyxl.load_workbook(io.BytesIO(reponse.content)).active.iter_rows(values_only=True)
                     for c in ligne]
         assert "Ouverture débiteur" in cellules or "Solde au 01/03/2026" in cellules
+
+
+def test_le_grand_livre_est_pagine_et_le_cumul_reste_juste_d_une_page_a_l_autre(client):
+    """Audit TECH-66 : 60 ventes → 2 pages de 50 ; la page 2 continue le cumul, sans ligne d'ouverture."""
+    for jour in range(1, 31):
+        _vente(date(2026, 3, jour), "1000")
+        _vente(date(2026, 4, jour), "1000")
+    client.force_login(UserFactory(role=Role.FINANCES))
+    url = reverse("accounting:grand_livre")
+
+    page1 = client.get(url, {"compte": "411000", "debut": "2026-03-01"})
+    page2 = client.get(url, {"compte": "411000", "debut": "2026-03-01", "page": 2})
+
+    assert len(page1.context["lignes"]) == 50 and page1.context["ouverture"] is not None
+    assert len(page2.context["lignes"]) == 10 and page2.context["ouverture"] is None
+    assert page2.context["lignes"][-1]["solde_cumule"] == Decimal("60000")
+    assert "Page 2 sur 2" in page2.content.decode()
