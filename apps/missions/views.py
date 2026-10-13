@@ -111,6 +111,13 @@ class MissionDetailView(RoleRequiredMixin, DetailView):
     def get_queryset(self):
         return services.missions_queryset()
 
+    def get(self, request, *args, **kwargs):
+        reponse = super().get(request, *args, **kwargs)
+        # La fiche affiche les codes de départ et de livraison : jamais gardée en cache (ordinateur partagé, bouton
+        # « précédent » après déconnexion), comme le PDF et le QR des codes (audit AUD-15).
+        reponse["Cache-Control"] = "no-store, private"
+        return reponse
+
     def get_context_data(self, **kwargs):
         contexte = super().get_context_data(**kwargs)
         mission, utilisateur = self.object, self.request.user

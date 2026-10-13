@@ -116,3 +116,12 @@ def test_la_fiche_propose_le_telechargement_du_pdf(client):
     contenu = client.get(reverse("missions:detail", args=[mission.pk])).content.decode()
 
     assert reverse("missions:codes_pdf", args=[mission.pk]) in contenu
+
+
+def test_la_fiche_mission_qui_affiche_les_codes_n_est_jamais_gardee_en_cache(client):
+    """Audit AUD-15 : comme le PDF et le QR des codes."""
+    client.force_login(UserFactory(role=sorted(permissions.VOIR_CODES)[0]))
+
+    reponse = client.get(reverse("missions:detail", args=[MissionFactory().pk]))
+
+    assert reponse.status_code == 200 and reponse["Cache-Control"] == "no-store, private"
