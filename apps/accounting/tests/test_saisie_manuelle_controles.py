@@ -7,7 +7,7 @@ import pytest
 
 from apps.accounting import services
 from apps.accounting.exceptions import CompteInconnu, EcritureNonEquilibree
-from apps.accounting.models import LigneEcriture, SensEcriture, StatutEcriture
+from apps.accounting.models import Compte, LigneEcriture, SensEcriture, StatutEcriture
 from apps.billing.tests.helpers import direction, finances
 
 from .factories import CompteFactory
@@ -50,3 +50,28 @@ def test_une_ecriture_correcte_se_valide_toujours():
 
     ecriture.refresh_from_db()
     assert ecriture.statut == StatutEcriture.VALIDEE
+
+
+# --- pas d'opération diverse sur un compte de trésorerie (décision du 13/10/2026, audit AV-10) ---
+
+
+@pytest.mark.parametrize("compte", ["521000", "571000", "521900"])
+def test_une_operation_diverse_ne_touche_pas_un_compte_de_tresorerie(compte):
+    """Sinon la comptabilité et l'écran Trésorerie ne montrent plus le même solde."""
+    ecriture = _brouillon()
+
+    with pytest.raises(CompteInconnu, match="Trésorerie"):
+        services.ajouter_ligne_manuelle(ecriture, finances(), compte=compte, sens=SensEcriture.DEBIT, montant=Decimal("500"))
+
+    assert not LigneEcriture.objects.filter(ecriture=ecriture).exists()
+
+
+def test_un_brouillon_saisi_avant_la_regle_est_refuse_a_la_validation():
+    ecriture, autre = _brouillon(), CompteFactory()
+    LigneEcriture.objects.create(
+        ecriture=ecriture, compte=Compte.objects.get(numero="571000"), sens=SensEcriture.DEBIT, montant=Decimal("500")
+    )
+    services.ajouter_ligne_manuelle(ecriture, finances(), compte=autre.numero, sens=SensEcriture.CREDIT, montant=Decimal("500"))
+
+    with pytest.raises(CompteInconnu, match="Trésorerie"):
+        services.valider_ecriture_manuelle(ecriture, direction())

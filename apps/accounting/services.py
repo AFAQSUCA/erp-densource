@@ -688,6 +688,18 @@ def creer_ecriture_manuelle(acteur, *, date_ecriture: date, libelle: str) -> Ecr
     )
 
 
+def _exiger_hors_tresorerie(numeros: set[str]) -> None:
+    """Une opération diverse ne mouvemente pas la banque, la caisse ni le Mobile Money : un mouvement d'argent se
+    saisit dans Trésorerie, qui passe lui-même l'écriture, et les deux écrans gardent le même solde (décision du
+    13/10/2026, audit AV-10)."""
+    tresorerie = sorted(numeros & set(COMPTE_TRESORERIE_VERS_COMPTE.values()))
+    if tresorerie:
+        raise CompteInconnu(
+            f"Compte de trésorerie ({', '.join(tresorerie)}) : un mouvement de banque, de caisse ou de Mobile Money se "
+            "saisit dans Trésorerie (mouvement manuel), pas en opération diverse."
+        )
+
+
 @transaction.atomic
 def ajouter_ligne_manuelle(
     ecriture: EcritureComptable, acteur, *, compte: str, sens: str, montant: Decimal, libelle: str = ""
@@ -697,6 +709,7 @@ def ajouter_ligne_manuelle(
     _exiger_brouillon(ecriture, "ajouter une ligne")
     if sens not in SensEcriture.values:  # audit AV-09
         raise EcritureNonEquilibree("Le sens d'une ligne est débit ou crédit.")
+    _exiger_hors_tresorerie({compte})
     montant = Decimal(montant)
     if montant <= 0:
         raise EcritureNonEquilibree("Le montant doit être strictement positif.")
@@ -735,8 +748,10 @@ def valider_ecriture_manuelle(ecriture: EcritureComptable, acteur) -> EcritureCo
     lignes = list(ecriture.lignes.select_related("compte"))
     if len(lignes) < 2:
         raise EcritureNonEquilibree("Une écriture comptable a au moins 2 lignes.")
-    # Un compte a pu être désactivé entre la saisie du brouillon et sa validation (audit AV-09).
+    # Un compte a pu être désactivé entre la saisie du brouillon et sa validation (audit AV-09) ; un brouillon
+    # saisi avant la règle AV-10 peut toucher un compte de trésorerie.
     _comptes_actifs({ligne.compte.numero for ligne in lignes})
+    _exiger_hors_tresorerie({ligne.compte.numero for ligne in lignes})
     total_debit = sum((l.montant for l in lignes if l.sens == SensEcriture.DEBIT), Decimal("0"))
     total_credit = sum((l.montant for l in lignes if l.sens == SensEcriture.CREDIT), Decimal("0"))
     if total_debit != total_credit:

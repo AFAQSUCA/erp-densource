@@ -35,7 +35,7 @@ def test_la_validation_d_une_ecriture_manuelle_est_journalisee_en_validate():
     from apps.billing.tests.helpers import finances
 
     ecriture = compta.creer_ecriture_manuelle(finances(), date_ecriture=date(2026, 3, 1), libelle="Apport")
-    compta.ajouter_ligne_manuelle(ecriture, finances(), compte="571000", sens=SensEcriture.DEBIT, montant=Decimal("500"))
+    compta.ajouter_ligne_manuelle(ecriture, finances(), compte="411000", sens=SensEcriture.DEBIT, montant=Decimal("500"))
     compta.ajouter_ligne_manuelle(ecriture, finances(), compte="101000", sens=SensEcriture.CREDIT, montant=Decimal("500"))
 
     compta.valider_ecriture_manuelle(ecriture, direction())
@@ -61,7 +61,7 @@ def test_une_suppression_physique_est_journalisee():
         direction(), date_ecriture=date(2026, 3, 1), libelle="Brouillon à corriger"
     )
     ligne = compta.ajouter_ligne_manuelle(
-        ecriture, direction(), compte="571000", sens=SensEcriture.DEBIT, montant=Decimal("500")
+        ecriture, direction(), compte="411000", sens=SensEcriture.DEBIT, montant=Decimal("500")
     )
 
     identifiant = ligne.pk  # Django remet le pk à None sur l'instance supprimée
@@ -101,7 +101,7 @@ def test_le_csv_contient_les_valeurs_modifiees_et_le_user_agent(client):
 
 def _od_validee_par(auteur, validateur):
     ecriture = compta.creer_ecriture_manuelle(auteur, date_ecriture=date(2026, 3, 1), libelle="Apport")
-    compta.ajouter_ligne_manuelle(ecriture, auteur, compte="571000", sens=SensEcriture.DEBIT, montant=Decimal("500"))
+    compta.ajouter_ligne_manuelle(ecriture, auteur, compte="411000", sens=SensEcriture.DEBIT, montant=Decimal("500"))
     compta.ajouter_ligne_manuelle(ecriture, auteur, compte="101000", sens=SensEcriture.CREDIT, montant=Decimal("500"))
     compta.valider_ecriture_manuelle(ecriture, validateur)
     return AuditLog.objects.get(action=ActionChoices.VALIDATE, entite="EcritureComptable", entite_id=ecriture.pk)

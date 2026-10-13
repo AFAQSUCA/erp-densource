@@ -17,8 +17,9 @@ pytestmark = pytest.mark.django_db
 
 
 def _od_validee():
-    ecriture = services.creer_ecriture_manuelle(finances(), date_ecriture=date(2026, 3, 1), libelle="Apport")
-    services.ajouter_ligne_manuelle(ecriture, finances(), compte="571000", sens=SensEcriture.DEBIT, montant=Decimal("500"))
+    # Pas de compte de trésorerie dans une opération diverse (audit AV-10) : un reclassement de créance.
+    ecriture = services.creer_ecriture_manuelle(finances(), date_ecriture=date(2026, 3, 1), libelle="Reclassement")
+    services.ajouter_ligne_manuelle(ecriture, finances(), compte="411000", sens=SensEcriture.DEBIT, montant=Decimal("500"))
     services.ajouter_ligne_manuelle(ecriture, finances(), compte="101000", sens=SensEcriture.CREDIT, montant=Decimal("500"))
     return services.valider_ecriture_manuelle(ecriture, direction())
 
@@ -31,7 +32,7 @@ def test_la_direction_contre_passe_une_operation_diverse_validee():
     assert inverse.statut == StatutEcriture.VALIDEE
     assert services.contre_passation_de(ecriture) == inverse
     sens = {(l.compte.numero, l.sens) for l in inverse.lignes.select_related("compte")}
-    assert sens == {("571000", SensEcriture.CREDIT), ("101000", SensEcriture.DEBIT)}
+    assert sens == {("411000", SensEcriture.CREDIT), ("101000", SensEcriture.DEBIT)}
     assert "Montant erroné" in inverse.libelle
 
 
