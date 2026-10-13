@@ -201,6 +201,9 @@ SIMPLE_JWT = {
     "UPDATE_LAST_LOGIN": True,
     "AUTH_HEADER_TYPES": ("Bearer",),
 }
+# Durée maximale d'une session de l'API, connexion comprise : le renouvellement glisse de 7 jours à chaque usage,
+# sans plafond une session régulièrement utilisée ne finissait jamais (audit TECH-43). Au-delà, se reconnecter.
+JWT_SESSION_MAX = timedelta(days=30)
 
 SPECTACULAR_SETTINGS = {
     "TITLE": "ERP DEN Source Group : API",
