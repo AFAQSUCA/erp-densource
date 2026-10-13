@@ -8,7 +8,7 @@ from apps.garage.models import POINTS_CHECKLIST, GraviteIncident, TypeIncident
 
 CHAMP_TACTILE = (
     "block w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-base text-slate-900 "
-    "shadow-sm placeholder:text-slate-400 focus:border-marque-600 focus:outline-none "
+    "shadow-sm placeholder:text-slate-500 focus:border-marque-600 focus:outline-none "
     "focus:ring-2 focus:ring-marque-600/30"
 )
 
