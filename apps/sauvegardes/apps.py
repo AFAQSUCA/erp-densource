@@ -13,3 +13,12 @@ class SauvegardesConfig(AppConfig):
         from . import permissions
 
         enregistrer(EntreeMenu("Sauvegardes", "sauvegardes:liste", "fa-database", permissions.CONSULTATION, ordre=91))
+
+        from apps.core.mesures import enregistrer_jauge
+
+        from .services import age_derniere_sauvegarde
+
+        enregistrer_jauge(
+            "erp_sauvegarde_age_secondes", "Âge de la dernière sauvegarde réussie (service `sauvegarde`).",
+            age_derniere_sauvegarde,
+        )

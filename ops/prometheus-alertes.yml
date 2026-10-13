@@ -1,0 +1,62 @@
+# Alertes évaluées par Prometheus (audit TECH-24), visibles dans son interface, onglet « Alerts ».
+# Seuils repris du cahier des charges (cahier-des-charges.md:286-287 : < 500 ms pour une page simple, < 2 s pour
+# un tableau de bord) et de l'écran « Sauvegardes » (alerte au-delà de 26 h).
+
+groups:
+  - name: erp
+    rules:
+      - alert: ApplicationInjoignable
+        expr: up{job="erp"} == 0
+        for: 2m
+        labels:
+          gravite: critique
+        annotations:
+          resume: "L'application ne répond plus à Prometheus depuis 2 minutes."
+
+      - alert: BaseDeDonneesInjoignable
+        expr: erp_base_de_donnees_disponible == 0
+        for: 1m
+        labels:
+          gravite: critique
+        annotations:
+          resume: "La base de données ne répond plus."
+
+      - alert: CacheInjoignable
+        expr: erp_cache_disponible == 0
+        for: 2m
+        labels:
+          gravite: haute
+        annotations:
+          resume: "Redis ne répond plus : tableau de bord, anti force brute et tâches de fond touchés."
+
+      - alert: ErreursServeur
+        expr: sum(rate(erp_requetes_total{statut="5xx"}[5m])) / sum(rate(erp_requetes_total[5m])) > 0.02
+        for: 5m
+        labels:
+          gravite: haute
+        annotations:
+          resume: "Plus de 2 % des requêtes finissent en erreur serveur (5xx) ; voir Sentry."
+
+      - alert: ReponsesLentes
+        expr: histogram_quantile(0.95, sum(rate(erp_requete_duree_secondes_bucket[10m])) by (le)) > 2
+        for: 10m
+        labels:
+          gravite: moyenne
+        annotations:
+          resume: "5 % des requêtes prennent plus de 2 secondes depuis 10 minutes."
+
+      - alert: TachesDeFondBloquees
+        expr: erp_celery_file_attente > 50
+        for: 10m
+        labels:
+          gravite: haute
+        annotations:
+          resume: "Plus de 50 tâches Celery en attente : le worker est-il arrêté ?"
+
+      - alert: SauvegardeTropAncienne
+        expr: erp_sauvegarde_age_secondes > 26 * 3600
+        for: 15m
+        labels:
+          gravite: haute
+        annotations:
+          resume: "Aucune sauvegarde réussie depuis plus de 26 heures."

@@ -1,0 +1,24 @@
+# Configuration de Prometheus (service `prometheus` de docker-compose.yml ; audit TECH-24).
+#
+# Lit les mesures de l'application (apps/core/mesures.py) sur le réseau interne de docker-compose, sans passer par
+# Nginx ni Internet. Le jeton est celui de METRIQUES_JETON (.env), recopié au démarrage dans /prometheus/jeton.
+
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+rule_files:
+  - /etc/prometheus/alertes.yml
+
+scrape_configs:
+  - job_name: erp
+    metrics_path: /metriques/
+    authorization:
+      type: Bearer
+      credentials_file: /prometheus/jeton
+    static_configs:
+      - targets: ["web:8000"]
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

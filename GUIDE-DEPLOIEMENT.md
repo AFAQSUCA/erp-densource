@@ -311,9 +311,45 @@ SENTRY_DSN=https://…@…ingest.sentry.io/…
 Puis `docker compose up -d` (redémarre `web`, `celery_worker`, `celery_beat` avec Sentry actif —
 config/settings/prod.py). Sans `SENTRY_DSN`, rien ne change : Sentry reste inactif.
 
-*Prometheus/Grafana* (également cité au cahier des charges) n'est volontairement pas installé : pour
-un serveur unique, deux conteneurs de plus pour un tableau de bord de métriques n'apportent pas
-encore assez, face à Sentry qui couvre déjà les erreurs. À ajouter si le volume le justifie.
+## 10 bis. Mesures techniques (Prometheus)
+
+Décision du 13/10/2026 (`avenant-decisions-audit.md`, audit TECH-24 ; `cahier-des-charges.md:256`). Sentry dit
+*quelle* erreur s'est produite ; Prometheus montre *comment va* le serveur dans le temps : nombre de requêtes et
+d'erreurs par écran, temps de réponse, base et Redis joignables, tâches Celery en attente, PDF en préparation, âge
+de la dernière sauvegarde. Le service `prometheus` de `docker-compose.yml` relève ces mesures toutes les 30 s et en
+garde 30 jours.
+
+1. **Choisir un jeton** et l'ajouter à `.env` (il protège l'adresse `/metriques/`) :
+
+   ```bash
+   echo "METRIQUES_JETON=$(openssl rand -hex 32)" >> .env
+   docker compose up -d
+   ```
+
+   Sans jeton, l'application ne publie aucune mesure et Prometheus affiche la cible « down ». L'adresse
+   `/metriques/` n'est de toute façon jamais accessible depuis Internet : Nginx la refuse ; seul Prometheus la lit,
+   sur le réseau interne de docker-compose.
+
+2. **Ouvrir l'interface**, qui n'écoute que sur le serveur lui-même (127.0.0.1:9090). Depuis votre poste, ouvrir un
+   tunnel SSH puis aller sur <http://localhost:9090> :
+
+   ```bash
+   ssh -L 9090:127.0.0.1:9090 utilisateur@adresse-du-serveur
+   ```
+
+   - **Status → Targets** : la cible `erp` doit être « UP ».
+   - **Alerts** : les alertes de `ops/prometheus-alertes.yml` (application ou base injoignable, plus de 2 %
+     d'erreurs serveur, réponses de plus de 2 s, tâches de fond bloquées, sauvegarde de plus de 26 h).
+   - **Graph**, exemples de requêtes :
+     - temps de réponse (95 % des requêtes en dessous) :
+       `histogram_quantile(0.95, sum(rate(erp_requete_duree_secondes_bucket[5m])) by (le))` ;
+     - écrans les plus lents en moyenne :
+       `topk(5, sum by (vue) (rate(erp_vue_duree_secondes_total[1h])) / sum by (vue) (rate(erp_requetes_total[1h])))` ;
+     - erreurs serveur par écran : `sum by (vue) (rate(erp_requetes_total{statut="5xx"}[5m]))`.
+
+Les alertes s'affichent dans l'interface ; pour les recevoir par e-mail, ajouter plus tard un service Alertmanager
+(non installé : un serveur unique n'en a pas encore besoin, et Sentry prévient déjà par e-mail des erreurs).
+Grafana peut aussi se brancher sur ce Prometheus pour des tableaux de bord graphiques.
 
 ## 11. Mettre à jour l'application
 

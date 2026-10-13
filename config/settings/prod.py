@@ -120,8 +120,8 @@ SAUVEGARDES_SURVEILLEES = env.bool("SAUVEGARDES_SURVEILLEES", default=True)
 
 # Supervision des erreurs (cahier-des-charges.md:297, architecture.md §8 « Observabilité »). Inactif
 # tant que SENTRY_DSN n'est pas défini : un environnement de démonstration n'a pas besoin de compte
-# Sentry pour démarrer. Prometheus/Grafana (mentionné au même endroit) n'est volontairement pas
-# installé : un serveur unique n'en tire pas encore parti ; Sentry couvre déjà erreurs et exceptions.
+# Sentry pour démarrer. Les mesures techniques (temps de réponse, erreurs, files d'attente) vont à Prometheus
+# (service `prometheus` de docker-compose.yml, apps/core/mesures.py ; audit TECH-24).
 SENTRY_DSN = env("SENTRY_DSN", default="")
 if SENTRY_DSN:
     import sentry_sdk

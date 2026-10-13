@@ -146,6 +146,31 @@ services:
       web:
         condition: service_healthy
 
+  # Mesures techniques (audit TECH-24) : Prometheus lit /metriques/ sur `web` toutes les 30 s, garde 30 jours
+  # d'historique et évalue les alertes de ops/prometheus-alertes.yml. Interface sur 127.0.0.1:9090 seulement
+  # (tunnel SSH, GUIDE-DEPLOIEMENT.md § 10 bis). Le jeton (METRIQUES_JETON, .env) est recopié dans un fichier lu
+  # par Prometheus, qui ne sait pas lire une variable d'environnement dans sa configuration.
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    restart: unless-stopped
+    environment:
+      METRIQUES_JETON: ${METRIQUES_JETON:-}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        printf '%s' "$$METRIQUES_JETON" > /prometheus/jeton &&
+        exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus
+        --storage.tsdb.retention.time=30d
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./ops/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./ops/prometheus-alertes.yml:/etc/prometheus/alertes.yml:ro
+      - prometheus_data:/prometheus
+    depends_on:
+      web:
+        condition: service_healthy
+
   # Sauvegarde chiffrée de la base et des fichiers déposés, chaque nuit et à la demande de l'ADMIN (écran
   # « Sauvegardes ») : ops/planificateur-sauvegarde.sh. Les fichiers chiffrés et le journal sont dans le volume
   # `sauvegardes_data` ; une copie hors serveur se règle avec SAUVEGARDE_COPIE_RSYNC (GUIDE-DEPLOIEMENT.md § 9).
@@ -187,3 +212,4 @@ volumes:
   media_data:
   certbot_www:
   sauvegardes_data:
+  prometheus_data:
