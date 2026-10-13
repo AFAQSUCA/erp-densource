@@ -10,7 +10,10 @@ import os
 
 from django.core.asgi import get_asgi_application
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings.dev')
+# Point d'entrée des serveurs de production (gunicorn, daphne, celery) : sans DJANGO_SETTINGS_MODULE, on part
+# sur la production, qui exige ses secrets, jamais sur le développement (DEBUG actif) — audit TECH-47.
+# ``manage.py`` garde le développement par défaut.
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings.prod')
 
 # Doit précéder l'import des consommateurs : il initialise le registre des applications Django.
 application_http = get_asgi_application()

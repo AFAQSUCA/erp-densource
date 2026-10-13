@@ -16,3 +16,9 @@ tutoriel/
 outils/
 GUIDE-*.md
 Presentation-ERP-DEN-Source.*
+
+# Secrets : jamais dans l'image (audit TECH-49).
+certs/
+*.pem
+*.key
+COMPTES-ESSAI.md
