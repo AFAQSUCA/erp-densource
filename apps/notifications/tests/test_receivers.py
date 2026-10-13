@@ -206,14 +206,14 @@ def test_la_rh_est_prevenue_d_une_demande_de_report(equipe):
     conge = _en_cours(equipe)
 
     report = hr.demander_report(
-        conge, equipe.compte, nouvelle_date_fin=date(2026, 10, 7), motif="Fin des vacances",
+        conge, equipe.compte, date_reprise=date(2026, 10, 8), motif="Fin des vacances",
         aujourd_hui=JOUR_DU_REPORT,
     )
 
     notification = _de(equipe.compte_rh)[-1]  # la RH a déjà la notification de validation N2 (_en_cours)
     assert notification.categorie == CategorieNotification.CONGE
     assert "Issa Bamba" in notification.titre
-    assert "07/10/2026" in notification.message
+    assert "08/10/2026" in notification.message
     assert notification.action == "Confirmer le report"
     assert notification.url == reverse("hr:conges_detail", args=[conge.pk])
 
@@ -221,20 +221,20 @@ def test_la_rh_est_prevenue_d_une_demande_de_report(equipe):
 def test_l_employe_est_prevenu_de_la_decision_sur_son_report(equipe):
     conge = _en_cours(equipe)
     report = hr.demander_report(
-        conge, equipe.compte, nouvelle_date_fin=date(2026, 10, 7), motif="x", aujourd_hui=JOUR_DU_REPORT
+        conge, equipe.compte, date_reprise=date(2026, 10, 8), motif="x", aujourd_hui=JOUR_DU_REPORT
     )
 
     hr.approuver_report(report, equipe.compte_rh, aujourd_hui=JOUR_DU_REPORT)
 
     notification = _de(equipe.compte)[-1]  # l'employé a déjà la notification d'approbation (_en_cours)
     assert "validé" in notification.titre
-    assert "07/10/2026" in notification.message
+    assert "08/10/2026" in notification.message
 
 
 def test_l_employe_est_prevenu_du_refus_de_son_report(equipe):
     conge = _en_cours(equipe)
     report = hr.demander_report(
-        conge, equipe.compte, nouvelle_date_fin=date(2026, 10, 7), motif="x", aujourd_hui=JOUR_DU_REPORT
+        conge, equipe.compte, date_reprise=date(2026, 10, 8), motif="x", aujourd_hui=JOUR_DU_REPORT
     )
 
     hr.refuser_report(report, equipe.compte_rh, motif="Effectif insuffisant")

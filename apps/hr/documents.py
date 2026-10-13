@@ -137,7 +137,7 @@ def generer_pdf_autorisation(conge: Conge) -> bytes:
         c.setFont("Helvetica-Bold", 11)
         c.drawString(MARGE, y, "Report de solde")
         y -= 7 * mm
-        y = _ligne(c, "Reprise anticipée le", report.nouvelle_date_fin.strftime("%d/%m/%Y"), y)
+        y = _ligne(c, "Reprise anticipée le", report.date_reprise.strftime("%d/%m/%Y"), y)
         y = _ligne(c, "Jours reversés au solde", f"{report.jours_restants} jour{'s' if report.jours_restants > 1 else ''} ouvré{'s' if report.jours_restants > 1 else ''}", y)
         y = _ligne(c, "Motif du report", report.motif[:80], y)
         y = _ligne(c, "Validé par (RH)", f"{report.valide_par} le {report.date_decision.strftime('%d/%m/%Y')}", y)

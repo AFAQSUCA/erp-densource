@@ -24,7 +24,7 @@
         {% for erreur in form.non_field_errors %}<p>{{ erreur }}</p>{% endfor %}
       </div>
     {% endif %}
-    {% include "components/_champ.html" with champ=form.nouvelle_date_fin %}
+    {% include "components/_champ.html" with champ=form.date_reprise %}
     {% include "components/_champ.html" with champ=form.motif %}
 
     <div class="flex items-center justify-end gap-3 border-t border-slate-100 pt-5">

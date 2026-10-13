@@ -710,10 +710,10 @@ def test_bilan_equilibre_avec_le_resultat_net():
 
 def test_bilan_exclut_les_brouillons_non_valides():
     exercice = services.exercice_pour(JOUR)
-    caisse = _compte("571000")
+    clients = _compte("411000")  # pas de compte de trésorerie en opération diverse (audit AV-10)
     ecriture = services.creer_ecriture_manuelle(finances(), date_ecriture=JOUR, libelle="Brouillon")
     services.ajouter_ligne_manuelle(
-        ecriture, finances(), compte=caisse.numero, sens=SensEcriture.DEBIT, montant=Decimal("5000")
+        ecriture, finances(), compte=clients.numero, sens=SensEcriture.DEBIT, montant=Decimal("5000")
     )
 
     rapport = services.bilan(exercice)

@@ -511,6 +511,29 @@ def annuler_depense_automatique(depense: Depense, acteur, *, motif: str) -> None
     vérifiés par l'app d'origine. L'annulation d'une dépense saisie à la main reste à décider (audit AV-12)."""
     if not depense.est_automatique:
         raise ActionFactureNonAutorisee("Seule une dépense créée automatiquement s'annule avec son opération.")
+    _annuler(depense, acteur, motif)
+
+
+@transaction.atomic
+def annuler_depense(depense: Depense, acteur, *, motif: str) -> None:
+    """Annule une dépense **saisie à la main** (péage, frais administratifs...) : par ceux qui saisissent les
+    dépenses, motif obligatoire ; l'écriture est contre-passée et le pointage bancaire défait, comme pour un
+    règlement (décision du 13/10/2026, audit AV-12). Une dépense automatique s'annule avec son opération d'origine
+    (un plein annulé, par exemple)."""
+    _exiger_role(acteur, permissions.SAISIE, "annuler une dépense")
+    if depense.est_automatique:
+        raise ActionFactureNonAutorisee(
+            f"« {depense.libelle} » est une dépense automatique : elle s'annule avec son opération d'origine "
+            f"({depense.get_origine_display().lower()})."
+        )
+    if not motif.strip():
+        raise MontantInvalide("Le motif de l'annulation est obligatoire.")
+    _annuler(depense, acteur, motif)
+
+
+def _annuler(depense: Depense, acteur, motif: str) -> None:
+    """Suppression logique avec motif, puis ``depense_annulee`` : écriture contre-passée (``accounting``),
+    pointage bancaire défait (``finance``)."""
     depense.motif_annulation = motif.strip()
     depense.save(update_fields=["motif_annulation", "updated_at"])
     depense.delete(deleted_by=acteur)

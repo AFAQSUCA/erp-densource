@@ -29,6 +29,7 @@ urlpatterns = [
     path("depenses/excel/", views.DepenseExporterXlsxView.as_view(), name="depenses_xlsx"),
     path("depenses/nouvelle/", views.DepenseCreateView.as_view(), name="depense_nouvelle"),
     path("depenses/<int:pk>/mode/", views.DepenseModeView.as_view(), name="depense_mode"),
+    path("depenses/<int:pk>/annuler/", views.DepenseAnnulerView.as_view(), name="depense_annuler"),
     path("devis/", views.ProformaListView.as_view(), name="proformas"),
     path("devis/imprimer/", views.ProformaImprimerView.as_view(), name="proformas_imprimer"),
     path("devis/nouveau/", views.ProformaCreateView.as_view(), name="proforma_nouveau"),

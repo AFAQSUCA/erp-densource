@@ -115,7 +115,7 @@
 
           {% if report_en_attente %}
             <div class="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-              <p>Demande envoyée le {{ report_en_attente.created_at|date:"d/m/Y à H:i" }} : reprise le <strong>{{ report_en_attente.nouvelle_date_fin|date:"d/m/Y" }}</strong>, {{ report_en_attente.jours_restants }} jour{{ report_en_attente.jours_restants|pluralize }} ouvré{{ report_en_attente.jours_restants|pluralize }} à reverser au solde.</p>
+              <p>Demande envoyée le {{ report_en_attente.created_at|date:"d/m/Y à H:i" }} : reprise le <strong>{{ report_en_attente.date_reprise|date:"d/m/Y" }}</strong>, {{ report_en_attente.jours_restants }} jour{{ report_en_attente.jours_restants|pluralize }} ouvré{{ report_en_attente.jours_restants|pluralize }} à reverser au solde.</p>
               <p class="mt-1">« {{ report_en_attente.motif }} »</p>
             </div>
             {% if peut_decider_report %}

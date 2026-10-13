@@ -46,7 +46,7 @@
       <table class="min-w-full divide-y divide-slate-200 text-sm">
         <caption class="sr-only">Liste des dépenses</caption>
         <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-          <tr><th scope="col" class="px-4 py-3">Date</th><th scope="col" class="px-4 py-3">Libellé</th><th scope="col" class="px-4 py-3">Catégorie</th><th scope="col" class="hidden px-4 py-3 xl:table-cell">Mission</th><th scope="col" class="px-4 py-3">Mode</th><th scope="col" class="px-4 py-3 text-right">Montant</th></tr>
+          <tr><th scope="col" class="px-4 py-3">Date</th><th scope="col" class="px-4 py-3">Libellé</th><th scope="col" class="px-4 py-3">Catégorie</th><th scope="col" class="hidden px-4 py-3 xl:table-cell">Mission</th><th scope="col" class="px-4 py-3">Mode</th><th scope="col" class="px-4 py-3 text-right">Montant</th>{% if peut_saisir %}<th scope="col" class="px-4 py-3"><span class="sr-only">Actions</span></th>{% endif %}</tr>
         </thead>
         <tbody class="divide-y divide-slate-100">
           {% for d in depenses %}
@@ -71,6 +71,18 @@
                 {{ d.montant|floatformat:0|intcomma }}
                 {% if d.montant_tva %}<br><span class="text-xs font-normal text-slate-500">dont {{ d.montant_tva|floatformat:0|intcomma }} TVA déd.</span>{% endif %}
               </td>
+              {% if peut_saisir %}
+                <td class="py-3 pl-4 pr-4 text-right" x-data="{ ouvert: false }">
+                  {% if not d.est_automatique %}
+                    <button type="button" @click="ouvert = !ouvert" :aria-expanded="ouvert.toString()" class="text-sm font-medium text-red-800 underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-red-700">Annuler</button>
+                    <form method="post" action="{% url 'billing:depense_annuler' d.pk %}" x-show="ouvert" x-cloak class="mt-2 space-y-2 text-left">{% csrf_token %}
+                      <label for="motif-depense-{{ d.pk }}" class="block text-xs font-medium text-slate-800">Motif <span class="text-red-700" aria-hidden="true">*</span></label>
+                      <input id="motif-depense-{{ d.pk }}" name="motif" required class="block w-full rounded-lg border border-slate-300 px-2 py-1 text-sm focus:border-marque-600 focus:outline-none focus:ring-2 focus:ring-marque-600/30">
+                      <button type="submit" class="rounded-lg border border-red-300 bg-white px-3 py-1 text-xs font-semibold text-red-800 hover:bg-red-50">Confirmer l'annulation</button>
+                    </form>
+                  {% endif %}
+                </td>
+              {% endif %}
             </tr>
           {% endfor %}
         </tbody>

@@ -29,8 +29,8 @@ def test_la_direction_est_prevenue_d_une_facture_a_valider():
     services.soumettre(facture, preparateur)
 
     for compte in (chef, autre_direction):
-        (notification,) = _de(compte)
-        assert notification.categorie == CategorieNotification.FACTURE
+        # Seulement l'avis de facturation : créer le 2e compte Direction a aussi prévenu le 1er (audit AUD-09).
+        (notification,) = [n for n in _de(compte) if n.categorie == CategorieNotification.FACTURE]
         assert notification.niveau == NiveauNotification.ATTENTION
         assert facture.client.raison_sociale in notification.titre
         assert "1 180 000 FCFA TTC" in notification.message.replace("\xa0", " ").replace(" ", " ")

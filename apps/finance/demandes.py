@@ -172,6 +172,7 @@ def comptabiliser_avec_controle_enveloppe(
             demande = DemandeDepense.objects.create(
                 numero=prochain_numero(PREFIXE_DEMANDE, annee),
                 categorie=categorie, vehicule=enveloppe.vehicule, origine=OrigineDemande.DEPASSEMENT_ENVELOPPE,
+                enveloppe=enveloppe,
                 montant_estime=consomme - enveloppe.montant_plafond,
                 motif=f"Enveloppe « {enveloppe.get_categorie_display()} » de {mois:02d}/{annee} dépassée par « {libelle} ».",
             )
@@ -223,6 +224,8 @@ def valider_demande(demande: DemandeDepense, acteur, *, montant_valide: Decimal 
     demande.valide_par = acteur
     demande.date_decision = timezone.now()
     demande.save(update_fields=["statut", "valide_par", "date_decision", "updated_at"])
+    if demande.origine == OrigineDemande.DEPASSEMENT_ENVELOPPE:
+        _relever_le_plafond(demande, montant_valide)
     if demande.origine == OrigineDemande.MANUELLE:
         ordre = OrdreDecaissement.objects.create(
             numero=prochain_numero(PREFIXE_ORDRE, timezone.localdate().year),
@@ -231,6 +234,25 @@ def valider_demande(demande: DemandeDepense, acteur, *, montant_valide: Decimal 
         signals.emettre(signals.ordre_a_executer, ordre=ordre)
     signals.emettre(signals.demande_decidee, demande=demande)
     return demande
+
+
+def _relever_le_plafond(demande: DemandeDepense, montant_valide: Decimal | None) -> None:
+    """Valider un dépassement relève le plafond du mois du montant validé (le dépassement constaté par défaut) : les
+    dépenses suivantes passent tant qu'elles restent dans ce nouveau plafond (décision du 13/10/2026, audit AV-03).
+    Une demande d'avant ce lot, sans enveloppe enregistrée, retrouve celle du mois où elle a été ouverte."""
+    enveloppe = demande.enveloppe
+    if enveloppe is None:
+        ouverte = timezone.localtime(demande.created_at)
+        enveloppe = _enveloppe_applicable(demande.categorie, demande.vehicule, ouverte.year, ouverte.month)
+    if enveloppe is None:
+        return
+    augmentation = Decimal(montant_valide) if montant_valide else demande.montant_estime
+    if augmentation <= 0:
+        raise MontantInvalide("Le montant validé doit être strictement positif.")
+    EnveloppeDepense.objects.select_for_update().filter(pk=enveloppe.pk).first()
+    enveloppe.refresh_from_db()
+    enveloppe.montant_plafond += augmentation
+    enveloppe.save(update_fields=["montant_plafond", "updated_at"])
 
 
 @transaction.atomic

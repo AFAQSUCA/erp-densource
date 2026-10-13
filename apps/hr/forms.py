@@ -58,10 +58,10 @@ class DecisionForm(StyleTailwindMixin, forms.Form):
 class ReportForm(StyleTailwindMixin, forms.Form):
     """Demande de report du solde non pris d'un congé en cours (avenant § R7)."""
 
-    nouvelle_date_fin = forms.DateField(
+    date_reprise = forms.DateField(
         label="Je reprends le travail le", widget=forms.DateInput(attrs={"type": "date"}),
-        help_text="Dernier jour de congé réellement pris ; les jours ouvrés restants jusqu'à la fin "
-        "initialement prévue vous sont reversés une fois la RH d'accord.",
+        help_text="Jour où vous revenez au travail : votre congé s'arrête la veille, et les jours ouvrés à partir "
+        "de ce jour jusqu'à la fin initialement prévue vous sont reversés une fois la RH d'accord.",
     )
     motif = forms.CharField(label="Motif", widget=forms.Textarea(attrs={"rows": 3}))
 

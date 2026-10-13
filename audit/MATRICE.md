@@ -14,7 +14,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 
 ## Bilan
 
-**441 exigences : 420 ✅, 5 🟡, 3 ❌, 10 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **96,5 %**.
+**441 exigences : 426 ✅, 0 🟡, 4 ❌, 5 ❓, 6 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **97,9 %**.
 
 | Bloc | Lignes | ✅ | 🟡 | ❌ | ❓ | ⚪ |
 |---|---|---|---|---|---|---|
@@ -30,12 +30,12 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M10 Finances | 13 | 13 | 0 | 0 | 0 | 0 |
 | M11 RH | 30 | 30 | 0 | 0 | 0 | 0 |
 | M12 Tableaux de bord | 28 | 26 | 0 | 0 | 0 | 2 |
-| Technique | 87 | 76 | 1 | 1 | 8 | 1 |
+| Technique | 87 | 76 | 0 | 3 | 4 | 4 |
 | Recette | 7 | 7 | 0 | 0 | 0 | 0 |
-| Avenants | 17 | 12 | 3 | 2 | 0 | 0 |
-| Écarts d'audit | 23 | 20 | 1 | 0 | 2 | 0 |
+| Avenants | 17 | 16 | 0 | 1 | 0 | 0 |
+| Écarts d'audit | 23 | 22 | 0 | 0 | 1 | 0 |
 
-**Reprise à TECH-18** (première ligne non terminée, dans l'ordre des ID).
+**Reprise à TECH-24** (première ligne non terminée, dans l'ordre des ID).
 
 ## Contradictions entre sources (règle 1)
 
@@ -436,13 +436,13 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | TECH-15 | §4 l.251 | Celery 5.4+ | ✅ | `requirements/base.txt:19` | — | Fait |
 | TECH-16 | §4 l.252 | PDF (WeasyPrint / ReportLab) | ✅ | `requirements/base.txt:24` | — | Fait |
 | TECH-17 | §4 l.252 | QR : qrcode + Pillow | ✅ | `requirements/base.txt:10-11` | — | Fait |
-| TECH-18 | §4 l.253 | Notifications SMS (Twilio) | ❓ | NON TROUVÉ ; écarté selon le tutoriel, sans décision écrite dans le CDC | Faire acter la décision | Décision |
-| TECH-19 | §4 l.253 | Notifications push (Firebase) | ❓ | NON TROUVÉ ; idem | Faire acter la décision | Décision |
-| TECH-20 | §4 l.254 | Stockage S3 / MinIO | ❌ | NON TROUVÉ (volume local `media_data`) | Décision ou intégration `django-storages` | Décision |
+| TECH-18 | §4 l.253 | Notifications SMS (Twilio) | ⚪ | Écarté le 13/10/2026 : alertes dans l'application et par e-mail (`avenant-decisions-audit.md`) | — | — |
+| TECH-19 | §4 l.253 | Notifications push (Firebase) | ⚪ | Écarté le 13/10/2026 : espace chauffeur en page web (`avenant-decisions-audit.md`) | — | — |
+| TECH-20 | §4 l.254 | Stockage S3 / MinIO | ⚪ | Écarté le 13/10/2026 : disque du serveur, chiffré dans la sauvegarde nocturne (`avenant-decisions-audit.md`) | — | — |
 | TECH-21 | §4 l.255 | Docker | ✅ | `Dockerfile` | `certs/` copié dans l'image (TECH-49) | Fait |
 | TECH-22 | §4 l.255 | Docker Compose | ✅ | `docker-compose.yml` | — | Fait |
 | TECH-23 | §4 l.256 | Sentry | ✅ | `config/settings/prod.py:125` | — | Fait |
-| TECH-24 | §4 l.256 | Prometheus | ❓ | Écarté en commentaire (`config/settings/prod.py:117`), pas dans le CDC | Faire acter la décision | Décision |
+| TECH-24 | §4 l.256 | Prometheus | ❌ | Décision du 13/10/2026 : à mettre en place (`avenant-decisions-audit.md`) | Exposer les mesures | À faire |
 | TECH-25 | §4 l.259 | Les 17 apps | ✅ | `config/settings/base.py` (`INSTALLED_APPS`) | — | Fait |
 | TECH-26 | §4 l.262 | views → serializers → services → models | ✅ | Les 7 lectures directes passent par des services (`accounting.services.ecritures_manuelles`, `exercices`, `plan_comptable` ; `finance.demandes.ordre_de` ; `hr.services.attributions_de`) ; restent seulement les `get_object_or_404` de l'objet de la page | Fait (`616403e`) | Fait |
 | TECH-27 | §4 l.263 | Logique métier dans services.py | ✅ | Aucun calcul métier dans les vues | — | Fait |
@@ -488,8 +488,8 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | TECH-67 | §4 l.293 | Index BDD sur colonnes de recherche | ✅ | Index sur `date_emission`, `date_reglement`, `date_depense` (+ catégorie), `date_mouvement`, `date_plein`, `date_expiration` (documents), dates d'expiration du permis et de la visite médicale (migrations `*_index_dates`, appliquées sur PostgreSQL 16) | Fait (`dd05e33`) | Fait |
 | TECH-68 | §4 l.294 | Celery : notifications | ✅ | `apps/notifications/tasks.py` | — | Fait |
 | TECH-69 | §4 l.294 | Celery : alertes | ✅ | `config/settings/base.py` (beat quotidien) | — | Fait |
-| TECH-70 | §4 l.294 | Celery : PDF | 🟡 | PDF générés dans la requête (`apps/missions/documents.py`, `apps/hr/documents.py`) | Acceptable (PDF légers) : faire acter | Décision |
-| TECH-71 | §4 l.295 | CDN Cloudflare | ❓ | `GUIDE-DEPLOIEMENT.md:5` (« pas de CDN »), décision hors CDC | Faire acter la décision | Décision |
+| TECH-70 | §4 l.294 | Celery : PDF | ❌ | Décision du 13/10/2026 : PDF générés par Celery (`avenant-decisions-audit.md`) ; aujourd'hui dans la requête | Génération en tâche de fond | À faire |
+| TECH-71 | §4 l.295 | CDN Cloudflare | ❌ | Décision du 13/10/2026 : derrière Cloudflare (`avenant-decisions-audit.md`) | Réglages + guide | À faire |
 | TECH-72 | §4 l.296 | Compression gzip | ✅ | `nginx/nginx.conf:26` | — | Fait |
 | TECH-73 | §4 l.297 | Monitoring Sentry | ✅ | `config/settings/prod.py:125` | — | Fait |
 | TECH-74 | §4 l.300 | Chrome (2 dernières versions) | ❓ | Aucun test navigateur réel | Recette manuelle | Hors code |
@@ -523,18 +523,18 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 
 | ID | Source | Exigence | Verdict | Preuve | Action | Statut |
 |---|---|---|---|---|---|---|
-| AV-01 | R7 | Report de congé : la date de reprise n'est pas un jour de congé | 🟡 | `apps/hr/services.py:832,861` décompte le jour de reprise ; libellé « Je reprends le travail le » (`apps/hr/forms.py:61`) | Exclure le jour de reprise | À faire |
+| AV-01 | R7 | Report de congé : la date de reprise n'est pas un jour de congé | ✅ | Décision du 13/10/2026 : on saisit le jour de reprise, le congé s'arrête la veille (`apps/hr/services.py`, `demander_report` / `approuver_report`) ; champ `ReportConge.date_reprise` (migration `0013`) ; test `test_le_jour_de_reprise_n_est_pas_un_jour_de_conge` | Fait (`66cea4c`) | Fait |
 | AV-02 | R8 §2 | RH = FINANCES partout (dont frais de mission) | ✅ | `apps/missions/permissions.py` (RH dans `FRAIS_CONSULTATION` et `FRAIS_VALIDATION_FINANCES`), décision du 12/10/2026, note datée dans l'avenant R8 § 2 | Fait (`d1456ed`) | Fait |
-| AV-03 | R2 | Dépassement d'enveloppe validé : la dépense suivante n'est plus bloquée | 🟡 | `apps/finance/demandes.py:165-175` : chaque dépense suivante rouvre une demande | Relever le plafond du montant validé | À faire |
+| AV-03 | R2 | Dépassement d'enveloppe validé : la dépense suivante n'est plus bloquée | ✅ | Décision du 13/10/2026 : la validation relève le plafond du montant validé (`apps/finance/demandes.py`, `_relever_le_plafond`) ; `DemandeDepense.enveloppe` (migration `0007`) ; tests `apps/finance/tests/test_demandes.py` | Fait (`061bc70`) | Fait |
 | AV-04 | Compta P3 | Reclassement du mode de paiement d'une dépense : écriture correcte | ✅ | `apps/accounting/services.py:421-455` (débit de l'ancien compte, crédit du nouveau, pièce de la dépense) ; reprise `apps/accounting/services.py:461,479` + commande `corriger_reclassements_inverses` ; tests `apps/accounting/tests/test_receivers.py:224,238`, `apps/accounting/tests/test_reprise_reclassements.py` (8 tests) ; couverture 99 % ; avenant P3 corrigé | Corrigé (`595cb83`, `ed05eec`, `50497cc`) ; lancer la commande en production | Fait |
 | AV-05 | Compta P1/F | Comptes utilisés par le code non désactivables | ✅ | `apps/accounting/constants.py:64` (`COMPTES_UTILISES_PAR_LE_CODE`) ; refus au service `apps/accounting/services.py:133,138`, case grisée à l'écran, lecture seule et suppression interdite dans l'admin ; tests `apps/accounting/tests/test_comptes_proteges.py` (5 tests) ; vérifié dans le navigateur | Fait (`1c53252`) | Fait |
 | AV-06 | Compta P1 | Écritures validées immuables | ✅ | `apps/accounting/models.py:65,160` (`EcritureQuerySet`, `LigneQuerySet` : pas de modification ni suppression en masse) ; déclencheurs PostgreSQL (migration `0005_verrou_ecritures_validees`) ; tests `apps/accounting/tests/test_verrou_ecritures.py` (dont 2 sur PostgreSQL 16) | Fait (`a407692`) | Fait |
 | AV-07 | Compta P6 | Grand livre et balance d'une période : solde d'ouverture | ✅ | `apps/accounting/services.py:777` (`solde_ouverture`, clôtures passées comprises), `apps/accounting/services.py:814` (balance : colonnes d'ouverture) ; écran, impression, Excel ; tests `apps/accounting/tests/test_soldes_ouverture.py` (6 tests) ; vérifié dans le navigateur | Fait (`f69eb5d`) | Fait |
 | AV-08 | Compta F | Plan comptable : numéro et nature cohérents | ✅ | `apps/accounting/services.py:88,100` : 2 à 10 chiffres, nature permise par la classe SYSCOHADA (1 passif ; 2-3 actif ; 4-5 actif/passif ; 6 charge ; 7 produit ; 8 charge/produit ; 9 libre) ; tests `apps/accounting/tests/test_plan_comptable_coherence.py` (27 tests) | Fait (`fc3b649`) | Fait |
 | AV-09 | Compta P4 | Saisie manuelle : sens contrôlé, comptes actifs revérifiés | ✅ | `apps/accounting/services.py:692` (sens débit/crédit), `apps/accounting/services.py:727` (comptes revérifiés à la validation) ; tests `apps/accounting/tests/test_saisie_manuelle_controles.py` | Fait (`83f0cb1`) | Fait |
-| AV-10 | Compta P4/G | OD sur un compte de trésorerie | 🟡 | Écart non détecté avec `soldes_par_compte` | Interdire ou signaler | Décision |
+| AV-10 | Compta P4/G | OD sur un compte de trésorerie | ✅ | Décision du 13/10/2026 : interdit à l'ajout et à la validation (`apps/accounting/services.py`, `_exiger_hors_tresorerie`) ; tests `apps/accounting/tests/test_saisie_manuelle_controles.py` | Fait (`685a3c8`) | Fait |
 | AV-11 | Compta (CDC l.340) | Avoir / annulation d'une facture émise | ❌ | NON TROUVÉ | Écran d'avoir DIRECTION | Décision |
-| AV-12 | Compta C | Annulation / correction d'une dépense | ❌ | NON TROUVÉ (`apps/billing/urls.py`) | Annulation avec contre-passation | Décision |
+| AV-12 | Compta C | Annulation / correction d'une dépense | ✅ | Décision du 13/10/2026 : `apps/billing/services.py` (`annuler_depense` : Finance, RH, Direction, admin ; motif ; dépense manuelle seulement) ; écriture contre-passée, pointage défait (`depense_annulee`) ; écran : lien « Annuler » dans la liste des dépenses ; tests `apps/billing/tests/test_annulation_depense.py` | Fait (`031ccd0`) | Fait |
 | AV-13 | Import | Valeurs non finies (NaN, Infinity, nombre énorme) | ✅ | `apps/importation/services.py` (`_nombre_fini`, `_entier`, `_decimal` : nombre fini et borné à la capacité du champ en base) ; import RH : `apps/hr/services.py` (`SALAIRE_MAX`) ; tests `apps/importation/tests/test_fichiers_pieges.py` ; vérifié sur PostgreSQL 16 | Fait (`ec4190e`) | Fait |
 | AV-14 | Import | Fichier à dimension fausse | ✅ | `apps/importation/services.py` (`reset_dimensions()` avant lecture) ; test `test_une_dimension_fausse_ne_fait_perdre_aucune_ligne` | Fait (`ec4190e`) | Fait |
 | AV-15 | Import | Enregistrements supprimés logiquement | ✅ | Décision du 12/10/2026 : erreur de ligne « restaurez la fiche ou retirez la ligne » pour employé, client, camion et import RH (`apps/importation/services.py`, `apps/hr/services.py`) ; règle dans `apps/importation/README.md` ; tests `apps/importation/tests/test_fichiers_pieges.py` | Fait (`e75f07f`) | Fait |
@@ -553,11 +553,11 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | AUD-06 | M9-16 | Double soumission non protégée (règlement, dépense, mouvement, imprévu) | ✅ | Navigateur : un formulaire POST envoyé une fois (`static/js/app.js:27`) ; serveur : enregistrement identique de moins d'une minute refusé (`apps/core/doublons.py`, `apps/billing/services.py:469,661`, `apps/finance/services.py:85`, `apps/missions/terrain.py:98,128`) ; tests `apps/core/tests/test_doublons.py` (6 tests) | Fait (`762f616`) | Fait |
 | AUD-07 | M11-11 | Même compte en N1 et N2 | ✅ | `apps/hr/services.py:511,522` ; voir M11-11 ; tests `apps/hr/tests/test_separation_n1_n2.py` | Fait (`a1a8ddf`, `ab285ae`) | Fait |
 | AUD-08 | TECH-46 | `TRUSTED_PROXY_COUNT` absent de `docker-compose.yml` | ✅ | `docker-compose.yml` (`web`, `realtime` : `${TRUSTED_PROXY_COUNT:-1}`) ; guide § variables mis à jour | Fait | Fait |
-| AUD-09 | M1-11 | L'ADMIN peut créer un compte DIRECTION et valider à sa place | ❓ | `apps/accounts/services.py:76-121` | Règle des deux personnes ? | Décision |
+| AUD-09 | M1-11 | L'ADMIN peut créer un compte DIRECTION et valider à sa place | ✅ | Décision du 13/10/2026 : permis, la Direction est prévenue (avis urgent, catégorie « Comptes et sécurité », auteur nommé) ; `apps/accounts/signals.py` (`compte_direction_attribue`), `apps/notifications/receivers.py` ; tests `apps/notifications/tests/test_compte_direction.py` | Fait (`dccfbfc`) | Fait |
 | AUD-10 | M5-04 | Chauffeur sans permis / visite / catégorie C-E affectable | ✅ | Bloquant (décision du 12/10/2026) : voir M5-04 | Fait (`65c73ed`) | Fait |
 | AUD-11 | M1-67 | Imprévu ou avance acceptés sur une mission clôturée | ✅ | `apps/missions/terrain.py:82` (`_exiger_mission_non_cloturee`, appelé par `declarer_imprevu` et `planifier_frais`) ; une mission livrée non clôturée accepte encore un imprévu (trajet retour) ; tests `apps/missions/tests/test_frais_mission.py` | Fait (`af062ba`) | Fait |
 | AUD-12 | M2 | Camion aux documents expirés affectable | ✅ | Bloquant si expiré ou manquant (décision du 12/10/2026) : `apps/missions/services.py` (`documents_non_valides_du_vehicule`, `_exiger_vehicule_en_regle`), affectation et départ ; tests `test_documents_et_reaffectation.py` | Fait (`65c73ed`) | Fait |
-| AUD-13 | M6-08 | N° de ticket unique globalement (pas par station) | 🟡 | `apps/fuel/models.py:99-103` | Unicité (station, ticket) | Décision |
+| AUD-13 | M6-08 | N° de ticket unique globalement (pas par station) | ✅ | Décision du 13/10/2026 : règle conservée, unique dans toute l'entreprise (`avenant-decisions-audit.md`) ; `apps/fuel/models.py` (contrainte `plein_ticket_unique`) | Décidé | Fait |
 | AUD-14 | AV-03 | Enveloppe globale dupliquée (NULL), aucun verrou | ✅ | Contrainte `enveloppe_globale_unique_par_mois` (`apps/finance/models.py`, migration `0006` qui supprime d'abord les doublons) ; verrou de l'enveloppe au contrôle (`apps/finance/demandes.py`) ; tests `apps/finance/tests/test_demandes.py`, verts sur PostgreSQL 16 | Fait (`9392dac`) | Fait |
 | AUD-15 | M5-11 | Pages contenant les codes sans `Cache-Control: no-store` | ✅ | `apps/missions/views.py` (`MissionDetailView.get` : `no-store, private`, comme le PDF et le QR) ; test `apps/missions/tests/test_documents.py` | Fait (`18d12c2`) | Fait |
 | AUD-16 | M11-13 | DIRECTION jamais prévenue des validations de congé en retard | ✅ | `apps/notifications/taches.py` (`_prevenir_la_direction` : une fois par congé et par niveau, jamais pour sa propre demande) ; tests `apps/notifications/tests/test_taches.py` | Fait (`831beaf`) | Fait |
