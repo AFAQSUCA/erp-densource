@@ -14,7 +14,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 
 ## Bilan
 
-**441 exigences : 431 ✅, 0 🟡, 0 ❌, 4 ❓, 6 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **99,1 %**.
+**441 exigences : 434 ✅, 0 🟡, 0 ❌, 1 ❓, 6 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **99,8 %**.
 
 | Bloc | Lignes | ✅ | 🟡 | ❌ | ❓ | ⚪ |
 |---|---|---|---|---|---|---|
@@ -30,12 +30,12 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M10 Finances | 13 | 13 | 0 | 0 | 0 | 0 |
 | M11 RH | 30 | 30 | 0 | 0 | 0 | 0 |
 | M12 Tableaux de bord | 28 | 26 | 0 | 0 | 0 | 2 |
-| Technique | 87 | 79 | 0 | 0 | 4 | 4 |
+| Technique | 87 | 82 | 0 | 0 | 1 | 4 |
 | Recette | 7 | 7 | 0 | 0 | 0 | 0 |
 | Avenants | 17 | 17 | 0 | 0 | 0 | 0 |
 | Écarts d'audit | 23 | 23 | 0 | 0 | 0 | 0 |
 
-**Reprise à TECH-74** (première ligne non terminée, dans l'ordre des ID).
+**Reprise à TECH-76** (première ligne non terminée, dans l'ordre des ID).
 
 ## Contradictions entre sources (règle 1)
 
@@ -492,10 +492,10 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | TECH-71 | §4 l.295 | CDN Cloudflare | ✅ | Décision du 13/10/2026 (`avenant-decisions-audit.md`) : vraie adresse du visiteur crue seulement depuis les plages de Cloudflare `nginx/cloudflare-ips.conf` (inclus avant `limit_req`, `nginx/nginx.conf`, embarqué par `nginx/Dockerfile`), mise à jour `nginx/maj-ips-cloudflare.sh` ; `/static/` public et immutable, toute autre réponse `Cache-Control: private` (`apps/core/middleware.py`, `SecurityHeadersMiddleware`) ; défi Let's Encrypt aussi en HTTPS ; réglages du tableau de bord `GUIDE-DEPLOIEMENT.md` § 8 bis ; tests `apps/core/tests/test_cloudflare.py` (8 tests), script essayé (liste valide, page d'erreur) ; compte et DNS Cloudflare fournis par l'entreprise | Fait (`a6619f4`) | Fait |
 | TECH-72 | §4 l.296 | Compression gzip | ✅ | `nginx/nginx.conf:26` | — | Fait |
 | TECH-73 | §4 l.297 | Monitoring Sentry | ✅ | `config/settings/prod.py:125` | — | Fait |
-| TECH-74 | §4 l.300 | Chrome (2 dernières versions) | ❓ | Aucun test navigateur réel | Recette manuelle : fiche `RECETTE-NAVIGATEURS.md` (à remplir par l'entreprise) | Hors code |
-| TECH-75 | §4 l.300 | Edge | ❓ | Idem | Recette manuelle : fiche `RECETTE-NAVIGATEURS.md` (à remplir par l'entreprise) | Hors code |
-| TECH-76 | §4 l.300 | Safari | ❓ | Idem | Recette manuelle : fiche `RECETTE-NAVIGATEURS.md` (à remplir par l'entreprise) | Hors code |
-| TECH-77 | §4 l.300 | Firefox | ❓ | Idem | Recette manuelle : fiche `RECETTE-NAVIGATEURS.md` (à remplir par l'entreprise) | Hors code |
+| TECH-74 | §4 l.300 | Chrome (2 dernières versions) | ✅ | Recette automatisée dans le Chrome installé (155.0.8059.40, version courante ; la précédente n'est plus installable, mise à jour automatique) : 22 scénarios de la fiche `RECETTE-NAVIGATEURS.md` (connexion et double authentification, menus, formulaires, impression, PDF, Excel, suivi en direct par WebSocket, espace chauffeur sur téléphone Android émulé avec caméra simulée lisant le QR), tous réussis — `recette_navigateurs/` (`python -m pytest recette_navigateurs`), résultats `recette_navigateurs/RESULTATS.md` du 13/10/2026 | Fait | Fait |
+| TECH-75 | §4 l.300 | Edge | ✅ | Même recette automatisée dans l'Edge installé (155.0.4283.45) : 22 scénarios réussis — `recette_navigateurs/RESULTATS.md` du 13/10/2026 | Fait | Fait |
+| TECH-76 | §4 l.300 | Safari | ❓ | Moteur de Safari (WebKit 26.6, Playwright) : 21 scénarios réussis, caméra non simulable sous Windows — `recette_navigateurs/RESULTATS.md` du 13/10/2026. Safari lui-même n'existe que sur Mac et iPhone | Vérification sur un iPhone (section F de `RECETTE-NAVIGATEURS.md`, ≈ 15 min) par l'entreprise | Hors code |
+| TECH-77 | §4 l.300 | Firefox | ✅ | Recette automatisée dans Firefox 155.0 (version Playwright du moteur Gecko) : 22 scénarios réussis, dont la caméra (flux de test) — `recette_navigateurs/RESULTATS.md` du 13/10/2026 | Fait | Fait |
 | TECH-78 | §4 l.301 | Responsive mobile-first | ✅ | `templates/base.html:5`, `apps/mobile_api/templates/mobile/base.html:5` | — | Fait |
 | TECH-79 | §4 l.302 | PWA espace chauffeur | ✅ | `apps/mobile_api/views_web.py:388` | — | Fait |
 | TECH-80 | §4 l.303 | Hors ligne + sync différée | ⚪ | Écarté le 29/09/2026 (CDC l.303) | — | — |
