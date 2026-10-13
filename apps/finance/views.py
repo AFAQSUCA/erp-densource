@@ -385,10 +385,11 @@ class OrdreRevaliderView(RoleRequiredMixin, View):
         return redirect("finance:demande", pk=ordre.demande_id)
 
 
-class EnveloppeListView(RoleRequiredMixin, ListView):
+class EnveloppeListView(PaginationTolerante, RoleRequiredMixin, ListView):
     roles = permissions.ENVELOPPE_VALIDATION
     template_name = "finance/enveloppe_list.html"
     context_object_name = "enveloppes"
+    paginate_by = 24  # deux ans de mois, audit TECH-66
 
     def get_queryset(self):
         return demandes_services.enveloppes_queryset()
