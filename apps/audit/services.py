@@ -12,6 +12,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
+from django.contrib.auth import get_user_model
 from django.db.models import QuerySet
 
 from apps.core.middleware import get_client_ip
@@ -83,13 +84,23 @@ def log_logout(utilisateur, request) -> AuditLog:
     )
 
 
+def identifiant_journalise(username: str) -> str:
+    """Identifiant tapé lors d'une connexion échouée, tel qu'inscrit au journal (audit AUD-17) : en entier s'il
+    désigne un compte existant (on sait quel compte est visé) ; sinon masqué, car ce peut être un mot de passe tapé
+    dans le champ « Identifiant »."""
+    username = (username or "").strip()[:150]
+    if not username or get_user_model().objects.filter(username__iexact=username).exists():
+        return username
+    return f"{username[:2]}… ({len(username)} caractères, compte inconnu)"
+
+
 def log_login_failed(username: str, request) -> AuditLog:
     return log_action(
         action=ActionChoices.LOGIN,
         module="AUTH",
         entite="User",
         utilisateur=None,
-        nouvelle_valeur={"username_tente": username},
+        nouvelle_valeur={"username_tente": identifiant_journalise(username)},
         request=request,
         statut=StatutChoices.FAILED,
     )

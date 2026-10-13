@@ -60,12 +60,21 @@ def test_log_action_lit_l_adresse_ajoutee_par_les_proxys_de_confiance(settings):
 
 def test_log_login_failed_records_failed_status_and_attempted_username():
     request = RequestFactory().post("/login")
+    UserFactory(username="awa.kone")
 
-    entry = services.log_login_failed("intrus", request)
+    entry = services.log_login_failed("awa.kone", request)
 
     assert entry.statut == StatutChoices.FAILED
-    assert entry.nouvelle_valeur == {"username_tente": "intrus"}
+    assert entry.nouvelle_valeur == {"username_tente": "awa.kone"}  # compte existant : en entier
     assert entry.utilisateur is None
+
+
+def test_un_identifiant_inconnu_est_masque_car_ce_peut_etre_un_mot_de_passe():
+    """Audit AUD-17 : un mot de passe tapé dans le champ « Identifiant » ne doit pas finir lisible au journal."""
+    entry = services.log_login_failed("MonSecret2026!", RequestFactory().post("/login"))
+
+    assert entry.nouvelle_valeur == {"username_tente": "Mo… (14 caractères, compte inconnu)"}
+    assert "Secret" not in str(entry.nouvelle_valeur)
 
 
 # --- nom et rôle de l'auteur (audit M1-53, M1-54) ---
