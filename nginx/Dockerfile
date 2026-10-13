@@ -7,4 +7,6 @@ RUN apk add --no-cache openssl
 
 # Les scripts de /docker-entrypoint.d/ s'exécutent, dans l'ordre alphabétique, avant le lancement de Nginx.
 COPY preparer-https.sh /docker-entrypoint.d/10-preparer-https.sh
+# Plages d'adresses de Cloudflare (vraie adresse du visiteur, audit TECH-71) : incluses par nginx.conf.
+COPY cloudflare-ips.conf /etc/nginx/cloudflare-ips.conf
 RUN chmod +x /docker-entrypoint.d/10-preparer-https.sh

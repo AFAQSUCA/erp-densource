@@ -25,7 +25,7 @@ tranchait pas. L'entreprise a décidé le 13/10/2026 :
 | **TECH-20** — Stockage S3 / MinIO | **Disque du serveur conservé**, chiffré dans la sauvegarde nocturne (`avenant-sauvegardes.md`) ; S3 pourra s'ajouter si le volume grossit. |
 | **TECH-24** — Prometheus | **À mettre en place** : mesures techniques du serveur (temps de réponse, erreurs), en plus de Sentry. |
 | **TECH-70** — PDF en tâche de fond | **Mis en place** : les PDF des rapports, listes, factures, devis et avoirs sont préparés par le worker Celery (`apps/core/documents_pdf.py`) ; page d'attente puis téléchargement réservé au demandeur, fichier effacé après 24 h. Restent rendus dans la requête, sans jamais être stockés : les codes d'une mission (un secret) et l'autorisation de congé (document personnel d'une page). |
-| **TECH-71** — CDN Cloudflare | **À mettre en place** : l'application est servie derrière Cloudflare (réglages côté application et guide de déploiement ; le compte Cloudflare et le DNS sont fournis par l'entreprise). |
+| **TECH-71** — CDN Cloudflare | **Mis en place côté application** : vraie adresse du visiteur crue seulement depuis les plages de Cloudflare (`nginx/cloudflare-ips.conf`), fichiers statiques publics et cachables, toute autre réponse `private`, défi Let's Encrypt aussi en HTTPS ; réglages du tableau de bord Cloudflare dans `GUIDE-DEPLOIEMENT.md` § 8 bis. Le compte Cloudflare et le DNS sont fournis par l'entreprise. |
 
 ## Suivi
 

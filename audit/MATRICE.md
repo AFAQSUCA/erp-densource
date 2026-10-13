@@ -14,7 +14,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 
 ## Bilan
 
-**441 exigences : 429 ✅, 0 🟡, 2 ❌, 4 ❓, 6 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **98,6 %**.
+**441 exigences : 430 ✅, 0 🟡, 1 ❌, 4 ❓, 6 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **98,9 %**.
 
 | Bloc | Lignes | ✅ | 🟡 | ❌ | ❓ | ⚪ |
 |---|---|---|---|---|---|---|
@@ -30,7 +30,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M10 Finances | 13 | 13 | 0 | 0 | 0 | 0 |
 | M11 RH | 30 | 30 | 0 | 0 | 0 | 0 |
 | M12 Tableaux de bord | 28 | 26 | 0 | 0 | 0 | 2 |
-| Technique | 87 | 77 | 0 | 2 | 4 | 4 |
+| Technique | 87 | 78 | 0 | 1 | 4 | 4 |
 | Recette | 7 | 7 | 0 | 0 | 0 | 0 |
 | Avenants | 17 | 17 | 0 | 0 | 0 | 0 |
 | Écarts d'audit | 23 | 23 | 0 | 0 | 0 | 0 |
@@ -489,7 +489,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | TECH-68 | §4 l.294 | Celery : notifications | ✅ | `apps/notifications/tasks.py` | — | Fait |
 | TECH-69 | §4 l.294 | Celery : alertes | ✅ | `config/settings/base.py` (beat quotidien) | — | Fait |
 | TECH-70 | §4 l.294 | Celery : PDF | ✅ | Décision du 13/10/2026 (`avenant-decisions-audit.md`) : `apps/core/documents_pdf.py:45` (`telecharger`, appelé par `apps/core/views.py` et `apps/core/xlsx.py` : rapports, listes, factures, devis, avoirs), tâche `apps/core/tasks.py` ; `DocumentPdf` (`apps/core/models.py`, réservé au demandeur, purgé après 24 h) ; page d'attente `templates/core/document_pdf.html` ; prod `config/settings/prod.py` (`PDF_EN_TACHE_DE_FOND`), volume media du worker `docker-compose.yml` ; codes de mission et autorisation de congé restent dans la requête (jamais stockés) ; tests `apps/core/tests/test_pdf_tache_de_fond.py` (14 tests) ; vérifié dans le navigateur | Fait (`89076d1`) | Fait |
-| TECH-71 | §4 l.295 | CDN Cloudflare | ❌ | Décision du 13/10/2026 : derrière Cloudflare (`avenant-decisions-audit.md`) | Réglages + guide | À faire |
+| TECH-71 | §4 l.295 | CDN Cloudflare | ✅ | Décision du 13/10/2026 (`avenant-decisions-audit.md`) : vraie adresse du visiteur crue seulement depuis les plages de Cloudflare `nginx/cloudflare-ips.conf` (inclus avant `limit_req`, `nginx/nginx.conf`, embarqué par `nginx/Dockerfile`), mise à jour `nginx/maj-ips-cloudflare.sh` ; `/static/` public et immutable, toute autre réponse `Cache-Control: private` (`apps/core/middleware.py`, `SecurityHeadersMiddleware`) ; défi Let's Encrypt aussi en HTTPS ; réglages du tableau de bord `GUIDE-DEPLOIEMENT.md` § 8 bis ; tests `apps/core/tests/test_cloudflare.py` (8 tests), script essayé (liste valide, page d'erreur) ; compte et DNS Cloudflare fournis par l'entreprise | Fait (`a6619f4`) | Fait |
 | TECH-72 | §4 l.296 | Compression gzip | ✅ | `nginx/nginx.conf:26` | — | Fait |
 | TECH-73 | §4 l.297 | Monitoring Sentry | ✅ | `config/settings/prod.py:125` | — | Fait |
 | TECH-74 | §4 l.300 | Chrome (2 dernières versions) | ❓ | Aucun test navigateur réel | Recette manuelle | Hors code |

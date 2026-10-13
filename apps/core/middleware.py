@@ -96,6 +96,10 @@ def get_client_ip(request):
 class SecurityHeadersMiddleware:
     """Ajoute la politique de sécurité du contenu (CSP) et la politique des fonctions du navigateur.
 
+    Marque aussi ``Cache-Control: private`` toute réponse qui ne dit rien de sa mise en cache : derrière
+    Cloudflare (audit TECH-71), une page, un export ou un fichier d'un utilisateur ne doit jamais être gardé
+    dans un cache partagé et resservi à un autre. Seuls les fichiers statiques, servis par Nginx, sont publics.
+
     Les autres en-têtes (HSTS, X-Frame-Options, nosniff, Referrer-Policy) sont posés par Django
     (``SecurityMiddleware``, ``XFrameOptionsMiddleware``) selon les réglages de ``settings``.
     """
@@ -115,4 +119,6 @@ class SecurityHeadersMiddleware:
             reponse[nom] = politique
         if "Permissions-Policy" not in reponse:
             reponse["Permissions-Policy"] = settings.PERMISSIONS_POLICY
+        if "Cache-Control" not in reponse:
+            reponse["Cache-Control"] = "private"
         return reponse
