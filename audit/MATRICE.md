@@ -14,7 +14,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 
 ## Bilan
 
-**441 exigences : 414 ✅, 11 🟡, 3 ❌, 10 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **95,8 %**.
+**441 exigences : 416 ✅, 9 🟡, 3 ❌, 10 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **96,0 %**.
 
 | Bloc | Lignes | ✅ | 🟡 | ❌ | ❓ | ⚪ |
 |---|---|---|---|---|---|---|
@@ -30,10 +30,10 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | M10 Finances | 13 | 13 | 0 | 0 | 0 | 0 |
 | M11 RH | 30 | 30 | 0 | 0 | 0 | 0 |
 | M12 Tableaux de bord | 28 | 26 | 0 | 0 | 0 | 2 |
-| Technique | 87 | 71 | 6 | 1 | 8 | 1 |
+| Technique | 87 | 72 | 5 | 1 | 8 | 1 |
 | Recette | 7 | 7 | 0 | 0 | 0 | 0 |
 | Avenants | 17 | 12 | 3 | 2 | 0 | 0 |
-| Écarts d'audit | 23 | 19 | 2 | 0 | 2 | 0 |
+| Écarts d'audit | 23 | 20 | 1 | 0 | 2 | 0 |
 
 **Reprise à TECH-18** (première ligne non terminée, dans l'ordre des ID).
 
@@ -502,7 +502,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | TECH-81 | §4 l.304 | Accessibilité WCAG 2.1 AA | 🟡 | Contraste bouton orange 3,19:1 (`apps/missions/templates/missions/mission_detail.html:170`), placeholders 2,56:1 (`apps/core/forms.py:5`), menu mobile fermé atteignable au clavier (`templates/base.html:20`), champ sans libellé (`apps/missions/templates/missions/frais_detail.html:80`) | Corriger ces 4 points | À faire |
 | TECH-82 | §4 l.305 | Export PDF | ✅ | Vrai PDF serveur partout : 16 listes, 5 rapports comptables, trésorerie, facture, devis, frais de mission, tableau de bord (`apps/core/pdf.py`, `TelechargementPdfMixin`, `reponse_rapport`) ; `apps/core/tests/test_pdf.py` (43 tests) ; rendu contrôlé (personnel, bilan, facture) | Fait | Fait |
 | TECH-83 | §4 l.305 | Export Excel | 🟡 | Finance et comptabilité seulement ; pas pour missions, flotte, carburant, stock, clients, chauffeurs, congés | Brancher `ExportXlsxMixin` | À faire |
-| TECH-84 | checklist Technique | Dépendances reproductibles | 🟡 | `requirements/*.txt` en `>=`, sans fichier de verrouillage | Fichier de verrouillage | À faire |
+| TECH-84 | checklist Technique | Dépendances reproductibles | ✅ | `requirements/prod.lock` (72 paquets, versions exactes pour Linux / Python 3.14), généré par `outils/verrouiller_dependances.py` ; appliqué en contrainte par le `Dockerfile` ; test `apps/core/tests/test_deploiement.py` | Fait (`0d16e6f`) | Fait |
 | TECH-85 | checklist Technique | Migrations à jour | ✅ | `manage.py makemigrations --check` : aucun changement | — | Fait |
 | TECH-86 | checklist Technique | Suite de tests verte | ✅ | 3 173 tests réussis, 0 échec ; suite rejouée avec l'horloge avancée d'un et de deux ans sans autre échec (seul un artefact du décalage) ; voir AUD-01 | Fait (`1c87fbb`) | Fait |
 | TECH-87 | §4 l.273 | Changement de mot de passe une fois connecté | ✅ | `apps/accounts/views.py:91` (`/mon-mot-de-passe/`, lien clé dans `templates/base.html`) : ancien mot de passe exigé, validateurs, session gardée, événement tracé (`apps/audit/signals.py`) ; tests `apps/accounts/tests/test_changer_mot_de_passe.py` (6 tests) ; vérifié dans le navigateur | Fait (`358b5c9`) | Fait |
@@ -564,7 +564,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | AUD-17 | TECH-46 | Identifiant mal saisi journalisé en clair à l'échec de connexion | ✅ | `apps/audit/services.py` (`identifiant_journalise` : compte existant en entier, identifiant inconnu masqué) ; tests `apps/audit/tests/test_services.py` | Fait (`3cbe348`) | Fait |
 | AUD-18 | TECH-55 | Mot de passe de la base dans les arguments de `pg_dump` | ✅ | `ops/fonctions-sauvegarde.sh:30` (URL sans mot de passe, `.pgpass` temporaire 600) ; tests `apps/sauvegardes/tests/test_scripts.py` | Fait (`b042d06`) | Fait |
 | AUD-19 | TECH-43 | Tables de sessions et de jetons jamais purgées | ✅ | `apps/accounts/services.py` (`purger_sessions_et_jetons_expires`), lancée par la tâche quotidienne (`apps/notifications/taches.py`) ; tests `apps/accounts/tests/test_purge.py` | Fait (`5d5d6ac`) | Fait |
-| AUD-20 | architecture | `architecture.md` ne reflète plus les dépendances réelles | 🟡 | `apps/notifications` importe 12 apps | Mettre à jour le schéma | À faire |
+| AUD-20 | architecture | `architecture.md` ne reflète plus les dépendances réelles | ✅ | § 3 régénéré depuis les imports réels ; 2 cycles supprimés (`accounts`↔`audit`, `missions`↔`billing`) et une dépendance remontante (`inventory`→`billing`) ; test `apps/core/tests/test_architecture.py` (aucun cycle, schéma conforme au code) | Fait (`db59ec2`) | Fait |
 | AUD-21 | M9-10 | Modification d'un devis : TVA écrite « 18,00 » (format français), refusée par le champ numérique qui reste vide | ✅ | `apps/billing/templates/billing/proforma_modifier.html:22,42` (`unlocalize`) ; test `apps/billing/tests/test_proforma_views.py:257` | Fait (`7942790`) | Fait |
 | AUD-22 | AV-06 | Pièce d'une écriture limitée à 30 caractères, référence d'une dépense ou d'un mouvement à 100 : erreur 500 sur PostgreSQL au-delà de 30 | ✅ | `apps/accounting/models.py:95` (100 caractères, migration `0004_piece_reference_100`) ; tests `apps/accounting/tests/test_longueur_piece.py` (alignement des longueurs) | Fait (`3e1454a`) | Fait |
 | AUD-23 | M11 (sortie du personnel) + TECH-86 | Sortie du personnel : erreur 500 sur PostgreSQL (verrou sur une jointure facultative), invisible sur SQLite | ✅ | `apps/hr/sorties.py:178,248` (`select_for_update(of=("self",))`) ; garde-fou `apps/core/tests/test_compatibilite_postgresql.py` ; suite complète rejouée sur PostgreSQL 16 : 3 232 tests réussis, 0 échec | Fait (`a80ee99`) | Fait |
