@@ -10,7 +10,7 @@ class BillingConfig(AppConfig):
         from apps.accounts.navigation import EntreeMenu, enregistrer
         from apps.audit.registry import audit_model
 
-        from . import permissions
+        from . import permissions, receivers  # noqa: F401  (branche les récepteurs)
         from .models import Depense, Facture, LigneFacture, Proforma, Reglement
 
         audit_model(

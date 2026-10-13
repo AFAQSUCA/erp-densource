@@ -283,6 +283,7 @@ class StatutProforma(models.TextChoices):
     ENVOYEE_CLIENT = "ENVOYEE_CLIENT", _("Envoyée au client")
     ACCEPTEE = "ACCEPTEE", _("Acceptée par le client")
     REFUSEE = "REFUSEE", _("Refusée par le client")
+    ANNULEE = "ANNULEE", _("Annulé (mission annulée)")  # audit AUD-02
     EXPIREE = "EXPIREE", _("Expirée")
     CONVERTIE = "CONVERTIE", _("Convertie en mission")
 

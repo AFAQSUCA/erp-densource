@@ -19,6 +19,7 @@ class StatutMission(models.TextChoices):
     EN_COURS_COLIS_RECUPERE = "EN_COURS_COLIS_RECUPERE", _("En cours : colis récupéré")
     LIVREE = "LIVREE", _("Livrée")
     CLOTUREE = "CLOTUREE", _("Clôturée et validée")
+    ANNULEE = "ANNULEE", _("Annulée")  # avant le départ, avec motif (décision du 13/10/2026, audit AUD-02)
 
 
 # Camion et chauffeur réservés : la mission a été affectée mais n'est pas terminée.
@@ -27,6 +28,10 @@ STATUTS_ACTIFS = (
     StatutMission.EN_COURS_DEPART,
     StatutMission.EN_COURS_COLIS_RECUPERE,
 )
+
+# Une mission s'annule tant qu'elle n'est pas partie ; en route, elle se transfère (audit AUD-02).
+STATUTS_ANNULABLES = (StatutMission.BROUILLON, StatutMission.PLANIFIEE, StatutMission.AFFECTEE)
+STATUTS_EN_ROUTE_TRANSFERABLES = (StatutMission.EN_COURS_DEPART, StatutMission.EN_COURS_COLIS_RECUPERE)
 
 # Modification autorisée tant que le colis n'est pas encore récupéré : au-delà, le client a déjà le
 # camion à quai / la marchandise est en route sur la base de ces informations (règle de séparation des
@@ -118,6 +123,13 @@ class Mission(BaseModel):
     date_recuperation = models.DateTimeField(_("colis récupéré le"), null=True, blank=True)
     date_livraison = models.DateTimeField(_("livrée le"), null=True, blank=True)
     date_cloture = models.DateTimeField(_("clôturée le"), null=True, blank=True)
+    # Annulation avant le départ (audit AUD-02)
+    date_annulation = models.DateTimeField(_("annulée le"), null=True, blank=True)
+    motif_annulation = models.TextField(_("motif d'annulation"), blank=True)
+    annulee_par = models.ForeignKey(
+        settings.AUTH_USER_MODEL, verbose_name=_("annulée par"), null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="+",
+    )
 
     class Meta:
         verbose_name = _("mission")
@@ -131,7 +143,8 @@ class Mission(BaseModel):
         constraints = [
             models.CheckConstraint(
                 condition=Q(
-                    statut__in=[StatutMission.BROUILLON, StatutMission.PLANIFIEE]
+                    # Annulée : peut l'être avant toute affectation (audit AUD-02).
+                    statut__in=[StatutMission.BROUILLON, StatutMission.PLANIFIEE, StatutMission.ANNULEE]
                 )
                 | (Q(vehicule__isnull=False) & Q(chauffeur__isnull=False)),
                 name="mission_affectee_requiert_camion_et_chauffeur",
@@ -287,3 +300,39 @@ class FraisMission(BaseModel):
     def attend_la_finance(self) -> bool:
         """Prévu, et déjà passé (ou pas concerné) par la première validation du Parc Auto."""
         return self.statut == StatutFraisMission.PREVU and not self.attend_le_parc_auto
+
+
+class TransfertMission(BaseModel):
+    """Transfert d'une mission en route vers un autre camion et/ou chauffeur (panne définitive, chauffeur
+    indisponible) — décision du 13/10/2026, audit AUD-02. Garde l'équipage avant et après et le kilométrage de
+    chaque tronçon ; la mission continue avec ses codes."""
+
+    mission = models.ForeignKey(Mission, verbose_name=_("mission"), on_delete=models.PROTECT, related_name="transferts")
+    ancien_vehicule = models.ForeignKey(
+        "fleet.Vehicule", verbose_name=_("ancien camion"), on_delete=models.PROTECT, related_name="+"
+    )
+    nouveau_vehicule = models.ForeignKey(
+        "fleet.Vehicule", verbose_name=_("nouveau camion"), on_delete=models.PROTECT, related_name="+"
+    )
+    ancien_chauffeur = models.ForeignKey(
+        "drivers.Chauffeur", verbose_name=_("ancien chauffeur"), on_delete=models.PROTECT, related_name="+"
+    )
+    nouveau_chauffeur = models.ForeignKey(
+        "drivers.Chauffeur", verbose_name=_("nouveau chauffeur"), on_delete=models.PROTECT, related_name="+"
+    )
+    km_ancien_vehicule = models.PositiveIntegerField(_("km de l'ancien camion au transfert"))
+    km_depart_nouveau = models.PositiveIntegerField(_("km du nouveau camion au transfert"))
+    statut_ancien_vehicule = models.CharField(_("statut donné à l'ancien camion"), max_length=20)
+    motif = models.TextField(_("motif"))
+    transfere_par = models.ForeignKey(
+        settings.AUTH_USER_MODEL, verbose_name=_("transféré par"), null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="+",
+    )
+
+    class Meta:
+        verbose_name = _("transfert de mission")
+        verbose_name_plural = _("transferts de mission")
+        ordering = ["-created_at", "-pk"]
+
+    def __str__(self):
+        return f"{self.mission} : {self.ancien_vehicule} → {self.nouveau_vehicule}"

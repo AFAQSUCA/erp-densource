@@ -26,12 +26,14 @@ from . import terrain as frais_terrain
 from .exceptions import MissionError
 from .forms import (
     AffectationForm,
+    AnnulationMissionForm,
     CodeForm,
     FraisPrevisionForm,
     LivraisonForm,
     MissionForm,
     ModificationForm,
     MotifRejetFraisForm,
+    TransfertMissionForm,
 )
 from .models import STATUTS_MODIFIABLES, FraisMission, Mission, StatutMission
 
@@ -47,8 +49,12 @@ ETAPES = [
 
 
 def _etapes(statut: str) -> list[dict]:
-    """Frise du cycle de vie : chaque étape est faite, en cours ou à venir."""
-    rang_courant = [code for code, _ in ETAPES].index(statut)
+    """Frise du cycle de vie : chaque étape est faite, en cours ou à venir. Une mission annulée n'a pas de frise
+    (audit AUD-02) : son motif d'annulation s'affiche à la place."""
+    codes = [code for code, _ in ETAPES]
+    if statut not in codes:
+        return []
+    rang_courant = codes.index(statut)
     return [
         {
             "libelle": libelle,
@@ -547,3 +553,53 @@ class MissionExporterXlsxView(ExportXlsxMixin, MissionImprimerView):
         ("Chauffeur", lambda m: f"{m.chauffeur.personnel.prenom} {m.chauffeur.personnel.nom}" if m.chauffeur_id else ""),
         ("Statut", "get_statut_display"), ("Prix convenu (FCFA)", lambda m: m.prix_convenu),
     )
+
+
+# --- annulation avant le départ et transfert en route (décision du 13/10/2026, audit AUD-02) ---
+
+
+class AnnulerView(RoleRequiredMixin, View):
+    roles = permissions.ANNULATION
+    http_method_names = ["post"]
+
+    def post(self, request, pk):
+        mission = get_object_or_404(services.missions_queryset(), pk=pk)
+        form = AnnulationMissionForm(request.POST)
+        if not form.is_valid():
+            messages.error(request, "Le motif de l'annulation est obligatoire.")
+            return redirect("missions:detail", pk=mission.pk)
+        try:
+            services.annuler_mission(mission, request.user, motif=form.cleaned_data["motif"])
+        except MissionError as erreur:
+            messages.error(request, str(erreur))
+        else:
+            messages.success(request, f"Mission {mission.numero} annulée : le camion et le chauffeur ne sont plus réservés.")
+        return redirect("missions:detail", pk=mission.pk)
+
+
+class TransfererView(RoleRequiredMixin, FormView):
+    roles = permissions.TRANSFERT
+    template_name = "missions/mission_transfert.html"
+    form_class = TransfertMissionForm
+
+    def charger_objet(self, request, *args, **kwargs):
+        self.mission = get_object_or_404(services.missions_queryset(), pk=kwargs["pk"])
+
+    def get_form_kwargs(self):
+        return {**super().get_form_kwargs(), "mission": self.mission}
+
+    def get_context_data(self, **kwargs):
+        return super().get_context_data(mission=self.mission, **kwargs)
+
+    def form_valid(self, form):
+        try:
+            transfert = services.transferer_mission(self.mission, self.request.user, **form.cleaned_data)
+        except MissionError as erreur:
+            form.add_error(None, str(erreur))
+            return self.form_invalid(form)
+        messages.success(
+            self.request,
+            f"Mission {self.mission.numero} transférée : {transfert.nouveau_vehicule.immatriculation}, "
+            f"chauffeur {transfert.nouveau_chauffeur}.",
+        )
+        return redirect("missions:detail", pk=self.mission.pk)

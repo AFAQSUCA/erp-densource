@@ -133,3 +133,51 @@ class MotifRejetFraisForm(StyleTailwindMixin, forms.Form):
     """Motif du rejet d'un frais de mission."""
 
     motif = forms.CharField(label="Motif du rejet", widget=forms.Textarea(attrs={"rows": 2}))
+
+
+class AnnulationMissionForm(StyleTailwindMixin, forms.Form):
+    motif = forms.CharField(label="Motif de l'annulation", widget=forms.Textarea(attrs={"rows": 2}))
+
+
+class TransfertMissionForm(StyleTailwindMixin, forms.Form):
+    """Transfert en route (audit AUD-02) : les listes proposent les camions, chauffeurs et copilotes disponibles, et
+    l'équipage actuel pour pouvoir le garder (ne changer que le chauffeur, par exemple)."""
+
+    vehicule = forms.ModelChoiceField(queryset=None, label="Camion")
+    chauffeur = forms.ModelChoiceField(queryset=None, label="Chauffeur")
+    copilote = forms.ModelChoiceField(queryset=None, label="Copilote", required=False, empty_label="Aucun (facultatif)")
+    km_ancien_vehicule = forms.IntegerField(
+        label="Kilométrage de l'ancien camion au transfert", min_value=0,
+        help_text="Compteur du camion laissé en route (ignoré si le camion ne change pas).",
+    )
+    statut_ancien_vehicule = forms.ChoiceField(label="L'ancien camion passe", choices=())
+    motif = forms.CharField(label="Motif du transfert", widget=forms.Textarea(attrs={"rows": 2}))
+
+    def __init__(self, *args, mission, **kwargs):
+        from apps.drivers.models import Chauffeur, Copilote
+        from apps.fleet.models import StatutVehicule, Vehicule
+
+        from .services import STATUTS_ANCIEN_CAMION
+
+        super().__init__(*args, **kwargs)
+        self.fields["vehicule"].queryset = (
+            fleet_services.vehicules_disponibles() | Vehicule.objects.filter(pk=mission.vehicule_id)
+        ).distinct()
+        self.fields["vehicule"].label_from_instance = lambda v: (
+            f"{v.immatriculation} - {v.marque} {v.modele} ({v.capacite_charge_t} t)"
+            + (" — camion actuel" if v.pk == mission.vehicule_id else "")
+        )
+        self.fields["chauffeur"].queryset = (
+            drivers_services.chauffeurs_disponibles() | Chauffeur.objects.filter(pk=mission.chauffeur_id)
+        ).distinct()
+        self.fields["copilote"].queryset = (
+            drivers_services.copilotes_disponibles() | Copilote.objects.filter(pk=mission.copilote_id)
+        ).distinct()
+        self.fields["statut_ancien_vehicule"].choices = [
+            (code, StatutVehicule(code).label) for code in STATUTS_ANCIEN_CAMION
+        ]
+        self.initial.setdefault("vehicule", mission.vehicule_id)
+        self.initial.setdefault("chauffeur", mission.chauffeur_id)
+        self.initial.setdefault("copilote", mission.copilote_id)
+        if mission.vehicule_id:
+            self.initial.setdefault("km_ancien_vehicule", mission.vehicule.kilometrage)
