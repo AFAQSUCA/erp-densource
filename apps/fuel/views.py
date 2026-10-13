@@ -5,7 +5,7 @@ délèguent à ``services.py`` (conventions.md:19-23).
 """
 
 from django.contrib import messages
-from django.shortcuts import redirect
+from django.shortcuts import get_object_or_404, redirect
 from django.utils import timezone
 from django.views.generic import FormView, ListView, TemplateView
 
@@ -15,7 +15,8 @@ from apps.core.views import ImpressionListeMixin, PaginationTolerante
 
 from . import permissions, services
 from .exceptions import CarburantError, SaisieSuspecte
-from .forms import FiltrePleinsForm, PleinForm
+from .models import Plein
+from .forms import AnnulationPleinForm, FiltrePleinsForm, PleinForm
 from .models import NiveauAlerte
 
 
@@ -44,6 +45,7 @@ class PleinListView(PaginationTolerante, RoleRequiredMixin, ListView):
             ),
             nombre_a_surveiller=services.pleins_a_surveiller().count(),
             peut_modifier=self.request.user.role_effectif in permissions.MODIFICATION,
+            derniers_pleins=services.derniers_pleins_ids(contexte["pleins"]),
         )
         return contexte
 
@@ -144,3 +146,31 @@ class AnalyseView(RoleRequiredMixin, TemplateView):
             par_chauffeur=services.consommation_par_chauffeur(),
         )
         return contexte
+
+
+class PleinAnnulerView(RoleRequiredMixin, FormView):
+    """Annule le dernier plein d'un camion, saisi par erreur, avec un motif (audit AUD-03)."""
+
+    roles = permissions.MODIFICATION
+    form_class = AnnulationPleinForm
+    template_name = "fuel/plein_annuler.html"
+
+    def dispatch(self, request, *args, **kwargs):
+        self.plein = get_object_or_404(Plein.objects.select_related("vehicule", "chauffeur__personnel"), pk=kwargs["pk"])
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        return super().get_context_data(plein=self.plein, **kwargs)
+
+    def form_valid(self, form):
+        try:
+            services.annuler_plein(self.plein, self.request.user, motif=form.cleaned_data["motif"])
+        except CarburantError as erreur:
+            messages.error(self.request, str(erreur))
+        else:
+            messages.success(
+                self.request,
+                f"Plein {self.plein.numero_ticket} du {self.plein.date_plein:%d/%m/%Y} annulé ; sa dépense et son "
+                "écriture comptable ont été contre-passées.",
+            )
+        return redirect("fuel:liste")

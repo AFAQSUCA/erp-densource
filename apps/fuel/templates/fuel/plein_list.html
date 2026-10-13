@@ -75,6 +75,7 @@
             <th scope="col" class="px-4 py-3 text-right">L/100 km</th>
             <th scope="col" class="px-4 py-3 text-right">Écart</th>
             <th scope="col" class="px-4 py-3">Alertes</th>
+            {% if peut_modifier %}<th scope="col" class="px-4 py-3"><span class="sr-only">Actions</span></th>{% endif %}
           </tr>
         </thead>
         <tbody class="divide-y divide-slate-100">
@@ -97,6 +98,13 @@
                   {% if plein.niveau_alerte == "AUCUNE" and not plein.anomalie and not plein.alerte_saisie %}<span class="text-slate-500">—</span>{% endif %}
                 </div>
               </td>
+              {% if peut_modifier %}
+                <td class="whitespace-nowrap px-4 py-3 text-right">
+                  {% if plein.pk in derniers_pleins %}
+                    <a href="{% url 'fuel:annuler' plein.pk %}" class="text-sm font-medium text-red-700 underline-offset-2 hover:underline">Annuler<span class="sr-only"> le plein {{ plein.numero_ticket }}</span></a>
+                  {% endif %}
+                </td>
+              {% endif %}
             </tr>
           {% endfor %}
         </tbody>

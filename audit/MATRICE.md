@@ -14,7 +14,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 
 ## Bilan
 
-**441 exigences : 401 ✅, 23 🟡, 4 ❌, 10 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **94,2 %**.
+**441 exigences : 402 ✅, 23 🟡, 3 ❌, 10 ❓, 3 ⚪** — taux de conformité (✅ + ½ 🟡) / évaluables = **94,4 %**.
 
 | Bloc | Lignes | ✅ | 🟡 | ❌ | ❓ | ⚪ |
 |---|---|---|---|---|---|---|
@@ -33,7 +33,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 | Technique | 87 | 64 | 13 | 1 | 8 | 1 |
 | Recette | 7 | 7 | 0 | 0 | 0 | 0 |
 | Avenants | 17 | 12 | 3 | 2 | 0 | 0 |
-| Écarts d'audit | 23 | 13 | 7 | 1 | 2 | 0 |
+| Écarts d'audit | 23 | 14 | 7 | 0 | 2 | 0 |
 
 **Reprise à TECH-18** (première ligne non terminée, dans l'ordre des ID).
 
@@ -547,7 +547,7 @@ indépendantes avec scénarios de reproduction) et relus contre le code ; preuve
 |---|---|---|---|---|---|---|
 | AUD-01 | TECH-86 | 3 tests à dates codées en dur échouent depuis le 08/10/2026 | ✅ | `apps/notifications/tests/test_receivers.py` (jour du report fixé) ; 18 autres tests datés corrigés avant d'échouer : `apps/hr/tests/test_report_conge.py` (fixture « aujourd'hui »), `apps/finance/tests/test_demandes.py`, `apps/hr/tests/test_recrutement.py`, `apps/api/tests/test_v1.py` | Fait (`1c87fbb`) | Fait |
 | AUD-02 | M5 | Mission sans issue : ni annulation ni transfert (panne définitive) | ❓ | `apps/missions/services.py` (aucune transition de sortie) | Statut « Annulée » et/ou transfert | Décision |
-| AUD-03 | M6-07 | Pas d'annulation ni de correction d'un plein | ❌ | `apps/fuel/urls.py` | Annulation avec contre-passation de la dépense | À faire |
+| AUD-03 | M6-07 | Pas d'annulation ni de correction d'un plein | ✅ | Décision du 13/10/2026 : `apps/fuel/services.py` (`annuler_plein`, `peut_annuler` : Parc Auto, Direction, admin ; motif ; dernier plein du camion seulement) ; dépense annulée (`apps/billing/services.py`, `annuler_depense_automatique`), écriture contre-passée, pointage défait (signaux `plein_annule`, `depense_annulee`) ; écran `/carburant/<id>/annuler/` ; tests `apps/fuel/tests/test_annulation_plein.py` ; vérifié dans le navigateur | Fait (`a8d15ac`) | Fait |
 | AUD-04 | TECH-57 | Suppression physique via l'admin Django | ✅ | `apps/core/admin.py` appliqué à `apps/fuel/admin.py`, `apps/missions/admin.py`, `apps/garage/admin.py`, `apps/inventory/admin.py`, `apps/hr/admin.py`, `apps/customers/admin.py`, `apps/fleet/admin.py`, `apps/drivers/admin.py`, `apps/notifications/admin.py` ; comptes : `apps/accounting/admin.py` (AV-05) ; test `apps/core/tests/test_admin_suppression.py` (tout admin `BaseModel` vérifié) | Fait (`1c7a72f`) | Fait |
 | AUD-05 | M9-16 | Centimes acceptés (règlements, dépenses, mouvements) | ✅ | Refusés, jamais arrondis : `apps/core/montants.py` (`exiger_montant_entier`), appelé par billing, finance, missions, garage, inventory, fuel, accounting ; décision du 12/10/2026 (`avenant-montants-fcfa.md`) ; tests `apps/core/tests/test_montants.py` (13 tests) | Fait (`d621d1e`) | Fait |
 | AUD-06 | M9-16 | Double soumission non protégée (règlement, dépense, mouvement, imprévu) | ✅ | Navigateur : un formulaire POST envoyé une fois (`static/js/app.js:27`) ; serveur : enregistrement identique de moins d'une minute refusé (`apps/core/doublons.py`, `apps/billing/services.py:469,661`, `apps/finance/services.py:85`, `apps/missions/terrain.py:98,128`) ; tests `apps/core/tests/test_doublons.py` (6 tests) | Fait (`762f616`) | Fait |

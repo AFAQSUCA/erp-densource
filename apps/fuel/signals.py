@@ -10,3 +10,8 @@ alerte_consommation = Signal()
 # ``finance``, qui en fait une dépense : émis avec ``send`` (pas ``send_robust``) pour qu'une erreur annule
 # la saisie plutôt que de laisser une dépense non comptée.
 plein_enregistre = Signal()
+
+# Un plein saisi par erreur vient d'être annulé (``services.annuler_plein``). Arguments : ``plein`` (supprimé
+# logiquement, avec son motif), ``acteur``. Souscrit par ``finance``, qui annule sa dépense : ``send`` brut, une
+# erreur annule l'annulation (audit AUD-03).
+plein_annule = Signal()
