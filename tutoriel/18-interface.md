@@ -1,0 +1,4479 @@
+# Chapitre 18 — Le socle de l'interface : gabarits, styles, connexion, notifications
+
+> 70 fichier(s) dans ce chapitre, 3753 lignes de code.
+
+## Ce que vous allez construire
+
+Le **socle de l'interface** : tout ce qu'il faut pour que le **premier écran s'affiche** dans un navigateur, avant
+même les écrans métier.
+
+| Élément | Rôle |
+|---|---|
+| **Styles et bibliothèques locaux** | Tailwind (mise en forme), Alpine.js (petites interactions), Font Awesome (icônes), **servis par l'application** : aucun service externe |
+| `templates/base.html` | la **mise en page commune** : menu de gauche, en-tête avec cloche et déconnexion |
+| Composants | champ de formulaire, messages, pagination : des morceaux réutilisables |
+| **Connexion** | page de connexion avec anti force brute |
+| **Double authentification** | pages d'activation (QR code), de vérification et de codes de secours |
+| **Notifications** | la liste et la cloche de l'en-tête |
+| Page d'accueil **provisoire** | le temps que le tableau de bord (chapitre 30) existe |
+
+L'interface comprend aussi l'écran **Utilisateurs** (`/utilisateurs/`, réservé à l'ADMIN) : liste filtrable, création, modification,
+activation/désactivation des comptes, par-dessus `accounts/services.py` (chapitre 3). Ses gabarits sont `templates/accounts/utilisateur_*.html`.
+
+## Prérequis
+
+- Chapitres 1 à 17 terminés ; `python manage.py migrate` à jour.
+- **Node.js** installé (`node --version`) : on s'en sert **uniquement** pour compiler les styles.
+
+## Notions de ce chapitre
+
+- **Gabarit (template)** : un fichier HTML où `{{ variable }}` affiche une valeur et `{% instruction %}`
+  exécute une logique (boucle, condition, inclusion). Django **échappe automatiquement** le HTML des
+  variables : c'est la protection contre les attaques XSS.
+- **Héritage de gabarits** : `{% extends "base.html" %}` puis des `{% block contenu %}…{% endblock %}` qui
+  remplissent les trous du gabarit parent. Toute page hérite de `base.html`.
+- **`{% include "components/_champ.html" %}`** : insère un morceau réutilisable.
+- **Processeur de contexte** : une fonction qui ajoute des variables (`menu`, `nombre_non_lues`) à **tous**
+  les gabarits, sans que chaque vue s'en occupe.
+- **Vue basée sur une classe** (`ListView`, `FormView`, `LoginView`, `View`) : une classe dont les méthodes
+  `get()` et `post()` répondent aux requêtes. Les **mixins** (`LoginRequiredMixin`, `RoleRequiredMixin`) ajoutent
+  des comportements.
+- **Espaces de noms d'URL** : `app_name = "accounts"` puis `reverse("accounts:login")` : le nom logique d'une
+  page ne change pas si son adresse change.
+- **Jeton CSRF** : `{% csrf_token %}` dans chaque formulaire `POST` : sans lui, un site malveillant pourrait
+  déclencher une action à votre insu.
+- **Fichiers statiques** : `{% static 'css/tailwind.css' %}` donne l'adresse d'un fichier du dossier `static/`.
+- **Politique de sécurité du contenu (CSP)** : le navigateur refuse tout script ou style qui ne vient pas de
+  notre serveur. **Conséquence** : *aucune page ne contient de JavaScript écrit en ligne* ; les
+  comportements passent par `static/js/app.js`.
+- **Tailwind** : des classes utilitaires (`text-sm`, `bg-marque-600`, `px-4`) plutôt que du CSS écrit à la
+  main. Un compilateur lit **tous les gabarits**, retrouve les classes utilisées et fabrique un fichier CSS
+  minimal. **À chaque nouvelle classe, il faut recompiler.**
+- **Alpine.js** : de petits attributs (`x-data`, `x-show`, `@click`) pour les interactions (par exemple
+  ouvrir le menu sur téléphone).
+
+## Étape 1 — Les images de la marque
+
+Le projet utilise quatre images : le **logo**, l'**icône** du navigateur et deux icônes d'application. Si vous
+avez le dépôt de référence, copiez `static/img/logo-emblem.jpg`, `favicon.png`, `icon-192.png` et
+`icon-512.png`. Sinon, fabriquez quatre **images de remplacement** (vous les remplacerez plus tard par le vrai
+logo). Créez le fichier `faire_images.py` à la racine :
+
+```python
+"""Fabrique quatre images de remplacement (à remplacer plus tard par le vrai logo)."""
+from pathlib import Path
+
+from PIL import Image, ImageDraw
+
+dossier = Path("static/img")
+dossier.mkdir(parents=True, exist_ok=True)
+
+BORDEAUX, ORANGE = (139, 3, 25), (242, 138, 20)
+
+
+def fabriquer(nom, taille, format_image):
+    image = Image.new("RGB", taille, BORDEAUX)
+    dessin = ImageDraw.Draw(image)
+    largeur, hauteur = taille
+    marge = min(largeur, hauteur) // 5
+    dessin.rectangle([marge, marge, largeur - marge, hauteur - marge], outline=ORANGE, width=max(2, marge // 4))
+    dessin.text((largeur // 2 - 12, hauteur // 2 - 5), "DEN", fill=ORANGE)
+    image.save(dossier / nom, format_image)
+
+
+fabriquer("logo-emblem.jpg", (344, 258), "JPEG")
+fabriquer("favicon.png", (128, 128), "PNG")
+fabriquer("icon-192.png", (192, 192), "PNG")
+fabriquer("icon-512.png", (512, 512), "PNG")
+print("4 images créées dans", dossier)
+```
+
+```bash
+python faire_images.py
+```
+
+**Résultat attendu :** `4 images créées dans static/img`. Vous pouvez ensuite supprimer `faire_images.py`.
+
+## Étape 2 — La chaîne de compilation des styles
+
+Le dossier `frontend/` décrit comment fabriquer les fichiers de l'interface. **Node n'est nécessaire que pour ça** :
+les fichiers produits (`static/css/tailwind.css`, `static/vendor/…`) suffisent ensuite pour faire tourner le site.
+
+#### `frontend/package.json`
+
+*16 lignes*
+
+```json
+{
+  "name": "erp-densource-frontend",
+  "private": true,
+  "description": "Compilation des styles et récupération des bibliothèques de l'interface (étape 7). Les fichiers produits sont versionnés dans static/ : Node n'est nécessaire que pour les régénérer.",
+  "scripts": {
+    "build": "npm run build:css && npm run vendor",
+    "build:css": "tailwindcss -c tailwind.config.js -i input.css -o ../static/css/tailwind.css --minify",
+    "vendor": "node vendor.js"
+  },
+  "devDependencies": {
+    "@fortawesome/fontawesome-free": "6.5.2",
+    "alpinejs": "3.14.1",
+    "jsqr": "^1.4.0",
+    "tailwindcss": "3.4.17"
+  }
+}
+```
+
+`npm run build` enchaîne deux scripts : `build:css` (Tailwind) et `vendor` (copie Alpine.js et Font Awesome).
+Les versions sont **épinglées** pour un résultat reproductible.
+
+#### `frontend/tailwind.config.js`
+
+*26 lignes*
+
+```javascript
+// Couleurs du logo DEN Source Group : bordeaux (#8B0319) et orange (#F28A14).
+// Reprend à l'identique la configuration qui était écrite dans templates/components/_assets.html
+// (Tailwind par CDN) : l'apparence ne doit pas changer.
+module.exports = {
+  content: [
+    "../templates/**/*.html",
+    "../apps/**/templates/**/*.html",
+    "../apps/**/*.py", // classes écrites dans le code (badges, formulaires...)
+    "../static/js/**/*.js",
+  ],
+  theme: {
+    extend: {
+      fontFamily: { sans: ["Inter", "ui-sans-serif", "system-ui", "sans-serif"] },
+      colors: {
+        marque: {
+          50: "#fdf2f3", 100: "#fbe5e7", 200: "#f6cdd2", 300: "#ee9fa8", 400: "#e16673",
+          500: "#c93448", 600: "#a80c26", 700: "#8b0319", 800: "#6f0616", 900: "#560512", 950: "#33030a",
+        },
+        accent: {
+          50: "#fff8ec", 100: "#ffeed0", 200: "#fdd9a0", 300: "#fbbd63", 400: "#f7a038",
+          500: "#f28a14", 600: "#d97008", 700: "#b45509", 800: "#90430d", 900: "#763a0e",
+        },
+      },
+    },
+  },
+};
+```
+
+Deux points importants : les **couleurs de la marque** (`marque` = bordeaux #8B0319, `accent` = orange
+#F28A14) sont définies ici ; et `content` liste **où Tailwind cherche les classes** : les gabarits **et le
+code Python** (des classes sont écrites dans `apps/core/templatetags/ui.py`). Ne composez donc jamais un nom de
+classe par morceaux (`"bg-" + couleur`) : Tailwind ne le verrait pas.
+
+#### `frontend/input.css`
+
+*74 lignes*
+
+```css
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Éléments Alpine.js masqués tant que le script n'a pas démarré (évite un flash à l'affichage). */
+[x-cloak] { display: none !important; }
+
+/* --- Graphiques du tableau de bord (apps/core/graphiques.py, templates/components/_graphique_*.html) ---
+   Palette catégorielle validée avec dataviz/scripts/validate_palette.js sur fond blanc :
+   bleu, orange, aqua (dans cet ordre). L'interface n'a pas de thème sombre : un seul jeu de valeurs.
+   Marques fines (colonnes ≤ 24 px, bout arrondi de 4 px, socle droit), quadrillage en filet plein,
+   texte toujours en encre neutre (jamais dans la couleur de la série). */
+:root {
+  --viz-1: #2a78d6;
+  --viz-2: #eb6834;
+  --viz-3: #1baf7a;
+  --viz-grille: #e1e0d9;
+  --viz-axe: #c3c2b7;
+}
+.viz-s1 { background-color: var(--viz-1); }
+.viz-s2 { background-color: var(--viz-2); }
+.viz-s3 { background-color: var(--viz-3); }
+
+/* Barres horizontales : libellé | piste | valeur */
+.viz-barres { display: grid; gap: 0.5rem; }
+.viz-barre-ligne { display: grid; grid-template-columns: minmax(6rem, 10rem) 1fr minmax(3rem, auto); align-items: center; gap: 0.75rem; font-size: 0.875rem; }
+.viz-barre-libelle { color: #334155; overflow-wrap: anywhere; }
+.viz-piste { display: block; height: 1.25rem; }
+.viz-barre { display: block; height: 100%; border-radius: 0 4px 4px 0; transition: opacity 0.15s; }
+.viz-barre-ligne:hover .viz-barre { opacity: 0.8; }
+.viz-barre-valeur { text-align: right; font-weight: 600; color: #0f172a; font-variant-numeric: tabular-nums; white-space: nowrap; }
+@media (max-width: 480px) {
+  .viz-barre-ligne { grid-template-columns: 1fr auto; }
+  .viz-barre-ligne .viz-piste { grid-column: 1 / -1; grid-row: 2; }
+}
+
+/* Légende (≥ 2 séries) */
+.viz-legende { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; margin-bottom: 0.75rem; font-size: 0.8125rem; color: #334155; }
+.viz-legende li { display: flex; align-items: center; gap: 0.375rem; }
+.viz-cle { display: inline-block; width: 0.75rem; height: 0.75rem; border-radius: 2px; }
+
+/* Colonnes groupées */
+.viz-colonnes { display: grid; grid-template-columns: 3rem 1fr; column-gap: 0.5rem; }
+.viz-axe-y { position: relative; height: 12rem; font-size: 0.75rem; color: #475569; font-variant-numeric: tabular-nums; }
+.viz-axe-y span { position: absolute; right: 0; transform: translateY(50%); line-height: 1; }
+.viz-trace { position: relative; height: 12rem; border-bottom: 1px solid var(--viz-axe); }
+.viz-grille { position: absolute; left: 0; right: 0; height: 0; border-top: 1px solid var(--viz-grille); }
+.viz-grappes { position: absolute; inset: 0; display: flex; }
+.viz-grappe { position: relative; flex: 1 1 0; height: 100%; display: flex; align-items: flex-end; justify-content: center; border-radius: 4px 4px 0 0; outline: none; }
+.viz-grappe:hover, .viz-grappe:focus { background-color: rgba(15, 23, 42, 0.05); }
+.viz-grappe:focus-visible { box-shadow: inset 0 0 0 2px var(--viz-1); }
+.viz-colonnes-serie { display: flex; align-items: flex-end; justify-content: center; gap: 2px; width: 80%; height: 100%; }
+.viz-colonne { display: block; flex: 1 1 0; min-width: 0; max-width: 24px; border-radius: 4px 4px 0 0; }
+.viz-axe-x { display: flex; margin-top: 0.375rem; font-size: 0.75rem; color: #475569; }
+.viz-axe-x span { flex: 1 1 0; min-width: 0; text-align: center; line-height: 1.2; white-space: nowrap; }
+/* Beaucoup de mois sur un petit écran : un libellé sur deux, le dernier mois toujours visible (les valeurs restent dans l'infobulle et le tableau). */
+@media (max-width: 640px) { .viz-dense .viz-axe-x span:nth-child(odd) { visibility: hidden; } }
+.viz-axe-x small { display: block; font-size: 0.6875rem; color: #64748b; }
+
+/* Infobulle : la valeur d'abord (en gras), le nom de la série ensuite ; clé = petit trait de la couleur de la série */
+.viz-info { display: none; position: absolute; bottom: calc(100% + 6px); z-index: 20; min-width: 10rem; padding: 0.5rem 0.625rem; background: #fff; border: 1px solid #cbd5e1; border-radius: 0.5rem; box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12); font-size: 0.8125rem; pointer-events: none; }
+.viz-info-milieu { left: 50%; transform: translateX(-50%); }
+.viz-info-debut { left: 0; }
+.viz-info-fin { right: 0; }
+.viz-grappe:hover .viz-info, .viz-grappe:focus .viz-info { display: block; }
+.viz-info-titre { display: block; margin-bottom: 0.25rem; color: #475569; font-weight: 500; }
+.viz-info-ligne { display: flex; align-items: center; gap: 0.5rem; white-space: nowrap; }
+.viz-trait { display: inline-block; width: 0.75rem; height: 2px; border-radius: 1px; }
+.viz-info-valeur { font-weight: 600; color: #0f172a; font-variant-numeric: tabular-nums; }
+.viz-info-nom { color: #475569; }
+
+/* Un tableau qui défile horizontalement contient aussi ses libellés cachés (.sr-only est en position absolue) :
+   sans cela, ils sortaient du conteneur et élargissaient toute la page sur téléphone. */
+.overflow-x-auto { position: relative; }
+```
+
+#### `frontend/vendor.js`
+
+*24 lignes*
+
+```javascript
+// Copie dans static/vendor/ les fichiers des bibliothèques (Alpine.js, Font Awesome, jsQR) : ils sont
+// servis par l'application elle-même, sans CDN. À relancer après une mise à jour de version.
+const fs = require("fs");
+const path = require("path");
+
+const racine = path.resolve(__dirname, "..", "static", "vendor");
+const modules = path.resolve(__dirname, "node_modules");
+
+function copier(source, cible) {
+  fs.mkdirSync(path.dirname(cible), { recursive: true });
+  fs.copyFileSync(source, cible);
+  console.log("copié", path.relative(path.resolve(__dirname, ".."), cible));
+}
+
+copier(path.join(modules, "alpinejs/dist/cdn.min.js"), path.join(racine, "alpine/alpine.min.js"));
+const fa = path.join(modules, "@fortawesome/fontawesome-free");
+copier(path.join(fa, "css/all.min.css"), path.join(racine, "fontawesome/css/all.min.css"));
+for (const police of ["fa-solid-900.woff2", "fa-regular-400.woff2"]) {
+  copier(path.join(fa, "webfonts", police), path.join(racine, "fontawesome/webfonts", police));
+}
+copier(path.join(fa, "LICENSE.txt"), path.join(racine, "fontawesome/LICENSE.txt"));
+// jsQR : lecture d'un code QR dans une image, pour les navigateurs sans BarcodeDetector (Safari, Firefox).
+copier(path.join(modules, "jsqr/dist/jsQR.js"), path.join(racine, "jsqr/jsQR.js"));
+copier(path.join(modules, "jsqr/LICENSE"), path.join(racine, "jsqr/LICENSE"));
+```
+
+#### `frontend/.gitignore`
+
+*1 ligne*
+
+```bash
+node_modules/
+```
+
+#### `frontend/README.md`
+
+*24 lignes* — frontend
+
+````markdown
+# frontend
+
+Compilation des styles et récupération des bibliothèques de l'interface (étape 7, lot 1). **Node n'est
+nécessaire que pour régénérer** les fichiers : ceux-ci sont versionnés dans `static/` et l'application
+tourne sans Node.
+
+```bash
+cd frontend
+npm install
+npm run build        # = build:css (Tailwind) + vendor (Alpine.js, Font Awesome)
+```
+
+- `tailwind.config.js` : palette du logo (`marque` #8B0319, `accent` #F28A14), reprise à l'identique de
+  l'ancienne configuration CDN. Il scanne les gabarits **et le code Python** (`apps/**/*.py`) : une classe
+  Tailwind écrite dans un `templatetags/ui.py` est donc bien compilée. Ne pas composer un nom de classe
+  par morceaux (`"bg-" + couleur`) : Tailwind ne le verrait pas.
+- Sortie : `static/css/tailwind.css`, `static/vendor/alpine/`, `static/vendor/fontawesome/` (seules les
+  polices solid et regular sont copiées).
+- **À relancer** quand on ajoute une nouvelle classe Tailwind dans un gabarit ou un fichier Python.
+  Un test (`apps/core/tests/test_csp.py`) signale un CSS périmé pour les couleurs de la marque.
+- Politique de sécurité du contenu (CSP) : aucun script ni style écrit dans les pages ; les
+  comportements passent par `static/js/app.js` (`data-confirm`, `data-imprimer`) et par les attributs
+  Alpine.js. Réserves assumées : `'unsafe-eval'` (Alpine.js) et `'unsafe-inline'` pour les styles.
+- Pour observer une CSP sans bloquer (mise au point) : `CSP_REPORT_ONLY=true`.
+````
+
+## Étape 3 — Les gabarits communs
+
+Créez d'abord les dossiers :
+
+```bash
+mkdir -p templates/components templates/registration templates/accounts static/js
+```
+
+#### `templates/components/_assets.html`
+
+*9 lignes*
+
+```django
+{% load static %}{# Styles (Tailwind compilé), icônes et Alpine.js : servis par l'application elle-même. Partagés par l'interface de bureau et l'espace mobile. #}
+{% comment %}
+  Les fichiers viennent de frontend/ (voir frontend/package.json) et sont versionnés dans static/.
+  Aucun script ni style écrit dans les pages : la politique de sécurité (CSP) interdit le code en ligne.
+{% endcomment %}
+<link rel="stylesheet" href="{% static 'css/tailwind.css' %}">
+<link rel="stylesheet" href="{% static 'vendor/fontawesome/css/all.min.css' %}">
+<script defer src="{% static 'js/app.js' %}"></script>
+<script defer src="{% static 'vendor/alpine/alpine.min.js' %}"></script>
+```
+
+Les trois fichiers chargés sont locaux : le CSS compilé, Font Awesome, `app.js` puis Alpine.js (attribut `defer`
+: le script s'exécute après l'affichage de la page).
+
+#### `static/js/app.js`
+
+*48 lignes*
+
+```javascript
+// Comportements communs de l'interface. Aucun code n'est écrit dans les pages (CSP stricte) :
+// les gabarits déclarent leur intention par des attributs « data-… » que ce fichier interprète.
+//
+//   <form data-confirm="Question ?">   demande confirmation avant l'envoi du formulaire
+//   <button data-imprimer>             ouvre la fenêtre d'impression
+//   <form data-renvoi-permis>          autorise plusieurs envois sans recharger la page (par défaut, un
+//                                      formulaire POST n'est envoyé qu'une fois : double clic, audit AUD-06)
+(function () {
+  "use strict";
+
+  document.addEventListener("submit", function (evenement) {
+    var formulaire = evenement.target;
+    var question = formulaire && formulaire.dataset ? formulaire.dataset.confirm : "";
+    if (question && !window.confirm(question)) {
+      evenement.preventDefault();
+      return;
+    }
+    // Un formulaire POST n'est envoyé qu'une fois : un double clic ne crée pas deux règlements. Le bouton n'est
+    // pas désactivé (il n'enverrait plus son nom ni sa valeur) : le formulaire est marqué, le second envoi ignoré.
+    if ((formulaire.method || "").toLowerCase() !== "post" || formulaire.hasAttribute("data-renvoi-permis")) {
+      return;
+    }
+    if (formulaire.dataset.envoye === "1") {
+      evenement.preventDefault();
+      return;
+    }
+    formulaire.dataset.envoye = "1";
+    formulaire.setAttribute("aria-busy", "true");
+  });
+
+  // Retour arrière du navigateur vers une page gardée en cache : le formulaire doit redevenir utilisable.
+  window.addEventListener("pageshow", function (evenement) {
+    if (!evenement.persisted) {
+      return;
+    }
+    document.querySelectorAll("form[data-envoye]").forEach(function (formulaire) {
+      delete formulaire.dataset.envoye;
+      formulaire.removeAttribute("aria-busy");
+    });
+  });
+
+  document.addEventListener("click", function (evenement) {
+    var declencheur = evenement.target.closest ? evenement.target.closest("[data-imprimer]") : null;
+    if (declencheur) {
+      window.print();
+    }
+  });
+})();
+```
+
+Il n'y a **aucun code dans les pages** : un formulaire qui demande confirmation porte simplement
+`data-confirm="Question ?"` ; ce fichier s'en occupe pour toute l'application.
+
+#### `templates/base.html`
+
+*107 lignes*
+
+```django
+{% load static %}<!DOCTYPE html>
+<html lang="fr" class="h-full bg-slate-50">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block titre %}Accueil{% endblock %} · DEN Source ERP</title>
+  <link rel="icon" type="image/png" href="{% static 'img/favicon.png' %}">
+
+  {% include "components/_assets.html" %}
+  {% block head_extra %}{% endblock %}
+</head>
+<body class="h-full text-slate-900 antialiased"
+      x-data="{ menuOuvert: false }" @keydown.escape.window="menuOuvert = false">
+  <a href="#contenu"
+     class="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-50 focus:rounded-md focus:bg-white focus:px-3 focus:py-2 focus:text-sm focus:font-semibold focus:shadow">
+    Aller au contenu
+  </a>
+
+  {% block layout %}
+  <div class="min-h-full lg:flex">
+    <div x-show="menuOuvert" x-cloak x-transition.opacity @click="menuOuvert = false"
+         class="fixed inset-0 z-30 bg-slate-900/50 lg:hidden" aria-hidden="true"></div>
+
+    <aside id="navigation" aria-label="Navigation principale"
+           class="fixed inset-y-0 left-0 z-40 w-64 shrink-0 -translate-x-full transform bg-marque-900 text-marque-100 transition-transform duration-200 lg:sticky lg:top-0 lg:bottom-auto lg:h-screen lg:translate-x-0 lg:overflow-y-auto"
+           :class="menuOuvert ? '!translate-x-0' : 'max-lg:invisible'">
+      <a href="{% url 'home' %}" class="flex h-16 items-center gap-3 border-b border-white/10 px-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-400">
+        <span class="flex h-11 w-14 shrink-0 items-center justify-center rounded-lg bg-white p-1">
+          <img src="{% static 'img/logo-emblem.jpg' %}" alt="" class="h-full w-auto">
+        </span>
+        <span class="leading-tight">
+          <span class="block text-lg font-extrabold tracking-wide text-white">DEN</span>
+          <span class="block text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-accent-300">Source Group</span>
+        </span>
+        <span class="sr-only">Accueil DEN Source Group</span>
+      </a>
+      <nav class="space-y-1 px-3 py-4">
+        {% for entree in menu %}
+          <a href="{{ entree.url }}"
+             {% if entree.actif %}aria-current="page"{% endif %}
+             class="flex items-center gap-3 rounded-lg border-l-4 px-3 py-2 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-400
+                    {% if entree.actif %}border-accent-500 bg-white/10 text-white{% else %}border-transparent text-marque-100 hover:bg-white/10 hover:text-white{% endif %}">
+            <i class="fa-solid {{ entree.icone }} w-5 text-center {% if entree.actif %}text-accent-400{% endif %}" aria-hidden="true"></i>
+            {{ entree.libelle }}
+          </a>
+        {% endfor %}
+      </nav>
+    </aside>
+
+    <div class="flex min-h-full flex-1 flex-col lg:min-w-0">
+      <div class="h-1 bg-gradient-to-r from-marque-700 via-marque-500 to-accent-500" aria-hidden="true"></div>
+      <header class="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-slate-200 bg-white px-4 sm:px-6 lg:px-8">
+        <div class="flex items-center gap-3">
+          <button type="button" class="rounded-lg p-2 text-slate-600 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 lg:hidden"
+                  @click="menuOuvert = !menuOuvert" aria-controls="navigation" :aria-expanded="menuOuvert.toString()">
+            <span class="sr-only">Ouvrir le menu</span>
+            <i class="fa-solid fa-bars" aria-hidden="true"></i>
+          </button>
+          <p class="text-sm font-semibold text-slate-800">{% block entete %}{% endblock %}</p>
+        </div>
+        {% if user.is_authenticated %}
+          <div class="flex items-center gap-4">
+            <a href="{% url 'notifications:liste' %}"
+               class="relative rounded-lg p-2 text-slate-600 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+              <i class="fa-regular fa-bell" aria-hidden="true"></i>
+              {% if nombre_non_lues %}
+                <span class="absolute -right-0.5 -top-0.5 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-accent-500 px-1 text-[0.65rem] font-bold text-slate-900" aria-hidden="true">{{ nombre_non_lues }}</span>
+              {% endif %}
+              <span class="sr-only">Notifications{% if nombre_non_lues %} : {{ nombre_non_lues }} non lue{{ nombre_non_lues|pluralize }}{% endif %}</span>
+            </a>
+            <div class="hidden text-right leading-tight sm:block">
+              <p class="text-sm font-medium text-slate-900">{{ user.get_full_name|default:user.username }}</p>
+              <p class="text-xs text-slate-600">{{ user.get_role_display|default:"Administrateur" }}</p>
+            </div>
+            <a href="{% url 'accounts:password_change' %}" title="Changer mon mot de passe"
+               class="rounded-lg p-2 text-slate-600 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+              <i class="fa-solid fa-key" aria-hidden="true"></i>
+              <span class="sr-only">Changer mon mot de passe</span>
+            </a>
+            {% if mfa_requise %}
+              <a href="{% url 'accounts:mfa_codes' %}" title="Codes de secours de la double authentification"
+                 class="rounded-lg p-2 text-slate-600 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+                <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
+                <span class="sr-only">Codes de secours (double authentification)</span>
+              </a>
+            {% endif %}
+            <form method="post" action="{% url 'accounts:logout' %}">
+              {% csrf_token %}
+              <button type="submit"
+                      class="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+                <i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i>
+                Déconnexion
+              </button>
+            </form>
+          </div>
+        {% endif %}
+      </header>
+
+      <main id="contenu" class="flex-1 px-4 py-6 sm:px-6 lg:px-8">
+        {% include "components/_messages.html" %}
+        {% block contenu %}{% endblock %}
+      </main>
+    </div>
+  </div>
+  {% endblock layout %}
+</body>
+</html>
+```
+
+Structure de la page : un menu latéral (`{% for entree in menu %}` : le menu produit par le registre du chapitre
+3), une en-tête (cloche des notifications, nom et rôle de l'utilisateur, lien vers les codes de secours pour les
+rôles soumis à la MFA, bouton de déconnexion en `POST` avec jeton CSRF) et la zone `{% block contenu %}`. Les blocs
+`titre`, `entete`, `layout` et `contenu` sont les « trous » que remplissent les pages filles.
+
+#### `templates/components/_champ.html`
+
+*11 lignes* — Champ de formulaire accessible : {% include "components/_champ.html" with champ=form.nom %}
+
+```django
+{# Champ de formulaire accessible : {% include "components/_champ.html" with champ=form.nom %} #}
+<div>
+  <label for="{{ champ.id_for_label }}" class="block text-sm font-medium text-slate-800">
+    {{ champ.label }}{% if champ.field.required %}<span class="text-red-700" aria-hidden="true"> *</span>{% endif %}
+  </label>
+  <div class="mt-1">{{ champ }}</div>
+  {% if champ.help_text %}<p class="mt-1 text-xs text-slate-600">{{ champ.help_text }}</p>{% endif %}
+  {% for erreur in champ.errors %}
+    <p class="mt-1 text-xs font-medium text-red-700" role="alert">{{ erreur }}</p>
+  {% endfor %}
+</div>
+```
+
+#### `templates/components/_messages.html`
+
+*21 lignes*
+
+```django
+{% if messages %}
+  <div class="mb-5 space-y-2" aria-label="Notifications">
+    {% for message in messages %}
+      <div x-data="{ visible: true }" x-show="visible"
+           role="{% if message.level_tag == 'error' %}alert{% else %}status{% endif %}"
+           class="flex items-start justify-between gap-3 rounded-lg border px-4 py-3 text-sm
+                  {% if message.level_tag == 'success' %}border-emerald-300 bg-emerald-50 text-emerald-900
+                  {% elif message.level_tag == 'error' %}border-red-300 bg-red-50 text-red-900
+                  {% elif message.level_tag == 'warning' %}border-amber-300 bg-amber-50 text-amber-900
+                  {% else %}border-blue-300 bg-blue-50 text-blue-900{% endif %}">
+        <p>
+          <i class="fa-solid {% if message.level_tag == 'success' %}fa-circle-check{% elif message.level_tag == 'error' %}fa-circle-exclamation{% elif message.level_tag == 'warning' %}fa-triangle-exclamation{% else %}fa-circle-info{% endif %} mr-2" aria-hidden="true"></i>{{ message }}
+        </p>
+        <button type="button" @click="visible = false" class="rounded p-0.5 opacity-70 hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-current">
+          <span class="sr-only">Fermer le message</span>
+          <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+        </button>
+      </div>
+    {% endfor %}
+  </div>
+{% endif %}
+```
+
+#### `templates/components/_pagination.html`
+
+*22 lignes*
+
+```django
+{% if page_obj.has_other_pages %}
+  <nav class="mt-4 flex flex-wrap items-center justify-between gap-3" aria-label="Pagination">
+    <p class="text-sm text-slate-700">
+      Page {{ page_obj.number }} sur {{ page_obj.paginator.num_pages }}
+      · {{ page_obj.paginator.count }} résultat{{ page_obj.paginator.count|pluralize }}
+    </p>
+    <div class="flex gap-2">
+      {% if page_obj.has_previous %}
+        <a href="{% querystring page=page_obj.previous_page_number %}"
+           class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+          Précédent
+        </a>
+      {% endif %}
+      {% if page_obj.has_next %}
+        <a href="{% querystring page=page_obj.next_page_number %}"
+           class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+          Suivant
+        </a>
+      {% endif %}
+    </div>
+  </nav>
+{% endif %}
+```
+
+#### `templates/403.html`
+
+*14 lignes*
+
+```django
+{% extends "base.html" %}
+{% block titre %}Accès refusé{% endblock %}
+{% block entete %}Accès refusé{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-lg rounded-xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+  <span class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-marque-50 text-marque-700">
+    <i class="fa-solid fa-lock" aria-hidden="true"></i>
+  </span>
+  <h1 class="mt-4 text-xl font-bold text-slate-900">Accès refusé</h1>
+  <p class="mt-2 text-sm text-slate-700">Votre rôle ne vous permet pas d'accéder à cette page.</p>
+  <a href="{% url 'home' %}" class="mt-6 inline-block rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white hover:bg-marque-700">Retour à l'accueil</a>
+</div>
+{% endblock %}
+```
+
+#### `templates/404.html`
+
+*14 lignes*
+
+```django
+{% extends "base.html" %}
+{% block titre %}Page introuvable{% endblock %}
+{% block entete %}Page introuvable{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-lg rounded-xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+  <span class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-700">
+    <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+  </span>
+  <h1 class="mt-4 text-xl font-bold text-slate-900">Page introuvable</h1>
+  <p class="mt-2 text-sm text-slate-700">Cette page n'existe pas ou a été déplacée.</p>
+  <a href="{% url 'home' %}" class="mt-6 inline-block rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white hover:bg-marque-700">Retour à l'accueil</a>
+</div>
+{% endblock %}
+```
+
+Django utilise automatiquement `403.html` et `404.html` pour les erreurs « accès refusé » et « page
+introuvable ».
+
+## Étape 4 — La connexion et la double authentification
+
+#### `templates/registration/login.html`
+
+*51 lignes*
+
+```django
+{% extends "base.html" %}
+{% load static %}
+{% block titre %}Connexion{% endblock %}
+
+{% block layout %}
+<div class="flex min-h-full items-center justify-center bg-gradient-to-b from-marque-50 via-white to-white px-4 py-12">
+  <div class="w-full max-w-md">
+    <div class="mb-8 text-center">
+      <span class="mx-auto inline-block rounded-2xl bg-white p-3 shadow-md ring-1 ring-marque-100"><img src="{% static 'img/logo-emblem.jpg' %}" alt="DEN Source Group" class="h-24 w-auto"></span>
+      <h1 class="mt-3 text-3xl font-extrabold tracking-wide text-marque-700">DEN</h1>
+      <p class="text-xs font-semibold uppercase tracking-[0.3em] text-slate-700">Source Group</p>
+      <p class="mt-4 text-sm text-slate-600">Connectez-vous pour accéder à votre espace.</p>
+    </div>
+
+    <form method="post" class="space-y-5 rounded-2xl border border-slate-200 border-t-4 border-t-accent-500 bg-white p-6 shadow-sm">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ next }}">
+
+      {% if blocage %}
+        <div role="alert" class="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900"><p>{{ blocage }}</p></div>
+      {% endif %}
+
+      {% if form.non_field_errors %}
+        <div role="alert" class="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">
+          {% for erreur in form.non_field_errors %}<p>{{ erreur }}</p>{% endfor %}
+        </div>
+      {% endif %}
+
+      <div>
+        <label for="{{ form.username.id_for_label }}" class="block text-sm font-medium text-slate-800">Identifiant</label>
+        <input type="text" name="username" id="{{ form.username.id_for_label }}" required autofocus
+               autocomplete="username" value="{{ form.username.value|default:'' }}"
+               class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-marque-600 focus:outline-none focus:ring-2 focus:ring-marque-600/30">
+      </div>
+      <div>
+        <label for="{{ form.password.id_for_label }}" class="block text-sm font-medium text-slate-800">Mot de passe</label>
+        <input type="password" name="password" id="{{ form.password.id_for_label }}" required
+               autocomplete="current-password"
+               class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-marque-600 focus:outline-none focus:ring-2 focus:ring-marque-600/30">
+      </div>
+      <button type="submit"
+              class="w-full rounded-lg bg-marque-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">
+        Se connecter
+      </button>
+      <p class="text-center text-sm">
+        <a href="{% url 'accounts:password_reset' %}" class="font-medium text-marque-700 hover:underline">Mot de passe oublié ?</a>
+      </p>
+    </form>
+  </div>
+</div>
+{% endblock %}
+```
+
+#### `apps/accounts/views.py`
+
+*114 lignes*
+
+```python
+from django.conf import settings
+from django.contrib import messages
+from django.contrib.auth.forms import AuthenticationForm
+from django.contrib.auth.views import (
+    LoginView,
+    LogoutView,
+    PasswordChangeView,
+    PasswordResetCompleteView,
+    PasswordResetConfirmView,
+    PasswordResetDoneView,
+    PasswordResetView,
+)
+from django.urls import reverse_lazy
+
+from . import throttle
+from .models import Role
+from .signals import mot_de_passe_change, mot_de_passe_reinitialise
+
+
+class ConnexionView(LoginView):
+    """Page de connexion. Les connexions réussies ou ratées sont tracées dans
+    ``audit_log`` par les signaux de l'app ``audit``.
+
+    Anti force brute : après trop d'échecs pour un même identifiant depuis une même adresse (ou
+    trop d'échecs depuis l'adresse), la connexion est refusée pour un temps, **même avec le bon mot
+    de passe** : la vérification n'est même pas tentée."""
+
+    template_name = "registration/login.html"
+    redirect_authenticated_user = True
+
+    def post(self, request, *args, **kwargs):
+        restant = throttle.connexion_secondes_restantes(request, request.POST.get("username", ""))
+        if restant:
+            form = AuthenticationForm(request)  # non liée : aucune vérification de mot de passe
+            blocage = f"Trop de tentatives échouées. Réessayez dans {throttle.phrase_attente(restant)}."
+            reponse = self.render_to_response(self.get_context_data(form=form, blocage=blocage))
+            reponse.status_code = 429
+            return reponse
+        return super().post(request, *args, **kwargs)
+
+    def form_valid(self, form):
+        reponse = super().form_valid(form)
+        throttle.connexion_reinitialiser(self.request, form.cleaned_data.get("username", ""))
+        if self.request.user.role == Role.CHAUFFEUR:
+            # Espace mobile : 15 minutes d'inactivité (cahier-des-charges.md:285), 30 pour le bureau.
+            self.request.session.set_expiry(settings.SESSION_COOKIE_AGE_MOBILE)
+        return reponse
+
+
+class DeconnexionView(LogoutView):
+    """Déconnexion (POST uniquement, protégée par CSRF)."""
+
+
+# --- mot de passe oublié ---
+#
+# Les 4 étapes standard de Django, avec nos gabarits (français, mise en page du site) : demande de
+# l'adresse -> confirmation d'envoi -> lien reçu par e-mail -> nouveau mot de passe -> terminé.
+# Ne dit jamais si l'adresse correspond à un compte (mêmes pages dans les deux cas) : un tiers ne
+# peut pas s'en servir pour savoir qui a un compte ici. Le mot de passe choisi passe par les mêmes
+# règles qu'à l'inscription (AUTH_PASSWORD_VALIDATORS, longueur 10, Argon2).
+
+
+class ReinitialiserMotDePasseView(PasswordResetView):
+    template_name = "registration/password_reset_form.html"
+    email_template_name = "registration/password_reset_email.txt"
+    subject_template_name = "registration/password_reset_subject.txt"
+    success_url = reverse_lazy("accounts:password_reset_done")
+
+    def post(self, request, *args, **kwargs):
+        """Demandes limitées par adresse IP et par adresse e-mail (audit TECH-46) : au-delà, aucun e-mail."""
+        email = request.POST.get("email", "")
+        restant = throttle.reinitialisation_secondes_restantes(request, email)
+        if restant:
+            blocage = f"Trop de demandes. Réessayez dans {throttle.phrase_attente(restant)}."
+            reponse = self.render_to_response(self.get_context_data(form=self.get_form(), blocage=blocage))
+            reponse.status_code = 429
+            return reponse
+        throttle.reinitialisation_enregistrer(request, email)
+        return super().post(request, *args, **kwargs)
+
+
+class ReinitialiserMotDePasseEnvoyeView(PasswordResetDoneView):
+    template_name = "registration/password_reset_done.html"
+
+
+class ReinitialiserMotDePasseConfirmerView(PasswordResetConfirmView):
+    template_name = "registration/password_reset_confirm.html"
+    success_url = reverse_lazy("accounts:password_reset_complete")
+
+    def form_valid(self, form):
+        reponse = super().form_valid(form)
+        mot_de_passe_reinitialise.send(sender=self.__class__, request=self.request, utilisateur=self.user)
+        return reponse
+
+
+class ReinitialiserMotDePasseTermineeView(PasswordResetCompleteView):
+    template_name = "registration/password_reset_complete.html"
+
+
+# --- changer son mot de passe une fois connecté (cahier-des-charges.md:273, audit TECH-87) ---
+
+
+class ChangerMotDePasseView(PasswordChangeView):
+    """Ancien mot de passe exigé ; le nouveau suit les mêmes règles qu'à l'inscription (AUTH_PASSWORD_VALIDATORS).
+    Django garde la session ouverte (le compte n'est pas déconnecté) ; l'événement est tracé au journal."""
+
+    template_name = "registration/password_change_form.html"
+    success_url = reverse_lazy("home")
+
+    def form_valid(self, form):
+        reponse = super().form_valid(form)
+        mot_de_passe_change.send(sender=self.__class__, request=self.request, utilisateur=self.request.user)
+        messages.success(self.request, "Votre mot de passe a été changé.")
+        return reponse
+```
+
+`ConnexionView` prolonge `LoginView` de Django : elle ajoute le **blocage anti force brute** (réponse 429 avant
+même de vérifier le mot de passe) et la **session de 15 minutes** pour les chauffeurs.
+
+#### `apps/accounts/forms.py`
+
+*66 lignes*
+
+```python
+from django import forms
+
+from apps.core.forms import StyleTailwindMixin
+
+from .models import Role
+
+
+class CodeMFAForm(StyleTailwindMixin, forms.Form):
+    """Code à 6 chiffres de l'application, ou code de secours (XXXXX-XXXXX)."""
+
+    code = forms.CharField(
+        label="Code",
+        max_length=20,
+        widget=forms.TextInput(
+            attrs={
+                "autocomplete": "one-time-code",
+                "inputmode": "text",
+                "autofocus": True,
+                "placeholder": "123456",
+                "spellcheck": "false",
+            }
+        ),
+    )
+
+    def clean_code(self):
+        return self.cleaned_data["code"].strip()
+
+
+class _CoordonneesForm(StyleTailwindMixin, forms.Form):
+    first_name = forms.CharField(label="Prénom", max_length=150)
+    last_name = forms.CharField(label="Nom", max_length=150)
+    email = forms.EmailField(label="Adresse e-mail", help_text="Sert à réinitialiser le mot de passe.")
+    telephone = forms.CharField(label="Téléphone", max_length=20, required=False)
+    role = forms.ChoiceField(label="Rôle", choices=Role.choices)
+
+
+class UtilisateurCreationForm(_CoordonneesForm):
+    """Nouveau compte : identifiant, coordonnées, rôle et mot de passe initial (à changer par la personne)."""
+
+    username = forms.CharField(label="Identifiant de connexion", max_length=150)
+    password1 = forms.CharField(
+        label="Mot de passe initial", strip=False, widget=forms.PasswordInput(attrs={"autocomplete": "new-password"}),
+        help_text="10 caractères au moins, ni trop courant, ni uniquement des chiffres, ni proche de l'identifiant.",
+    )
+    password2 = forms.CharField(
+        label="Confirmer le mot de passe", strip=False, widget=forms.PasswordInput(attrs={"autocomplete": "new-password"})
+    )
+    field_order = ["username", "first_name", "last_name", "email", "telephone", "role", "password1", "password2"]
+
+    def clean(self):
+        donnees = super().clean()
+        if donnees.get("password1") and donnees.get("password2") and donnees["password1"] != donnees["password2"]:
+            self.add_error("password2", "Les deux mots de passe ne correspondent pas.")
+        return donnees
+
+
+class UtilisateurModificationForm(_CoordonneesForm):
+    """Coordonnées et rôle d'un compte existant (l'identifiant et le mot de passe ne se changent pas ici)."""
+
+
+class FiltreUtilisateursForm(StyleTailwindMixin, forms.Form):
+    q = forms.CharField(label="Recherche", required=False)
+    role = forms.ChoiceField(label="Rôle", choices=[("", "Tous les rôles")] + list(Role.choices), required=False)
+    actif = forms.ChoiceField(
+        label="Statut", choices=[("", "Tous"), ("oui", "Actifs"), ("non", "Désactivés")], required=False
+    )
+```
+
+#### `apps/accounts/views_mfa.py`
+
+*206 lignes* — Écrans de la double authentification : activation, saisie du code, codes de secours.
+
+```python
+"""Écrans de la double authentification : activation, saisie du code, codes de secours.
+
+Aucune règle ici : ``mfa.py`` décide, ``throttle.py`` limite les essais. Ces pages sont les seules
+accessibles à un ADMIN ou une DIRECTION dont la session n'est pas encore vérifiée (voir
+``middleware.py``). Elles n'ont de sens que pour les rôles soumis à la MFA : les autres reçoivent 404.
+"""
+
+from __future__ import annotations
+
+import io
+
+import qrcode
+from django.contrib.auth.mixins import LoginRequiredMixin
+from django.http import Http404, HttpResponse
+from django.shortcuts import redirect, render
+from django.urls import reverse
+from django.utils.http import url_has_allowed_host_and_scheme
+from django.views import View
+from django.views.generic import FormView
+
+from . import mfa, throttle
+from .forms import CodeMFAForm
+from .signals import mfa_evenement
+
+
+class _MFABase(LoginRequiredMixin):
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated and not mfa.mfa_requise(request.user):
+            raise Http404
+        return super().dispatch(request, *args, **kwargs)
+
+    def prochaine_page(self) -> str:
+        cible = self.request.GET.get("next") or self.request.POST.get("next") or ""
+        if cible and url_has_allowed_host_and_scheme(
+            cible, allowed_hosts={self.request.get_host()}, require_https=self.request.is_secure()
+        ):
+            return cible
+        return reverse("home")
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        contexte["next"] = self.request.GET.get("next") or self.request.POST.get("next") or ""
+        return contexte
+
+    def _refus_si_bloque(self, form):
+        """Réponse 429 si trop de codes faux récemment ; ``None`` sinon."""
+        restant = throttle.mfa_secondes_restantes(self.request.user)
+        if not restant:
+            return None
+        form.add_error(
+            "code",
+            f"Trop de codes incorrects. Réessayez dans {throttle.phrase_attente(restant)}.",
+        )
+        reponse = self.render_to_response(self.get_context_data(form=form))
+        reponse.status_code = 429
+        return reponse
+
+    def _signaler(self, evenement: str, succes: bool = True):
+        mfa_evenement.send(
+            sender=type(self),
+            request=self.request,
+            utilisateur=self.request.user,
+            evenement=evenement,
+            succes=succes,
+        )
+
+
+class MFAVerifierView(_MFABase, FormView):
+    """Saisie du code à chaque ouverture de session."""
+
+    template_name = "accounts/mfa_verifier.html"
+    form_class = CodeMFAForm
+
+    def get(self, request, *args, **kwargs):
+        if mfa.est_verifiee(request):
+            return redirect(self.prochaine_page())
+        if mfa.appareil_actif(request.user) is None:
+            return redirect(reverse("accounts:mfa_activer"))
+        return super().get(request, *args, **kwargs)
+
+    def post(self, request, *args, **kwargs):
+        if mfa.appareil_actif(request.user) is None:
+            return redirect(reverse("accounts:mfa_activer"))
+        return super().post(request, *args, **kwargs)
+
+    def form_valid(self, form):
+        refus = self._refus_si_bloque(form)
+        if refus is not None:
+            return refus
+        utilisateur = self.request.user
+        if not mfa.verifier_code(utilisateur, form.cleaned_data["code"]):
+            throttle.mfa_enregistrer_echec(utilisateur)
+            self._signaler("code_refuse", succes=False)
+            form.add_error("code", "Code incorrect ou déjà utilisé.")
+            return self.form_invalid(form)
+        throttle.mfa_reinitialiser(utilisateur)
+        mfa.marquer_verifiee(self.request)
+        self._signaler("code_accepte")
+        return redirect(self.prochaine_page())
+
+
+class MFAActiverView(_MFABase, FormView):
+    """Première utilisation : scanner le QR code, confirmer avec un premier code, noter les codes de secours."""
+
+    template_name = "accounts/mfa_activer.html"
+    form_class = CodeMFAForm
+
+    def get(self, request, *args, **kwargs):
+        if mfa.appareil_actif(request.user) is not None:
+            return redirect(self.prochaine_page() if mfa.est_verifiee(request) else reverse("accounts:mfa_verifier"))
+        return super().get(request, *args, **kwargs)
+
+    def post(self, request, *args, **kwargs):
+        if mfa.appareil_actif(request.user) is not None:
+            return redirect(reverse("accounts:mfa_verifier"))
+        return super().post(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        appareil = mfa.preparer_activation(self.request.user)
+        contexte["secret"] = " ".join(appareil.secret[i : i + 4] for i in range(0, len(appareil.secret), 4))
+        return contexte
+
+    def form_valid(self, form):
+        refus = self._refus_si_bloque(form)
+        if refus is not None:
+            return refus
+        utilisateur = self.request.user
+        try:
+            codes = mfa.confirmer_activation(utilisateur, form.cleaned_data["code"])
+        except mfa.CodeInvalide as erreur:
+            throttle.mfa_enregistrer_echec(utilisateur)
+            self._signaler("activation_refusee", succes=False)
+            form.add_error("code", str(erreur))
+            return self.form_invalid(form)
+        throttle.mfa_reinitialiser(utilisateur)
+        mfa.marquer_verifiee(self.request)
+        self._signaler("activation")
+        return _page_codes(self.request, codes, apres_activation=True, suite=self.prochaine_page())
+
+
+class MFAQrView(_MFABase, View):
+    """Image du QR code d'activation : seulement tant que l'appareil n'est pas confirmé, jamais mise en cache."""
+
+    def get(self, request):
+        try:
+            appareil = mfa.preparer_activation(request.user)
+        except mfa.DejaActive as erreur:
+            raise Http404 from erreur
+        tampon = io.BytesIO()
+        qrcode.make(mfa.uri_provisionnement(appareil), box_size=8, border=2).save(tampon, format="PNG")
+        reponse = HttpResponse(tampon.getvalue(), content_type="image/png")
+        reponse["Cache-Control"] = "no-store, private"
+        return reponse
+
+
+class MFACodesView(_MFABase, FormView):
+    """Régénérer les codes de secours (avec un code de l'application, pas un code de secours)."""
+
+    template_name = "accounts/mfa_codes.html"
+    form_class = CodeMFAForm
+
+    def dispatch(self, request, *args, **kwargs):
+        # Cette page fait partie des pages libres de la porte MFA : elle vérifie elle-même que la
+        # session est vérifiée, pour qu'un mot de passe volé ne permette pas de toucher aux codes.
+        utilisateur = request.user
+        if utilisateur.is_authenticated and mfa.mfa_requise(utilisateur) and not mfa.est_verifiee(request):
+            return redirect(reverse("accounts:mfa_verifier"))
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        contexte["restants"] = mfa.codes_secours_restants(self.request.user)
+        return contexte
+
+    def get(self, request, *args, **kwargs):
+        if mfa.appareil_actif(request.user) is None:
+            return redirect(reverse("accounts:mfa_activer"))
+        return super().get(request, *args, **kwargs)
+
+    def form_valid(self, form):
+        refus = self._refus_si_bloque(form)
+        if refus is not None:
+            return refus
+        utilisateur = self.request.user
+        try:
+            codes = mfa.regenerer_codes_secours(utilisateur, form.cleaned_data["code"])
+        except mfa.CodeInvalide:
+            throttle.mfa_enregistrer_echec(utilisateur)
+            self._signaler("codes_refuses", succes=False)
+            form.add_error("code", "Code incorrect ou déjà utilisé.")
+            return self.form_invalid(form)
+        throttle.mfa_reinitialiser(utilisateur)
+        self._signaler("codes_regeneres")
+        return _page_codes(self.request, codes, apres_activation=False, suite=reverse("home"))
+
+
+def _page_codes(request, codes, *, apres_activation: bool, suite: str):
+    """Affiche les codes de secours une seule fois (réponse directe, jamais mise en cache)."""
+    reponse = render(
+        request,
+        "accounts/mfa_codes_affiches.html",
+        {"codes": codes, "apres_activation": apres_activation, "suite": suite},
+    )
+    reponse["Cache-Control"] = "no-store, private"
+    return reponse
+```
+
+Quatre vues : **vérifier** (saisir le code à chaque ouverture de session), **activer** (QR code + premier
+code + codes de secours affichés **une seule fois**), **QR** (l'image, jamais mise en cache) et **codes**
+(régénérer les codes de secours). La redirection après vérification refuse toute adresse extérieure au site.
+
+#### `apps/accounts/urls.py`
+
+*43 lignes*
+
+```python
+from django.urls import path
+
+from . import views, views_mfa, views_utilisateurs
+
+app_name = "accounts"
+
+urlpatterns = [
+    path("connexion/", views.ConnexionView.as_view(), name="login"),
+    path("deconnexion/", views.DeconnexionView.as_view(), name="logout"),
+    # Double authentification (ADMIN et DIRECTION) : pages ouvertes avant la vérification.
+    path("mfa/verifier/", views_mfa.MFAVerifierView.as_view(), name="mfa_verifier"),
+    path("mfa/activer/", views_mfa.MFAActiverView.as_view(), name="mfa_activer"),
+    path("mfa/qr/", views_mfa.MFAQrView.as_view(), name="mfa_qr"),
+    path("mfa/codes/", views_mfa.MFACodesView.as_view(), name="mfa_codes"),
+    # Gestion des comptes (ADMIN).
+    path("utilisateurs/", views_utilisateurs.UtilisateurListView.as_view(), name="utilisateurs"),
+    path("utilisateurs/nouveau/", views_utilisateurs.UtilisateurCreateView.as_view(), name="utilisateur_nouveau"),
+    path("utilisateurs/<int:pk>/modifier/", views_utilisateurs.UtilisateurUpdateView.as_view(), name="utilisateur_modifier"),
+    path(
+        "utilisateurs/<int:pk>/activation/",
+        views_utilisateurs.UtilisateurActivationView.as_view(),
+        name="utilisateur_activation",
+    ),
+    # Changer son mot de passe, une fois connecté.
+    path("mon-mot-de-passe/", views.ChangerMotDePasseView.as_view(), name="password_change"),
+    # Mot de passe oublié : ouvert à tous, avant connexion.
+    path("mot-de-passe/", views.ReinitialiserMotDePasseView.as_view(), name="password_reset"),
+    path(
+        "mot-de-passe/envoye/",
+        views.ReinitialiserMotDePasseEnvoyeView.as_view(),
+        name="password_reset_done",
+    ),
+    path(
+        "mot-de-passe/confirmer/<uidb64>/<token>/",
+        views.ReinitialiserMotDePasseConfirmerView.as_view(),
+        name="password_reset_confirm",
+    ),
+    path(
+        "mot-de-passe/termine/",
+        views.ReinitialiserMotDePasseTermineeView.as_view(),
+        name="password_reset_complete",
+    ),
+]
+```
+
+#### `apps/accounts/context_processors.py`
+
+*13 lignes*
+
+```python
+from . import mfa
+from .navigation import entrees_pour
+
+
+def menu(request):
+    """Ajoute ``menu`` (entrées visibles pour le rôle) au contexte des templates."""
+    utilisateur = request.user
+    if not utilisateur.is_authenticated:
+        return {}
+    return {
+        "menu": entrees_pour(utilisateur.role_effectif, request.path),
+        "mfa_requise": mfa.mfa_requise(utilisateur),
+    }
+```
+
+#### `templates/accounts/mfa_verifier.html`
+
+*34 lignes*
+
+```django
+{% extends "base.html" %}
+{% load static %}
+{% block titre %}Vérification en deux étapes{% endblock %}
+
+{% block layout %}
+<div class="flex min-h-full items-center justify-center bg-gradient-to-b from-marque-50 via-white to-white px-4 py-12">
+  <div class="w-full max-w-md">
+    <div class="mb-6 text-center">
+      <span class="mx-auto inline-block rounded-2xl bg-white p-3 shadow-md ring-1 ring-marque-100"><img src="{% static 'img/logo-emblem.jpg' %}" alt="DEN Source Group" class="h-16 w-auto"></span>
+      <h1 class="mt-3 text-xl font-bold text-slate-900">Vérification en deux étapes</h1>
+      <p class="mt-2 text-sm text-slate-600">Saisissez le code à 6 chiffres affiché par votre application d'authentification.</p>
+    </div>
+
+    <form method="post" class="space-y-5 rounded-2xl border border-slate-200 border-t-4 border-t-accent-500 bg-white p-6 shadow-sm">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ next }}">
+      <div>
+        <label for="{{ form.code.id_for_label }}" class="block text-sm font-medium text-slate-800">Code</label>
+        {{ form.code }}
+        {% for erreur in form.code.errors %}<p role="alert" class="mt-1 text-sm text-red-800">{{ erreur }}</p>{% endfor %}
+      </div>
+      <button type="submit"
+              class="w-full rounded-lg bg-marque-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">
+        Vérifier
+      </button>
+      <p class="text-xs text-slate-600">Téléphone perdu ? Saisissez à la place un de vos codes de secours (format XXXXX-XXXXX). Sans code de secours, l'Administrateur peut réinitialiser votre double authentification.</p>
+    </form>
+    <form method="post" action="{% url 'accounts:logout' %}" class="mt-4 text-center">
+      {% csrf_token %}
+      <button type="submit" class="text-sm text-slate-600 underline hover:text-slate-900">Se déconnecter</button>
+    </form>
+  </div>
+</div>
+{% endblock %}
+```
+
+#### `templates/accounts/mfa_activer.html`
+
+*41 lignes*
+
+```django
+{% extends "base.html" %}
+{% load static %}
+{% block titre %}Activer la double authentification{% endblock %}
+
+{% block layout %}
+<div class="flex min-h-full items-center justify-center bg-gradient-to-b from-marque-50 via-white to-white px-4 py-12">
+  <div class="w-full max-w-md">
+    <div class="mb-6 text-center">
+      <span class="mx-auto inline-block rounded-2xl bg-white p-3 shadow-md ring-1 ring-marque-100"><img src="{% static 'img/logo-emblem.jpg' %}" alt="DEN Source Group" class="h-16 w-auto"></span>
+      <h1 class="mt-3 text-xl font-bold text-slate-900">Activez la double authentification</h1>
+      <p class="mt-2 text-sm text-slate-600">Votre rôle exige une vérification en deux étapes. Cela ne prend qu'une minute.</p>
+    </div>
+
+    <form method="post" class="space-y-5 rounded-2xl border border-slate-200 border-t-4 border-t-accent-500 bg-white p-6 shadow-sm">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ next }}">
+      <ol class="list-decimal space-y-3 pl-5 text-sm text-slate-800">
+        <li>Installez une application d'authentification sur votre téléphone (Google Authenticator, Microsoft Authenticator, Authy…).</li>
+        <li>Scannez ce code QR avec l'application.
+          <div class="mt-2 flex justify-center"><img src="{% url 'accounts:mfa_qr' %}" alt="Code QR d'activation de la double authentification" width="200" height="200" class="rounded-lg border border-slate-200"></div>
+          <p class="mt-2 text-xs text-slate-600">Impossible de scanner ? Saisissez cette clé dans l'application : <span class="font-mono font-semibold tracking-wider text-slate-900">{{ secret }}</span></p>
+        </li>
+        <li>Saisissez le code à 6 chiffres qu'elle affiche.</li>
+      </ol>
+      <div>
+        <label for="{{ form.code.id_for_label }}" class="block text-sm font-medium text-slate-800">Code</label>
+        {{ form.code }}
+        {% for erreur in form.code.errors %}<p role="alert" class="mt-1 text-sm text-red-800">{{ erreur }}</p>{% endfor %}
+      </div>
+      <button type="submit"
+              class="w-full rounded-lg bg-marque-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">
+        Activer
+      </button>
+    </form>
+    <form method="post" action="{% url 'accounts:logout' %}" class="mt-4 text-center">
+      {% csrf_token %}
+      <button type="submit" class="text-sm text-slate-600 underline hover:text-slate-900">Se déconnecter</button>
+    </form>
+  </div>
+</div>
+{% endblock %}
+```
+
+#### `templates/accounts/mfa_codes.html`
+
+*30 lignes*
+
+```django
+{% extends "base.html" %}
+{% load static %}
+{% block titre %}Codes de secours{% endblock %}
+
+{% block layout %}
+<div class="flex min-h-full items-center justify-center bg-gradient-to-b from-marque-50 via-white to-white px-4 py-12">
+  <div class="w-full max-w-md">
+    <div class="mb-6 text-center">
+      <span class="mx-auto inline-block rounded-2xl bg-white p-3 shadow-md ring-1 ring-marque-100"><img src="{% static 'img/logo-emblem.jpg' %}" alt="DEN Source Group" class="h-16 w-auto"></span>
+      <h1 class="mt-3 text-xl font-bold text-slate-900">Codes de secours</h1>
+      <p class="mt-2 text-sm text-slate-600">Il vous reste <strong>{{ restants }}</strong> code{{ restants|pluralize }} de secours non utilisé{{ restants|pluralize }}.</p>
+    </div>
+
+    <form method="post" class="space-y-5 rounded-2xl border border-slate-200 border-t-4 border-t-accent-500 bg-white p-6 shadow-sm">
+      {% csrf_token %}
+      <p class="text-sm text-slate-800">Générer de nouveaux codes annule les anciens. Confirmez avec le code actuel de votre application.</p>
+      <div>
+        <label for="{{ form.code.id_for_label }}" class="block text-sm font-medium text-slate-800">Code</label>
+        {{ form.code }}
+        {% for erreur in form.code.errors %}<p role="alert" class="mt-1 text-sm text-red-800">{{ erreur }}</p>{% endfor %}
+      </div>
+      <button type="submit"
+              class="w-full rounded-lg bg-marque-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">
+        Générer de nouveaux codes
+      </button>
+    </form>
+    <p class="mt-4 text-center"><a href="{% url 'home' %}" class="text-sm text-slate-600 underline hover:text-slate-900">Retour à l'accueil</a></p>
+  </div>
+</div>
+{% endblock %}
+```
+
+#### `templates/accounts/mfa_codes_affiches.html`
+
+*25 lignes*
+
+```django
+{% extends "base.html" %}
+{% load static %}
+{% block titre %}Vos codes de secours{% endblock %}
+
+{% block layout %}
+<div class="flex min-h-full items-center justify-center bg-gradient-to-b from-marque-50 via-white to-white px-4 py-12">
+  <div class="w-full max-w-md">
+    <div class="mb-6 text-center">
+      <span class="mx-auto inline-block rounded-2xl bg-white p-3 shadow-md ring-1 ring-marque-100"><img src="{% static 'img/logo-emblem.jpg' %}" alt="DEN Source Group" class="h-16 w-auto"></span>
+      <h1 class="mt-3 text-xl font-bold text-slate-900">Conservez vos codes de secours</h1>
+      <p class="mt-2 text-sm text-slate-600">{% if apres_activation %}La double authentification est activée. {% endif %}Chaque code ne sert <strong>qu'une seule fois</strong> si vous perdez votre téléphone. Ils ne seront plus jamais affichés : notez-les dans un endroit sûr (coffre, gestionnaire de mots de passe).</p>
+    </div>
+
+    <div class="space-y-5 rounded-2xl border border-slate-200 border-t-4 border-t-accent-500 bg-white p-6 shadow-sm">
+      <ul class="grid grid-cols-2 gap-2 font-mono text-sm font-semibold tracking-wider text-slate-900">
+        {% for code in codes %}<li class="rounded-lg bg-slate-100 px-3 py-2 text-center">{{ code }}</li>{% endfor %}
+      </ul>
+      <a href="{{ suite }}"
+         class="block w-full rounded-lg bg-marque-600 px-4 py-2.5 text-center text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">
+        J'ai noté mes codes, continuer
+      </a>
+    </div>
+  </div>
+</div>
+{% endblock %}
+```
+
+## Étape 5 — Aides d'affichage, notifications, page d'accueil provisoire
+
+#### `apps/core/templatetags/ui.py`
+
+*131 lignes* — Aides d'affichage : pastilles de statut colorées.
+
+```python
+"""Aides d'affichage : pastilles de statut colorées.
+
+Le texte de la pastille porte toujours le sens ; la couleur est un renfort, pas
+la seule information (accessibilité WCAG 2.1 AA, cahier-des-charges.md:304).
+"""
+
+from django import template
+from django.utils.html import format_html
+
+from apps.core.formats import pourcentage_signe as _pourcentage_signe
+
+register = template.Library()
+
+STYLES = {
+    "gris": "bg-slate-100 text-slate-700 ring-slate-300",
+    "bleu": "bg-blue-50 text-blue-800 ring-blue-300",
+    "indigo": "bg-indigo-50 text-indigo-800 ring-indigo-300",
+    "ambre": "bg-amber-50 text-amber-900 ring-amber-400",
+    "vert": "bg-emerald-50 text-emerald-900 ring-emerald-400",
+    "rouge": "bg-red-50 text-red-800 ring-red-300",
+}
+
+# Couleur par code de statut. Les codes identiques d'apps différentes
+# (« DISPONIBLE », « EN_MISSION »...) partagent volontairement la même couleur.
+COULEURS_STATUT = {
+    "BROUILLON": "gris",
+    "PLANIFIEE": "bleu",
+    "AFFECTEE": "indigo",
+    "EN_COURS_DEPART": "ambre",
+    "EN_COURS_COLIS_RECUPERE": "ambre",
+    "LIVREE": "vert",
+    "CLOTUREE": "gris",
+    # camions
+    "DISPONIBLE": "vert",
+    "EN_MISSION": "bleu",
+    "EN_MAINTENANCE": "ambre",
+    "IMMOBILISE": "rouge",
+    "HORS_SERVICE": "gris",
+    # chauffeurs
+    "EN_CONGE": "indigo",
+    "SUSPENDU": "rouge",
+    "INACTIF": "gris",
+    # documents réglementaires
+    "VALIDE": "vert",
+    "A_RENOUVELER": "ambre",
+    "EXPIRE": "rouge",
+    "MANQUANT": "gris",
+    # ordres de réparation
+    "OUVERT": "ambre",
+    "CLOTURE": "gris",
+    # stock
+    "STOCK_BAS": "ambre",
+    "RUPTURE": "rouge",
+    "ENTREE": "vert",
+    "SORTIE": "bleu",
+    "AJUSTEMENT": "ambre",
+    # incidents
+    "SIGNALE": "rouge",
+    "PRIS_EN_COMPTE": "bleu",
+    "CLOS": "gris",
+    "FAIBLE": "gris",
+    "MOYENNE": "ambre",
+    "GRAVE": "rouge",
+    # facturation
+    "A_VALIDER": "ambre",
+    "EMISE": "bleu",
+    "PARTIELLEMENT_PAYEE": "indigo",
+    "PAYEE": "vert",
+    "ECHUE": "rouge",
+    # devis
+    "SOUMISE": "ambre",
+    "CONTRE_PROPOSEE": "ambre",
+    "EN_ATTENTE_DIRECTION": "ambre",
+    "VALIDEE": "bleu",
+    "ENVOYEE_CLIENT": "indigo",
+    "ACCEPTEE": "vert",
+    "REFUSEE": "rouge",
+    "EXPIREE": "rouge",
+    "CONVERTIE": "vert",
+    # notifications
+    "INFO": "bleu",
+    "ATTENTION": "ambre",
+    "URGENT": "rouge",
+    # congés
+    "DEMANDE": "ambre",
+    "VALIDATION_N1": "bleu",
+    "APPROUVE": "vert",
+    "EN_COURS": "indigo",
+    "TERMINE": "gris",
+    "REFUSE": "rouge",
+    # clients
+    "RECLAMATION": "rouge",
+    # carburant
+    "JAUNE": "ambre",
+    "ROUGE": "rouge",
+    "ANOMALIE": "rouge",
+    "SAISIE_SUSPECTE": "ambre",
+    # frais de mission (R4)
+    "PREVU": "ambre",
+    "CONFIRME": "vert",
+    "REJETE": "rouge",
+    # demandes de dépense et ordres de décaissement (parc auto, R2)
+    "SOUMISE": "ambre",
+    "VALIDEE": "vert",
+    "REFUSEE": "rouge",
+    "A_EXECUTER": "ambre",
+    "EN_ATTENTE_REVALIDATION": "rouge",
+    "EXECUTE": "vert",
+    # mission ou devis annulé (audit AUD-02)
+    "ANNULEE": "rouge",
+}
+
+
+@register.simple_tag
+def badge(code: str, libelle: str):
+    """Pastille de statut : ``{% badge mission.statut mission.get_statut_display %}``."""
+    couleur = STYLES[COULEURS_STATUT.get(code, "gris")]
+    return format_html(
+        '<span class="inline-flex items-center rounded-full px-2.5 py-0.5 '
+        'text-xs font-semibold ring-1 ring-inset {}">{}</span>',
+        couleur,
+        libelle,
+    )
+
+
+@register.filter
+def pourcentage_signe(valeur, decimales=1):
+    """``{{ ecart|pourcentage_signe }} %`` → « +23,3 % » (virgule française, signe explicite)."""
+    if valeur is None:
+        return ""
+    return _pourcentage_signe(valeur, int(decimales))
+```
+
+Des **balises de gabarit personnalisées** : `{% badge %}` affiche une pastille colorée pour un statut (le texte
+porte toujours le sens, la couleur n'est qu'un renfort : accessibilité).
+
+#### `apps/core/views.py`
+
+*127 lignes* — Aides communes aux vues.
+
+```python
+"""Aides communes aux vues."""
+
+from . import documents_pdf, pdf
+from .rapports import contexte_rapport, url_pdf
+
+
+class PaginationTolerante:
+    """Pagination qui ne renvoie pas d'erreur 404 sur un numéro de page inutilisable.
+
+    Un lien enregistré vers la page 5, une page qui disparaît après un filtre ou un
+    ``?page=abc`` amènent sur la première ou la dernière page existante au lieu d'une
+    page d'erreur. ``?page=last`` reste accepté.
+    """
+
+    def paginate_queryset(self, queryset, page_size):
+        paginator = self.get_paginator(
+            queryset,
+            page_size,
+            orphans=self.get_paginate_orphans(),
+            allow_empty_first_page=self.get_allow_empty(),
+        )
+        demande = self.request.GET.get(self.page_kwarg, "1")
+        try:
+            numero = paginator.num_pages if demande == "last" else int(demande)
+        except ValueError:
+            numero = 1
+        numero = min(max(numero, 1), paginator.num_pages)
+        page = paginator.page(numero)
+        return paginator, page, page.object_list, page.has_other_pages()
+
+
+class TelechargementPdfMixin:
+    """Ajoute à une page de document imprimable (facture, devis, rapport de mission, tableau de bord) sa version
+    PDF générée par le serveur : ``?format=pdf`` (avenant-export-pdf.md). La sous-classe décrit le document dans
+    ``blocs_pdf(contexte)`` (blocs de :mod:`apps.core.pdf`) ; titre, sous-titre et en-tête viennent du contexte
+    du rapport (``contexte_rapport``), comme la page HTML. À placer avant la vue dans les classes parentes."""
+
+    def blocs_pdf(self, contexte: dict) -> list:
+        raise NotImplementedError
+
+    def get(self, request, *args, **kwargs):
+        if request.GET.get("format") != "pdf":
+            return super().get(request, *args, **kwargs)
+        if hasattr(self, "get_object"):
+            self.object = self.get_object()
+        contexte = self.get_context_data(**kwargs)
+        return documents_pdf.telecharger(
+            request, titre=contexte["titre"], sous_titre=contexte.get("sous_titre", ""), blocs=self.blocs_pdf(contexte),
+            entreprise=contexte["entreprise"], genere_par=contexte["genere_par"], genere_le=contexte["genere_le"],
+        )
+
+    def get_context_data(self, **kwargs):
+        return {**super().get_context_data(**kwargs), "url_pdf": url_pdf(self.request)}
+
+
+def fcfa(montant) -> str:
+    """Montant pour un document PDF : « 1 250 000 FCFA »."""
+    return f"{pdf.cellule(montant)} FCFA"
+
+
+class ImpressionListeMixin:
+    """Transforme un ``ListView`` existant en rapport imprimable, sans dupliquer ses filtres.
+
+    S'utilise en écrivant une sous-classe du ``ListView`` de la liste, mixin en premier pour que son
+    ``get_context_data`` l'emporte : ``class XImprimerView(ImpressionListeMixin, XListView): ...``. Les
+    droits (``roles``) et la recherche/les filtres (``get_queryset``) restent ceux de la liste ; seuls la
+    pagination et le contexte d'affichage changent. Chaque sous-classe déclare ``titre_impression`` et
+    ``colonnes`` : une suite de ``(libellé, clé)``, ``clé`` étant soit un chemin en pointillés résolu sur
+    chaque objet (``"client.raison_sociale"``, méthodes get_FOO_display comprises), soit un callable
+    ``clé(objet) -> str`` pour une valeur composée.
+    """
+
+    template_name = "rapports/liste_impression.html"
+    titre_impression = ""
+    colonnes: tuple = ()
+    limite_impression = 500
+
+    def get_titre_impression(self) -> str:
+        return self.titre_impression
+
+    def get_sous_titre_impression(self) -> str:
+        return ""
+
+    @staticmethod
+    def _valeur(objet, cle):
+        if callable(cle):
+            return cle(objet)
+        valeur = objet
+        for morceau in cle.split("."):
+            if valeur in (None, ""):
+                return "—"
+            valeur = getattr(valeur, morceau, "")
+            if callable(valeur):
+                valeur = valeur()
+        return valeur if valeur not in (None, "") else "—"
+
+    def get(self, request, *args, **kwargs):
+        """``?format=pdf`` : le même rapport en vrai PDF, généré par le serveur (avenant-export-pdf.md)."""
+        if request.GET.get("format") != "pdf":
+            return super().get(request, *args, **kwargs)
+        self.object_list = self.get_queryset()
+        contexte = self.get_context_data()
+        nombre = contexte["nombre"]
+        resume = f"{nombre} ligne{'s' if nombre > 1 else ''}"
+        if contexte["tronque"]:
+            resume += f" — limité aux {nombre} premières ; affinez la recherche pour voir le reste"
+        return documents_pdf.telecharger(
+            request, titre=contexte["titre"], sous_titre=contexte["sous_titre"], entreprise=contexte["entreprise"],
+            genere_par=contexte["genere_par"], genere_le=contexte["genere_le"],
+            blocs=[pdf.Texte(resume, discret=True), pdf.Tableau(entetes=contexte["entetes"], lignes=contexte["lignes"])],
+        )
+
+    def get_context_data(self, **kwargs):
+        objets = list(self.get_queryset()[: self.limite_impression + 1])
+        tronque = len(objets) > self.limite_impression
+        objets = objets[: self.limite_impression]
+        contexte = contexte_rapport(
+            self.request, titre=self.get_titre_impression(), sous_titre=self.get_sous_titre_impression()
+        )
+        contexte.update(
+            entetes=[libelle for libelle, _ in self.colonnes],
+            lignes=[[self._valeur(o, cle) for _, cle in self.colonnes] for o in objets],
+            nombre=len(objets),
+            tronque=tronque,
+            url_pdf=url_pdf(self.request),
+        )
+        return contexte
+```
+
+`PaginationTolerante` : une page inexistante ou illisible affiche la première ou la dernière page au lieu d'une
+erreur 404.
+
+#### `apps/notifications/views.py`
+
+*55 lignes* — Page « Notifications » : liste, lecture, tout marquer comme lu.
+
+```python
+"""Page « Notifications » : liste, lecture, tout marquer comme lu.
+
+Chaque utilisateur ne voit et ne modifie que ses propres notifications (tous rôles).
+"""
+
+from django.contrib.auth.mixins import LoginRequiredMixin
+from django.http import Http404
+from django.shortcuts import redirect
+from django.utils.http import url_has_allowed_host_and_scheme
+from django.views import View
+from django.views.generic import ListView
+
+from apps.core.views import PaginationTolerante
+
+from . import services
+
+
+class NotificationListView(LoginRequiredMixin, PaginationTolerante, ListView):
+    template_name = "notifications/liste.html"
+    context_object_name = "notifications"
+    paginate_by = 20
+
+    def get_queryset(self):
+        return services.notifications_de(
+            self.request.user, non_lues=self.request.GET.get("non_lues") == "1"
+        )
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        contexte["non_lues_seulement"] = self.request.GET.get("non_lues") == "1"
+        return contexte
+
+
+class LireView(LoginRequiredMixin, View):
+    """Marque une notification comme lue (POST) puis ouvre son lien."""
+
+    http_method_names = ["post"]
+
+    def post(self, request, pk):
+        notification = services.notifications_de(request.user).filter(pk=pk).first()
+        if notification is None:
+            raise Http404
+        services.marquer_lue(notification)
+        cible = notification.url
+        if cible and url_has_allowed_host_and_scheme(cible, allowed_hosts=None):
+            return redirect(cible)
+        return redirect("notifications:liste")
+
+
+class ToutLireView(LoginRequiredMixin, View):
+    http_method_names = ["post"]
+
+    def post(self, request):
+        services.marquer_toutes_lues(request.user)
+        return redirect("notifications:liste")
+```
+
+#### `apps/notifications/urls.py`
+
+*11 lignes*
+
+```python
+from django.urls import path
+
+from . import views
+
+app_name = "notifications"
+
+urlpatterns = [
+    path("", views.NotificationListView.as_view(), name="liste"),
+    path("tout-lire/", views.ToutLireView.as_view(), name="tout_lire"),
+    path("<int:pk>/lire/", views.LireView.as_view(), name="lire"),
+]
+```
+
+#### `apps/notifications/context_processors.py`
+
+*9 lignes*
+
+```python
+from . import services
+
+
+def notifications(request):
+    """Ajoute ``nombre_non_lues`` (cloche de l'en-tête) au contexte des templates."""
+    utilisateur = request.user
+    if not utilisateur.is_authenticated:
+        return {}
+    return {"nombre_non_lues": services.nombre_non_lues(utilisateur)}
+```
+
+#### `apps/notifications/templates/notifications/liste.html`
+
+*70 lignes*
+
+```django
+{% extends "base.html" %}
+{% load ui %}
+{% block titre %}Notifications{% endblock %}
+{% block entete %}Notifications{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-4xl">
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <div>
+      <h1 class="text-2xl font-bold text-slate-900">Notifications</h1>
+      <p class="mt-1 text-sm text-slate-600">
+        {% if nombre_non_lues %}{{ nombre_non_lues }} non lue{{ nombre_non_lues|pluralize }}{% else %}Tout est lu{% endif %}
+      </p>
+    </div>
+    <div class="flex flex-wrap items-center gap-3">
+      <a href="{% if non_lues_seulement %}{% url 'notifications:liste' %}{% else %}?non_lues=1{% endif %}"
+         class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+        {% if non_lues_seulement %}Afficher toutes{% else %}Non lues seulement{% endif %}
+      </a>
+      {% if nombre_non_lues %}
+        <form method="post" action="{% url 'notifications:tout_lire' %}">
+          {% csrf_token %}
+          <button type="submit" class="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2">Tout marquer comme lu</button>
+        </form>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if notifications %}
+    <ul class="mt-5 divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      {% for n in notifications %}
+        <li class="flex flex-wrap items-start gap-x-4 gap-y-3 p-4 {% if not n.est_lue %}bg-marque-50/40{% endif %}">
+          <span class="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full {% if n.est_lue %}bg-transparent{% else %}bg-marque-600{% endif %}" aria-hidden="true"></span>
+          <div class="min-w-0 flex-1 basis-56">
+            <p class="flex flex-wrap items-center gap-2">
+              {% badge n.niveau n.get_niveau_display %}
+              <span class="text-xs font-semibold uppercase tracking-wide text-slate-600">{{ n.get_categorie_display }}</span>
+              <span class="text-xs text-slate-600">{{ n.created_at|date:"d/m/Y H:i" }}</span>
+              {% if not n.est_lue %}<span class="sr-only">Non lue</span>{% endif %}
+            </p>
+            <p class="mt-1 font-semibold text-slate-900">{{ n.titre }}</p>
+            {% if n.message %}<p class="mt-0.5 text-sm text-slate-700">{{ n.message }}</p>{% endif %}
+          </div>
+          <form method="post" action="{% url 'notifications:lire' n.pk %}" class="w-full shrink-0 pl-6 sm:w-auto sm:pl-0">
+            {% csrf_token %}
+            {% if n.action and n.url %}
+              <button type="submit"
+                      class="w-full rounded-lg bg-emerald-700 px-3 py-1.5 sm:w-auto text-sm font-semibold text-white shadow-sm hover:bg-emerald-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:ring-offset-2">
+                {{ n.action }}
+              </button>
+            {% else %}
+              <button type="submit"
+                      class="w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 sm:w-auto text-sm font-medium text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+                {% if n.url %}Ouvrir{% elif n.est_lue %}Lue{% else %}Marquer comme lue{% endif %}
+              </button>
+            {% endif %}
+          </form>
+        </li>
+      {% endfor %}
+    </ul>
+    {% include "components/_pagination.html" %}
+  {% else %}
+    <div class="mt-5 rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center">
+      <span class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-600"><i class="fa-regular fa-bell" aria-hidden="true"></i></span>
+      <p class="mt-3 font-semibold text-slate-900">{% if non_lues_seulement %}Aucune notification non lue{% else %}Aucune notification{% endif %}</p>
+      <p class="mt-1 text-sm text-slate-600">Les alertes (congés, stock, carburant, échéances) apparaîtront ici.</p>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}
+```
+
+#### `apps/audit/views.py`
+
+*122 lignes* — Écran du journal d'audit : liste filtrable, export CSV, rapport imprimable — ADMIN et DIRECTION
+
+```python
+"""Écran du journal d'audit : liste filtrable, export CSV, rapport imprimable — ADMIN et DIRECTION
+(cahier-des-charges.md:56-82). Aucune écriture ici : le journal ne se remplit que via
+``services.log_action`` (signaux, ``registry.audit_model``), jamais depuis cet écran.
+"""
+
+import csv
+import json
+
+from django.http import HttpResponse
+from django.views.generic import ListView
+
+from apps.accounts.mixins import RoleRequiredMixin
+from apps.core.views import ImpressionListeMixin, PaginationTolerante
+
+from . import permissions, services
+from .forms import FiltreJournalForm
+
+
+class JournalListView(PaginationTolerante, RoleRequiredMixin, ListView):
+    roles = permissions.CONSULTATION
+    template_name = "audit/journal_list.html"
+    context_object_name = "lignes"
+    paginate_by = 30
+
+    def get_filtre(self):
+        if not hasattr(self, "_filtre"):
+            self._filtre = FiltreJournalForm(self.request.GET, modules=services.modules_utilises())
+        return self._filtre
+
+    def get_queryset(self):
+        return services.rechercher(**self.get_filtre().criteres())
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(**kwargs)
+        contexte.update(
+            filtre=self.get_filtre(),
+            filtres_actifs=any(self.get_filtre().criteres().values()),
+        )
+        return contexte
+
+
+COLONNES_EXPORT = (
+    ("Date/heure", lambda e: e.date_heure.strftime("%d/%m/%Y %H:%M:%S")),
+    ("Utilisateur", lambda e: e.utilisateur_nom or "—"),
+    ("Rôle", lambda e: e.role or "—"),
+    ("Action", "get_action_display"), ("Module", "module"), ("Entité", "entite"),
+    ("ID entité", lambda e: e.entite_id if e.entite_id is not None else "—"),
+    ("Statut", "get_statut_display"), ("Adresse IP", lambda e: e.adresse_ip or "—"),
+)
+
+
+def _json(valeur):
+    return json.dumps(valeur, ensure_ascii=False, sort_keys=True, default=str) if valeur is not None else ""
+
+
+def _texte_sur(valeur: str) -> str:
+    """Neutralise l'injection de formule d'un tableur : un texte qui commence par = + - @ s'exécuterait à
+    l'ouverture dans Excel (le user-agent est fourni par le client)."""
+    return f"'{valeur}" if valeur[:1] in ("=", "+", "-", "@", "\t", "\r") else valeur
+
+
+# Le CSV sert aux audits externes : en plus des colonnes de l'écran, ce qui a réellement changé (anciennes et
+# nouvelles valeurs) et le navigateur utilisé. Le rapport imprimable garde les colonnes de l'écran.
+COLONNES_CSV = COLONNES_EXPORT + (
+    ("Ancienne valeur", lambda e: _texte_sur(_json(e.ancienne_valeur))),
+    ("Nouvelle valeur", lambda e: _texte_sur(_json(e.nouvelle_valeur))),
+    ("User-agent", lambda e: _texte_sur(e.user_agent)),
+)
+
+
+class JournalImprimerView(ImpressionListeMixin, JournalListView):
+    """Rapport imprimable du journal (mêmes filtres que la liste)."""
+
+    titre_impression = "Journal d'audit"
+    colonnes = COLONNES_EXPORT
+
+    def get_sous_titre_impression(self):
+        criteres = self.get_filtre().criteres()
+        morceaux = []
+        if criteres.get("module"):
+            morceaux.append(f"module : {criteres['module']}")
+        if criteres.get("action"):
+            morceaux.append(f"action : {dict(services.ActionChoices.choices)[criteres['action']]}")
+        if criteres.get("statut"):
+            morceaux.append(f"statut : {dict(services.StatutChoices.choices)[criteres['statut']]}")
+        if criteres.get("date_debut"):
+            morceaux.append(f"du {criteres['date_debut'].strftime('%d/%m/%Y')}")
+        if criteres.get("date_fin"):
+            morceaux.append(f"au {criteres['date_fin'].strftime('%d/%m/%Y')}")
+        if criteres.get("recherche"):
+            morceaux.append(f"recherche : « {criteres['recherche']} »")
+        return " · ".join(morceaux)
+
+
+class JournalExporterCsvView(RoleRequiredMixin, ListView):
+    """Export CSV du journal filtré (cahier-des-charges.md:82 « Export CSV/PDF pour audits externes »).
+
+    Le PDF s'obtient par :class:`JournalImprimerView` (Ctrl+P / Enregistrer au format PDF).
+    """
+
+    roles = permissions.CONSULTATION
+
+    def get_filtre(self):
+        return FiltreJournalForm(self.request.GET, modules=services.modules_utilises())
+
+    def get_queryset(self):
+        return services.rechercher(**self.get_filtre().criteres())
+
+    def get(self, request, *args, **kwargs):
+        reponse = HttpResponse(content_type="text/csv; charset=utf-8")
+        reponse["Content-Disposition"] = 'attachment; filename="journal_audit.csv"'
+        reponse.write("﻿")  # BOM : Excel ouvre l'UTF-8 sans le déformer
+        redacteur = csv.writer(reponse, delimiter=";")
+        redacteur.writerow([libelle for libelle, _ in COLONNES_CSV])
+        # Lecture par lots : le journal grossit sans fin (conservation 5 ans), il ne doit pas tenir en mémoire.
+        # Chaque cellule est neutralisée, pas seulement celles fournies par le navigateur : un nom d'utilisateur,
+        # une entité ou un module saisis librement peuvent aussi commencer par « = » (audit M1-76).
+        for entree in self.get_queryset().iterator(chunk_size=2000):
+            redacteur.writerow(
+                [_texte_sur(str(ImpressionListeMixin._valeur(entree, cle))) for _, cle in COLONNES_CSV]
+            )
+        return reponse
+```
+
+(Ce fichier ne contient qu'un commentaire ; l'app `audit` n'a pas d'écran dédié.)
+
+La **page d'accueil provisoire** : le vrai tableau de bord arrivera au chapitre 30 et renvoie vers tous les
+écrans ; en attendant, une page simple permet de tester la connexion.
+
+#### `templates/accueil_provisoire.html`
+
+*Fichier provisoire, propre au tutoriel : il sera supprimé au chapitre « La page d'accueil : le tableau de bord ».*
+
+```django
+{% extends "base.html" %}
+{% block titre %}Accueil{% endblock %}
+{% block entete %}Accueil{% endblock %}
+
+{% block contenu %}
+<h1 class="text-2xl font-bold text-slate-900">Bienvenue</h1>
+<p class="mt-2 text-sm text-slate-700">
+  Page d'accueil provisoire : le tableau de bord la remplacera au chapitre « La page d'accueil : le tableau de bord ».
+</p>
+{% endblock %}
+```
+
+## Étape 6 — Les tests
+
+#### Fichiers vides à créer
+
+Ces fichiers n'ont aucun contenu ; ils servent à faire de leur dossier un *paquet Python* (sans eux, `import apps.xxx` échouerait). Créez d'abord les dossiers, puis les fichiers :
+
+```bash
+mkdir -p apps\core\templatetags
+touch apps/core/templatetags/__init__.py
+```
+
+> Sous PowerShell, `mkdir -p` s'écrit `New-Item -ItemType Directory -Force <dossier>` et `touch fichier` s'écrit `New-Item -ItemType File -Force fichier`. Vous pouvez aussi créer ces fichiers avec votre éditeur.
+
+#### `templates/accounts/utilisateur_form.html`
+
+*30 lignes*
+
+```django
+{% extends "base.html" %}
+{% block titre %}{% if compte %}Modifier {{ compte.username }}{% else %}Nouveau compte{% endif %}{% endblock %}
+{% block entete %}Administration{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-2xl">
+  <nav aria-label="Fil d'Ariane" class="text-sm text-slate-600">
+    <a href="{% url 'accounts:utilisateurs' %}" class="underline-offset-2 hover:underline">Utilisateurs</a>
+    <span aria-hidden="true">/</span> {% if compte %}{{ compte.username }}{% else %}Nouveau compte{% endif %}
+  </nav>
+  <h1 class="mt-2 text-2xl font-bold text-slate-900">{% if compte %}Modifier {{ compte.username }}{% else %}Nouveau compte{% endif %}</h1>
+  {% if not compte %}
+    <p class="mt-1 text-sm text-slate-600">La personne se connecte avec l'identifiant et le mot de passe initial ci-dessous ; elle peut ensuite le changer avec « Mot de passe oublié ». Pour les rôles Administrateur et Direction, la double authentification est demandée à la première connexion.</p>
+  {% endif %}
+
+  <form method="post" novalidate class="mt-6 space-y-4 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+      <div role="alert" class="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">{% for erreur in form.non_field_errors %}<p>{{ erreur }}</p>{% endfor %}</div>
+    {% endif %}
+    {% for champ in form %}
+      {% include "components/_champ.html" with champ=champ %}
+    {% endfor %}
+    <div class="flex items-center justify-end gap-3 border-t border-slate-100 pt-5">
+      <a href="{% url 'accounts:utilisateurs' %}" class="rounded-lg px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Annuler</a>
+      <button type="submit" class="rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">{% if compte %}Enregistrer{% else %}Créer le compte{% endif %}</button>
+    </div>
+  </form>
+</div>
+{% endblock %}
+```
+
+#### `templates/accounts/utilisateur_list.html`
+
+*68 lignes*
+
+```django
+{% extends "base.html" %}
+{% block titre %}Utilisateurs{% endblock %}
+{% block entete %}Administration{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-6xl">
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <div>
+      <h1 class="text-2xl font-bold text-slate-900">Utilisateurs</h1>
+      <p class="mt-1 text-sm text-slate-600">{{ paginator.count|default:0 }} compte{{ paginator.count|pluralize }}. Un compte ne se supprime jamais : on le désactive, son historique reste attribué à son nom.</p>
+    </div>
+    <a href="{% url 'accounts:utilisateur_nouveau' %}" class="inline-flex items-center gap-2 rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">
+      <i class="fa-solid fa-user-plus" aria-hidden="true"></i> Nouveau compte
+    </a>
+  </div>
+
+  <form method="get" class="mt-5 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    {% include "components/_champ.html" with champ=filtre.q %}
+    {% include "components/_champ.html" with champ=filtre.role %}
+    {% include "components/_champ.html" with champ=filtre.actif %}
+    <button type="submit" class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">Filtrer</button>
+  </form>
+
+  <div class="mt-5 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+    <table class="min-w-full divide-y divide-slate-200 text-sm">
+      <caption class="sr-only">Comptes utilisateurs</caption>
+      <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+        <tr>
+          <th scope="col" class="px-4 py-3">Identifiant</th>
+          <th scope="col" class="px-4 py-3">Nom</th>
+          <th scope="col" class="px-4 py-3">Rôle</th>
+          <th scope="col" class="px-4 py-3">Double authentification</th>
+          <th scope="col" class="px-4 py-3">Statut</th>
+          <th scope="col" class="px-4 py-3"><span class="sr-only">Actions</span></th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for c in comptes %}
+          <tr class="hover:bg-slate-50">
+            <td class="whitespace-nowrap px-4 py-3 font-semibold text-slate-900">{{ c.username }}{% if c.pk == moi.pk %} <span class="text-xs font-normal text-slate-600">(vous)</span>{% endif %}</td>
+            <td class="px-4 py-3 text-slate-700">{{ c.get_full_name|default:"—" }}<span class="block text-xs text-slate-600">{{ c.email }}</span></td>
+            <td class="px-4 py-3 text-slate-700">{% if c.is_superuser %}Superutilisateur{% else %}{{ c.get_role_display|default:"—" }}{% endif %}</td>
+            <td class="px-4 py-3 text-slate-700">{% if c.mfa_enabled %}Activée{% else %}—{% endif %}</td>
+            <td class="px-4 py-3">{% if c.is_active %}<span class="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-900">Actif</span>{% else %}<span class="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-semibold text-slate-800">Désactivé</span>{% endif %}</td>
+            <td class="whitespace-nowrap px-4 py-3 text-right">
+              {% if c.is_superuser %}
+                <span class="text-xs text-slate-600">géré en ligne de commande</span>
+              {% else %}
+                <a href="{% url 'accounts:utilisateur_modifier' c.pk %}" class="font-medium text-marque-700 underline-offset-2 hover:underline">Modifier</a>
+                {% if c.pk != moi.pk %}
+                  <form method="post" action="{% url 'accounts:utilisateur_activation' c.pk %}" class="ml-3 inline" data-confirm="{% if c.is_active %}Désactiver ce compte ? La personne ne pourra plus se connecter.{% else %}Réactiver ce compte ?{% endif %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="actif" value="{% if c.is_active %}non{% else %}oui{% endif %}">
+                    <button type="submit" class="font-medium text-red-800 underline-offset-2 hover:underline">{% if c.is_active %}Désactiver{% else %}Réactiver{% endif %}</button>
+                  </form>
+                {% endif %}
+              {% endif %}
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" class="px-4 py-8 text-center text-slate-600">Aucun compte ne correspond.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% include "components/_pagination.html" %}
+  </div>
+</div>
+{% endblock %}
+```
+
+#### `templates/components/_bouton_xlsx.html`
+
+*4 lignes*
+
+```django
+<a href="{{ url }}?{{ request.GET.urlencode }}" download
+   class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+  <i class="fa-solid fa-file-excel" aria-hidden="true"></i> Excel
+</a>
+```
+
+#### `templates/components/_graphique_barres.html`
+
+*17 lignes* — Barres horizontales (apps.core.graphiques.barres_horizontales). Valeur au bout de la barre : rien ne dépend de la souris.
+
+```django
+{# Barres horizontales (apps.core.graphiques.barres_horizontales). Valeur au bout de la barre : rien ne dépend de la souris. #}
+{% if g.vide %}
+  <p class="text-sm text-slate-600">{{ vide }}</p>
+{% else %}
+  <ul class="viz-barres">
+    {% for l in g.lignes %}
+      <li class="viz-barre-ligne">
+        <span class="viz-barre-libelle">
+          {% if l.url %}<a href="{{ l.url }}" class="font-medium text-marque-700 underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">{{ l.libelle }}</a>{% else %}{{ l.libelle }}{% endif %}
+          {% if l.detail %}<span class="text-xs text-slate-600">· {{ l.detail }}</span>{% endif %}
+        </span>
+        <span class="viz-piste" aria-hidden="true"><span class="viz-barre viz-s1" style="width: {{ l.largeur }}%"></span></span>
+        <span class="viz-barre-valeur">{{ l.valeur_texte }}{% if g.unite %} <span class="text-xs font-normal text-slate-600">{{ g.unite }}</span>{% endif %}</span>
+      </li>
+    {% endfor %}
+  </ul>
+{% endif %}
+```
+
+#### `templates/components/_graphique_colonnes.html`
+
+*50 lignes*
+
+```django
+{% load l10n %}{# Colonnes groupées (apps.core.graphiques.colonnes_groupees). Infobulle au survol ET au focus clavier ; équivalent en tableau dessous. #}
+{% if g.vide %}
+  <p class="text-sm text-slate-600">{{ vide }}</p>
+{% else %}
+  <ul class="viz-legende" aria-label="Légende">
+    {% for s in g.legende %}<li><span class="viz-cle viz-s{{ s.rang }}" aria-hidden="true"></span>{{ s.nom }}</li>{% endfor %}
+  </ul>
+  <div class="viz-colonnes{% if g.grappes|length > 6 %} viz-dense{% endif %}">
+    <div class="viz-axe-y" aria-hidden="true">
+      {% for t in g.graduations %}<span style="bottom: {{ t.position }}%">{{ t.etiquette }}</span>{% endfor %}
+    </div>
+    <div class="viz-zone">
+      <div class="viz-trace">
+        {% for t in g.graduations %}<span class="viz-grille" style="bottom: {{ t.position }}%" aria-hidden="true"></span>{% endfor %}
+        <div class="viz-grappes">
+          {% for grappe in g.grappes %}
+            <div class="viz-grappe" tabindex="0" aria-label="{{ grappe.libelle }} : {% for c in grappe.colonnes %}{{ c.serie }} {{ c.valeur_texte }} {{ g.unite }}{% if not forloop.last %}, {% endif %}{% endfor %}">
+              <div class="viz-colonnes-serie">
+                {% for c in grappe.colonnes %}<span class="viz-colonne viz-s{{ c.rang }}" style="height: {{ c.hauteur|unlocalize }}%"></span>{% endfor %}
+              </div>
+              <div class="viz-info viz-info-{{ grappe.bord }}" role="tooltip">
+                <strong class="viz-info-titre">{{ grappe.libelle }}</strong>
+                {% for c in grappe.colonnes %}
+                  <span class="viz-info-ligne"><span class="viz-trait viz-s{{ c.rang }}" aria-hidden="true"></span><span class="viz-info-valeur">{{ c.valeur_texte }}</span><span class="viz-info-nom">{{ c.serie }}</span></span>
+                {% endfor %}
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="viz-axe-x" aria-hidden="true">
+        {% for grappe in g.grappes %}<span>{{ grappe.libelle_court }}{% if grappe.sous_libelle %}<small>{{ grappe.sous_libelle }}</small>{% endif %}</span>{% endfor %}
+      </div>
+    </div>
+  </div>
+  <details class="mt-3 text-sm">
+    <summary class="cursor-pointer text-marque-700 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">Voir en tableau</summary>
+    <div class="mt-2 overflow-x-auto">
+      <table class="w-full text-left text-sm" id="{{ id }}-tableau">
+        <caption class="sr-only">Valeurs en {{ g.unite }}</caption>
+        <thead><tr class="border-b border-slate-200 text-slate-600"><th scope="col" class="py-1 pr-3 font-medium">Mois</th>{% for e in g.tableau.entetes %}<th scope="col" class="py-1 pl-3 text-right font-medium">{{ e }}</th>{% endfor %}</tr></thead>
+        <tbody>
+          {% for l in g.tableau.lignes %}
+            <tr class="border-b border-slate-100"><th scope="row" class="py-1 pr-3 font-medium text-slate-800">{{ l.libelle }}</th>{% for v in l.valeurs %}<td class="py-1 pl-3 text-right tabular-nums text-slate-800">{{ v }}</td>{% endfor %}</tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+{% endif %}
+```
+
+#### `templates/components/_suivi_direct.html`
+
+*19 lignes* — Voyant du suivi en direct + annonce pour lecteurs d'écran + bandeau « actualiser » (static/js/suivi-missions.js).
+
+```django
+{# Voyant du suivi en direct + annonce pour lecteurs d'écran + bandeau « actualiser » (static/js/suivi-missions.js). #}
+<div class="flex flex-wrap items-center gap-3">
+  <p id="suivi-voyant" class="text-xs">
+    <span data-etat="connecte" class="hidden items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 font-medium text-emerald-800 ring-1 ring-emerald-200">
+      <span class="h-2 w-2 rounded-full bg-emerald-600" aria-hidden="true"></span>En direct
+    </span>
+    <span data-etat="reconnexion" class="hidden items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 font-medium text-amber-900 ring-1 ring-amber-300">
+      <span class="h-2 w-2 rounded-full bg-amber-500" aria-hidden="true"></span>Reconnexion…
+    </span>
+    <span data-etat="hors_ligne" class="hidden items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 font-medium text-slate-700 ring-1 ring-slate-300">
+      <span class="h-2 w-2 rounded-full bg-slate-400" aria-hidden="true"></span>Suivi en direct indisponible : actualisez la page pour voir les changements
+    </span>
+  </p>
+  <div id="suivi-bandeau" class="hidden items-center gap-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs text-amber-900" role="status">
+    Cette page vient de changer.
+    <button type="button" id="suivi-actualiser" class="font-semibold underline underline-offset-2 hover:text-amber-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-700">Actualiser</button>
+  </div>
+  <div id="suivi-annonce" class="sr-only" aria-live="polite"></div>
+</div>
+```
+
+#### `templates/core/document_pdf.html`
+
+*55 lignes*
+
+```django
+{% extends "base.html" %}
+{% block titre %}PDF : {{ document.titre }}{% endblock %}
+{% block entete %}Téléchargement{% endblock %}
+
+{% block head_extra %}
+  {# Sans JavaScript : la page se recharge tant que le PDF se prépare, puis lance son téléchargement (audit TECH-70). #}
+  {% if en_attente and not bloque %}
+    <meta http-equiv="refresh" content="2">
+  {% elif document.statut == "PRET" %}
+    <meta http-equiv="refresh" content="0;url={% url 'document_pdf_telecharger' document.cle %}">
+  {% endif %}
+{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-xl">
+  <div class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm" role="status" aria-live="polite">
+    <h1 class="text-xl font-bold text-slate-900">{{ document.titre }}</h1>
+
+    {% if bloque %}
+      <p class="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+        <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+        La préparation prend plus longtemps que prévu : le service qui fabrique les PDF semble arrêté. Réessayez dans
+        quelques minutes ; si cela se reproduit, prévenez l'administrateur.
+      </p>
+    {% elif en_attente %}
+      <p class="mt-3 flex items-center gap-2 text-sm text-slate-700">
+        <i class="fa-solid fa-spinner fa-spin text-marque-600" aria-hidden="true"></i>
+        Préparation de votre PDF… Le téléchargement démarrera tout seul.
+      </p>
+      <p class="mt-2 text-xs text-slate-600">Vous pouvez continuer à travailler : le document reste disponible
+        {{ heures_conservation }} heures à cette adresse.</p>
+    {% elif document.statut == "PRET" %}
+      <p class="mt-3 text-sm text-slate-700">
+        <i class="fa-solid fa-circle-check text-green-700" aria-hidden="true"></i>
+        Votre PDF est prêt ; le téléchargement démarre. S'il ne démarre pas :
+      </p>
+      <a href="{% url 'document_pdf_telecharger' document.cle %}"
+         class="mt-3 inline-flex items-center gap-2 rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">
+        <i class="fa-solid fa-file-pdf" aria-hidden="true"></i> Télécharger {{ document.nom_fichier }}
+      </a>
+    {% else %}
+      <p class="mt-3 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-900">
+        <i class="fa-solid fa-circle-xmark" aria-hidden="true"></i>
+        Le PDF n'a pas pu être fabriqué. Réessayez ; si le problème persiste, prévenez l'administrateur.
+      </p>
+    {% endif %}
+
+    {% if document.url_retour %}
+      <p class="mt-5 border-t border-slate-100 pt-4 text-sm">
+        <a href="{{ document.url_retour }}" class="font-medium text-marque-700 underline-offset-2 hover:underline">Retour à la page d'origine</a>
+      </p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+```
+
+#### `templates/parametres/parametres.html`
+
+*45 lignes*
+
+```django
+{% extends "base.html" %}
+{% load l10n %}
+{% block titre %}Paramètres{% endblock %}
+{% block entete %}Administration{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-3xl">
+  <h1 class="text-2xl font-bold text-slate-900">Paramètres</h1>
+  <p class="mt-1 text-sm text-slate-600">
+    Seuils d'alerte et valeurs proposées par défaut. Une modification s'applique dès l'opération suivante ; elle ne
+    change pas ce qui est déjà enregistré (niveau d'alerte d'un plein passé, date limite d'un congé déjà demandé).
+    Chaque modification est tracée au journal d'audit.
+  </p>
+  <p class="mt-2 text-xs text-slate-600">
+    {% if en_vigueur.modifie_le %}
+      Dernière modification le {{ en_vigueur.modifie_le|date:"d/m/Y à H:i" }}{% if en_vigueur.modifie_par %} par {{ en_vigueur.modifie_par.get_full_name|default:en_vigueur.modifie_par.username }}{% endif %}.
+    {% else %}
+      Aucune modification : les valeurs du cahier des charges s'appliquent.
+    {% endif %}
+  </p>
+
+  <form method="post" novalidate class="mt-6 space-y-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+      <div role="alert" class="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">{% for erreur in form.non_field_errors %}<p>{{ erreur }}</p>{% endfor %}</div>
+    {% endif %}
+    {% for section in sections %}
+      <fieldset class="{% if not forloop.first %}border-t border-slate-100 pt-5{% endif %}">
+        <legend class="text-sm font-semibold text-slate-900">{{ section.titre }}</legend>
+        <div class="mt-3 grid grid-cols-1 gap-5 sm:grid-cols-2">
+          {% for champ, defaut in section.champs %}
+            <div>
+              {% include "components/_champ.html" with champ=champ %}
+              <p class="mt-1 text-xs text-slate-600">Cahier des charges : {{ defaut|unlocalize }}</p>
+            </div>
+          {% endfor %}
+        </div>
+      </fieldset>
+    {% endfor %}
+    <div class="flex items-center justify-end gap-3 border-t border-slate-100 pt-5">
+      <button type="submit" class="rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">Enregistrer</button>
+    </div>
+  </form>
+</div>
+{% endblock %}
+```
+
+#### `templates/rapports/_entete_impression.html`
+
+*20 lignes*
+
+```django
+{% load static %}{# En-tête commune des rapports imprimables : logo, entreprise, titre, sous-titre, bouton Imprimer. #}
+<div class="actions">
+  {% if url_pdf %}<a href="{{ url_pdf }}" class="bouton-pdf"><i class="fa-solid fa-file-pdf" aria-hidden="true"></i> Télécharger en PDF</a>{% endif %}
+  <button type="button" data-imprimer><i class="fa-solid fa-print" aria-hidden="true"></i> Imprimer</button>
+</div>
+
+<div class="rapport-entete">
+  <div class="rapport-marque">
+    <img src="{% static 'img/logo-emblem.jpg' %}" alt="" class="rapport-logo">
+    <div>
+      <strong class="rapport-nom">{{ entreprise.nom }}</strong><br>
+      {% if entreprise.adresse %}<span class="petit">{{ entreprise.adresse|linebreaksbr }}</span><br>{% endif %}
+      {% if entreprise.ncc %}<span class="petit">NCC {{ entreprise.ncc }}</span>{% endif %}
+    </div>
+  </div>
+  <div style="text-align:right">
+    <h1>{{ titre }}</h1>
+    {% if sous_titre %}<div class="petit">{{ sous_titre }}</div>{% endif %}
+  </div>
+</div>
+```
+
+#### `templates/rapports/_pied_impression.html`
+
+*2 lignes* — Pied commun des rapports imprimables : qui l'a généré, quand.
+
+```django
+{# Pied commun des rapports imprimables : qui l'a généré, quand. #}
+<p class="rapport-pied">Généré le {{ genere_le|date:"d/m/Y à H:i" }} par {{ genere_par }} — DEN Source ERP</p>
+```
+
+#### `templates/rapports/_style_impression.html`
+
+*29 lignes*
+
+```django
+<style>
+  :root { --marque: #8b0319; --accent: #f28a14; } /* couleurs du logo DEN Source Group (frontend/tailwind.config.js) */
+  body { font-family: Arial, Helvetica, sans-serif; color: #111; margin: 2rem auto; max-width: 960px; padding: 0 1rem; font-size: 13px; }
+  h1 { font-size: 1.5rem; margin: 0; color: var(--marque); }
+  h2 { font-size: 1.05rem; margin: 1.75rem 0 .5rem; padding-top: .75rem; border-top: 2px solid var(--accent); color: var(--marque); }
+  table { width: 100%; border-collapse: collapse; margin-top: .75rem; }
+  th, td { padding: .4rem .6rem; border-bottom: 1px solid #ccc; text-align: left; vertical-align: top; }
+  th { background: #fdf2f3; color: var(--marque); font-size: .75rem; text-transform: uppercase; letter-spacing: .03em; }
+  td.droite, th.droite { text-align: right; white-space: nowrap; }
+  .rapport-entete { display: flex; justify-content: space-between; gap: 2rem; align-items: flex-start; padding-bottom: .75rem; border-bottom: 3px solid var(--accent); }
+  .rapport-marque { display: flex; align-items: center; gap: .85rem; }
+  .rapport-logo { height: 48px; width: 48px; object-fit: contain; flex-shrink: 0; }
+  .rapport-nom { color: var(--marque); font-size: 1.15rem; }
+  .petit { color: #555; font-size: .85rem; }
+  .cartouche { display: flex; flex-wrap: wrap; gap: 1.5rem; margin-top: 1rem; }
+  .cartouche > div { min-width: 9rem; }
+  .cartouche dt { color: #555; font-size: .78rem; }
+  .cartouche dd { margin: 0; font-size: 1.15rem; font-weight: bold; color: var(--marque); }
+  .actions { margin-bottom: 1rem; display: flex; gap: .5rem; flex-wrap: wrap; }
+  .actions .bouton-pdf { display: inline-flex; align-items: center; gap: .5rem; border: 1px solid var(--marque); background: #fff; color: var(--marque); border-radius: .5rem; padding: .5rem 1rem; font-weight: 600; text-decoration: none; }
+  .actions button { display: inline-flex; align-items: center; gap: .5rem; border: 1px solid var(--marque); background: var(--marque); color: #fff; border-radius: .5rem; padding: .5rem 1rem; font: inherit; font-weight: 600; cursor: pointer; }
+  .rapport-pied { margin-top: 2rem; padding-top: .5rem; border-top: 1px solid #ddd; color: #777; font-size: .78rem; }
+  @media print {
+    .actions { display: none; }
+    body { margin: 0; }
+    h2 { break-after: avoid; }
+    tr { break-inside: avoid; }
+  }
+</style>
+```
+
+#### `templates/rapports/liste_impression.html`
+
+*32 lignes*
+
+```django
+{% load static %}<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ titre }} · {{ entreprise.nom }}</title>
+  {% include "rapports/_style_impression.html" %}
+</head>
+<body>
+  {% include "rapports/_entete_impression.html" %}
+
+  <p class="petit">
+    {{ nombre }} ligne{{ nombre|pluralize }}{% if tronque %} — limité aux {{ nombre }} premières ; affinez la recherche pour voir le reste{% endif %}
+  </p>
+
+  {% if lignes %}
+    <table>
+      <thead><tr>{% for entete in entetes %}<th>{{ entete }}</th>{% endfor %}</tr></thead>
+      <tbody>
+        {% for ligne in lignes %}
+          <tr>{% for valeur in ligne %}<td>{{ valeur }}</td>{% endfor %}</tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p>Aucune ligne pour ces critères.</p>
+  {% endif %}
+
+  {% include "rapports/_pied_impression.html" %}
+  <script src="{% static 'js/app.js' %}" defer></script>
+</body>
+</html>
+```
+
+#### `templates/registration/password_change_form.html`
+
+*52 lignes*
+
+```django
+{% extends "base.html" %}
+{% block titre %}Changer mon mot de passe{% endblock %}
+{% block entete %}Mon compte{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-md">
+  <h1 class="text-2xl font-bold text-slate-900">Changer mon mot de passe</h1>
+  <p class="mt-1 text-sm text-slate-600">Vous restez connecté après le changement.</p>
+
+  <form method="post" class="mt-6 space-y-5 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+      <div role="alert" class="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">
+        {% for erreur in form.non_field_errors %}<p>{{ erreur }}</p>{% endfor %}
+      </div>
+    {% endif %}
+
+    <div>
+      <label for="{{ form.old_password.id_for_label }}" class="block text-sm font-medium text-slate-800">Mot de passe actuel</label>
+      <input type="password" name="old_password" id="{{ form.old_password.id_for_label }}" required autofocus
+             autocomplete="current-password"
+             {% if form.old_password.errors %}aria-invalid="true" aria-describedby="erreur-ancien"{% endif %}
+             class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-marque-600 focus:outline-none focus:ring-2 focus:ring-marque-600/30">
+      {% for erreur in form.old_password.errors %}<p id="erreur-ancien" class="mt-1 text-sm text-red-700">{{ erreur }}</p>{% endfor %}
+    </div>
+    <div>
+      <label for="{{ form.new_password1.id_for_label }}" class="block text-sm font-medium text-slate-800">Nouveau mot de passe</label>
+      <input type="password" name="new_password1" id="{{ form.new_password1.id_for_label }}" required
+             autocomplete="new-password" aria-describedby="aide-nouveau{% if form.new_password1.errors %} erreur-nouveau{% endif %}"
+             {% if form.new_password1.errors %}aria-invalid="true"{% endif %}
+             class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-marque-600 focus:outline-none focus:ring-2 focus:ring-marque-600/30">
+      <p id="aide-nouveau" class="mt-1 text-xs text-slate-600">Au moins 10 caractères, ni trop simple ni proche de votre identifiant.</p>
+      {% for erreur in form.new_password1.errors %}<p id="erreur-nouveau" class="mt-1 text-sm text-red-700">{{ erreur }}</p>{% endfor %}
+    </div>
+    <div>
+      <label for="{{ form.new_password2.id_for_label }}" class="block text-sm font-medium text-slate-800">Confirmer le nouveau mot de passe</label>
+      <input type="password" name="new_password2" id="{{ form.new_password2.id_for_label }}" required
+             autocomplete="new-password"
+             {% if form.new_password2.errors %}aria-invalid="true" aria-describedby="erreur-confirmation"{% endif %}
+             class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-marque-600 focus:outline-none focus:ring-2 focus:ring-marque-600/30">
+      {% for erreur in form.new_password2.errors %}<p id="erreur-confirmation" class="mt-1 text-sm text-red-700">{{ erreur }}</p>{% endfor %}
+    </div>
+
+    <div class="flex items-center justify-end gap-3 border-t border-slate-100 pt-5">
+      <a href="{% url 'home' %}" class="rounded-lg px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Annuler</a>
+      <button type="submit" class="rounded-lg bg-marque-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">
+        Enregistrer
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}
+```
+
+#### `templates/registration/password_reset_complete.html`
+
+*21 lignes*
+
+```django
+{% extends "base.html" %}
+{% load static %}
+{% block titre %}Mot de passe changé{% endblock %}
+
+{% block layout %}
+<div class="flex min-h-full items-center justify-center bg-gradient-to-b from-marque-50 via-white to-white px-4 py-12">
+  <div class="w-full max-w-md">
+    <div class="mb-8 text-center">
+      <span class="mx-auto inline-block rounded-2xl bg-white p-3 shadow-md ring-1 ring-marque-100"><img src="{% static 'img/logo-emblem.jpg' %}" alt="DEN Source Group" class="h-24 w-auto"></span>
+    </div>
+    <div class="rounded-2xl border border-slate-200 border-t-4 border-t-accent-500 bg-white p-6 text-center shadow-sm">
+      <h1 class="text-xl font-bold text-slate-900">Mot de passe changé</h1>
+      <p class="mt-3 text-sm text-slate-600">Vous pouvez vous connecter avec votre nouveau mot de passe.</p>
+      <a href="{% url 'accounts:login' %}"
+         class="mt-6 inline-block rounded-lg bg-marque-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-marque-700">
+        Se connecter
+      </a>
+    </div>
+  </div>
+</div>
+{% endblock %}
+```
+
+#### `templates/registration/password_reset_confirm.html`
+
+*52 lignes*
+
+```django
+{% extends "base.html" %}
+{% load static %}
+{% block titre %}Nouveau mot de passe{% endblock %}
+
+{% block layout %}
+<div class="flex min-h-full items-center justify-center bg-gradient-to-b from-marque-50 via-white to-white px-4 py-12">
+  <div class="w-full max-w-md">
+    <div class="mb-8 text-center">
+      <span class="mx-auto inline-block rounded-2xl bg-white p-3 shadow-md ring-1 ring-marque-100"><img src="{% static 'img/logo-emblem.jpg' %}" alt="DEN Source Group" class="h-24 w-auto"></span>
+      <h1 class="mt-3 text-2xl font-bold text-slate-900">Nouveau mot de passe</h1>
+    </div>
+
+    {% if validlink %}
+      <form method="post" class="space-y-5 rounded-2xl border border-slate-200 border-t-4 border-t-accent-500 bg-white p-6 shadow-sm">
+        {% csrf_token %}
+        {% if form.non_field_errors %}
+          <div role="alert" class="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">
+            {% for erreur in form.non_field_errors %}<p>{{ erreur }}</p>{% endfor %}
+          </div>
+        {% endif %}
+
+        <div>
+          <label for="{{ form.new_password1.id_for_label }}" class="block text-sm font-medium text-slate-800">Nouveau mot de passe</label>
+          <input type="password" name="new_password1" id="{{ form.new_password1.id_for_label }}" required autofocus
+                 autocomplete="new-password"
+                 class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-marque-600 focus:outline-none focus:ring-2 focus:ring-marque-600/30">
+          <p class="mt-1 text-xs text-slate-500">Au moins 10 caractères, ni trop simple ni proche de votre identifiant.</p>
+          {% for erreur in form.new_password1.errors %}<p class="mt-1 text-sm text-red-700">{{ erreur }}</p>{% endfor %}
+        </div>
+        <div>
+          <label for="{{ form.new_password2.id_for_label }}" class="block text-sm font-medium text-slate-800">Confirmer le mot de passe</label>
+          <input type="password" name="new_password2" id="{{ form.new_password2.id_for_label }}" required
+                 autocomplete="new-password"
+                 class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-marque-600 focus:outline-none focus:ring-2 focus:ring-marque-600/30">
+          {% for erreur in form.new_password2.errors %}<p class="mt-1 text-sm text-red-700">{{ erreur }}</p>{% endfor %}
+        </div>
+        <button type="submit"
+                class="w-full rounded-lg bg-marque-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">
+          Enregistrer le nouveau mot de passe
+        </button>
+      </form>
+    {% else %}
+      <div class="rounded-2xl border border-slate-200 border-t-4 border-t-red-500 bg-white p-6 text-center shadow-sm">
+        <p class="text-sm text-slate-700">
+          Ce lien n'est plus valable : il a déjà servi, ou il a expiré. Demandez-en un nouveau.
+        </p>
+        <a href="{% url 'accounts:password_reset' %}" class="mt-6 inline-block font-medium text-marque-700 hover:underline">Redemander un lien</a>
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+```
+
+#### `templates/registration/password_reset_done.html`
+
+*24 lignes*
+
+```django
+{% extends "base.html" %}
+{% load static %}
+{% block titre %}Mot de passe oublié{% endblock %}
+
+{% block layout %}
+<div class="flex min-h-full items-center justify-center bg-gradient-to-b from-marque-50 via-white to-white px-4 py-12">
+  <div class="w-full max-w-md">
+    <div class="mb-8 text-center">
+      <span class="mx-auto inline-block rounded-2xl bg-white p-3 shadow-md ring-1 ring-marque-100"><img src="{% static 'img/logo-emblem.jpg' %}" alt="DEN Source Group" class="h-24 w-auto"></span>
+    </div>
+    <div class="rounded-2xl border border-slate-200 border-t-4 border-t-accent-500 bg-white p-6 text-center shadow-sm">
+      <h1 class="text-xl font-bold text-slate-900">E-mail envoyé</h1>
+      <p class="mt-3 text-sm text-slate-600">
+        Si cette adresse correspond à un compte, un e-mail vient d'être envoyé avec un lien pour
+        choisir un nouveau mot de passe. Il reste valable quelques jours.
+      </p>
+      <p class="mt-3 text-sm text-slate-600">
+        Rien reçu ? Vérifiez le dossier indésirable, ou réessayez avec la bonne adresse.
+      </p>
+      <a href="{% url 'accounts:login' %}" class="mt-6 inline-block font-medium text-marque-700 hover:underline">Retour à la connexion</a>
+    </div>
+  </div>
+</div>
+{% endblock %}
+```
+
+#### `templates/registration/password_reset_email.txt`
+
+*12 lignes*
+
+```text
+Bonjour {{ user.get_full_name|default:user.username }},
+
+Une demande de réinitialisation de mot de passe a été faite pour votre compte sur l'ERP DEN Source Group
+({{ domain }}). Si vous n'êtes pas à l'origine de cette demande, ignorez cet e-mail : votre mot de passe
+ne change pas tant que vous n'ouvrez pas le lien ci-dessous.
+
+Pour choisir un nouveau mot de passe :
+{{ protocol }}://{{ domain }}{% url 'accounts:password_reset_confirm' uidb64=uid token=token %}
+
+Ce lien n'est valable qu'une fois, pendant quelques jours.
+
+— ERP DEN Source Group
+```
+
+#### `templates/registration/password_reset_form.html`
+
+*45 lignes*
+
+```django
+{% extends "base.html" %}
+{% load static %}
+{% block titre %}Mot de passe oublié{% endblock %}
+
+{% block layout %}
+<div class="flex min-h-full items-center justify-center bg-gradient-to-b from-marque-50 via-white to-white px-4 py-12">
+  <div class="w-full max-w-md">
+    <div class="mb-8 text-center">
+      <span class="mx-auto inline-block rounded-2xl bg-white p-3 shadow-md ring-1 ring-marque-100"><img src="{% static 'img/logo-emblem.jpg' %}" alt="DEN Source Group" class="h-24 w-auto"></span>
+      <h1 class="mt-3 text-2xl font-bold text-slate-900">Mot de passe oublié</h1>
+      <p class="mt-2 text-sm text-slate-600">
+        Indiquez l'adresse e-mail de votre compte : si elle y est rattachée, un lien pour choisir un
+        nouveau mot de passe vous sera envoyé.
+      </p>
+    </div>
+
+    <form method="post" class="space-y-5 rounded-2xl border border-slate-200 border-t-4 border-t-accent-500 bg-white p-6 shadow-sm">
+      {% csrf_token %}
+      {% if blocage %}
+        <div role="alert" class="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900"><p>{{ blocage }}</p></div>
+      {% endif %}
+      {% if form.non_field_errors %}
+        <div role="alert" class="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">
+          {% for erreur in form.non_field_errors %}<p>{{ erreur }}</p>{% endfor %}
+        </div>
+      {% endif %}
+
+      <div>
+        <label for="{{ form.email.id_for_label }}" class="block text-sm font-medium text-slate-800">Adresse e-mail</label>
+        <input type="email" name="email" id="{{ form.email.id_for_label }}" required autofocus
+               autocomplete="email" value="{{ form.email.value|default:'' }}"
+               class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-marque-600 focus:outline-none focus:ring-2 focus:ring-marque-600/30">
+        {% for erreur in form.email.errors %}<p class="mt-1 text-sm text-red-700">{{ erreur }}</p>{% endfor %}
+      </div>
+      <button type="submit"
+              class="w-full rounded-lg bg-marque-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-marque-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600 focus-visible:ring-offset-2">
+        Envoyer le lien
+      </button>
+      <p class="text-center text-sm text-slate-600">
+        <a href="{% url 'accounts:login' %}" class="font-medium text-marque-700 hover:underline">Retour à la connexion</a>
+      </p>
+    </form>
+  </div>
+</div>
+{% endblock %}
+```
+
+#### `templates/registration/password_reset_subject.txt`
+
+*1 ligne*
+
+```text
+Réinitialisation de votre mot de passe — ERP DEN Source Group
+```
+
+#### `apps/audit/forms.py`
+
+*42 lignes* — Filtres du journal d'audit.
+
+```python
+"""Filtres du journal d'audit."""
+
+from django import forms
+
+from apps.core.forms import StyleTailwindMixin
+
+from .models import ActionChoices, StatutChoices
+
+
+class FiltreJournalForm(StyleTailwindMixin, forms.Form):
+    """Filtres de la liste ; un paramètre invalide est ignoré."""
+
+    q = forms.CharField(label="Rechercher", required=False, help_text="Utilisateur, entité, adresse IP…")
+    module = forms.ChoiceField(label="Module", choices=[("", "Tous")], required=False)
+    action = forms.ChoiceField(label="Action", choices=[("", "Toutes")] + ActionChoices.choices, required=False)
+    statut = forms.ChoiceField(label="Statut", choices=[("", "Tous")] + StatutChoices.choices, required=False)
+    date_debut = forms.DateField(label="Du", required=False, widget=forms.DateInput(attrs={"type": "date"}))
+    date_fin = forms.DateField(label="Au", required=False, widget=forms.DateInput(attrs={"type": "date"}))
+
+    def __init__(self, *args, modules=(), **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["module"].choices = [("", "Tous")] + [(m, m) for m in modules]
+
+    def clean(self):
+        donnees = super().clean()
+        debut, fin = donnees.get("date_debut"), donnees.get("date_fin")
+        if debut and fin and debut > fin:
+            self.add_error("date_fin", "La date de fin précède la date de début : période ignorée.")
+            donnees.pop("date_debut", None)
+        return donnees
+
+    def criteres(self) -> dict:
+        self.is_valid()
+        donnees = getattr(self, "cleaned_data", {})
+        return {
+            "recherche": donnees.get("q") or "",
+            "module": donnees.get("module") or "",
+            "action": donnees.get("action") or "",
+            "statut": donnees.get("statut") or "",
+            "date_debut": donnees.get("date_debut"),
+            "date_fin": donnees.get("date_fin"),
+        }
+```
+
+#### `apps/parametres/forms.py`
+
+*15 lignes*
+
+```python
+from django import forms
+
+from apps.core.forms import StyleTailwindMixin
+
+from .models import Parametres
+from .services import CHAMPS
+
+
+class ParametresForm(StyleTailwindMixin, forms.ModelForm):
+    """Contrôle de forme seulement (types, bornes du modèle) : la cohérence entre seuils est vérifiée par
+    ``services.modifier_parametres``."""
+
+    class Meta:
+        model = Parametres
+        fields = CHAMPS
+```
+
+#### `apps/accounts/views_utilisateurs.py`
+
+*93 lignes* — Écran « Utilisateurs » (ADMIN) : liste, création, modification, activation. Les règles sont dans
+
+```python
+"""Écran « Utilisateurs » (ADMIN) : liste, création, modification, activation. Les règles sont dans
+``accounts.services`` ; ces vues n'ajoutent que l'affichage."""
+
+from django.contrib import messages
+from django.shortcuts import get_object_or_404, redirect
+from django.views import View
+from django.views.generic import FormView, ListView
+
+from apps.core.views import PaginationTolerante
+
+from . import permissions, services
+from .forms import FiltreUtilisateursForm, UtilisateurCreationForm, UtilisateurModificationForm
+from .mixins import RoleRequiredMixin
+from .models import User
+
+
+class UtilisateurListView(PaginationTolerante, RoleRequiredMixin, ListView):
+    roles = permissions.GESTION_UTILISATEURS
+    template_name = "accounts/utilisateur_list.html"
+    context_object_name = "comptes"
+    paginate_by = 25
+
+    def get_filtre(self):
+        return FiltreUtilisateursForm(self.request.GET)
+
+    def get_queryset(self):
+        filtre = self.get_filtre()
+        donnees = filtre.cleaned_data if filtre.is_valid() else {}
+        return services.utilisateurs(
+            recherche=donnees.get("q", ""), role=donnees.get("role", ""), actif=donnees.get("actif", "")
+        )
+
+    def get_context_data(self, **kwargs):
+        return super().get_context_data(filtre=self.get_filtre(), moi=self.request.user, **kwargs)
+
+
+class UtilisateurCreateView(RoleRequiredMixin, FormView):
+    roles = permissions.GESTION_UTILISATEURS
+    template_name = "accounts/utilisateur_form.html"
+    form_class = UtilisateurCreationForm
+
+    def form_valid(self, form):
+        try:
+            donnees = dict(form.cleaned_data)
+            donnees["password"] = donnees.pop("password1")
+            donnees.pop("password2")
+            compte = services.creer_utilisateur(self.request.user, **donnees)
+        except services.UtilisateurError as erreur:
+            form.add_error(None, str(erreur))
+            return self.form_invalid(form)
+        messages.success(self.request, f"Compte {compte.username} créé.")
+        return redirect("accounts:utilisateurs")
+
+
+class UtilisateurUpdateView(RoleRequiredMixin, FormView):
+    roles = permissions.GESTION_UTILISATEURS
+    template_name = "accounts/utilisateur_form.html"
+    form_class = UtilisateurModificationForm
+
+    def charger_objet(self, request, *args, **kwargs):
+        self.compte = get_object_or_404(User, pk=kwargs["pk"])
+
+    def get_initial(self):
+        c = self.compte
+        return {"first_name": c.first_name, "last_name": c.last_name, "email": c.email, "telephone": c.telephone, "role": c.role}
+
+    def get_context_data(self, **kwargs):
+        return super().get_context_data(compte=self.compte, **kwargs)
+
+    def form_valid(self, form):
+        try:
+            services.modifier_utilisateur(self.request.user, self.compte, **form.cleaned_data)
+        except services.UtilisateurError as erreur:
+            form.add_error(None, str(erreur))
+            return self.form_invalid(form)
+        messages.success(self.request, f"Compte {self.compte.username} modifié.")
+        return redirect("accounts:utilisateurs")
+
+
+class UtilisateurActivationView(RoleRequiredMixin, View):
+    roles = permissions.GESTION_UTILISATEURS
+    http_method_names = ["post"]
+
+    def post(self, request, pk):
+        compte = get_object_or_404(User, pk=pk)
+        actif = request.POST.get("actif") == "oui"
+        try:
+            services.definir_actif(request.user, compte, actif)
+        except services.UtilisateurError as erreur:
+            messages.error(request, str(erreur))
+        else:
+            messages.success(request, f"Compte {compte.username} {'activé' if actif else 'désactivé'}.")
+        return redirect("accounts:utilisateurs")
+```
+
+#### `apps/parametres/views.py`
+
+*61 lignes* — Écran « Paramètres » (ADMIN, DIRECTION). Les règles sont dans ``parametres.services`` ; la vue n'ajoute que
+
+```python
+"""Écran « Paramètres » (ADMIN, DIRECTION). Les règles sont dans ``parametres.services`` ; la vue n'ajoute que
+l'affichage."""
+
+from django.contrib import messages
+from django.shortcuts import redirect
+from django.views.generic import FormView
+
+from apps.accounts.mixins import RoleRequiredMixin
+
+from . import permissions, services
+from .forms import ParametresForm
+from .models import Parametres
+
+SECTIONS = (
+    ("Alertes d'expiration", ("delai_alerte_jours",)),
+    (
+        "Carburant et compteur",
+        (
+            "seuil_conso_jaune_pct",
+            "seuil_conso_rouge_pct",
+            "seuil_conso_saisie_pct",
+            "conso_min_l100",
+            "conso_max_l100",
+            "ecart_km_max",
+        ),
+    ),
+    ("Clients et facturation", ("tva_defaut", "delai_paiement_defaut_jours")),
+    ("Congés", ("delai_validation_n1_heures", "delai_validation_n2_heures", "droit_annuel_jours")),
+)
+assert sorted(c for _, champs in SECTIONS for c in champs) == sorted(services.CHAMPS)
+
+
+class ParametresView(RoleRequiredMixin, FormView):
+    roles = permissions.MODIFICATION
+    template_name = "parametres/parametres.html"
+    form_class = ParametresForm
+
+    def get_form_kwargs(self):
+        return {**super().get_form_kwargs(), "instance": services.parametres()}
+
+    def get_context_data(self, **kwargs):
+        contexte = super().get_context_data(en_vigueur=services.parametres(), **kwargs)
+        form, defauts = contexte["form"], Parametres()  # valeurs du cahier des charges
+        contexte["sections"] = [
+            {"titre": titre, "champs": [(form[champ], getattr(defauts, champ)) for champ in champs]}
+            for titre, champs in SECTIONS
+        ]
+        return contexte
+
+    def form_valid(self, form):
+        try:
+            services.modifier_parametres(
+                self.request.user, **{champ: form.cleaned_data[champ] for champ in services.CHAMPS}
+            )
+        except services.ParametresInvalides as erreur:
+            for champ, messages_champ in erreur.erreurs.items():
+                for message in messages_champ:
+                    form.add_error(champ if champ in form.fields else None, message)
+            return self.form_invalid(form)
+        messages.success(self.request, "Paramètres enregistrés : ils s'appliquent dès maintenant.")
+        return redirect("parametres:modifier")
+```
+
+#### `apps/audit/urls.py`
+
+*11 lignes*
+
+```python
+from django.urls import path
+
+from . import views
+
+app_name = "audit"
+
+urlpatterns = [
+    path("", views.JournalListView.as_view(), name="journal"),
+    path("imprimer/", views.JournalImprimerView.as_view(), name="imprimer"),
+    path("export.csv", views.JournalExporterCsvView.as_view(), name="export_csv"),
+]
+```
+
+#### `apps/parametres/urls.py`
+
+*9 lignes*
+
+```python
+from django.urls import path
+
+from . import views
+
+app_name = "parametres"
+
+urlpatterns = [
+    path("", views.ParametresView.as_view(), name="modifier"),
+]
+```
+
+#### `apps/core/templatetags/graphiques.py`
+
+*17 lignes* — Balises des graphiques du tableau de bord (données préparées par ``apps.core.graphiques``).
+
+```python
+"""Balises des graphiques du tableau de bord (données préparées par ``apps.core.graphiques``)."""
+
+from django import template
+
+register = template.Library()
+
+
+@register.inclusion_tag("components/_graphique_barres.html")
+def graphique_barres(donnees, vide="Aucune donnée pour le moment."):
+    """Barres horizontales : ``{% graphique_barres graphique %}``."""
+    return {"g": donnees, "vide": vide}
+
+
+@register.inclusion_tag("components/_graphique_colonnes.html")
+def graphique_colonnes(donnees, identifiant, vide="Aucune donnée sur la période."):
+    """Colonnes groupées : ``{% graphique_colonnes graphique "id-unique" %}``."""
+    return {"g": donnees, "id": identifiant, "vide": vide}
+```
+
+#### `apps/audit/templates/audit/journal_list.html`
+
+*80 lignes*
+
+```django
+{% extends "base.html" %}
+{% load ui %}
+{% block titre %}Journal d'audit{% endblock %}
+{% block entete %}Journal d'audit{% endblock %}
+
+{% block contenu %}
+<div class="mx-auto max-w-7xl">
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <div>
+      <h1 class="text-2xl font-bold text-slate-900">Journal d'audit</h1>
+      <p class="mt-1 text-sm text-slate-600">
+        {{ paginator.count|default:0 }} entrée{{ paginator.count|pluralize }} · immuable : créations, modifications,
+        suppressions, connexions/déconnexions et validations, conservées au moins 5 ans.
+      </p>
+    </div>
+    <div class="flex flex-wrap items-center gap-2">
+      <a href="{% url 'audit:export_csv' %}?{{ request.GET.urlencode }}"
+         class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+        <i class="fa-solid fa-file-csv" aria-hidden="true"></i> Exporter en CSV
+      </a>
+      <a href="{% url 'audit:imprimer' %}?{{ request.GET.urlencode }}" target="_blank" rel="noopener"
+         class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-marque-600">
+        <i class="fa-solid fa-print" aria-hidden="true"></i> Imprimer
+      </a>
+    </div>
+  </div>
+
+  <form method="get" class="mt-5 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div class="min-w-[14rem] flex-1">{% include "components/_champ.html" with champ=filtre.q %}</div>
+    <div class="min-w-[10rem]">{% include "components/_champ.html" with champ=filtre.module %}</div>
+    <div class="min-w-[10rem]">{% include "components/_champ.html" with champ=filtre.action %}</div>
+    <div class="min-w-[10rem]">{% include "components/_champ.html" with champ=filtre.statut %}</div>
+    {% include "components/_champ.html" with champ=filtre.date_debut %}
+    {% include "components/_champ.html" with champ=filtre.date_fin %}
+    <button type="submit" class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2">Filtrer</button>
+    {% if filtres_actifs %}
+      <a href="{% url 'audit:journal' %}" class="px-2 py-2 text-sm font-medium text-slate-700 underline hover:text-slate-900">Réinitialiser</a>
+    {% endif %}
+  </form>
+
+  {% if lignes %}
+    <div class="mt-5 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+      <table class="min-w-full divide-y divide-slate-200 text-sm">
+        <caption class="sr-only">Journal d'audit</caption>
+        <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+          <tr>
+            <th scope="col" class="px-4 py-3">Date/heure</th>
+            <th scope="col" class="px-4 py-3">Utilisateur</th>
+            <th scope="col" class="px-4 py-3">Action</th>
+            <th scope="col" class="px-4 py-3">Module</th>
+            <th scope="col" class="px-4 py-3">Entité</th>
+            <th scope="col" class="hidden px-4 py-3 xl:table-cell">Adresse IP</th>
+            <th scope="col" class="px-4 py-3">Statut</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          {% for e in lignes %}
+            <tr class="hover:bg-slate-50">
+              <td class="whitespace-nowrap px-4 py-3 text-slate-700">{{ e.date_heure|date:"d/m/Y H:i:s" }}</td>
+              <td class="whitespace-nowrap px-4 py-3 text-slate-900">{{ e.utilisateur_nom|default:"—" }}<span class="block text-xs text-slate-600">{{ e.role|default:"—" }}</span></td>
+              <td class="whitespace-nowrap px-4 py-3">{% badge e.action e.get_action_display %}</td>
+              <td class="whitespace-nowrap px-4 py-3 text-slate-700">{{ e.module }}</td>
+              <td class="px-4 py-3 text-slate-700">{{ e.entite }}{% if e.entite_id %} #{{ e.entite_id }}{% endif %}</td>
+              <td class="hidden whitespace-nowrap px-4 py-3 text-slate-700 xl:table-cell">{{ e.adresse_ip|default:"—" }}</td>
+              <td class="whitespace-nowrap px-4 py-3">{% if e.statut == "FAILED" %}{% badge "URGENT" e.get_statut_display %}{% else %}{{ e.get_statut_display }}{% endif %}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% include "components/_pagination.html" %}
+  {% else %}
+    <div class="mt-5 rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center">
+      <span class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-600"><i class="fa-solid fa-clipboard-list" aria-hidden="true"></i></span>
+      <p class="mt-3 font-semibold text-slate-900">Aucune entrée</p>
+      <p class="mt-1 text-sm text-slate-600">{% if filtres_actifs %}Aucun résultat pour ces critères.{% else %}Les actions du journal apparaîtront ici.{% endif %}</p>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}
+```
+
+#### `apps/parametres/context_processors.py`
+
+*8 lignes*
+
+```python
+from django.utils.functional import SimpleLazyObject
+
+from . import services
+
+
+def parametres(request) -> dict:
+    """``{{ reglages.delai_validation_n1_heures }}`` dans tout gabarit : lu en base seulement si la page s'en sert."""
+    return {"reglages": SimpleLazyObject(services.parametres)}
+```
+
+#### `apps/accounts/tests/test_changer_mot_de_passe.py`
+
+*83 lignes* — Changer son mot de passe une fois connecté — cahier-des-charges.md:273, audit TECH-87.
+
+```python
+"""Changer son mot de passe une fois connecté — cahier-des-charges.md:273, audit TECH-87."""
+
+import pytest
+from django.urls import reverse
+
+from apps.accounts.models import Role
+from apps.accounts.tests.factories import UserFactory
+from apps.audit.models import AuditLog
+
+pytestmark = pytest.mark.django_db
+
+ANCIEN, NOUVEAU = "Ancien-Secret-2026", "Nouveau-Secret-2027"
+URL = reverse("accounts:password_change")
+
+
+def _connecte(client, role=Role.RH):
+    compte = UserFactory(role=role)
+    compte.set_password(ANCIEN)
+    compte.save()
+    client.force_login(compte)
+    return compte
+
+
+def _changer(client, ancien=ANCIEN, nouveau=NOUVEAU, confirmation=None):
+    return client.post(
+        URL, {"old_password": ancien, "new_password1": nouveau, "new_password2": confirmation or nouveau}, follow=True
+    )
+
+
+def test_l_ecran_est_accessible_une_fois_connecte_et_lie_dans_l_en_tete(client):
+    _connecte(client)
+
+    assert client.get(URL).status_code == 200
+    assert f'href="{URL}"' in client.get(reverse("home")).content.decode()
+
+
+def test_un_visiteur_non_connecte_est_renvoye_a_la_connexion(client):
+    reponse = client.get(URL)
+
+    assert reponse.status_code == 302 and reverse("accounts:login") in reponse["Location"]
+
+
+def test_le_mot_de_passe_change_sans_deconnecter_et_l_evenement_est_trace(client):
+    compte = _connecte(client)
+
+    reponse = _changer(client)
+
+    compte.refresh_from_db()
+    assert compte.check_password(NOUVEAU) and not compte.check_password(ANCIEN)
+    assert any("mot de passe a été changé" in str(m) for m in reponse.context["messages"])
+    assert client.get(URL).status_code == 200  # toujours connecté
+    trace = AuditLog.objects.get(entite="User", entite_id=compte.pk, nouvelle_valeur__evenement="mot_de_passe_change")
+    assert NOUVEAU not in str(trace.nouvelle_valeur) and ANCIEN not in str(trace.nouvelle_valeur)
+
+
+def test_l_ancien_mot_de_passe_est_exige(client):
+    compte = _connecte(client)
+
+    reponse = _changer(client, ancien="pas-le-bon-mot")
+
+    compte.refresh_from_db()
+    assert compte.check_password(ANCIEN)
+    assert "ancien mot de passe" in reponse.content.decode().lower()
+
+
+def test_un_mot_de_passe_trop_simple_ou_mal_confirme_est_refuse(client):
+    compte = _connecte(client)
+
+    for nouveau, confirmation in (("court", "court"), (NOUVEAU, "Autre-Secret-2027")):
+        reponse = _changer(client, nouveau=nouveau, confirmation=confirmation)
+        assert reponse.status_code == 200 and "text-red-700" in reponse.content.decode()  # erreur sous le champ
+
+    compte.refresh_from_db()
+    assert compte.check_password(ANCIEN)
+
+
+def test_le_chauffeur_peut_aussi_changer_son_mot_de_passe(client):
+    compte = _connecte(client, Role.CHAUFFEUR)
+
+    _changer(client)
+
+    compte.refresh_from_db()
+    assert compte.check_password(NOUVEAU)
+```
+
+#### `apps/accounts/tests/test_password_reset.py`
+
+*170 lignes* — Mot de passe oublié : les 4 étapes, sans jamais révéler si une adresse a un compte.
+
+```python
+"""Mot de passe oublié : les 4 étapes, sans jamais révéler si une adresse a un compte."""
+
+import re
+
+import pytest
+from django.contrib.auth.tokens import default_token_generator
+from django.core import mail
+from django.urls import reverse
+from django.utils.encoding import force_bytes
+from django.utils.http import urlsafe_base64_encode
+
+from apps.accounts.models import Role, User
+from apps.audit.models import ActionChoices, AuditLog
+
+from .factories import UserFactory
+
+pytestmark = pytest.mark.django_db
+
+NOUVEAU_MOT_DE_PASSE = "Un-Nouveau-Mot-2-Passe"
+
+
+def _lien_confirmation(compte):
+    """Construit l'URL de confirmation directement (sans dépendre du format de l'e-mail)."""
+    uid = urlsafe_base64_encode(force_bytes(compte.pk))
+    token = default_token_generator.make_token(compte)
+    return reverse("accounts:password_reset_confirm", kwargs={"uidb64": uid, "token": token})
+
+
+def _page_confirmation(client, compte):
+    """Ouvre le lien (GET) : Django range le jeton en session et redirige vers l'URL réellement
+    soumise par le formulaire (le jeton n'apparaît plus dans l'adresse). Un navigateur fait la
+    même chose avant de pouvoir poster le nouveau mot de passe."""
+    reponse = client.get(_lien_confirmation(compte), follow=True)
+    return reponse.redirect_chain[-1][0]
+
+
+# --- demande ---
+
+
+def test_la_page_de_demande_est_ouverte_a_tous(client):
+    assert client.get(reverse("accounts:password_reset")).status_code == 200
+
+
+def test_une_adresse_existante_recoit_un_e_mail(client):
+    UserFactory(role=Role.RH, email="marie@densourcegroup.ci")
+
+    reponse = client.post(
+        reverse("accounts:password_reset"), {"email": "marie@densourcegroup.ci"}, follow=True
+    )
+
+    assert reponse.redirect_chain[-1][0] == reverse("accounts:password_reset_done")
+    assert len(mail.outbox) == 1
+    assert mail.outbox[0].to == ["marie@densourcegroup.ci"]
+    assert "mot de passe" in mail.outbox[0].subject.lower()
+
+
+def test_une_adresse_inconnue_ne_revele_rien(client):
+    reponse = client.post(
+        reverse("accounts:password_reset"), {"email": "personne@densourcegroup.ci"}, follow=True
+    )
+
+    assert reponse.redirect_chain[-1][0] == reverse("accounts:password_reset_done")
+    assert len(mail.outbox) == 0
+
+
+def test_l_e_mail_contient_un_lien_qui_fonctionne(client):
+    UserFactory(role=Role.RH, email="marie@densourcegroup.ci", username="marie")
+
+    client.post(reverse("accounts:password_reset"), {"email": "marie@densourcegroup.ci"})
+
+    lien = re.search(r"https?://\S+/mot-de-passe/confirmer/\S+/", mail.outbox[0].body)
+    assert lien is not None
+    chemin = lien.group(0).split("://", 1)[1].split("/", 1)[1]
+    reponse = client.get("/" + chemin, follow=True)
+    assert reponse.status_code == 200
+    assert reponse.context["validlink"] is True
+
+
+# --- confirmation ---
+
+
+def test_un_nouveau_mot_de_passe_valide_fonctionne_ensuite(client):
+    compte = UserFactory(role=Role.RH)
+    page = _page_confirmation(client, compte)
+
+    reponse = client.post(
+        page,
+        {"new_password1": NOUVEAU_MOT_DE_PASSE, "new_password2": NOUVEAU_MOT_DE_PASSE},
+        follow=True,
+    )
+
+    compte.refresh_from_db()
+    assert reponse.redirect_chain[-1][0] == reverse("accounts:password_reset_complete")
+    assert compte.check_password(NOUVEAU_MOT_DE_PASSE)
+
+
+def test_deux_mots_de_passe_differents_sont_refuses(client):
+    compte = UserFactory(role=Role.RH)
+    page = _page_confirmation(client, compte)
+
+    reponse = client.post(
+        page, {"new_password1": NOUVEAU_MOT_DE_PASSE, "new_password2": "Autre-Chose-2026"}
+    )
+
+    assert reponse.status_code == 200
+    compte.refresh_from_db()
+    assert not compte.check_password(NOUVEAU_MOT_DE_PASSE)
+
+
+def test_un_mot_de_passe_trop_court_est_refuse_comme_a_la_creation(client):
+    compte = UserFactory(role=Role.RH)
+    page = _page_confirmation(client, compte)
+
+    reponse = client.post(page, {"new_password1": "court1", "new_password2": "court1"})
+
+    assert reponse.status_code == 200
+    compte.refresh_from_db()
+    assert not compte.check_password("court1")
+
+
+def test_un_lien_deja_utilise_est_refuse(client):
+    compte = UserFactory(role=Role.RH)
+    lien = _lien_confirmation(compte)
+    page = _page_confirmation(client, compte)
+    client.post(page, {"new_password1": NOUVEAU_MOT_DE_PASSE, "new_password2": NOUVEAU_MOT_DE_PASSE})
+
+    reponse = client.get(lien, follow=True)
+
+    assert reponse.context["validlink"] is False
+    assert "plus valable" in reponse.content.decode()
+
+
+def test_un_lien_invalide_affiche_l_erreur_sans_planter(client):
+    reponse = client.get(
+        reverse("accounts:password_reset_confirm", kwargs={"uidb64": "invalide", "token": "invalide"})
+    )
+
+    assert reponse.status_code == 200
+    assert reponse.context["validlink"] is False
+
+
+def test_la_reinitialisation_est_tracee_au_journal_d_audit(client):
+    compte = UserFactory(role=Role.RH)
+    page = _page_confirmation(client, compte)
+
+    client.post(page, {"new_password1": NOUVEAU_MOT_DE_PASSE, "new_password2": NOUVEAU_MOT_DE_PASSE})
+
+    entree = AuditLog.objects.filter(entite="User", entite_id=compte.pk, action=ActionChoices.UPDATE).first()
+    assert entree is not None
+    assert entree.utilisateur_id == compte.pk
+
+
+def test_un_administrateur_peut_aussi_reinitialiser_son_mot_de_passe(client):
+    """La MFA (ADMIN/DIRECTION) ne bloque pas ce parcours : la personne n'est pas encore connectée."""
+    compte = UserFactory(role=Role.ADMIN)
+    page = _page_confirmation(client, compte)
+
+    reponse = client.post(
+        page,
+        {"new_password1": NOUVEAU_MOT_DE_PASSE, "new_password2": NOUVEAU_MOT_DE_PASSE},
+        follow=True,
+    )
+
+    assert reponse.redirect_chain[-1][0] == reverse("accounts:password_reset_complete")
+
+
+def test_le_lien_mot_de_passe_oublie_est_sur_la_page_de_connexion(client):
+    reponse = client.get(reverse("accounts:login"))
+
+    assert reverse("accounts:password_reset") in reponse.content.decode()
+```
+
+#### `apps/accounts/tests/test_role_avant_objet.py`
+
+*69 lignes* — Le rôle est contrôlé avant de chercher l'objet de la page — audit TECH-34.
+
+```python
+"""Le rôle est contrôlé avant de chercher l'objet de la page — audit TECH-34.
+
+Avant, sept vues cherchaient l'objet (``get_object_or_404``) avant le contrôle du rôle : un utilisateur non autorisé
+recevait 404 pour un identifiant inexistant et 403 pour un identifiant existant, et pouvait ainsi deviner les
+comptes, devis, factures, pleins, congés et missions qui existent.
+"""
+
+import importlib
+
+import pytest
+from django.apps import apps as registre
+from django.contrib.auth.models import AnonymousUser
+from django.core.exceptions import PermissionDenied
+from django.test import RequestFactory
+
+from apps.accounts.mixins import RoleRequiredMixin
+from apps.accounts.models import Role
+from apps.accounts.tests.factories import UserFactory
+
+pytestmark = pytest.mark.django_db
+
+INEXISTANT = 987654321
+
+
+def _toutes_les_sous_classes(classe):
+    for sous_classe in classe.__subclasses__():
+        yield sous_classe
+        yield from _toutes_les_sous_classes(sous_classe)
+
+
+def _vues_qui_chargent_un_objet():
+    for config in registre.get_app_configs():
+        if config.name.startswith("apps."):
+            for module in ("views", "views_utilisateurs"):
+                try:
+                    importlib.import_module(f"{config.name}.{module}")
+                except ModuleNotFoundError:
+                    pass
+    return sorted(
+        {vue for vue in _toutes_les_sous_classes(RoleRequiredMixin) if "charger_objet" in vue.__dict__},
+        key=lambda vue: vue.__qualname__,
+    )
+
+
+VUES = _vues_qui_chargent_un_objet()
+
+
+def test_les_sept_vues_concernees_passent_par_charger_objet():
+    assert len(VUES) >= 7
+
+
+@pytest.mark.parametrize("vue", VUES, ids=lambda vue: f"{vue.__module__}.{vue.__qualname__}")
+def test_un_role_non_autorise_recoit_403_meme_pour_un_identifiant_inexistant(vue):
+    role = next(r for r in (Role.CHARGE_CLIENTELE, Role.PARCAUTO, Role.FINANCES, Role.RH, Role.CHAUFFEUR) if r not in vue.roles)
+    requete = RequestFactory().get("/")
+    requete.user = UserFactory(role=role)
+
+    with pytest.raises(PermissionDenied):
+        vue.as_view()(requete, pk=INEXISTANT)
+
+
+@pytest.mark.parametrize("vue", VUES, ids=lambda vue: f"{vue.__module__}.{vue.__qualname__}")
+def test_un_visiteur_non_connecte_est_renvoye_a_la_connexion(vue):
+    requete = RequestFactory().get("/")
+    requete.user = AnonymousUser()
+
+    reponse = vue.as_view()(requete, pk=INEXISTANT)
+
+    assert reponse.status_code == 302
+```
+
+#### `apps/accounts/tests/test_utilisateurs_ecran.py`
+
+*202 lignes* — Écran « Utilisateurs » (audit M1-02) : l'ADMIN crée, modifie, active et désactive les comptes — jamais un
+
+```python
+"""Écran « Utilisateurs » (audit M1-02) : l'ADMIN crée, modifie, active et désactive les comptes — jamais un
+superutilisateur, jamais soi-même, toujours tracé."""
+
+import pytest
+from django.test import Client
+from django.urls import reverse
+
+from apps.accounts import services
+from apps.accounts.models import Role, User
+from apps.accounts.tests.factories import UserFactory
+from apps.audit.models import ActionChoices, AuditLog
+
+pytestmark = pytest.mark.django_db
+
+MOT_DE_PASSE = "Camion-vert-2026!"
+
+
+def _admin():
+    return UserFactory(role=Role.ADMIN, is_staff=False)
+
+
+def _donnees(**surcharges):
+    donnees = {
+        "username": "awa.kone", "first_name": "Awa", "last_name": "Koné", "email": "awa@densource.ci",
+        "telephone": "+2250700000000", "role": Role.FINANCES, "password1": MOT_DE_PASSE, "password2": MOT_DE_PASSE,
+    }
+    donnees.update(surcharges)
+    return donnees
+
+
+@pytest.fixture
+def admin_client(client):
+    client.force_login(_admin())
+    return client
+
+
+# --- droits ---
+
+
+@pytest.mark.parametrize("role", [Role.DIRECTION, Role.RH, Role.FINANCES, Role.PARCAUTO, Role.CHAUFFEUR])
+def test_seul_l_admin_accede_a_l_ecran_des_utilisateurs(client, role):
+    client.force_login(UserFactory(role=role))
+
+    for nom in ("utilisateurs", "utilisateur_nouveau"):
+        assert client.get(reverse(f"accounts:{nom}")).status_code == 403
+    cible = UserFactory(role=Role.RH)
+    assert client.post(reverse("accounts:utilisateur_activation", args=[cible.pk]), {"actif": "non"}).status_code == 403
+    cible.refresh_from_db()
+    assert cible.is_active
+
+
+def test_le_menu_propose_utilisateurs_a_l_admin_seulement(client):
+    client.force_login(_admin())
+    assert reverse("accounts:utilisateurs") in client.get(reverse("home")).content.decode()
+    client.force_login(UserFactory(role=Role.FINANCES))
+    assert reverse("accounts:utilisateurs") not in client.get(reverse("home")).content.decode()
+
+
+# --- création ---
+
+
+def test_l_admin_cree_un_compte_qui_peut_se_connecter(admin_client):
+    reponse = admin_client.post(reverse("accounts:utilisateur_nouveau"), _donnees(), follow=True)
+
+    compte = User.objects.get(username="awa.kone")
+    assert compte.role == Role.FINANCES and compte.is_active and not compte.is_staff and not compte.is_superuser
+    assert compte.check_password(MOT_DE_PASSE)
+    assert any("créé" in str(m) for m in reponse.context["messages"])
+    assert AuditLog.objects.filter(entite="User", entite_id=compte.pk, action=ActionChoices.CREATE).exists()
+
+
+def test_le_mot_de_passe_n_est_jamais_ecrit_en_clair_dans_le_journal(admin_client):
+    admin_client.post(reverse("accounts:utilisateur_nouveau"), _donnees())
+
+    trace = AuditLog.objects.get(entite="User", action=ActionChoices.CREATE, nouvelle_valeur__username="awa.kone")
+
+    assert MOT_DE_PASSE not in str(trace.nouvelle_valeur) and trace.nouvelle_valeur["password"].startswith("masqué:")
+
+
+@pytest.mark.parametrize(
+    "surcharges, attendu",
+    [
+        ({"password2": "autre-chose-1234"}, "ne correspondent pas"),
+        ({"password1": "court1", "password2": "court1"}, "trop court"),
+        ({"password1": "1234567890", "password2": "1234567890"}, "numérique"),
+        ({"username": "ADMIN.EXISTANT"}, "déjà pris"),
+        ({"email": ""}, "obligatoire"),
+        ({"role": "SUPER"}, "Sélectionnez"),
+    ],
+)
+def test_une_creation_invalide_est_refusee_avec_son_message(admin_client, surcharges, attendu):
+    UserFactory(username="admin.existant")
+
+    reponse = admin_client.post(reverse("accounts:utilisateur_nouveau"), _donnees(**surcharges))
+
+    assert reponse.status_code == 200 and attendu in reponse.content.decode()
+    assert not User.objects.filter(username="awa.kone").exists()
+
+
+def test_un_email_deja_utilise_est_refuse(admin_client):
+    UserFactory(email="awa@densource.ci")
+
+    reponse = admin_client.post(reverse("accounts:utilisateur_nouveau"), _donnees())
+
+    assert "déjà utilisée" in reponse.content.decode()
+
+
+# --- modification et activation ---
+
+
+def test_l_admin_change_le_role_et_la_modification_est_tracee(admin_client):
+    compte = UserFactory(role=Role.RH, email="rh@densource.ci")
+
+    admin_client.post(
+        reverse("accounts:utilisateur_modifier", args=[compte.pk]),
+        {"first_name": "Marie", "last_name": "Yao", "email": "rh@densource.ci", "telephone": "", "role": Role.FINANCES},
+    )
+
+    compte.refresh_from_db()
+    assert compte.role == Role.FINANCES and compte.first_name == "Marie"
+    trace = AuditLog.objects.filter(entite="User", entite_id=compte.pk, action=ActionChoices.UPDATE).latest("date_heure")
+    assert trace.ancienne_valeur["role"] == Role.RH and trace.nouvelle_valeur["role"] == Role.FINANCES
+
+
+def test_on_ne_change_pas_son_propre_role(client):
+    admin = _admin()
+    client.force_login(admin)
+
+    reponse = client.post(
+        reverse("accounts:utilisateur_modifier", args=[admin.pk]),
+        {"first_name": "A", "last_name": "B", "email": "a@b.ci", "telephone": "", "role": Role.CHAUFFEUR},
+    )
+
+    admin.refresh_from_db()
+    assert admin.role == Role.ADMIN and "propre rôle" in reponse.content.decode()
+
+
+def test_desactiver_puis_reactiver_un_compte(admin_client):
+    compte = UserFactory(role=Role.RH)
+    url = reverse("accounts:utilisateur_activation", args=[compte.pk])
+
+    admin_client.post(url, {"actif": "non"})
+    compte.refresh_from_db()
+    assert compte.is_active is False
+    admin_client.post(url, {"actif": "oui"})
+    compte.refresh_from_db()
+    assert compte.is_active is True
+
+
+def test_un_compte_desactive_ne_se_connecte_plus(admin_client):
+    compte = UserFactory(role=Role.RH, username="rh.desactive")
+    compte.set_password(MOT_DE_PASSE)
+    compte.save()
+    admin_client.post(reverse("accounts:utilisateur_activation", args=[compte.pk]), {"actif": "non"})
+
+    assert Client().login(username="rh.desactive", password=MOT_DE_PASSE) is False
+
+
+def test_on_ne_se_desactive_pas_soi_meme(client):
+    admin = _admin()
+    client.force_login(admin)
+
+    client.post(reverse("accounts:utilisateur_activation", args=[admin.pk]), {"actif": "non"})
+
+    admin.refresh_from_db()
+    assert admin.is_active
+
+
+def test_un_superutilisateur_n_est_jamais_modifie_ni_desactive_par_cet_ecran(admin_client):
+    super_ = UserFactory(role=Role.ADMIN, is_superuser=True, is_staff=True)
+
+    reponse = admin_client.post(reverse("accounts:utilisateur_activation", args=[super_.pk]), {"actif": "non"}, follow=True)
+    modification = admin_client.post(
+        reverse("accounts:utilisateur_modifier", args=[super_.pk]),
+        {"first_name": "X", "last_name": "Y", "email": "x@y.ci", "telephone": "", "role": Role.CHAUFFEUR},
+    )
+
+    super_.refresh_from_db()
+    assert super_.is_active and super_.role == Role.ADMIN and super_.first_name != "X"
+    assert "superutilisateur" in reponse.content.decode().lower()
+    assert "superutilisateur" in modification.content.decode().lower()
+
+
+def test_les_services_refusent_un_acteur_qui_n_est_pas_admin():
+    with pytest.raises(services.ActionUtilisateurNonAutorisee):
+        services.creer_utilisateur(
+            UserFactory(role=Role.DIRECTION), username="x", first_name="", last_name="", email="x@y.ci",
+            role=Role.RH, password=MOT_DE_PASSE,
+        )
+
+
+def test_la_liste_se_filtre_par_role_statut_et_texte(admin_client):
+    UserFactory(username="rh.un", role=Role.RH)
+    UserFactory(username="fin.un", role=Role.FINANCES, is_active=False)
+
+    en_rh = admin_client.get(reverse("accounts:utilisateurs"), {"role": Role.RH}).content.decode()
+    inactifs = admin_client.get(reverse("accounts:utilisateurs"), {"actif": "non"}).content.decode()
+    texte = admin_client.get(reverse("accounts:utilisateurs"), {"q": "fin.un"}).content.decode()
+
+    assert "rh.un" in en_rh and "fin.un" not in en_rh
+    assert "fin.un" in inactifs and "rh.un" not in inactifs
+    assert "fin.un" in texte and "rh.un" not in texte
+```
+
+#### `apps/audit/tests/test_services.py`
+
+*103 lignes*
+
+```python
+import pytest
+from django.test import RequestFactory
+
+from apps.accounts.models import Role
+from apps.accounts.tests.factories import UserFactory
+from apps.audit import services
+from apps.audit.models import ActionChoices, StatutChoices
+
+pytestmark = pytest.mark.django_db
+
+
+def test_log_action_captures_ip_and_user_agent_from_request():
+    user = UserFactory(role=Role.PARCAUTO)
+    request = RequestFactory().post(
+        "/x", REMOTE_ADDR="10.0.0.5", HTTP_USER_AGENT="pytest-agent"
+    )
+
+    entry = services.log_action(
+        action=ActionChoices.UPDATE,
+        module="FLEET",
+        entite="Vehicule",
+        entite_id=42,
+        utilisateur=user,
+        request=request,
+    )
+
+    assert entry.adresse_ip == "10.0.0.5"
+    assert entry.user_agent == "pytest-agent"
+    assert entry.role == Role.PARCAUTO
+    assert entry.utilisateur_nom == user.get_full_name()
+
+
+def test_log_action_ignore_x_forwarded_for_sans_proxy_de_confiance():
+    """Sans proxy déclaré, l'en-tête écrit par le client ne doit jamais servir d'adresse."""
+    request = RequestFactory().get(
+        "/x", REMOTE_ADDR="10.0.0.5", HTTP_X_FORWARDED_FOR="1.2.3.4"
+    )
+
+    entry = services.log_action(
+        action=ActionChoices.LOGIN, module="AUTH", entite="User", request=request
+    )
+
+    assert entry.adresse_ip == "10.0.0.5"
+
+
+def test_log_action_lit_l_adresse_ajoutee_par_les_proxys_de_confiance(settings):
+    settings.TRUSTED_PROXY_COUNT = 2
+    request = RequestFactory().get(
+        "/x",
+        REMOTE_ADDR="10.0.0.5",
+        HTTP_X_FORWARDED_FOR="203.0.113.9, 10.0.0.1",
+    )
+
+    entry = services.log_action(
+        action=ActionChoices.LOGIN, module="AUTH", entite="User", request=request
+    )
+
+    assert entry.adresse_ip == "203.0.113.9"
+
+
+def test_log_login_failed_records_failed_status_and_attempted_username():
+    request = RequestFactory().post("/login")
+    UserFactory(username="awa.kone")
+
+    entry = services.log_login_failed("awa.kone", request)
+
+    assert entry.statut == StatutChoices.FAILED
+    assert entry.nouvelle_valeur == {"username_tente": "awa.kone"}  # compte existant : en entier
+    assert entry.utilisateur is None
+
+
+def test_un_identifiant_inconnu_est_masque_car_ce_peut_etre_un_mot_de_passe():
+    """Audit AUD-17 : un mot de passe tapé dans le champ « Identifiant » ne doit pas finir lisible au journal."""
+    entry = services.log_login_failed("MonSecret2026!", RequestFactory().post("/login"))
+
+    assert entry.nouvelle_valeur == {"username_tente": "Mo… (14 caractères, compte inconnu)"}
+    assert "Secret" not in str(entry.nouvelle_valeur)
+
+
+# --- nom et rôle de l'auteur (audit M1-53, M1-54) ---
+
+
+def test_un_superutilisateur_sans_nom_est_journalise_avec_son_identifiant_et_le_role_admin():
+    racine = UserFactory(username="racine", first_name="", last_name="", role="", is_superuser=True)
+
+    entree = services.log_action(action=ActionChoices.UPDATE, module="TEST", entite="X", utilisateur=racine)
+
+    assert entree.utilisateur_nom == "racine"
+    assert entree.role == Role.ADMIN  # rôle effectif : un superutilisateur agit en ADMIN
+
+
+def test_un_compte_avec_un_nom_complet_garde_son_nom_et_son_role():
+    compte = UserFactory(first_name="Awa", last_name="Kone", role=Role.RH)
+
+    entree = services.log_action(action=ActionChoices.UPDATE, module="TEST", entite="X", utilisateur=compte)
+
+    assert entree.utilisateur_nom == "Awa Kone" and entree.role == Role.RH
+
+
+def test_une_action_sans_auteur_n_a_ni_nom_ni_role():
+    entree = services.log_action(action=ActionChoices.UPDATE, module="TEST", entite="X")
+
+    assert entree.utilisateur_nom == "" and entree.role == ""
+```
+
+#### `apps/audit/tests/test_signals.py`
+
+*41 lignes*
+
+```python
+import pytest
+from django.test import Client
+
+from apps.accounts.models import Role
+from apps.accounts.tests.factories import UserFactory
+from apps.audit.models import ActionChoices, AuditLog, StatutChoices
+
+pytestmark = pytest.mark.django_db
+
+
+def test_login_signal_creates_audit_entry():
+    user = UserFactory(role=Role.FINANCES)
+    client = Client()
+
+    client.force_login(user)
+
+    entry = AuditLog.objects.filter(action=ActionChoices.LOGIN, utilisateur=user).latest(
+        "date_heure"
+    )
+    assert entry.role == Role.FINANCES
+    assert entry.statut == StatutChoices.SUCCESS
+
+
+def test_logout_signal_creates_audit_entry():
+    user = UserFactory(role=Role.RH)
+    client = Client()
+    client.force_login(user)
+
+    client.logout()
+
+    assert AuditLog.objects.filter(action=ActionChoices.LOGOUT, utilisateur=user).exists()
+
+
+def test_failed_login_creates_audit_entry_with_failed_status():
+    client = Client()
+
+    client.post("/connexion/", {"username": "ghost", "password": "wrong"})
+
+    assert AuditLog.objects.filter(
+        action=ActionChoices.LOGIN, statut=StatutChoices.FAILED
+    ).exists()
+```
+
+#### `apps/audit/tests/test_utilisateurs.py`
+
+*72 lignes* — Les comptes utilisateurs sont audités : rôle, droits et activation, jamais le mot de passe en clair.
+
+```python
+"""Les comptes utilisateurs sont audités : rôle, droits et activation, jamais le mot de passe en clair."""
+
+import pytest
+from django.test import Client
+
+from apps.accounts.models import Role, User
+from apps.accounts.tests.factories import UserFactory
+from apps.audit.models import ActionChoices, AuditLog
+
+pytestmark = pytest.mark.django_db
+
+
+def _entrees(user, action=None):
+    qs = AuditLog.objects.filter(module="UTILISATEURS", entite="User", entite_id=user.pk)
+    return qs.filter(action=action) if action else qs
+
+
+def test_la_creation_d_un_compte_est_journalisee_sans_le_mot_de_passe():
+    user = User.objects.create_user(username="nouveau", password="Secret-12345!", role=Role.FINANCES)
+
+    entree = _entrees(user, ActionChoices.CREATE).get()
+
+    assert entree.nouvelle_valeur["role"] == Role.FINANCES
+    assert entree.nouvelle_valeur["password"].startswith("masqué:")
+    assert user.password not in str(entree.nouvelle_valeur)
+    assert "Secret-12345!" not in str(entree.nouvelle_valeur)
+
+
+def test_un_changement_de_role_est_journalise_avec_l_ancienne_valeur():
+    user = UserFactory(role=Role.RH)
+
+    user.role = Role.DIRECTION
+    user.save()
+
+    entree = _entrees(user, ActionChoices.UPDATE).filter(nouvelle_valeur__role=Role.DIRECTION).get()
+    assert entree.ancienne_valeur == {"role": Role.RH}
+
+
+def test_la_desactivation_et_les_droits_d_administration_sont_journalises():
+    user = UserFactory(role=Role.ADMIN)
+
+    user.is_active = False
+    user.is_superuser = True
+    user.save()
+
+    entree = _entrees(user, ActionChoices.UPDATE).filter(nouvelle_valeur__is_active=False).get()
+    assert entree.nouvelle_valeur == {"is_active": False, "is_superuser": True}
+    assert entree.ancienne_valeur == {"is_active": True, "is_superuser": False}
+
+
+def test_un_changement_de_mot_de_passe_est_visible_sans_ecrire_le_hash():
+    user = UserFactory(role=Role.RH)
+    ancien_hash = user.password
+
+    user.set_password("Autre-mot-de-passe-9876!")
+    user.save()
+
+    entree = _entrees(user, ActionChoices.UPDATE).filter(nouvelle_valeur__has_key="password").latest("pk")
+    assert entree.ancienne_valeur["password"].startswith("masqué:")
+    assert entree.nouvelle_valeur["password"].startswith("masqué:")
+    assert entree.ancienne_valeur["password"] != entree.nouvelle_valeur["password"]
+    assert ancien_hash not in str(entree.ancienne_valeur)
+    assert user.password not in str(entree.nouvelle_valeur)
+
+
+def test_la_connexion_ne_produit_pas_de_modification_de_compte():
+    user = UserFactory(role=Role.FINANCES)
+    avant = _entrees(user, ActionChoices.UPDATE).count()
+
+    Client().force_login(user)
+
+    assert _entrees(user, ActionChoices.UPDATE).count() == avant
+```
+
+#### `apps/audit/tests/test_views.py`
+
+*168 lignes* — Écran du journal d'audit : accès, filtres, export CSV, rapport imprimable.
+
+```python
+"""Écran du journal d'audit : accès, filtres, export CSV, rapport imprimable."""
+
+from datetime import date, datetime
+from datetime import timezone as dt_timezone
+
+from unittest import mock
+
+import pytest
+from django.urls import reverse
+
+from apps.accounts.models import Role
+from apps.accounts.tests.factories import UserFactory
+from apps.audit import services
+from apps.audit.models import ActionChoices, AuditLog, StatutChoices
+
+pytestmark = pytest.mark.django_db
+
+
+def _texte(reponse) -> str:
+    return reponse.content.decode()
+
+
+def _entree(**surcharges):
+    donnees = dict(
+        action=ActionChoices.UPDATE, module="FLEET", entite="Vehicule", entite_id=1,
+        utilisateur_nom="Awa Koné", role=Role.PARCAUTO, adresse_ip="10.0.0.1",
+    )
+    donnees.update(surcharges)
+    if "date_heure" in surcharges:
+        # ``date_heure`` est posée à la création (auto_now_add) et le journal est append-only, y compris en base
+        # PostgreSQL (trigger) : on fixe donc l'horloge le temps de la création plutôt que de modifier la ligne.
+        donnees.pop("date_heure")
+        with mock.patch("django.utils.timezone.now", return_value=surcharges["date_heure"]):
+            return AuditLog.objects.create(**donnees)
+    return AuditLog.objects.create(**donnees)
+
+
+# --- accès ---
+
+
+@pytest.mark.parametrize("role", [Role.ADMIN, Role.DIRECTION])
+def test_le_journal_est_accessible_a_admin_et_direction(client, role):
+    client.force_login(UserFactory(role=role))
+
+    assert client.get(reverse("audit:journal")).status_code == 200
+
+
+@pytest.mark.parametrize("role", [Role.RH, Role.FINANCES, Role.PARCAUTO, Role.CHARGE_CLIENTELE])
+def test_le_journal_est_interdit_aux_autres_roles(client, role):
+    client.force_login(UserFactory(role=role))
+
+    assert client.get(reverse("audit:journal")).status_code == 403
+
+
+# --- filtres ---
+
+
+def test_la_recherche_porte_sur_l_utilisateur_l_entite_et_l_ip(client):
+    client.force_login(UserFactory(role=Role.ADMIN))
+    _entree(utilisateur_nom="Fatou Diallo", entite="Facture", adresse_ip="41.1.1.1")
+    _entree(utilisateur_nom="Ibrahim Sanogo", entite="Vehicule", adresse_ip="41.2.2.2")
+
+    reponse = client.get(reverse("audit:journal"), {"q": "Fatou"})
+
+    assert "Fatou Diallo" in _texte(reponse) and "Ibrahim Sanogo" not in _texte(reponse)
+
+
+def test_le_filtre_module_et_action_se_combinent(client):
+    client.force_login(UserFactory(role=Role.ADMIN))
+    _entree(module="RH", action=ActionChoices.CREATE)
+    _entree(module="RH", action=ActionChoices.DELETE)
+    _entree(module="FLEET", action=ActionChoices.CREATE)
+
+    reponse = services.rechercher(module="RH", action=ActionChoices.CREATE)
+
+    assert reponse.count() == 1
+
+
+def test_le_filtre_de_periode_borne_la_date(client):
+    client.force_login(UserFactory(role=Role.ADMIN))
+    dans_la_periode = _entree(date_heure=datetime(2026, 9, 10, tzinfo=dt_timezone.utc))
+    hors_periode = _entree(date_heure=datetime(2026, 8, 1, tzinfo=dt_timezone.utc))
+
+    resultat = services.rechercher(date_debut=date(2026, 9, 1), date_fin=date(2026, 9, 30))
+
+    assert dans_la_periode in resultat and hors_periode not in resultat
+
+
+def test_le_statut_echec_est_filtrable(client):
+    client.force_login(UserFactory(role=Role.ADMIN))
+    _entree(statut=StatutChoices.FAILED, module="AUTH")
+    _entree(statut=StatutChoices.SUCCESS, module="AUTH")
+
+    assert services.rechercher(statut=StatutChoices.FAILED).count() == 1
+
+
+def test_le_filtre_module_liste_les_modules_deja_presents():
+    _entree(module="RH")
+    _entree(module="FLEET")
+
+    assert services.modules_utilises() == ["FLEET", "RH"]
+
+
+# --- export CSV ---
+
+
+def test_export_csv_reprend_les_filtres_et_contient_les_colonnes(client):
+    client.force_login(UserFactory(role=Role.ADMIN))
+    _entree(utilisateur_nom="Awa Koné", module="RH", entite="Personnel", entite_id=7)
+    _entree(utilisateur_nom="Fatou Diallo", module="FINANCES")
+
+    reponse = client.get(reverse("audit:export_csv"), {"module": "RH"})
+
+    assert reponse["Content-Type"].startswith("text/csv")
+    contenu = reponse.content.decode("utf-8-sig")
+    assert "Awa Koné" in contenu and "Fatou Diallo" not in contenu
+    assert "Date/heure;Utilisateur;Rôle;Action;Module;Entité;ID entité;Statut;Adresse IP" in contenu
+
+
+def test_export_csv_neutralise_les_formules_dans_toutes_les_colonnes(client):
+    # Audit M1-76 : un nom d'utilisateur (saisi librement) commençant par « = » s'exécuterait dans Excel.
+    client.force_login(UserFactory(role=Role.ADMIN))
+    _entree(utilisateur_nom='=HYPERLINK("http://x")', entite="+Piege", module="-RH", role="@x")
+
+    contenu = client.get(reverse("audit:export_csv")).content.decode("utf-8-sig")
+
+    ligne = contenu.splitlines()[1]
+    assert "'=HYPERLINK" in ligne and "'+Piege" in ligne and "'-RH" in ligne and "'@x" in ligne
+    assert ';=' not in ligne and not ligne.startswith("=")
+
+
+def test_export_csv_interdit_hors_role(client):
+    client.force_login(UserFactory(role=Role.RH))
+
+    assert client.get(reverse("audit:export_csv")).status_code == 403
+
+
+# --- rapport imprimable ---
+
+
+def test_impression_du_journal(client):
+    client.force_login(UserFactory(role=Role.DIRECTION))
+    _entree(utilisateur_nom="Awa Koné", module="RH", action=ActionChoices.VALIDATE)
+
+    texte = _texte(client.get(reverse("audit:imprimer"), {"module": "RH"}))
+
+    assert "Journal d" in texte and "audit</h1>" in texte  # apostrophe échappée en HTML (&#x27;)
+    assert "Awa Koné" in texte and "module : RH" in texte
+
+
+def test_le_lien_imprimer_et_l_export_sont_sur_la_liste(client):
+    client.force_login(UserFactory(role=Role.ADMIN))
+
+    page = client.get(reverse("audit:journal"), {"module": "RH"}).content.decode()
+
+    assert reverse("audit:imprimer") in page and reverse("audit:export_csv") in page
+    assert "module%3DRH" in page or "module=RH" in page
+
+
+# --- menu ---
+
+
+def test_le_journal_apparait_dans_le_menu_de_l_admin_et_de_la_direction():
+    from apps.accounts.navigation import entrees_pour
+
+    for role in (Role.ADMIN, Role.DIRECTION):
+        assert any(e["url"] == reverse("audit:journal") for e in entrees_pour(role, "/"))
+    assert not any(e["url"] == reverse("audit:journal") for e in entrees_pour(Role.RH, "/"))
+```
+
+#### `apps/core/tests/test_rapports.py`
+
+*103 lignes* — Infrastructure commune aux rapports imprimables : en-tête et mixin de liste.
+
+```python
+"""Infrastructure commune aux rapports imprimables : en-tête et mixin de liste."""
+
+from datetime import datetime
+from datetime import timezone as dt_timezone
+
+import pytest
+from django.template import Context, Template
+
+from apps.accounts.models import Role
+from apps.accounts.tests.factories import UserFactory
+from apps.core.rapports import contexte_entreprise, contexte_rapport
+from apps.core.views import ImpressionListeMixin
+
+pytestmark = pytest.mark.django_db
+
+
+class _Requete:
+    def __init__(self, user):
+        self.user = user
+
+
+def test_contexte_entreprise_reprend_les_reglages(settings):
+    settings.ENTREPRISE_NOM = "DEN Source Group"
+    settings.ENTREPRISE_ADRESSE = "Abidjan"
+    settings.ENTREPRISE_NCC = "CI-123"
+
+    assert contexte_entreprise() == {"nom": "DEN Source Group", "adresse": "Abidjan", "ncc": "CI-123"}
+
+
+def test_contexte_rapport_identifie_qui_l_a_genere():
+    utilisateur = UserFactory(role=Role.ADMIN, first_name="Awa", last_name="Koné")
+
+    contexte = contexte_rapport(_Requete(utilisateur), titre="Missions", sous_titre="6 lignes")
+
+    assert contexte["titre"] == "Missions" and contexte["sous_titre"] == "6 lignes"
+    assert contexte["genere_par"] == "Awa Koné"
+    assert (datetime.now(dt_timezone.utc) - contexte["genere_le"]).total_seconds() < 5
+
+
+def test_sans_nom_le_genere_par_retombe_sur_l_identifiant():
+    utilisateur = UserFactory(role=Role.ADMIN, first_name="", last_name="", username="demo_admin")
+
+    contexte = contexte_rapport(_Requete(utilisateur), titre="x")
+
+    assert contexte["genere_par"] == "demo_admin"
+
+
+# --- ImpressionListeMixin._valeur ---
+
+
+class _Sous:
+    def __init__(self, nom):
+        self.nom = nom
+
+
+class _Objet:
+    def __init__(self, libelle, sous=None):
+        self.libelle = libelle
+        self.sous = sous
+
+    def get_libelle_display(self):
+        return f"« {self.libelle} »"
+
+
+def test_valeur_resout_un_attribut_simple():
+    assert ImpressionListeMixin._valeur(_Objet("Abidjan"), "libelle") == "Abidjan"
+
+
+def test_valeur_resout_une_methode_get_display():
+    assert ImpressionListeMixin._valeur(_Objet("Abidjan"), "get_libelle_display") == "« Abidjan »"
+
+
+def test_valeur_resout_un_chemin_en_pointilles():
+    assert ImpressionListeMixin._valeur(_Objet("x", sous=_Sous("Bolloré")), "sous.nom") == "Bolloré"
+
+
+def test_valeur_vide_ou_chemin_casse_donne_un_tiret():
+    assert ImpressionListeMixin._valeur(_Objet(""), "libelle") == "—"
+    assert ImpressionListeMixin._valeur(_Objet("x", sous=None), "sous.nom") == "—"
+    assert ImpressionListeMixin._valeur(_Objet("x"), "inconnu") == "—"
+
+
+def test_valeur_accepte_un_callable_pour_une_colonne_composee():
+    colonne = lambda o: f"{o.libelle}!"  # noqa: E731
+
+    assert ImpressionListeMixin._valeur(_Objet("Abidjan"), colonne) == "Abidjan!"
+
+
+def test_le_rendu_echappe_les_libelles():
+    html = Template(
+        '{% include "rapports/liste_impression.html" %}'
+    ).render(
+        Context(
+            {
+                "entreprise": {"nom": "DEN"}, "titre": "T", "sous_titre": "",
+                "genere_par": "x", "genere_le": datetime.now(dt_timezone.utc),
+                "entetes": ["Client"], "lignes": [["<script>alert(1)</script>"]],
+                "nombre": 1, "tronque": False,
+            }
+        )
+    )
+
+    assert "<script>" not in html and "&lt;script&gt;" in html
+```
+
+#### `apps/parametres/tests/test_parametres.py`
+
+*199 lignes* — Paramètres de l'application (audit M1-09, M1-10) : lecture, modification, droits, contrôles, écran.
+
+```python
+"""Paramètres de l'application (audit M1-09, M1-10) : lecture, modification, droits, contrôles, écran."""
+
+from decimal import Decimal
+
+import pytest
+from django.db import IntegrityError
+from django.urls import reverse
+
+from apps.accounts.models import Role
+from apps.accounts.tests.factories import UserFactory
+from apps.audit.models import ActionChoices, AuditLog
+from apps.parametres import services
+from apps.parametres.models import Parametres
+
+pytestmark = pytest.mark.django_db
+
+
+def _formulaire(**surcharges):
+    defauts = Parametres()
+    donnees = {champ: str(getattr(defauts, champ)) for champ in services.CHAMPS}
+    donnees.update({cle: str(valeur) for cle, valeur in surcharges.items()})
+    return donnees
+
+
+# --- lecture ---
+
+
+def test_sans_enregistrement_les_valeurs_du_cahier_des_charges_s_appliquent_sans_rien_ecrire():
+    p = services.parametres()
+
+    assert (p.delai_alerte_jours, p.seuil_conso_jaune_pct, p.seuil_conso_rouge_pct, p.seuil_conso_saisie_pct) == (
+        30, Decimal("20"), Decimal("40"), Decimal("60")
+    )
+    assert (p.conso_min_l100, p.conso_max_l100, p.ecart_km_max) == (Decimal("20"), Decimal("45"), 5000)
+    assert (p.tva_defaut, p.delai_paiement_defaut_jours) == (Decimal("18.00"), 30)
+    assert (p.delai_validation_n1_heures, p.delai_validation_n2_heures, p.droit_annuel_jours) == (48, 24, 26)
+    assert not Parametres.objects.exists()
+
+
+def test_delai_alerte_prend_la_valeur_fournie_sinon_le_parametre():
+    services.modifier_parametres(UserFactory(role=Role.ADMIN), delai_alerte_jours=45)
+
+    assert services.delai_alerte() == 45
+    assert services.delai_alerte(10) == 10
+
+
+# --- modification ---
+
+
+@pytest.mark.parametrize("role", [Role.ADMIN, Role.DIRECTION])
+def test_l_admin_et_la_direction_modifient(role):
+    acteur = UserFactory(role=role)
+
+    services.modifier_parametres(acteur, delai_alerte_jours=60, tva_defaut=Decimal("9"))
+
+    p = services.parametres()
+    assert (p.delai_alerte_jours, p.tva_defaut, p.modifie_par) == (60, Decimal("9.00"), acteur)
+    assert p.droit_annuel_jours == 26  # un champ absent garde sa valeur
+
+
+def test_un_superutilisateur_agit_en_admin():
+    services.modifier_parametres(UserFactory(role=Role.CHAUFFEUR, is_superuser=True), ecart_km_max=8000)
+
+    assert services.parametres().ecart_km_max == 8000
+
+
+@pytest.mark.parametrize("role", [Role.RH, Role.FINANCES, Role.PARCAUTO, Role.CHARGE_CLIENTELE, Role.CHAUFFEUR])
+def test_les_autres_roles_ne_modifient_pas(role):
+    with pytest.raises(services.ModificationNonAutorisee):
+        services.modifier_parametres(UserFactory(role=role), delai_alerte_jours=60)
+    assert not Parametres.objects.exists()
+
+
+def test_les_modifications_successives_gardent_une_seule_ligne():
+    admin = UserFactory(role=Role.ADMIN)
+    services.modifier_parametres(admin, delai_alerte_jours=40)
+    services.modifier_parametres(admin, delai_alerte_jours=50)
+
+    assert Parametres.objects.count() == 1 and services.parametres().delai_alerte_jours == 50
+
+
+def test_une_seconde_ligne_est_refusee_par_la_base():
+    services.modifier_parametres(UserFactory(role=Role.ADMIN), delai_alerte_jours=40)
+
+    with pytest.raises(IntegrityError):
+        Parametres.objects.create(pk=2)
+
+
+@pytest.mark.parametrize(
+    ("champ", "valeur"),
+    [
+        ("delai_alerte_jours", 0),
+        ("delai_alerte_jours", 366),
+        ("tva_defaut", Decimal("0")),
+        ("tva_defaut", Decimal("101")),
+        ("ecart_km_max", 50),
+        ("droit_annuel_jours", 61),
+        ("delai_validation_n1_heures", 0),
+        ("conso_min_l100", Decimal("0")),
+    ],
+)
+def test_une_valeur_hors_bornes_est_refusee(champ, valeur):
+    with pytest.raises(services.ParametresInvalides) as erreur:
+        services.modifier_parametres(UserFactory(role=Role.ADMIN), **{champ: valeur})
+
+    assert champ in erreur.value.erreurs
+    assert not Parametres.objects.exists()
+
+
+@pytest.mark.parametrize(
+    ("valeurs", "champ_en_erreur"),
+    [
+        ({"seuil_conso_jaune_pct": Decimal("40"), "seuil_conso_rouge_pct": Decimal("40")}, "seuil_conso_rouge_pct"),
+        ({"seuil_conso_rouge_pct": Decimal("70")}, "seuil_conso_saisie_pct"),
+        ({"conso_min_l100": Decimal("50")}, "conso_max_l100"),
+    ],
+)
+def test_des_seuils_incoherents_sont_refuses(valeurs, champ_en_erreur):
+    with pytest.raises(services.ParametresInvalides) as erreur:
+        services.modifier_parametres(UserFactory(role=Role.ADMIN), **valeurs)
+
+    assert champ_en_erreur in erreur.value.erreurs
+
+
+def test_un_champ_inconnu_est_refuse():
+    with pytest.raises(services.ParametresError, match="inconnu"):
+        services.modifier_parametres(UserFactory(role=Role.ADMIN), modifie_par=None)
+
+
+def test_chaque_modification_est_tracee_avec_l_ancienne_et_la_nouvelle_valeur(client):
+    admin = UserFactory(role=Role.ADMIN)
+    client.force_login(admin)  # l'auteur d'une entrée d'audit est celui de la requête
+    client.post(reverse("parametres:modifier"), _formulaire(delai_alerte_jours=40))
+    client.post(reverse("parametres:modifier"), _formulaire(delai_alerte_jours=50))
+
+    entree = AuditLog.objects.filter(module="PARAMETRES", action=ActionChoices.UPDATE).latest("pk")
+    assert entree.ancienne_valeur["delai_alerte_jours"] == 40
+    assert entree.nouvelle_valeur["delai_alerte_jours"] == 50
+    assert entree.utilisateur == admin
+
+
+# --- écran ---
+
+
+@pytest.mark.parametrize("role", [Role.ADMIN, Role.DIRECTION])
+def test_l_ecran_affiche_les_valeurs_en_vigueur_et_celles_du_cahier_des_charges(client, role):
+    client.force_login(UserFactory(role=role))
+
+    page = client.get(reverse("parametres:modifier")).content.decode()
+
+    assert "Paramètres" in page and 'name="delai_alerte_jours"' in page and 'value="30"' in page
+    assert 'name="seuil_conso_jaune_pct" value="20"' in page  # point décimal : un champ numérique refuse la virgule
+    assert 'name="tva_defaut" value="18.00"' in page
+    assert "Cahier des charges : 45" in page
+    assert "les valeurs du cahier des charges s'appliquent" in page
+
+
+@pytest.mark.parametrize("role", [Role.RH, Role.FINANCES, Role.PARCAUTO, Role.CHARGE_CLIENTELE, Role.CHAUFFEUR])
+def test_l_ecran_est_refuse_aux_autres_roles(client, role):
+    client.force_login(UserFactory(role=role))
+
+    assert client.get(reverse("parametres:modifier")).status_code == 403
+    assert client.post(reverse("parametres:modifier"), _formulaire(delai_alerte_jours=60)).status_code == 403
+    assert not Parametres.objects.exists()
+
+
+def test_enregistrer_l_ecran_applique_les_valeurs(client):
+    client.force_login(UserFactory(role=Role.DIRECTION))
+
+    reponse = client.post(reverse("parametres:modifier"), _formulaire(delai_alerte_jours=45), follow=True)
+
+    assert services.parametres().delai_alerte_jours == 45
+    assert "Paramètres enregistrés" in reponse.content.decode()
+    assert "Dernière modification le" in reponse.content.decode()
+
+
+def test_l_ecran_affiche_l_incoherence_sous_le_champ(client):
+    client.force_login(UserFactory(role=Role.ADMIN))
+
+    reponse = client.post(reverse("parametres:modifier"), _formulaire(conso_min_l100="50"))
+
+    assert reponse.status_code == 200
+    assert "La consommation maximale doit être supérieure" in reponse.content.decode()
+    assert not Parametres.objects.exists()
+
+
+def test_l_ecran_refuse_une_valeur_hors_bornes(client):
+    client.force_login(UserFactory(role=Role.ADMIN))
+
+    reponse = client.post(reverse("parametres:modifier"), _formulaire(delai_alerte_jours="0"))
+
+    assert reponse.status_code == 200 and reponse.context["form"].errors["delai_alerte_jours"]
+    assert not Parametres.objects.exists()
+
+
+def test_le_menu_propose_les_parametres_a_l_admin_et_a_la_direction_seulement(client):
+    for role, visible in ((Role.ADMIN, True), (Role.DIRECTION, True), (Role.RH, False), (Role.FINANCES, False)):
+        client.force_login(UserFactory(role=role))
+        assert (reverse("parametres:modifier") in client.get(reverse("home")).content.decode()) is visible
+```
+
+## Étape 7 — Brancher tout cela dans les réglages
+
+#### `config/settings/base.py` — modifications
+
+*Les lignes précédées de `+` sont à ajouter ; les autres sont là pour vous repérer.*
+
+```diff
+--- config/settings/base.py (avant)
++++ config/settings/base.py (après)
+@@ -118,4 +118,7 @@
+                 "django.contrib.auth.context_processors.auth",
+                 "django.contrib.messages.context_processors.messages",
++                "apps.accounts.context_processors.menu",
++                "apps.notifications.context_processors.notifications",
++                "apps.parametres.context_processors.parametres",
+             ],
+         },
+```
+
+#### `config/urls.py` — modifications
+
+*Les lignes précédées de `+` sont à ajouter ; les autres sont là pour vous repérer.*
+
+```diff
+--- config/urls.py (avant)
++++ config/urls.py (après)
+@@ -8,13 +8,21 @@
+ from django.contrib import admin
+ from django.urls import include, path
+-from django.views.generic import RedirectView
++from django.views.generic import RedirectView, TemplateView
+ 
++from apps.core.documents_pdf import DocumentPdfTelechargerView, DocumentPdfView
+ from apps.core.medias import MediaProtegeView
+ 
+ urlpatterns = [
++    path("", TemplateView.as_view(template_name="accueil_provisoire.html"), name="home"),
+     # Les navigateurs (et l'administration Django) réclament /favicon.ico : on renvoie vers l'icône du site.
+     path("favicon.ico", RedirectView.as_view(url=settings.STATIC_URL + "img/favicon.png", permanent=True)),
+     path("medias/<path:chemin>", MediaProtegeView.as_view(), name="media"),
+     # PDF préparés en tâche de fond (audit TECH-70) : page d'attente, puis téléchargement par le seul demandeur.
++    path("documents-pdf/<uuid:cle>/", DocumentPdfView.as_view(), name="document_pdf"),
++    path("documents-pdf/<uuid:cle>/telecharger/", DocumentPdfTelechargerView.as_view(), name="document_pdf_telecharger"),
++    path("", include("apps.accounts.urls")),
++    path("audit/", include("apps.audit.urls")),
++    path("parametres/", include("apps.parametres.urls")),
++    path("notifications/", include("apps.notifications.urls")),
+     path("admin/", admin.site.urls),
+ ]
+```
+
+Les deux processeurs de contexte apparaissent dans `TEMPLATES`, et `config/urls.py` monte les adresses de
+`accounts` (connexion, MFA), de `notifications`, et la page d'accueil provisoire.
+
+## Étape 8 — Compiler les styles
+
+```bash
+cd frontend
+npm install
+npm run build
+cd ..
+```
+
+**Résultat attendu :** `npm install` télécharge Tailwind, Alpine.js et Font Awesome (quelques dizaines de
+secondes) ; `npm run build` affiche `Done in …ms.` puis `copié static/vendor/…` pour cinq fichiers. Vérifiez :
+
+```bash
+ls static/css static/vendor/alpine static/vendor/fontawesome
+```
+
+**Résultat attendu :** `tailwind.css` (environ 30 Ko), `alpine.min.js`, `all.min.css`, `webfonts/` et `LICENSE.txt`.
+
+> **Si `npm install` échoue** : vérifiez `node --version` (20 ou plus) et votre connexion. **Si la page s'affiche
+> sans mise en forme** : `static/css/tailwind.css` manque ; relancez `npm run build`.
+
+## Vérifier le chapitre
+
+```bash
+python manage.py check
+```
+
+```bash
+python -m pytest apps/accounts/tests/test_changer_mot_de_passe.py apps/accounts/tests/test_password_reset.py apps/accounts/tests/test_role_avant_objet.py apps/accounts/tests/test_utilisateurs_ecran.py apps/audit/tests/test_services.py apps/audit/tests/test_signals.py apps/audit/tests/test_utilisateurs.py apps/audit/tests/test_views.py apps/core/tests/test_rapports.py apps/parametres/tests/test_parametres.py -q --no-cov
+```
+
+**Résultat attendu :** `121 passed, 1 failed` (pour les 10 fichier(s) de tests présentés dans ce chapitre).
+
+Des tests échouent à ce stade, **c'est normal** : ils vérifient des écrans qui n'existent pas encore (par exemple la page d'accueil). Ils passeront au chapitre indiqué :
+
+- `test_role_avant_objet.py::test_les_sept_vues_concernees_passent_par_charger_objet` → chapitre 27 (« Écrans : facturation, dépenses et trésorerie »)
+
+**Maintenant, regardez le résultat dans un navigateur :**
+
+```bash
+python manage.py runserver
+```
+
+1. Ouvrez **http://localhost:8000/connexion/** : la page de connexion aux couleurs bordeaux et orange.
+2. Connectez-vous avec **`demo_rh`** et le mot de passe du chapitre 7. Vous arrivez sur la page « Bienvenue ». Le
+   menu de gauche ne montre pour l'instant que **Accueil** : les autres écrans n'existent pas encore, le menu les
+   ignore (c'est voulu). La **cloche** affiche `1` (la notification d'essai du chapitre 17) ; cliquez pour la lire.
+3. Déconnectez-vous puis connectez-vous avec **`demo_direction`** : vous êtes **renvoyé vers
+   `/mfa/activer/`**. Installez une application d'authentification sur votre téléphone, scannez le QR code,
+   saisissez le code à 6 chiffres, **notez les 10 codes de secours**, puis continuez.
+4. Déconnectez-vous et reconnectez-vous avec `demo_direction` : cette fois on vous demande **le code** (`/mfa/verifier/`).
+5. Essayez de saisir 5 mots de passe faux pour `demo_rh` : la 6e tentative affiche « Trop de tentatives
+   échouées » **même avec le bon mot de passe**.
+
+> **Téléphone perdu pendant l'essai ?** `python manage.py reinitialiser_mfa demo_direction`.
+
+Arrêtez le serveur avec `Ctrl+C`.
+
+## Ce qu'il faut retenir
+
+- Une page = un gabarit qui **hérite** de `base.html` ; les **composants** évitent de répéter du HTML.
+- La sécurité de l'interface est **côté serveur** : jeton CSRF, garde de rôle, blocage des essais, CSP.
+- Sans JavaScript en ligne, la politique de sécurité peut être **stricte** ; les comportements sont dans
+  `app.js`, déclarés par des attributs `data-…`.
+- Tailwind **scanne les fichiers** : après avoir ajouté des classes, **recompilez** (`npm run build:css`).
+
+## Valider avec Git
+
+```bash
+git add -A
+git commit -m "chapitre 18 : socle de l'interface (gabarits, styles locaux, connexion, MFA, notifications)"
+```
+
+---
+
+[← Chapitre 17](17-notifications.md) · [Sommaire](README.md) · [Chapitre 19 →](19-ecrans-rh.md)

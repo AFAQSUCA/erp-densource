@@ -33,7 +33,7 @@ if not Path(PYTHON).exists():
 # Apps qui ont des modèles à migrer, par chapitre où leurs modèles sont écrits.
 MIGRATIONS = {
     t.NUM[a]: [a] for a in (
-        "core", "accounts", "audit", "hr", "drivers", "customers", "fleet", "missions", "garage",
+        "core", "accounts", "audit", "parametres", "hr", "drivers", "customers", "fleet", "missions", "garage",
         "inventory", "fuel", "billing", "finance", "accounting", "notifications",
     )
 }
@@ -131,6 +131,17 @@ def main() -> int:
             if k == t.CH_ACCUEIL_FIN:
                 (destination / t.ACCUEIL_PROVISOIRE).unlink()
             print(f"    {len(fichiers)} fichiers écrits")
+
+            if k == t.NUM["finalisation"]:
+                # documents de référence et fichiers de mise en production, copiés depuis le dépôt (le tutoriel le
+                # demande au lecteur) : les vérifications d'ensemble les relisent
+                for nom in t.FICHIERS_DE_REFERENCE:
+                    source = t.RACINE / nom
+                    if source.is_dir():
+                        shutil.copytree(source, destination / nom, dirs_exist_ok=True)
+                    else:
+                        (destination / nom).parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy(source, destination / nom)
 
             if k == t.NUM["interface"]:
                 # images de la marque : copiées depuis le dépôt, puis compilation des styles (npm)

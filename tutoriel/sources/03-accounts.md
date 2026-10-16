@@ -15,12 +15,12 @@
 utilisateurs »). Les règles vivent dans `services.py` — jamais un compte supprimé (on le **désactive**), jamais un
 **superutilisateur** touché depuis l'écran, jamais soi-même (on ne se désactive pas, on ne change pas son propre rôle), un
 mot de passe initial validé par les validateurs de Django, et tout est tracé au journal d'audit (le mot de passe n'y figure
-qu'en empreinte). L'écran « Utilisateurs » lui-même est présenté au chapitre 17.
+qu'en empreinte). L'écran « Utilisateurs » lui-même est présenté au chapitre 18.
 
 ## Prérequis
 
 - Chapitres 1 et 2 terminés (`python -m pytest apps/core -q` est vert).
-- Une application d'authentification sur le téléphone n'est pas nécessaire ici ; elle servira au chapitre 17.
+- Une application d'authentification sur le téléphone n'est pas nécessaire ici ; elle servira au chapitre 18.
 
 ## Notions Django de ce chapitre
 
@@ -66,7 +66,7 @@ mkdir -p apps/accounts/tests apps/accounts/management/commands
 
 {{FICHIER apps/accounts/permissions.py}}
 
-Ces classes servent à l'**API** (chapitre 30) : `IsAdmin`, `IsDirection`… décident si un rôle a accès à une
+Ces classes servent à l'**API** (chapitre 32) : `IsAdmin`, `IsDirection`… décident si un rôle a accès à une
 route.
 
 {{FICHIER apps/accounts/mixins.py}}
@@ -115,7 +115,7 @@ La double authentification en quelques mots :
 La **porte** : à chaque requête, si l'utilisateur est un ADMIN ou une DIRECTION dont la session n'est pas
 « vérifiée », on le renvoie vers la saisie du code. C'est un **refus par défaut** : il couvre aussi
 l'administration et la documentation de l'API, sans que chaque vue y pense. Les appels d'API avec un jeton
-(JWT) ne passent pas ici : la MFA y est contrôlée à l'émission du jeton (chapitre 30).
+(JWT) ne passent pas ici : la MFA y est contrôlée à l'émission du jeton (chapitre 32).
 
 ## Étape 5 — Administration, démarrage et commande de secours
 
@@ -176,7 +176,7 @@ python manage.py check
 {{PYTEST}}
 
 Les tests de connexion, de MFA et de menu par rôle **ouvrent des pages** et seront présentés plus tard
-(chapitres 17 et suivants), quand les écrans existeront.
+(chapitres 18 et suivants), quand les écrans existeront.
 
 Petit essai dans le shell : créer un utilisateur et lire son rôle effectif.
 

@@ -1,58 +1,118 @@
 {
+  "apps/accounts/tests/test_force_brute_api_reinitialisation.py::test_nginx_limite_le_debit_des_pages_d_authentification": {
+    "presente_au": 32,
+    "vert_au": 34
+  },
+  "apps/accounts/tests/test_role_avant_objet.py::test_les_sept_vues_concernees_passent_par_charger_objet": {
+    "presente_au": 18,
+    "vert_au": 27
+  },
   "apps/accounts/tests/test_web.py::test_deconnexion_par_post_ferme_la_session_et_est_tracee": {
-    "presente_au": 26,
-    "vert_au": 28
+    "presente_au": 27,
+    "vert_au": 30
   },
   "apps/accounts/tests/test_web.py::test_l_accueil_exige_une_connexion_et_conserve_la_destination": {
-    "presente_au": 26,
-    "vert_au": 28
+    "presente_au": 27,
+    "vert_au": 30
   },
   "apps/accounts/tests/test_web.py::test_l_accueil_salue_l_utilisateur": {
-    "presente_au": 26,
-    "vert_au": 28
+    "presente_au": 27,
+    "vert_au": 30
   },
   "apps/accounts/tests/test_web.py::test_le_menu_depend_du_role": {
-    "presente_au": 26,
-    "vert_au": 28
+    "presente_au": 27,
+    "vert_au": 30
   },
   "apps/accounts/tests/test_web.py::test_un_chauffeur_est_renvoye_vers_l_espace_mobile": {
-    "presente_au": 26,
-    "vert_au": 28
+    "presente_au": 27,
+    "vert_au": 30
+  },
+  "apps/audit/tests/test_couverture.py::test_chaque_modele_sensible_est_trace[billing.Depense]": {
+    "presente_au": 13,
+    "vert_au": 14
+  },
+  "apps/audit/tests/test_couverture.py::test_chaque_modele_sensible_est_trace[billing.Facture]": {
+    "presente_au": 13,
+    "vert_au": 14
+  },
+  "apps/audit/tests/test_couverture.py::test_chaque_modele_sensible_est_trace[billing.LigneFacture]": {
+    "presente_au": 13,
+    "vert_au": 14
+  },
+  "apps/audit/tests/test_couverture.py::test_chaque_modele_sensible_est_trace[billing.Reglement]": {
+    "presente_au": 13,
+    "vert_au": 14
   },
   "apps/core/tests/test_graphiques.py::test_le_rendu_des_colonnes_offre_legende_infobulle_et_tableau": {
     "presente_au": 2,
-    "vert_au": 17
+    "vert_au": 18
   },
   "apps/core/tests/test_graphiques.py::test_le_rendu_echappe_les_libelles": {
     "presente_au": 2,
-    "vert_au": 17
+    "vert_au": 18
   },
   "apps/core/tests/test_graphiques.py::test_un_graphique_vide_affiche_le_message_sans_barre": {
     "presente_au": 2,
-    "vert_au": 17
+    "vert_au": 18
+  },
+  "apps/core/tests/test_pdf.py::test_le_tableau_de_bord_de_l_admin_se_telecharge_en_pdf": {
+    "presente_au": 28,
+    "vert_au": 30
+  },
+  "apps/core/tests/test_pdf.py::test_le_tableau_de_bord_se_telecharge_en_pdf_pour_chaque_role[CHARGE_CLIENTELE]": {
+    "presente_au": 28,
+    "vert_au": 30
+  },
+  "apps/core/tests/test_pdf.py::test_le_tableau_de_bord_se_telecharge_en_pdf_pour_chaque_role[DIRECTION]": {
+    "presente_au": 28,
+    "vert_au": 30
+  },
+  "apps/core/tests/test_pdf.py::test_le_tableau_de_bord_se_telecharge_en_pdf_pour_chaque_role[FINANCES]": {
+    "presente_au": 28,
+    "vert_au": 30
+  },
+  "apps/core/tests/test_pdf.py::test_le_tableau_de_bord_se_telecharge_en_pdf_pour_chaque_role[PARCAUTO]": {
+    "presente_au": 28,
+    "vert_au": 30
+  },
+  "apps/core/tests/test_pdf.py::test_le_tableau_de_bord_se_telecharge_en_pdf_pour_chaque_role[RH]": {
+    "presente_au": 28,
+    "vert_au": 30
   },
   "apps/missions/tests/test_encaissement_annule.py::test_annuler_le_reglement_retire_l_encaissement_de_la_mission": {
-    "presente_au": 13,
-    "vert_au": 14
+    "presente_au": 14,
+    "vert_au": 15
   },
   "apps/missions/tests/test_encaissement_annule.py::test_la_commande_de_reprise_rattache_et_retire_les_anciens_encaissements": {
-    "presente_au": 13,
-    "vert_au": 14
+    "presente_au": 14,
+    "vert_au": 15
   },
   "apps/missions/tests/test_encaissement_annule.py::test_la_commande_en_simulation_n_ecrit_rien": {
-    "presente_au": 13,
-    "vert_au": 14
+    "presente_au": 14,
+    "vert_au": 15
   },
   "apps/missions/tests/test_encaissement_annule.py::test_un_reglement_se_reflete_sur_la_mission_avec_son_lien": {
-    "presente_au": 13,
-    "vert_au": 14
+    "presente_au": 14,
+    "vert_au": 15
   },
   "apps/missions/tests/test_frais_mission.py::test_creer_encaissement_est_directement_confirme": {
-    "presente_au": 9,
-    "vert_au": 13
+    "presente_au": 10,
+    "vert_au": 14
   },
   "apps/missions/tests/test_frais_mission.py::test_totaux_ne_comptent_que_les_lignes_confirmees": {
-    "presente_au": 9,
-    "vert_au": 13
+    "presente_au": 10,
+    "vert_au": 14
+  },
+  "apps/notifications/tests/test_compte_direction.py::test_la_creation_d_un_compte_direction_previent_la_direction_existante": {
+    "presente_au": 17,
+    "vert_au": 18
+  },
+  "apps/notifications/tests/test_compte_direction.py::test_la_promotion_d_un_compte_existant_previent_aussi": {
+    "presente_au": 17,
+    "vert_au": 18
+  },
+  "apps/notifications/tests/test_compte_direction.py::test_les_autres_roles_et_changements_anodins_ne_previennent_pas": {
+    "presente_au": 17,
+    "vert_au": 18
   }
 }

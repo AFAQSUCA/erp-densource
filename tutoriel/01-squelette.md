@@ -1,6 +1,6 @@
 # Chapitre 1 — Le squelette du projet
 
-> 19 fichier(s) dans ce chapitre, 779 lignes de code.
+> 19 fichier(s) dans ce chapitre, 847 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -89,7 +89,7 @@ Ce que chaque bibliothèque apporte (vous les rencontrerez toutes) :
 | Bibliothèque | Rôle |
 |---|---|
 | **Django** | le framework : base de données, URL, vues, gabarits, administration, sécurité |
-| **djangorestframework** (DRF) | l'API REST (chapitre 30) |
+| **djangorestframework** (DRF) | l'API REST (chapitre 32) |
 | **django-environ** | lire le fichier `.env` |
 | **djangorestframework-simplejwt** | jetons JWT courts pour l'API mobile |
 | **django-filter** | filtres des listes de l'API |
@@ -101,7 +101,7 @@ Ce que chaque bibliothèque apporte (vous les rencontrerez toutes) :
 
 #### `requirements/dev.txt`
 
-*7 lignes*
+*11 lignes*
 
 ```text
 -r base.txt
@@ -111,6 +111,10 @@ pytest>=8
 pytest-django>=4.9
 pytest-cov>=5
 factory_boy>=3.3
+
+# Recette automatisée dans de vrais navigateurs (recette_navigateurs/, audit TECH-74 à 77). Après installation :
+# python -m playwright install firefox webkit (Chrome et Edge : ceux du poste).
+playwright>=1.50
 ```
 
 `pytest` lance les tests, `pytest-django` le branche sur Django, `pytest-cov` mesure la couverture,
@@ -150,7 +154,7 @@ python -c "import django, rest_framework, pytest, pyotp, qrcode; print('Django',
 
 #### `.gitignore`
 
-*25 lignes*
+*26 lignes*
 
 ```bash
 .venv/
@@ -161,6 +165,7 @@ db.sqlite3
 test_db.sqlite3
 .env
 media/
+/sauvegardes/
 staticfiles/
 *.log
 .pytest_cache/
@@ -195,7 +200,7 @@ Ce fichier force les **scripts shell** (`*.sh`) en fins de ligne Unix (LF), mêm
 
 #### `.env.example`
 
-*51 lignes*
+*56 lignes*
 
 ```bash
 # Copier en .env (jamais commité) — conventions.md §3 "Secrets via .env"
@@ -236,9 +241,14 @@ ALLOWED_HOSTS=localhost,127.0.0.1
 # SENTRY_DSN=https://…@…ingest.sentry.io/…
 # SENTRY_ENVIRONMENT=production
 # SENTRY_TRACES_SAMPLE_RATE=0
+# METRIQUES_JETON=change-moi-en-un-jeton-long-et-aleatoire   # mesures pour Prometheus (GUIDE-DEPLOIEMENT.md § 10 bis) ; vide = désactivé
 
-# Sauvegardes chiffrées (ops/sauvegarde.sh, ops/restauration.sh)
-# SAUVEGARDE_PASSPHRASE=change-moi-en-une-phrase-de-passe-longue
+# Sauvegardes chiffrées : service `sauvegarde` de docker-compose.yml (GUIDE-DEPLOIEMENT.md § 9)
+# SAUVEGARDE_PASSPHRASE=change-moi-en-une-phrase-de-passe-longue   # OBLIGATOIRE avec docker-compose, à garder hors du serveur
+# SAUVEGARDE_HEURE=02:00                                          # sauvegarde de nuit (HH:MM, fuseau TZ)
+# SAUVEGARDE_CONSERVER_JOURS=30                                   # rotation (0 = tout garder)
+# SAUVEGARDE_COPIE_RSYNC=utilisateur@hote:/chemin/                # copie hors serveur (facultatif)
+# SAUVEGARDES_SURVEILLEES=true                                     # alerte ADMIN si plus de 26 h sans sauvegarde (vrai par défaut en prod)
 
 # E-mail réel (prod uniquement) : notifications (si NOTIFICATIONS_EMAIL=true) et « mot de passe
 # oublié », qui en dépend entièrement. Un hébergeur de domaine (Hostinger compris) fournit souvent
@@ -296,7 +306,7 @@ réglages de développement.
 
 #### `config/wsgi.py`
 
-*16 lignes* — WSGI config for config project.
+*19 lignes* — WSGI config for config project.
 
 ```python
 """
@@ -312,14 +322,17 @@ import os
 
 from django.core.wsgi import get_wsgi_application
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings.dev')
+# Point d'entrée des serveurs de production (gunicorn, daphne, celery) : sans DJANGO_SETTINGS_MODULE, on part
+# sur la production, qui exige ses secrets, jamais sur le développement (DEBUG actif) — audit TECH-47.
+# ``manage.py`` garde le développement par défaut.
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings.prod')
 
 application = get_wsgi_application()
 ```
 
 #### `config/asgi.py`
 
-*29 lignes* — Configuration ASGI : HTTP (Django) et WebSocket (suivi des missions en direct).
+*32 lignes* — Configuration ASGI : HTTP (Django) et WebSocket (suivi des missions en direct).
 
 ```python
 """
@@ -334,7 +347,10 @@ import os
 
 from django.core.asgi import get_asgi_application
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings.dev')
+# Point d'entrée des serveurs de production (gunicorn, daphne, celery) : sans DJANGO_SETTINGS_MODULE, on part
+# sur la production, qui exige ses secrets, jamais sur le développement (DEBUG actif) — audit TECH-47.
+# ``manage.py`` garde le développement par défaut.
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings.prod')
 
 # Doit précéder l'import des consommateurs : il initialise le registre des applications Django.
 application_http = get_asgi_application()
@@ -368,7 +384,7 @@ __all__ = ("celery_app",)
 
 #### `config/celery.py`
 
-*19 lignes* — Application Celery : tâches asynchrones (étape 7 lot 2, ADR-004 architecture.md:493-497).
+*22 lignes* — Application Celery : tâches asynchrones (étape 7 lot 2, ADR-004 architecture.md:493-497).
 
 ```python
 """Application Celery : tâches asynchrones (étape 7 lot 2, ADR-004 architecture.md:493-497).
@@ -385,7 +401,10 @@ import os
 
 from celery import Celery
 
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.dev")
+# Point d'entrée des serveurs de production (gunicorn, daphne, celery) : sans DJANGO_SETTINGS_MODULE, on part
+# sur la production, qui exige ses secrets, jamais sur le développement (DEBUG actif) — audit TECH-47.
+# ``manage.py`` garde le développement par défaut.
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.prod")
 
 app = Celery("erp_den_source")
 app.config_from_object("django.conf:settings", namespace="CELERY")
@@ -483,6 +502,7 @@ SESSION_COOKIE_AGE = 30 * 60
 SESSION_SAVE_EVERY_REQUEST = True
 
 MIDDLEWARE = [
+    # En premier : chronomètre toute la chaîne et sert /metriques/ à Prometheus (audit TECH-24, apps/core/mesures.py).
     "django.middleware.security.SecurityMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -583,6 +603,9 @@ SIMPLE_JWT = {
     "UPDATE_LAST_LOGIN": True,
     "AUTH_HEADER_TYPES": ("Bearer",),
 }
+# Durée maximale d'une session de l'API, connexion comprise : le renouvellement glisse de 7 jours à chaque usage,
+# sans plafond une session régulièrement utilisée ne finissait jamais (audit TECH-43). Au-delà, se reconnecter.
+JWT_SESSION_MAX = timedelta(days=30)
 
 SPECTACULAR_SETTINGS = {
     "TITLE": "ERP DEN Source Group : API",
@@ -617,6 +640,16 @@ DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="ERP DEN Source Group <no
 # Avec Redis en production (CACHES), le cache est partagé entre les processus.
 DASHBOARD_CACHE_SECONDS = env.int("DASHBOARD_CACHE_SECONDS", default=60)
 
+# Écran « Sauvegardes » (ADMIN) : dossier partagé avec le service `sauvegarde` de docker-compose.yml (journal,
+# demandes). Alerte au tableau de bord si la dernière sauvegarde réussie est trop ancienne : seulement là où le
+# service tourne (production), sinon l'alerte serait permanente.
+SAUVEGARDES_DIR = env.path("SAUVEGARDES_DIR", default=BASE_DIR / "sauvegardes")
+SAUVEGARDES_SURVEILLEES = env.bool("SAUVEGARDES_SURVEILLEES", default=False)
+
+# Mesures pour Prometheus (cahier-des-charges.md:256, audit TECH-24) : GET /metriques/ avec
+# « Authorization: Bearer <METRIQUES_JETON> ». Vide (par défaut) : l'adresse n'existe pas.
+METRIQUES_JETON = env("METRIQUES_JETON", default="")
+
 # Mentions de l'émetteur sur la facture imprimable (à renseigner par l'environnement).
 ENTREPRISE_NOM = env("ENTREPRISE_NOM", default="DEN Source Group")
 ENTREPRISE_ADRESSE = env("ENTREPRISE_ADRESSE", default="")
@@ -629,6 +662,10 @@ ENTREPRISE_NCC = env("ENTREPRISE_NCC", default="")
 # courtier — même comportement qu'un appel de fonction. La production (config/settings/prod.py)
 # désactive ce mode : un vrai courtier Redis et un processus « celery worker » deviennent nécessaires.
 CELERY_TASK_ALWAYS_EAGER = env.bool("CELERY_TASK_ALWAYS_EAGER", default=True)
+# PDF des rapports, factures, devis (cahier-des-charges.md:294, audit TECH-70) : préparés par le worker plutôt que
+# dans la requête. Désactivé sans worker (développement, tests) : le PDF est rendu dans la requête, comme avant.
+PDF_EN_TACHE_DE_FOND = env.bool("PDF_EN_TACHE_DE_FOND", default=False)
+PDF_CONSERVATION_HEURES = 24  # puis le fichier est effacé (tâches quotidiennes)
 CELERY_TASK_EAGER_PROPAGATES = True
 CELERY_BROKER_URL = env("REDIS_URL", default="redis://localhost:6379/0")
 CELERY_TIMEZONE = TIME_ZONE
@@ -661,6 +698,11 @@ MFA_FENETRE = 10 * 60  # ... par fenêtre de 10 minutes, puis blocage jusqu'à l
 LOGIN_MAX_ECHECS_COMPTE = 5
 LOGIN_MAX_ECHECS_ADRESSE = 20
 LOGIN_FENETRE = 15 * 60
+# « Mot de passe oublié » (audit TECH-46) : par adresse IP et par adresse e-mail, sur une heure ; sans cela, on
+# pouvait inonder de courriels la boîte d'un employé.
+REINITIALISATION_MAX_PAR_ADRESSE = 5
+REINITIALISATION_MAX_PAR_EMAIL = 3
+REINITIALISATION_FENETRE = 60 * 60
 
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
@@ -724,6 +766,7 @@ from django.views.generic import RedirectView
 urlpatterns = [
     # Les navigateurs (et l'administration Django) réclament /favicon.ico : on renvoie vers l'icône du site.
     path("favicon.ico", RedirectView.as_view(url=settings.STATIC_URL + "img/favicon.png", permanent=True)),
+    # PDF préparés en tâche de fond (audit TECH-70) : page d'attente, puis téléchargement par le seul demandeur.
     path("admin/", admin.site.urls),
 ]
 
@@ -739,10 +782,10 @@ Les blocs à repérer dans `base.py` :
 | `TEMPLATES` | où chercher les gabarits HTML |
 | `PASSWORD_HASHERS`, `AUTH_PASSWORD_VALIDATORS` | Argon2 et règles de mot de passe (10 caractères minimum) |
 | `LANGUAGE_CODE = "fr"`, `TIME_ZONE = "Africa/Abidjan"` | langue et fuseau horaire |
-| `REST_FRAMEWORK`, `SIMPLE_JWT`, `SPECTACULAR_SETTINGS`, `CORS_…` | l'API (utilisés au chapitre 30) |
+| `REST_FRAMEWORK`, `SIMPLE_JWT`, `SPECTACULAR_SETTINGS`, `CORS_…` | l'API (utilisés au chapitre 32) |
 | `MFA_…`, `LOGIN_MAX_ECHECS_…` | double authentification et anti force brute (chapitre 3) |
-| `CSP`, `PERMISSIONS_POLICY` | politique de sécurité du contenu (chapitre 17) |
-| `CELERY_…` | tâches asynchrones ; `CELERY_BEAT_SCHEDULE` planifie `taches_quotidiennes` (chapitre 16) |
+| `CSP`, `PERMISSIONS_POLICY` | politique de sécurité du contenu (chapitre 18) |
+| `CELERY_…` | tâches asynchrones ; `CELERY_BEAT_SCHEDULE` planifie `taches_quotidiennes` (chapitre 17) |
 
 > **Pourquoi des lignes « à venir » dans des réglages qui ne servent pas encore ?** Les blocs API et
 > sécurité sont écrits une fois pour toutes ici, parce qu'ils ne dépendent d'aucune de nos applications.
@@ -840,7 +883,7 @@ authentification imposée (les tests qui la vérifient la réactivent), plafonds
 
 #### `config/settings/prod.py`
 
-*122 lignes* — Environnement production — PostgreSQL, Redis (architecture.md:405).
+*138 lignes* — Environnement production — PostgreSQL, Redis (architecture.md:405).
 
 ```python
 """Environnement production — PostgreSQL, Redis (architecture.md:405).
@@ -869,6 +912,16 @@ if SECRET_KEY.startswith("django-insecure-") or SECRET_KEY == "change-me" or len
         "SECRET_KEY absente, par défaut ou trop courte (32 caractères minimum) : en production, générez-en une "
         "avec « python -c \"import secrets; print(secrets.token_urlsafe(50))\" » et placez-la dans .env."
     )
+
+# Fichiers statiques à noms versionnés (``tailwind.4f2a9c.css``) : Nginx les garde 30 jours en cache
+# (nginx/nginx.conf). Sans cela, après un déploiement, les téléphones continuaient d'afficher l'ancien
+# ``tailwind.css`` avec les nouveaux gabarits : une classe ajoutée depuis (``grid-cols-6``...) manquait et la
+# barre de navigation du chauffeur s'empilait en colonne au milieu de l'écran. Le nom change quand le contenu
+# change (``collectstatic``, lancé par ops/entrypoint.sh), donc le cache ne sert jamais un fichier périmé.
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {"BACKEND": "apps.core.statiques.StockageStatiqueVersionne"},
+}
 
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS")
 
@@ -908,6 +961,8 @@ CHANNEL_LAYERS = {
 # la planification) doit tourner à côté de l'application — voir README « Lancer en production ».
 CELERY_TASK_ALWAYS_EAGER = False
 CELERY_BROKER_URL = env("REDIS_URL")
+# Les PDF passent par ce worker (audit TECH-70) ; il dépose les fichiers dans le volume media partagé avec `web`.
+PDF_EN_TACHE_DE_FOND = env.bool("PDF_EN_TACHE_DE_FOND", default=True)
 
 # Nginx envoie les fichiers téléversés sur ordre de Django (X-Accel-Redirect), après contrôle du rôle.
 MEDIA_ACCEL_REDIRECT = True
@@ -947,10 +1002,14 @@ EMAIL_HOST_USER = env("EMAIL_HOST_USER", default="")
 EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="")
 EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=True)
 
+# Le service `sauvegarde` tourne à côté de l'application (docker-compose.yml) : l'ADMIN est alerté si la dernière
+# sauvegarde réussie a plus de 26 h (apps/sauvegardes).
+SAUVEGARDES_SURVEILLEES = env.bool("SAUVEGARDES_SURVEILLEES", default=True)
+
 # Supervision des erreurs (cahier-des-charges.md:297, architecture.md §8 « Observabilité »). Inactif
 # tant que SENTRY_DSN n'est pas défini : un environnement de démonstration n'a pas besoin de compte
-# Sentry pour démarrer. Prometheus/Grafana (mentionné au même endroit) n'est volontairement pas
-# installé : un serveur unique n'en tire pas encore parti ; Sentry couvre déjà erreurs et exceptions.
+# Sentry pour démarrer. Les mesures techniques (temps de réponse, erreurs, files d'attente) vont à Prometheus
+# (service `prometheus` de docker-compose.yml, apps/core/mesures.py ; audit TECH-24).
 SENTRY_DSN = env("SENTRY_DSN", default="")
 if SENTRY_DSN:
     import sentry_sdk
@@ -968,7 +1027,7 @@ if SENTRY_DSN:
 ```
 
 En production : HTTPS obligatoire, cookies sécurisés, base PostgreSQL et Redis fournis par l'environnement.
-Ce fichier n'est pas utilisé dans ce tutoriel (voir « Aller plus loin », chapitre 32).
+Ce fichier n'est pas utilisé dans ce tutoriel (voir « Aller plus loin », chapitre 34).
 
 ## Étape 6 — Les adresses et la configuration des tests
 

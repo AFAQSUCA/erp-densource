@@ -1,6 +1,6 @@
 # Chapitre 4 — Le journal d'audit : l'app audit
 
-> 12 fichier(s) dans ce chapitre, 601 lignes de code.
+> 12 fichier(s) dans ce chapitre, 637 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -154,7 +154,7 @@ Points clés :
 
 #### `apps/audit/services.py`
 
-*137 lignes* — Logique métier du journal d'audit — conventions.md §2.
+*150 lignes* — Logique métier du journal d'audit — conventions.md §2.
 
 ```python
 """Logique métier du journal d'audit — conventions.md §2.
@@ -171,6 +171,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
+from django.contrib.auth import get_user_model
 from django.db.models import QuerySet
 
 from apps.core.middleware import get_client_ip
@@ -204,8 +205,10 @@ def log_action(
 
     return AuditLog.objects.create(
         utilisateur=utilisateur,
-        utilisateur_nom=getattr(utilisateur, "get_full_name", lambda: "")() or "",
-        role=getattr(utilisateur, "role", ""),
+        # Nom complet, à défaut l'identifiant de connexion ; rôle effectif (un superutilisateur agit en ADMIN) :
+        # jamais une entrée sans auteur lisible (audit M1-53, M1-54).
+        utilisateur_nom=getattr(utilisateur, "get_full_name", lambda: "")() or getattr(utilisateur, "username", "") or "",
+        role=getattr(utilisateur, "role_effectif", None) or getattr(utilisateur, "role", "") or "",
         action=action,
         module=module,
         entite=entite,
@@ -240,13 +243,23 @@ def log_logout(utilisateur, request) -> AuditLog:
     )
 
 
+def identifiant_journalise(username: str) -> str:
+    """Identifiant tapé lors d'une connexion échouée, tel qu'inscrit au journal (audit AUD-17) : en entier s'il
+    désigne un compte existant (on sait quel compte est visé) ; sinon masqué, car ce peut être un mot de passe tapé
+    dans le champ « Identifiant »."""
+    username = (username or "").strip()[:150]
+    if not username or get_user_model().objects.filter(username__iexact=username).exists():
+        return username
+    return f"{username[:2]}… ({len(username)} caractères, compte inconnu)"
+
+
 def log_login_failed(username: str, request) -> AuditLog:
     return log_action(
         action=ActionChoices.LOGIN,
         module="AUTH",
         entite="User",
         utilisateur=None,
-        nouvelle_valeur={"username_tente": username},
+        nouvelle_valeur={"username_tente": identifiant_journalise(username)},
         request=request,
         statut=StatutChoices.FAILED,
     )
@@ -473,7 +486,7 @@ savoir *qui* a modifié, même depuis un service qui ne reçoit pas la requête.
 
 #### `apps/audit/signals.py`
 
-*63 lignes* — Signaux LOGIN/LOGOUT/LOGIN_FAILED — cahier-des-charges.md:78-79, ADR-003.
+*77 lignes* — Signaux LOGIN/LOGOUT/LOGIN_FAILED — cahier-des-charges.md:78-79, ADR-003.
 
 ```python
 """Signaux LOGIN/LOGOUT/LOGIN_FAILED — cahier-des-charges.md:78-79, ADR-003.
@@ -491,7 +504,7 @@ from django.contrib.auth.signals import (
 )
 from django.dispatch import receiver
 
-from apps.accounts.signals import mfa_evenement, mot_de_passe_reinitialise
+from apps.accounts.signals import mfa_evenement, mot_de_passe_change, mot_de_passe_reinitialise
 
 from . import services
 from .models import ActionChoices, StatutChoices
@@ -537,6 +550,20 @@ def on_mot_de_passe_reinitialise(sender, request, utilisateur, **kwargs):
         entite_id=utilisateur.pk,
         utilisateur=utilisateur,
         nouvelle_valeur={"evenement": "mot_de_passe_reinitialise"},
+        request=request,
+    )
+
+
+@receiver(mot_de_passe_change)
+def on_mot_de_passe_change(sender, request, utilisateur, **kwargs):
+    """Mot de passe changé par le compte connecté (audit TECH-87) : tracé, sans jamais inscrire le mot de passe."""
+    services.log_action(
+        action=ActionChoices.UPDATE,
+        module="AUTH",
+        entite="User",
+        entite_id=utilisateur.pk,
+        utilisateur=utilisateur,
+        nouvelle_valeur={"evenement": "mot_de_passe_change"},
         request=request,
     )
 ```
@@ -600,7 +627,7 @@ DIRECTION doit en plus avoir l'accès à l'administration (case « statut équip
 
 #### `apps/audit/apps.py`
 
-*18 lignes*
+*27 lignes*
 
 ```python
 from django.apps import AppConfig
@@ -615,6 +642,15 @@ class AuditConfig(AppConfig):
         from apps.accounts.navigation import EntreeMenu, enregistrer
 
         from . import permissions, signals  # noqa: F401
+        from .registry import audit_model
+
+        # Création de compte, changement de rôle, activation/désactivation, droits : la modification la
+        # plus sensible de l'ERP. ``last_login`` change à chaque connexion (bruit) ; le mot de passe
+        # n'est jamais écrit, seule son empreinte, pour qu'un changement reste visible. Branché ici et non dans
+        # ``accounts`` : ``audit`` dépend de ``accounts``, jamais l'inverse (audit AUD-20).
+        from apps.accounts.models import User
+
+        audit_model(User, module="UTILISATEURS", exclure=("last_login",), masquer=("password",))
 
         enregistrer(
             EntreeMenu(
@@ -839,4 +875,4 @@ git commit -m "chapitre 4 : app audit (journal inaltérable, audit automatique d
 
 ---
 
-[← Chapitre 3](03-accounts.md) · [Sommaire](README.md) · [Chapitre 5 →](05-hr.md)
+[← Chapitre 3](03-accounts.md) · [Sommaire](README.md) · [Chapitre 5 →](05-parametres.md)

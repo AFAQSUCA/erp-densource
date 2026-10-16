@@ -1,6 +1,6 @@
 # Chapitre 3 — Utilisateurs, rôles et sécurité de la connexion : l'app accounts
 
-> 21 fichier(s) dans ce chapitre, 1105 lignes de code.
+> 21 fichier(s) dans ce chapitre, 1246 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -19,12 +19,12 @@
 utilisateurs »). Les règles vivent dans `services.py` — jamais un compte supprimé (on le **désactive**), jamais un
 **superutilisateur** touché depuis l'écran, jamais soi-même (on ne se désactive pas, on ne change pas son propre rôle), un
 mot de passe initial validé par les validateurs de Django, et tout est tracé au journal d'audit (le mot de passe n'y figure
-qu'en empreinte). L'écran « Utilisateurs » lui-même est présenté au chapitre 17.
+qu'en empreinte). L'écran « Utilisateurs » lui-même est présenté au chapitre 18.
 
 ## Prérequis
 
 - Chapitres 1 et 2 terminés (`python -m pytest apps/core -q` est vert).
-- Une application d'authentification sur le téléphone n'est pas nécessaire ici ; elle servira au chapitre 17.
+- Une application d'authentification sur le téléphone n'est pas nécessaire ici ; elle servira au chapitre 18.
 
 ## Notions Django de ce chapitre
 
@@ -259,12 +259,12 @@ class IsAdminOrDirection(HasRole):
 GESTION_UTILISATEURS = frozenset({Role.ADMIN})
 ```
 
-Ces classes servent à l'**API** (chapitre 30) : `IsAdmin`, `IsDirection`… décident si un rôle a accès à une
+Ces classes servent à l'**API** (chapitre 32) : `IsAdmin`, `IsDirection`… décident si un rôle a accès à une
 route.
 
 #### `apps/accounts/mixins.py`
 
-*19 lignes*
+*27 lignes*
 
 ```python
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -283,9 +283,17 @@ class RoleRequiredMixin(LoginRequiredMixin):
 
     def dispatch(self, request, *args, **kwargs):
         utilisateur = request.user
-        if utilisateur.is_authenticated and utilisateur.role_effectif not in self.roles:
+        if not utilisateur.is_authenticated:
+            return self.handle_no_permission()
+        if utilisateur.role_effectif not in self.roles:
             raise PermissionDenied
+        self.charger_objet(request, *args, **kwargs)
         return super().dispatch(request, *args, **kwargs)
+
+    def charger_objet(self, request, *args, **kwargs) -> None:
+        """Charge l'objet de la page (``self.compte = get_object_or_404(...)``), **après** les contrôles de connexion
+        et de rôle : chargé avant, un rôle non autorisé recevait 404 ou 403 selon que l'objet existe, et pouvait
+        ainsi deviner les identifiants existants (audit TECH-34). Ne rien charger dans ``dispatch``."""
 ```
 
 C'est **le** fichier de sécurité de l'interface web : toute vue qui hérite de `RoleRequiredMixin` et déclare
@@ -371,14 +379,15 @@ n'existe pas encore est simplement ignorée : c'est ce qui permet de construire 
 
 #### `apps/accounts/signals.py`
 
-*37 lignes* — Signaux de l'app ``accounts``.
+*87 lignes* — Signaux de l'app ``accounts``.
 
 ```python
 """Signaux de l'app ``accounts``.
 
 ``mfa_evenement`` : émis à chaque étape de la double authentification (activation, code vérifié ou
 refusé, codes régénérés, réinitialisation). ``mot_de_passe_reinitialise`` : émis quand un compte
-choisit un nouveau mot de passe via « mot de passe oublié » (``views.ReinitialiserMotDePasseConfirmerView``).
+choisit un nouveau mot de passe via « mot de passe oublié » (``views.ReinitialiserMotDePasseConfirmerView``) ;
+``mot_de_passe_change`` : quand un compte connecté change le sien (``views.ChangerMotDePasseView``).
 L'app ``audit`` s'y abonne pour inscrire ces deux au journal : ``accounts`` n'importe pas ``audit``
 (sens des dépendances, architecture.md:134).
 
@@ -387,6 +396,8 @@ sur les signaux d'authentification de Django.
 """
 
 from django.contrib.auth.signals import user_logged_in, user_login_failed
+from django.conf import settings
+from django.db.models.signals import post_save, pre_save
 from django.dispatch import Signal, receiver
 
 from . import mfa, throttle
@@ -396,6 +407,13 @@ mfa_evenement = Signal()
 
 # providing_args : request, utilisateur
 mot_de_passe_reinitialise = Signal()
+
+# providing_args : request, utilisateur
+mot_de_passe_change = Signal()
+
+# Un compte vient d'être créé avec le rôle DIRECTION, ou de recevoir ce rôle (admin Django compris) : la
+# Direction en est prévenue (``notifications``, décision du 13/10/2026, audit AUD-09). Argument : ``utilisateur``.
+compte_direction_attribue = Signal()
 
 
 @receiver(user_login_failed)
@@ -411,6 +429,46 @@ def repartir_sans_mfa_verifiee(sender, request=None, user=None, **kwargs):
     session = getattr(request, "session", None)
     if session is not None:
         mfa.oublier_verification(request)
+
+
+# --- jetons de l'API révoqués quand le compte change (audit TECH-43) ---
+
+CHAMPS_SENSIBLES = ("password", "role", "is_active")
+
+
+@receiver(pre_save, sender=settings.AUTH_USER_MODEL, dispatch_uid="accounts-jetons-avant")
+def memoriser_les_champs_sensibles(sender, instance, update_fields=None, **kwargs):
+    """Avant l'enregistrement : mot de passe, rôle et activation tels qu'en base, pour détecter un changement quel
+    que soit le chemin (écran, admin Django, mot de passe oublié, services)."""
+    instance._champs_sensibles_avant = None
+    if instance.pk is None or (update_fields is not None and not set(update_fields) & set(CHAMPS_SENSIBLES)):
+        return
+    instance._champs_sensibles_avant = (
+        sender.objects.filter(pk=instance.pk).values_list(*CHAMPS_SENSIBLES).first()
+    )
+
+
+@receiver(post_save, sender=settings.AUTH_USER_MODEL, dispatch_uid="accounts-jetons-apres")
+def revoquer_les_jetons_si_le_compte_change(sender, instance, created=False, **kwargs):
+    avant = getattr(instance, "_champs_sensibles_avant", None)
+    if created or avant is None:
+        return
+    if avant != tuple(getattr(instance, champ) for champ in CHAMPS_SENSIBLES):
+        from . import services
+
+        services.revoquer_jetons_api(instance)
+
+
+@receiver(post_save, sender=settings.AUTH_USER_MODEL, dispatch_uid="accounts-compte-direction")
+def signaler_un_compte_direction(sender, instance, created=False, **kwargs):
+    """Création d'un compte DIRECTION ou attribution de ce rôle (audit AUD-09)."""
+    from .models import Role
+
+    if instance.role != Role.DIRECTION:
+        return
+    avant = getattr(instance, "_champs_sensibles_avant", None)
+    if created or (avant is not None and avant[CHAMPS_SENSIBLES.index("role")] != Role.DIRECTION):
+        compte_direction_attribue.send(sender=sender, utilisateur=instance)
 ```
 
 Deux abonnements aux signaux de connexion de Django : chaque **échec** alimente le compteur anti force
@@ -421,7 +479,7 @@ brute ; chaque **nouvelle connexion** oublie la vérification MFA de la session 
 
 #### `apps/accounts/throttle.py`
 
-*96 lignes* — Limitation des essais de connexion et de double authentification (anti force brute).
+*147 lignes* — Limitation des essais de connexion et de double authentification (anti force brute).
 
 ```python
 """Limitation des essais de connexion et de double authentification (anti force brute).
@@ -436,6 +494,7 @@ serveur web (Nginx, étape 7 lot 3) et ne la remplace pas.
 from __future__ import annotations
 
 import hashlib
+import logging
 import math
 import time
 
@@ -443,6 +502,8 @@ from django.conf import settings
 from django.core.cache import cache
 
 from apps.core.middleware import get_client_ip
+
+logger = logging.getLogger(__name__)
 
 
 def _empreinte(texte: str) -> str:
@@ -461,17 +522,44 @@ def _cle_mfa(utilisateur) -> str:
     return f"throttle:mfa:{utilisateur.pk}"
 
 
+# Cache (Redis) en panne : les compteurs ne bloquent plus rien, plutôt que d'empêcher toute connexion au site
+# (erreur 500). La limite de débit de Nginx sur les pages d'authentification continue de freiner la force brute ;
+# la panne est signalée dans les journaux (audit TECH-65).
+
+
+def _cache_get(cle: str):
+    try:
+        return cache.get(cle)
+    except Exception:
+        logger.error("Cache indisponible : limitation des essais suspendue.", exc_info=True)
+        return None
+
+
+def _cache_set(cle: str, valeur, timeout: int) -> None:
+    try:
+        cache.set(cle, valeur, timeout=timeout)
+    except Exception:
+        logger.error("Cache indisponible : limitation des essais suspendue.", exc_info=True)
+
+
+def _cache_delete(cle: str) -> None:
+    try:
+        cache.delete(cle)
+    except Exception:
+        logger.error("Cache indisponible : limitation des essais suspendue.", exc_info=True)
+
+
 def _incrementer(cle: str, fenetre: int) -> None:
     maintenant = time.time()
-    etat = cache.get(cle)
+    etat = _cache_get(cle)
     if etat is None or etat[1] <= maintenant:
         etat = (0, maintenant + fenetre)
     etat = (etat[0] + 1, etat[1])
-    cache.set(cle, etat, timeout=max(1, math.ceil(etat[1] - maintenant)))
+    _cache_set(cle, etat, timeout=max(1, math.ceil(etat[1] - maintenant)))
 
 
 def _secondes_restantes(cle: str, plafond: int) -> int:
-    etat = cache.get(cle)
+    etat = _cache_get(cle)
     if etat is None:
         return 0
     reste = etat[1] - time.time()
@@ -498,7 +586,28 @@ def connexion_enregistrer_echec(request, identifiant: str) -> None:
 
 def connexion_reinitialiser(request, identifiant: str) -> None:
     """Une connexion réussie efface les échecs du couple (adresse, identifiant), pas ceux de l'adresse."""
-    cache.delete(_cle_compte(request, identifiant))
+    _cache_delete(_cle_compte(request, identifiant))
+
+
+# --- mot de passe oublié (audit TECH-46) ---
+
+
+def _cles_reinitialisation(request, email: str) -> list[tuple[str, int]]:
+    return [
+        (f"throttle:reset-ip:{get_client_ip(request)}", settings.REINITIALISATION_MAX_PAR_ADRESSE),
+        (f"throttle:reset-email:{_empreinte(email or '')}", settings.REINITIALISATION_MAX_PAR_EMAIL),
+    ]
+
+
+def reinitialisation_secondes_restantes(request, email: str) -> int:
+    """Secondes avant de pouvoir redemander un lien ; 0 si la demande est permise. Chaque demande compte, que
+    l'adresse ait un compte ou non (la réponse ne doit jamais le révéler)."""
+    return max(_secondes_restantes(cle, plafond) for cle, plafond in _cles_reinitialisation(request, email))
+
+
+def reinitialisation_enregistrer(request, email: str) -> None:
+    for cle, _plafond in _cles_reinitialisation(request, email):
+        _incrementer(cle, settings.REINITIALISATION_FENETRE)
 
 
 # --- double authentification ---
@@ -513,7 +622,7 @@ def mfa_enregistrer_echec(utilisateur) -> None:
 
 
 def mfa_reinitialiser(utilisateur) -> None:
-    cache.delete(_cle_mfa(utilisateur))
+    _cache_delete(_cle_mfa(utilisateur))
 
 
 def phrase_attente(secondes: int) -> str:
@@ -814,7 +923,7 @@ class MFARequiseMiddleware:
 La **porte** : à chaque requête, si l'utilisateur est un ADMIN ou une DIRECTION dont la session n'est pas
 « vérifiée », on le renvoie vers la saisie du code. C'est un **refus par défaut** : il couvre aussi
 l'administration et la documentation de l'API, sans que chaque vue y pense. Les appels d'API avec un jeton
-(JWT) ne passent pas ici : la MFA y est contrôlée à l'émission du jeton (chapitre 30).
+(JWT) ne passent pas ici : la MFA y est contrôlée à l'émission du jeton (chapitre 32).
 
 ## Étape 5 — Administration, démarrage et commande de secours
 
@@ -924,9 +1033,9 @@ class AccountsConfig(AppConfig):
 
     def ready(self):
         from . import signals  # noqa: F401  (branche les récepteurs)
-        from .models import User
 
-
+        # L'audit du modèle User est branché par ``apps.audit`` (qui dépend de ``accounts``, pas l'inverse :
+        # audit AUD-20).
         from . import permissions
         from .navigation import EntreeMenu, enregistrer
 
@@ -1031,7 +1140,7 @@ def code_frais(utilisateur):
 
 #### `apps/accounts/README.md`
 
-*63 lignes* — accounts
+*66 lignes* — accounts
 
 ```markdown
 # accounts
@@ -1055,6 +1164,9 @@ Entités : `User` (`AUTH_USER_MODEL`), `Role`, `AppareilMFA` (application TOTP d
   `TRUSTED_PROXY_COUNT` (proxys de confiance) est renseigné, et seule l'adresse ajoutée par eux compte.
   Sinon un client pourrait forger son adresse et échapper à la limitation. Derrière Nginx : `1`.
 - L'administration Django n'a plus son propre formulaire : `/admin/login/` renvoie vers `/connexion/`.
+- **Changer mon mot de passe** (`/mon-mot-de-passe/`, icône clé de l'en-tête, tous les rôles connectés) :
+  ancien mot de passe exigé, mêmes règles qu'à l'inscription, session gardée ouverte, événement
+  `mot_de_passe_change` tracé au journal (audit TECH-87).
 - **Mot de passe oublié** (`/mot-de-passe/`) : les 4 vues standard de Django (demande de l'adresse,
   confirmation d'envoi, lien reçu par e-mail, nouveau mot de passe), gabarits français assortis au
   reste du site. Ne révèle jamais si l'adresse correspond à un compte (même page dans les deux cas).
@@ -1101,7 +1213,7 @@ lecture seule pour le rôle ADMIN.
 
 #### `apps/accounts/services.py`
 
-*133 lignes* — Gestion des comptes utilisateurs par l'administrateur (cahier-des-charges.md:48 « création/suppression
+*168 lignes* — Gestion des comptes utilisateurs par l'administrateur (cahier-des-charges.md:48 « création/suppression
 
 ```python
 """Gestion des comptes utilisateurs par l'administrateur (cahier-des-charges.md:48 « création/suppression
@@ -1124,6 +1236,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import QuerySet
+from django.utils import timezone
 
 from apps.core.exceptions import ErreurMetier
 from apps.core.search import filtrer_par_texte
@@ -1237,6 +1350,40 @@ def definir_actif(acteur, utilisateur: User, actif: bool) -> User:
         utilisateur.is_active = actif
         utilisateur.save(update_fields=["is_active"])
     return utilisateur
+
+
+# --- purge quotidienne (audit AUD-19) ---
+
+
+def purger_sessions_et_jetons_expires(maintenant=None) -> dict[str, int]:
+    """Supprime les sessions et les jetons API (refresh) expirés : sans purge, ces tables grossissent sans fin.
+    Lancée chaque nuit par ``notifications.taches.executer_taches_quotidiennes`` (équivaut à ``clearsessions`` et
+    ``flushexpiredtokens``)."""
+    from django.contrib.sessions.models import Session
+    from rest_framework_simplejwt.token_blacklist.models import OutstandingToken
+
+    maintenant = maintenant or timezone.now()
+    sessions, _ = Session.objects.filter(expire_date__lt=maintenant).delete()
+    jetons = OutstandingToken.objects.filter(expires_at__lt=maintenant)
+    nombre_jetons = jetons.count()
+    jetons.delete()  # leurs mises en liste noire partent avec eux (cascade)
+    return {"sessions": sessions, "jetons": nombre_jetons}
+
+
+def revoquer_jetons_api(utilisateur) -> int:
+    """Met en liste noire tous les jetons de renouvellement de l'API encore valides du compte : ses sessions mobiles
+    se ferment (le jeton d'accès en cours expire de lui-même en 15 minutes). Appelée quand le mot de passe, le rôle
+    ou l'activation du compte changent (``signals``, audit TECH-43). Renvoie le nombre de jetons révoqués."""
+    from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
+
+    a_revoquer = OutstandingToken.objects.filter(user=utilisateur, expires_at__gt=timezone.now()).exclude(
+        blacklistedtoken__isnull=False
+    )
+    nombre = 0
+    for jeton in a_revoquer:
+        BlacklistedToken.objects.get_or_create(token=jeton)
+        nombre += 1
+    return nombre
 ```
 
 #### `apps/accounts/tests/test_models.py`
@@ -1349,7 +1496,7 @@ def test_has_role_denies_unauthenticated_user():
 +AUTH_USER_MODEL = "accounts.User"
  
  LOGIN_URL = "accounts:login"
-@@ -81,4 +83,5 @@
+@@ -83,4 +85,5 @@
      "django.middleware.csrf.CsrfViewMiddleware",
      "django.contrib.auth.middleware.AuthenticationMiddleware",
 +    "apps.accounts.middleware.MFARequiseMiddleware",
@@ -1390,7 +1537,7 @@ python -m pytest apps/accounts/tests/test_models.py apps/accounts/tests/test_per
 **Résultat attendu :** `7 passed` (pour les 2 fichier(s) de tests présentés dans ce chapitre).
 
 Les tests de connexion, de MFA et de menu par rôle **ouvrent des pages** et seront présentés plus tard
-(chapitres 17 et suivants), quand les écrans existeront.
+(chapitres 18 et suivants), quand les écrans existeront.
 
 Petit essai dans le shell : créer un utilisateur et lire son rôle effectif.
 

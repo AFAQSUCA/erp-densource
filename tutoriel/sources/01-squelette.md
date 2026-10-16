@@ -43,7 +43,7 @@ Ce que chaque bibliothèque apporte (vous les rencontrerez toutes) :
 | Bibliothèque | Rôle |
 |---|---|
 | **Django** | le framework : base de données, URL, vues, gabarits, administration, sécurité |
-| **djangorestframework** (DRF) | l'API REST (chapitre 30) |
+| **djangorestframework** (DRF) | l'API REST (chapitre 32) |
 | **django-environ** | lire le fichier `.env` |
 | **djangorestframework-simplejwt** | jetons JWT courts pour l'API mobile |
 | **django-filter** | filtres des listes de l'API |
@@ -139,10 +139,10 @@ Les blocs à repérer dans `base.py` :
 | `TEMPLATES` | où chercher les gabarits HTML |
 | `PASSWORD_HASHERS`, `AUTH_PASSWORD_VALIDATORS` | Argon2 et règles de mot de passe (10 caractères minimum) |
 | `LANGUAGE_CODE = "fr"`, `TIME_ZONE = "Africa/Abidjan"` | langue et fuseau horaire |
-| `REST_FRAMEWORK`, `SIMPLE_JWT`, `SPECTACULAR_SETTINGS`, `CORS_…` | l'API (utilisés au chapitre 30) |
+| `REST_FRAMEWORK`, `SIMPLE_JWT`, `SPECTACULAR_SETTINGS`, `CORS_…` | l'API (utilisés au chapitre 32) |
 | `MFA_…`, `LOGIN_MAX_ECHECS_…` | double authentification et anti force brute (chapitre 3) |
-| `CSP`, `PERMISSIONS_POLICY` | politique de sécurité du contenu (chapitre 17) |
-| `CELERY_…` | tâches asynchrones ; `CELERY_BEAT_SCHEDULE` planifie `taches_quotidiennes` (chapitre 16) |
+| `CSP`, `PERMISSIONS_POLICY` | politique de sécurité du contenu (chapitre 18) |
+| `CELERY_…` | tâches asynchrones ; `CELERY_BEAT_SCHEDULE` planifie `taches_quotidiennes` (chapitre 17) |
 
 > **Pourquoi des lignes « à venir » dans des réglages qui ne servent pas encore ?** Les blocs API et
 > sécurité sont écrits une fois pour toutes ici, parce qu'ils ne dépendent d'aucune de nos applications.
@@ -164,7 +164,7 @@ authentification imposée (les tests qui la vérifient la réactivent), plafonds
 {{FICHIER config/settings/prod.py}}
 
 En production : HTTPS obligatoire, cookies sécurisés, base PostgreSQL et Redis fournis par l'environnement.
-Ce fichier n'est pas utilisé dans ce tutoriel (voir « Aller plus loin », chapitre 32).
+Ce fichier n'est pas utilisé dans ce tutoriel (voir « Aller plus loin », chapitre 34).
 
 ## Étape 6 — Les adresses et la configuration des tests
 
