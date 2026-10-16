@@ -13,8 +13,8 @@ Le tutoriel (dossier ``tutoriel/``) est **généré depuis le code du dépôt** 
   créée à ce stade de la lecture est montré sans ce bloc à son chapitre, puis le bloc apparaît — comme la
   vraie migration qui l'ajoute — une fois l'app référencée créée.
 
-Deux phases : d'abord le « cerveau » (modèles, règles métier, tests : chapitres 2 à 16), ensuite le
-« visage » (écrans, gabarits, API : chapitres 17 à 31). Une app est créée dans l'ordre de ses dépendances
+Deux phases : d'abord le « cerveau » (modèles, règles métier, tests : chapitres 2 à 17), ensuite le
+« visage » (écrans, gabarits, API : chapitres 18 à 33). Une app est créée dans l'ordre de ses dépendances
 (``ORDRE_APPS``), vérifié par l'analyse des imports.
 """
 
@@ -36,6 +36,7 @@ _LISTE = [
     ("core", "Le socle : l'app core"),
     ("accounts", "Utilisateurs, rôles et sécurité de la connexion : l'app accounts"),
     ("audit", "Le journal d'audit : l'app audit"),
+    ("parametres", "Les réglages modifiables à l'écran : l'app parametres"),
     ("hr", "Personnel et congés : l'app hr"),
     ("drivers", "Les chauffeurs : l'app drivers"),
     ("customers", "Les clients : l'app customers"),
@@ -59,6 +60,7 @@ _LISTE = [
     ("ecrans-carburant", "Écrans : carburant"),
     ("ecrans-finances", "Écrans : facturation, dépenses et trésorerie"),
     ("ecrans-comptabilite", "Écrans : plan comptable, opérations diverses et rapports comptables"),
+    ("sauvegardes", "Le suivi des sauvegardes : l'app sauvegardes"),
     ("tableau-de-bord", "La page d'accueil : le tableau de bord"),
     ("mobile", "L'espace mobile du chauffeur"),
     ("api", "L'API REST"),
@@ -71,32 +73,35 @@ DERNIER = len(_LISTE) - 1
 
 # Ordre de création des apps (chaque app ne dépend que de celles qui la précèdent).
 ORDRE_APPS = [
-    "core", "accounts", "audit", "hr", "drivers", "customers", "fleet", "missions", "garage",
-    "inventory", "fuel", "billing", "finance", "accounting", "notifications", "dashboard", "mobile_api", "api",
-    "importation",
+    "core", "accounts", "audit", "parametres", "hr", "drivers", "customers", "fleet", "missions", "garage",
+    "inventory", "fuel", "billing", "finance", "accounting", "notifications", "sauvegardes", "dashboard",
+    "mobile_api", "api", "importation",
 ]
 RANG = {a: i for i, a in enumerate(ORDRE_APPS)}
 
 # Chapitre où la partie « métier » d'une app (modèles, services, tests) est écrite...
 CH_METIER = {
-    "core": NUM["core"], "accounts": NUM["accounts"], "audit": NUM["audit"], "hr": NUM["hr"],
+    "core": NUM["core"], "accounts": NUM["accounts"], "audit": NUM["audit"],
+    "parametres": NUM["parametres"], "hr": NUM["hr"],
     "drivers": NUM["drivers"], "customers": NUM["customers"], "fleet": NUM["fleet"],
     "missions": NUM["missions"], "garage": NUM["garage"], "inventory": NUM["inventory"],
     "fuel": NUM["fuel"], "billing": NUM["billing"], "finance": NUM["finance"],
     "accounting": NUM["accounting"],
     "notifications": NUM["notifications"], "dashboard": NUM["tableau-de-bord"],
+    "sauvegardes": NUM["sauvegardes"],
     "mobile_api": NUM["mobile"], "api": NUM["api"], "importation": NUM["importation"],
 }
 # ... et où sa partie « écrans » (vues, adresses, formulaires, gabarits) est écrite.
 CH_ECRANS = {
     "core": NUM["interface"], "accounts": NUM["interface"], "audit": NUM["interface"],
-    "notifications": NUM["interface"], "hr": NUM["ecrans-rh"], "drivers": NUM["ecrans-chauffeurs"],
+    "notifications": NUM["interface"], "parametres": NUM["interface"],
+    "hr": NUM["ecrans-rh"], "drivers": NUM["ecrans-chauffeurs"],
     "customers": NUM["ecrans-clients"], "fleet": NUM["ecrans-flotte"], "missions": NUM["ecrans-missions"],
     "garage": NUM["ecrans-garage"], "inventory": NUM["ecrans-stock"], "fuel": NUM["ecrans-carburant"],
     "billing": NUM["ecrans-finances"], "finance": NUM["ecrans-finances"],
     "accounting": NUM["ecrans-comptabilite"],
-    "dashboard": NUM["tableau-de-bord"], "mobile_api": NUM["mobile"], "api": NUM["api"],
-    "importation": NUM["importation"],
+    "dashboard": NUM["tableau-de-bord"], "sauvegardes": NUM["sauvegardes"], "mobile_api": NUM["mobile"],
+    "api": NUM["api"], "importation": NUM["importation"],
 }
 CH_TESTS_DASHBOARD = NUM["tableau-de-bord"]
 
@@ -114,8 +119,10 @@ EXCLUS = [
      "(voir le chapitre « L'import Excel des données »)"),
     (r"^static/img/", "identité visuelle de DEN Source Group : à copier depuis le dépôt (voir le chapitre « Le socle de l'interface »)"),
     (r"\.(docx|pptx)$", "documents de présentation, sans rapport avec le fonctionnement"),
-    (r"^(cahier-des-charges|architecture|conventions|glossaire-metier|audit-checklist|GUIDE-INTERFACE|GUIDE-PARCOURS|GUIDE-DEPLOIEMENT|avenant-[\w-]+)\.md$",
+    (r"^(cahier-des-charges|architecture|conventions|glossaire-metier|audit-checklist|GUIDE-INTERFACE|GUIDE-PARCOURS|GUIDE-DEPLOIEMENT|RECETTE-NAVIGATEURS|avenant-[\w-]+)\.md$|^audit/",
      "documents de référence à lire (ils décrivent le besoin), pas à recopier"),
+    (r"^requirements/prod\.lock$", "généré par `python outils/verrouiller_dependances.py` (versions figées de la production)"),
+    (r"^recette_navigateurs/RESULTATS\.md$", "généré par la recette navigateurs (`python -m pytest recette_navigateurs`)"),
     (r"^(outils|tutoriel)/", "outils et sources de ce tutoriel"),
     (r"^(Dockerfile|\.dockerignore|docker-compose\.yml)$|^nginx/|^ops/",
      "mise en production (Docker, Nginx, Gunicorn) : hors périmètre de ce tutoriel de développement — voir GUIDE-DEPLOIEMENT.md"),
@@ -204,13 +211,15 @@ _PREFIXES_URL = {
     "missions": "missions", "clients": "customers", "flotte": "fleet", "rh": "hr", "chauffeurs": "drivers",
     "garage": "garage", "carburant": "fuel", "stock": "inventory", "facturation": "billing",
     "finances": "finance", "comptabilite": "accounting", "chauffeur": "mobile_api", "api": "api",
-    "notifications": "notifications", "import": "importation",
+    "notifications": "notifications", "import": "importation", "parametres": "parametres",
+    "sauvegardes": "sauvegardes",
 }
 _ESPACES_NOMS = {
     "missions": "missions", "customers": "customers", "fleet": "fleet", "hr": "hr", "drivers": "drivers",
     "garage": "garage", "fuel": "fuel", "inventory": "inventory", "billing": "billing",
     "finance": "finance", "accounting": "accounting", "chauffeur": "mobile_api",
     "notifications": "notifications", "api": "api", "mobile": "api", "importation": "importation",
+    "parametres": "parametres", "sauvegardes": "sauvegardes",
 }
 
 
@@ -230,7 +239,7 @@ def _app_de(chemin: str) -> str | None:
 
 # Fichiers « écran » par leur nom mais nécessaires plus tôt (importés au démarrage par ``apps.py`` ou par
 # des sections d'une autre app) : ils sont présentés avec la partie métier.
-FORCES_AU_METIER = {"apps/core/forms.py": 2, "apps/inventory/forms.py": 11}
+FORCES_AU_METIER = {"apps/core/forms.py": NUM["core"], "apps/inventory/forms.py": NUM["inventory"]}
 
 # Tests qui ouvrent des pages d'une autre app *indirectement* : le récepteur qu'ils exercent construit
 # un lien (``reverse(...)``) vers une app dont les écrans n'existent pas encore, mais le test lui-même
@@ -240,7 +249,21 @@ FORCES_AUX_ECRANS = {
     "apps/notifications/tests/test_receivers_proforma.py": NUM["ecrans-finances"],
     "apps/notifications/tests/test_receivers_demandes.py": NUM["ecrans-finances"],
     "apps/notifications/tests/test_receivers_frais_mission.py": NUM["ecrans-missions"],
+    # Vérifications du projet complet : elles relisent architecture.md (toutes les apps) ou les fichiers de mise en
+    # production (Docker, Nginx, ops/), que le lecteur récupère au chapitre final (``FICHIERS_DE_REFERENCE``).
+    "apps/core/tests/test_architecture.py": NUM["finalisation"],
+    "apps/core/tests/test_deploiement.py": NUM["finalisation"],
+    "apps/core/tests/test_cloudflare.py": NUM["finalisation"],
+    "apps/core/tests/test_mesures.py": NUM["finalisation"],
+    "apps/core/tests/test_pdf_tache_de_fond.py": NUM["finalisation"],
+    "apps/sauvegardes/tests/test_scripts.py": NUM["finalisation"],
 }
+
+# Fichiers exclus du tutoriel (documents de référence, mise en production) que le lecteur copie depuis le dépôt au
+# chapitre final, avant les vérifications d'ensemble : certains tests les relisent.
+FICHIERS_DE_REFERENCE = [
+    "architecture.md", "Dockerfile", ".dockerignore", "docker-compose.yml", "requirements/prod.lock", "nginx", "ops",
+]
 
 
 def chapitre_de(chemin: str) -> int | None:
@@ -253,13 +276,15 @@ def chapitre_de(chemin: str) -> int | None:
     if not chemin.startswith("apps/"):
         if chemin.startswith("templates/importation/"):
             return NUM["importation"]
+        if chemin.startswith("templates/sauvegardes/"):
+            return NUM["sauvegardes"]
         if chemin.startswith(("templates/", "frontend/")) or chemin in ("static/js/app.js",):
             return NUM["interface"]
         if chemin in ("static/js/sw-register.js", "static/js/scanner.js"):
             return NUM["mobile"]
         if chemin == "static/js/suivi-missions.js":
             return NUM["ecrans-missions"]
-        if chemin == "README.md":
+        if chemin == "README.md" or chemin.startswith("recette_navigateurs/"):
             return NUM["finalisation"]
         return 1  # squelette : manage.py, config/, requirements/, .gitignore, pytest.ini...
     if chemin == "apps/__init__.py":
@@ -388,11 +413,15 @@ _REGLES_SETTINGS = [
 ] + [
     (r'^AUTH_USER_MODEL\b', NUM["accounts"]),
     (r'apps\.core\.middleware\.', NUM["core"]), (r'apps\.accounts\.middleware\.', NUM["accounts"]),
+    (r'apps\.core\.mesures\.', NUM["core"]),
+    (r'apps\.parametres\.context_processors\.', NUM["interface"]),
     (r'apps\.accounts\.context_processors\.', NUM["interface"]),
     (r'apps\.notifications\.context_processors\.', NUM["interface"]),
 ]
 _REGLES_URLS = [
     (r'MediaProtegeView', NUM["core"]),
+    (r'documents_pdf|DocumentPdf', NUM["interface"]),  # vues du core, mais leur gabarit est écrit avec l'interface
+    (r'apps\.parametres\.urls', NUM["interface"]), (r'apps\.sauvegardes\.urls', NUM["sauvegardes"]),
     (r'apps\.dashboard|Dashboard\w*View', NUM["tableau-de-bord"]),
     (r'apps\.accounts\.urls', NUM["interface"]), (r'apps\.notifications\.urls', NUM["interface"]),
     (r'apps\.audit\.urls', NUM["interface"]),
@@ -473,14 +502,14 @@ def chapitres_ou_config_change(chemin: str) -> list[int]:
 
 # ``apps/missions/models.py`` déclare ``Mission.proforma`` et ``FraisMission.reglement``, qui référencent
 # ``billing.Proforma`` et ``billing.Reglement`` — mais
-# l'app ``billing`` n'existe qu'au chapitre 13, bien après ``missions`` (chapitre 9). Ce n'est pas un
+# l'app ``billing`` n'existe qu'au chapitre 14, bien après ``missions`` (chapitre 10). Ce n'est pas un
 # accident : ``billing`` dépend elle-même de ``missions`` (``billing.services`` importe ``Mission``),
 # donc les deux apps ne peuvent pas être réordonnées l'une avant l'autre dans ``ORDRE_APPS``. C'est
 # exactement ce que montre la vraie migration : ``apps/missions/migrations/0002_mission_proforma.py``
 # (qui ajoute ce champ) dépend de ``billing.0004_proforma``, alors que ``missions.0001_initial`` (qui crée
 # ``Mission``) n'en dépend pas. Le tutoriel reproduit cet ordre : le modèle (et la section du README qui
-# décrit ce champ) sont montrés sans lui au chapitre 9, puis il est ajouté — avec une seconde migration —
-# au chapitre 13.
+# décrit ce champ) sont montrés sans lui au chapitre 10, puis il est ajouté — avec une seconde migration —
+# au chapitre 14.
 #
 # (motif de début, motif de fin, premier chapitre où le bloc apparaît, la ligne de fin fait-elle partie
 # du bloc retiré ?) Fin incluse (``True``) : la ligne de fin — ex. la parenthèse qui referme un champ —

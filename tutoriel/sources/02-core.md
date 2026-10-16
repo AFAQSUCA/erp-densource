@@ -13,14 +13,19 @@ On y trouve :
 | `RegistreSections` | un mécanisme pour qu'une fiche affiche des blocs fournis par d'autres apps |
 | middlewares | mémoriser la requête courante (pour l'audit) et ajouter les en-têtes de sécurité |
 
-Le socle porte aussi quatre mécanismes plus récents, présentés avec les fichiers restants de l'étape 6 :
+Le socle porte aussi des mécanismes plus récents, présentés avec les fichiers restants de l'étape 6 :
 
 | Élément | À quoi il sert |
 |---|---|
 | `ErreurMetier` + `ErreurMetierMiddleware` | une règle métier refusée **par une autre app** (budget dépassé, exercice clôturé…) devient un **message** suivi d'un retour à la page précédente, au lieu d'une erreur 500 |
 | `medias.py` | les **fichiers téléversés** ne sont jamais servis librement : Django contrôle le rôle, puis demande à Nginx de les envoyer (`X-Accel-Redirect`) |
-| `immuable.py` | les **tables append-only** (journal d'audit, mouvements de stock) : un manager qui refuse `update()` / `delete()` en masse, et les triggers PostgreSQL posés par les migrations des chapitres 4 et 11 |
+| `immuable.py` | les **tables append-only** (journal d'audit, mouvements de stock) : un manager qui refuse `update()` / `delete()` en masse, et les triggers PostgreSQL posés par les migrations des chapitres 4 et 12 |
 | `xlsx.py` | l'**export Excel** : `reponse_classeur` fabrique un `.xlsx` aux **valeurs brutes** (montants en nombres, dates en dates) ; un texte qui commence par `=` reste du texte, jamais une formule |
+| `pdf.py`, `classeurs.py` | le **PDF** d'un rapport, fabriqué par le serveur (ReportLab) à partir de blocs (titres, tableaux, paires libellé/valeur) ; la lecture prudente des **classeurs Excel importés** |
+| `documents_pdf.py`, `tasks.py` | les PDF **préparés en tâche de fond** par Celery : la requête rend la main, une page d'attente lance le téléchargement quand le fichier est prêt ; seul le demandeur le télécharge, le fichier est effacé après 24 h |
+| `montants.py`, `doublons.py` | deux gardes réutilisées par toutes les apps : un montant saisi en FCFA est **entier** (centimes refusés), et un double clic ne crée pas deux fois la même opération |
+| `mesures.py` | les **mesures pour Prometheus** (requêtes, erreurs, temps de réponse par écran, base et cache joignables) servies sur `/metriques/` avec un jeton |
+| `statiques.py` | des noms de fichiers statiques **versionnés** en production, pour que les navigateurs ne gardent jamais une ancienne feuille de style |
 
 La recherche texte (`search.py`) transforme chaque champ en texte avant de le comparer : sur PostgreSQL,
 `LOWER()` refuse un champ d'adresse IP, et la recherche du journal d'audit en dépend.
