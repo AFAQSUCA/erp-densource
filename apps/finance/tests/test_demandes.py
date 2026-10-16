@@ -370,7 +370,12 @@ def test_la_migration_supprime_les_doublons_globaux_en_gardant_le_plus_recent():
 
     from apps.finance.models import EnveloppeDepense
 
-    migration = importlib.import_module("apps.finance.migrations.0006_enveloppe_globale_unique")
+    # Migration écrite à la main dans l'historique du dépôt : absente d'un projet reconstruit d'un bloc (tutoriel),
+    # où les migrations sont générées depuis les modèles finaux et la contrainte existe dès la première.
+    try:
+        migration = importlib.import_module("apps.finance.migrations.0006_enveloppe_globale_unique")
+    except ModuleNotFoundError:
+        pytest.skip("historique des migrations du dépôt absent")
     # Les modèles « historiques » d'une migration, comme en vrai : leur suppression est physique.
     registre = MigrationExecutor(connection).loader.project_state(("finance", "0005_index_dates")).apps
     with connection.cursor() as curseur:  # simule une base d'avant la contrainte (annulé à la fin du test)
