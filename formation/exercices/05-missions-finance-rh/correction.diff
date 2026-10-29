@@ -1,0 +1,180 @@
+diff --git a/apps/accounts/tests/test_web.py b/apps/accounts/tests/test_web.py
+index 1edbc14..71c9eba 100644
+--- a/apps/accounts/tests/test_web.py
++++ b/apps/accounts/tests/test_web.py
+@@ -125,9 +125,9 @@ def test_le_menu_depend_du_role(client):
+     assert 'href="/missions/"' in client.get(reverse("home")).content.decode()
+ 
+     finances = Client()
+-    _connecte(finances, Role.FINANCES)  # seuls les congés sont ouverts à ce rôle pour l'instant
++    _connecte(finances, Role.FINANCES)
+     contenu = finances.get(reverse("home")).content.decode()
+-    assert 'href="/missions/"' not in contenu
++    assert 'href="/missions/"' in contenu  # la FINANCES consulte les missions (exercice 5)
+     assert 'href="/rh/conges/"' in contenu
+     assert "Aucun écran n" not in contenu
+ 
+@@ -154,7 +154,7 @@ def test_un_superutilisateur_sans_role_agit_en_admin(client):
+ 
+ 
+ def test_un_role_non_autorise_recoit_la_page_403(client):
+-    _connecte(client, Role.FINANCES)
++    _connecte(client, Role.CHAUFFEUR)
+ 
+     reponse = client.get(reverse("missions:liste"))
+ 
+diff --git a/apps/api/tests/test_v1.py b/apps/api/tests/test_v1.py
+index 4165bae..b4d5b7f 100644
+--- a/apps/api/tests/test_v1.py
++++ b/apps/api/tests/test_v1.py
+@@ -39,7 +39,7 @@ def _api(role=Role.ADMIN):
+ 
+ RESSOURCES = {
+     # Retour réunion : le Parc Auto affecte les missions, donc les consulte désormais aussi.
+-    "api:mission-list": {Role.ADMIN, Role.DIRECTION, Role.CHARGE_CLIENTELE, Role.PARCAUTO},
++    "api:mission-list": {Role.ADMIN, Role.DIRECTION, Role.CHARGE_CLIENTELE, Role.PARCAUTO, Role.FINANCES, Role.RH},
+     "api:camion-list": {Role.ADMIN, Role.DIRECTION, Role.PARCAUTO},
+     "api:chauffeur-list": {Role.ADMIN, Role.DIRECTION, Role.RH},
+     "api:client-list": {Role.ADMIN, Role.DIRECTION, Role.CHARGE_CLIENTELE},
+diff --git a/apps/core/tests/test_impression_listes.py b/apps/core/tests/test_impression_listes.py
+index e48cfa4..daa15d2 100644
+--- a/apps/core/tests/test_impression_listes.py
++++ b/apps/core/tests/test_impression_listes.py
+@@ -46,7 +46,7 @@ def test_impression_des_missions(client):
+ 
+ 
+ def test_impression_des_missions_refusee_hors_role(client):
+-    client.force_login(UserFactory(role=Role.RH))
++    client.force_login(UserFactory(role=Role.CHAUFFEUR))
+ 
+     assert client.get(reverse("missions:imprimer")).status_code == 403
+ 
+diff --git a/apps/missions/permissions.py b/apps/missions/permissions.py
+index fbb6381..bfe39f7 100644
+--- a/apps/missions/permissions.py
++++ b/apps/missions/permissions.py
+@@ -17,8 +17,9 @@ from .models import STATUTS_ANNULABLES, STATUTS_EN_ROUTE_TRANSFERABLES, Mission,
+ 
+ # Retour réunion (avenant) : c'est le Parc Auto qui affecte les missions (camion, chauffeur,
+ # copilote) une fois que le chargé clientèle les a créées — il doit donc aussi pouvoir les
+-# consulter pour savoir lesquelles affecter.
+-CONSULTATION = frozenset({Role.ADMIN, Role.DIRECTION, Role.CHARGE_CLIENTELE, Role.PARCAUTO})
++# consulter pour savoir lesquelles affecter. La FINANCES les consulte aussi (suivi de ce qui sera facturé), et donc
++# la RH (avenant R8 § 2 : la RH a les droits de la FINANCES). Lecture seule : les autres ensembles ne changent pas.
++CONSULTATION = frozenset({Role.ADMIN, Role.DIRECTION, Role.CHARGE_CLIENTELE, Role.PARCAUTO, Role.FINANCES, Role.RH})
+ CREATION = frozenset({Role.ADMIN, Role.DIRECTION, Role.CHARGE_CLIENTELE})
+ PLANIFICATION = frozenset({Role.ADMIN, Role.DIRECTION, Role.CHARGE_CLIENTELE})
+ AFFECTATION = frozenset({Role.ADMIN, Role.DIRECTION, Role.PARCAUTO})
+diff --git a/apps/missions/tests/test_alerte_conge.py b/apps/missions/tests/test_alerte_conge.py
+index e67d366..64c058e 100644
+--- a/apps/missions/tests/test_alerte_conge.py
++++ b/apps/missions/tests/test_alerte_conge.py
+@@ -63,7 +63,7 @@ def test_le_lien_vers_la_mission_est_reserve_aux_roles_qui_y_ont_acces(client, c
+     # Retour réunion : le Parc Auto affecte les missions, donc les consulte désormais aussi.
+     assert lien in _page(client, compte_sup, conge)
+     assert lien in _page(client, UserFactory(role=Role.DIRECTION), conge)
+-    assert lien not in _page(client, UserFactory(role=Role.RH), conge)
++    assert lien in _page(client, UserFactory(role=Role.RH), conge)  # la RH consulte désormais les missions
+ 
+ 
+ @pytest.mark.parametrize(
+@@ -112,7 +112,7 @@ def test_la_section_missions_du_client_est_reservee_aux_roles_des_missions():
+ 
+     fiche = ClientFactory()
+ 
+-    assert sections.section_missions_client(fiche, UserFactory(role=Role.RH)) is None
++    assert sections.section_missions_client(fiche, UserFactory(role=Role.CHAUFFEUR)) is None
+     assert sections.section_missions_client(fiche, UserFactory(role=Role.DIRECTION)) is not None
+ 
+ 
+diff --git a/apps/missions/tests/test_documents.py b/apps/missions/tests/test_documents.py
+index 1b65698..017cbd9 100644
+--- a/apps/missions/tests/test_documents.py
++++ b/apps/missions/tests/test_documents.py
+@@ -73,13 +73,19 @@ def test_les_roles_qui_voient_les_codes_telechargent_le_pdf(client, role):
+     assert "no-store" in reponse["Cache-Control"]
+ 
+ 
+-@pytest.mark.parametrize("role", [Role.CHAUFFEUR, Role.RH, Role.FINANCES])
+-def test_les_autres_roles_n_ont_pas_le_pdf(client, role):
+-    client.force_login(UserFactory(role=role))
++def test_les_autres_roles_n_ont_pas_le_pdf(client):
++    client.force_login(UserFactory(role=Role.CHAUFFEUR))
+ 
+     assert client.get(reverse("missions:codes_pdf", args=[MissionFactory().pk])).status_code == 403
+ 
+ 
++@pytest.mark.parametrize("role", [Role.RH, Role.FINANCES])
++def test_la_finance_et_la_rh_consultent_la_mission_mais_pas_le_pdf_des_codes(client, role):
++    client.force_login(UserFactory(role=role))
++
++    assert client.get(reverse("missions:codes_pdf", args=[MissionFactory().pk])).status_code == 404
++
++
+ def test_le_parc_auto_consulte_la_mission_mais_pas_le_pdf_des_codes(client):
+     """Retour réunion : le Parc Auto affecte les missions (CONSULTATION), mais les codes restent
+     réservés à ceux qui gèrent la relation client (VOIR_CODES, décision indépendante)."""
+diff --git a/apps/missions/tests/test_qr.py b/apps/missions/tests/test_qr.py
+index 206c6da..6904df0 100644
+--- a/apps/missions/tests/test_qr.py
++++ b/apps/missions/tests/test_qr.py
+@@ -63,14 +63,21 @@ def test_les_roles_qui_voient_les_codes_voient_le_qr(client, role):
+     assert client.get(reverse("missions:qr", args=[mission.pk, "expediteur"])).status_code == 200
+ 
+ 
+-@pytest.mark.parametrize("role", [Role.CHAUFFEUR, Role.RH, Role.FINANCES])
+-def test_les_autres_roles_n_obtiennent_pas_le_qr(client, role):
+-    client.force_login(UserFactory(role=role))
++def test_les_autres_roles_n_obtiennent_pas_le_qr(client):
++    client.force_login(UserFactory(role=Role.CHAUFFEUR))
+     mission = _mission()
+ 
+     assert client.get(reverse("missions:qr", args=[mission.pk, "expediteur"])).status_code == 403
+ 
+ 
++@pytest.mark.parametrize("role", [Role.RH, Role.FINANCES])
++def test_la_finance_et_la_rh_n_obtiennent_pas_le_qr_des_codes(client, role):
++    client.force_login(UserFactory(role=role))
++    mission = _mission()
++
++    assert client.get(reverse("missions:qr", args=[mission.pk, "expediteur"])).status_code == 404
++
++
+ def test_le_parc_auto_consulte_la_mission_mais_pas_le_qr_des_codes(client):
+     """Retour réunion : le Parc Auto affecte les missions (CONSULTATION), mais les codes restent
+     réservés à ceux qui gèrent la relation client (VOIR_CODES, décision indépendante)."""
+diff --git a/apps/missions/tests/test_temps_reel.py b/apps/missions/tests/test_temps_reel.py
+index 535cf3e..a0b8aa2 100644
+--- a/apps/missions/tests/test_temps_reel.py
++++ b/apps/missions/tests/test_temps_reel.py
+@@ -47,13 +47,15 @@ def _se_connecte(utilisateur, session=None) -> bool:
+ # --- qui peut se connecter ---
+ 
+ 
+-@pytest.mark.parametrize("role", [Role.ADMIN, Role.DIRECTION, Role.CHARGE_CLIENTELE, Role.PARCAUTO])
++@pytest.mark.parametrize(
++    "role", [Role.ADMIN, Role.DIRECTION, Role.CHARGE_CLIENTELE, Role.PARCAUTO, Role.FINANCES, Role.RH]
++)
+ def test_les_roles_qui_consultent_les_missions_se_connectent(role):
+     # Retour réunion : le Parc Auto affecte les missions, donc les consulte désormais aussi.
+     assert _se_connecte(UserFactory.build(role=role)) is True
+ 
+ 
+-@pytest.mark.parametrize("role", [Role.CHAUFFEUR, Role.RH, Role.FINANCES])
++@pytest.mark.parametrize("role", [Role.CHAUFFEUR])
+ def test_les_autres_roles_sont_refuses(role):
+     assert _se_connecte(UserFactory.build(role=role)) is False
+ 
+diff --git a/apps/missions/tests/test_views.py b/apps/missions/tests/test_views.py
+index bcccd3a..a78fa50 100644
+--- a/apps/missions/tests/test_views.py
++++ b/apps/missions/tests/test_views.py
+@@ -53,7 +53,7 @@ def test_la_liste_est_accessible_aux_roles_de_gestion(client, role):
+     assert client.get(reverse("missions:liste")).status_code == 200
+ 
+ 
+-@pytest.mark.parametrize("role", [Role.RH, Role.FINANCES, Role.CHAUFFEUR])
++@pytest.mark.parametrize("role", [Role.CHAUFFEUR])
+ def test_la_liste_est_interdite_aux_autres_roles(client, role):
+     _connecte(client, role)
+ 

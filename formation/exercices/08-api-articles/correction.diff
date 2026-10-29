@@ -1,0 +1,113 @@
+diff --git a/apps/api/urls.py b/apps/api/urls.py
+index 081d78c..142195d 100644
+--- a/apps/api/urls.py
++++ b/apps/api/urls.py
+@@ -17,6 +17,7 @@ routeur.register("camions", views.VehiculeViewSet, basename="camion")
+ routeur.register("chauffeurs", views.ChauffeurViewSet, basename="chauffeur")
+ routeur.register("clients", views.ClientViewSet, basename="client")
+ routeur.register("factures", views.FactureViewSet, basename="facture")
++routeur.register("articles", views.ArticleViewSet, basename="article")
+ 
+ # La documentation décrit toute l'API : réservée à l'ADMIN et à la DIRECTION, connectés à l'interface web.
+ _protection = {"authentication_classes": [SessionAuthentication], "permission_classes": [EstAdminOuDirection]}
+diff --git a/apps/api/v1/filters.py b/apps/api/v1/filters.py
+index 02bf172..04edf53 100644
+--- a/apps/api/v1/filters.py
++++ b/apps/api/v1/filters.py
+@@ -10,6 +10,8 @@ from apps.drivers import services as drivers_services
+ from apps.drivers.models import Chauffeur, StatutChauffeur
+ from apps.fleet import services as fleet_services
+ from apps.fleet.models import StatutVehicule, Vehicule
++from apps.inventory import services as inventory_services
++from apps.inventory.models import Article
+ from apps.missions import services as missions_services
+ from apps.missions.models import Mission, StatutMission
+ 
+@@ -80,3 +82,18 @@ class FactureFilter(filtres.FilterSet):
+     class Meta:
+         model = Facture
+         fields = ["q", "statut", "client", "echues"]
++
++
++class ArticleFilter(filtres.FilterSet):
++    q = filtres.CharFilter(method=_recherche(inventory_services.rechercher_articles), label="Recherche")
++    alerte = filtres.CharFilter(method="filtrer_sous_seuil", label="Au seuil ou en dessous (alerte=1, comme l'écran)")
++
++    class Meta:
++        model = Article
++        fields = ["q", "alerte"]
++
++    def filtrer_sous_seuil(self, queryset, nom, valeur):
++        if valeur != "1":
++            return queryset
++        return queryset.filter(pk__in=inventory_services.articles_sous_seuil().values("pk"))
++
+diff --git a/apps/api/v1/serializers.py b/apps/api/v1/serializers.py
+index 19d8a2d..0c7254a 100644
+--- a/apps/api/v1/serializers.py
++++ b/apps/api/v1/serializers.py
+@@ -11,6 +11,7 @@ from apps.billing.models import Facture, LigneFacture
+ from apps.customers.models import Client
+ from apps.drivers.models import Chauffeur
+ from apps.fleet.models import Vehicule
++from apps.inventory.models import Article
+ from apps.missions.models import Mission
+ 
+ 
+@@ -121,3 +122,18 @@ class FactureDetailSerializer(FactureSerializer):
+     class Meta(FactureSerializer.Meta):
+         fields = FactureSerializer.Meta.fields + ("lignes",)
+         read_only_fields = fields
++
++
++class ArticleSerializer(serializers.ModelSerializer):
++    """Pièce du stock. ``sous_seuil`` suit la règle du centre d'alertes (seuil atteint, seuil 0 = non surveillé)."""
++
++    sous_seuil = serializers.SerializerMethodField()
++
++    class Meta:
++        model = Article
++        fields = ("id", "reference", "designation", "categorie", "quantite", "seuil_minimal", "pump", "sous_seuil")
++        read_only_fields = fields
++
++    def get_sous_seuil(self, article) -> bool:
++        return article.seuil_minimal > 0 and article.quantite <= article.seuil_minimal
++
+diff --git a/apps/api/v1/views.py b/apps/api/v1/views.py
+index 290b13d..e952a27 100644
+--- a/apps/api/v1/views.py
++++ b/apps/api/v1/views.py
+@@ -17,11 +17,14 @@ from apps.drivers import permissions as drivers_permissions
+ from apps.drivers import services as drivers_services
+ from apps.fleet import permissions as fleet_permissions
+ from apps.fleet import services as fleet_services
++from apps.inventory import permissions as inventory_permissions
++from apps.inventory import services as inventory_services
+ from apps.missions import permissions as missions_permissions
+ from apps.missions import services as missions_services
+ 
+-from .filters import ChauffeurFilter, ClientFilter, FactureFilter, MissionFilter, VehiculeFilter
++from .filters import ArticleFilter, ChauffeurFilter, ClientFilter, FactureFilter, MissionFilter, VehiculeFilter
+ from .serializers import (
++    ArticleSerializer,
+     ChauffeurSerializer,
+     ClientSerializer,
+     FactureDetailSerializer,
+@@ -98,3 +101,17 @@ class FactureViewSet(ReadOnlyModelViewSet):
+ 
+     def get_serializer_class(self):
+         return FactureDetailSerializer if self.action == "retrieve" else FactureSerializer
++
++
++@extend_schema_view(
++    list=extend_schema(tags=["stock"], summary="Liste des articles du stock"),
++    retrieve=extend_schema(tags=["stock"], summary="Détail d'un article"),
++)
++class ArticleViewSet(ReadOnlyModelViewSet):
++    permission_classes = [IsAuthenticated, role_requis(inventory_permissions.CONSULTATION)]
++    serializer_class = ArticleSerializer
++    filterset_class = ArticleFilter
++
++    def get_queryset(self):
++        return inventory_services.rechercher_articles()
++

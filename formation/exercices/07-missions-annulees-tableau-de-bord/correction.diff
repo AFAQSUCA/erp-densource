@@ -1,0 +1,59 @@
+diff --git a/apps/dashboard/services.py b/apps/dashboard/services.py
+index 5ceed02..abafbe6 100644
+--- a/apps/dashboard/services.py
++++ b/apps/dashboard/services.py
+@@ -123,6 +123,7 @@ def exploitation(*, jour: date | None = None, mois: int = MOIS_HISTORIQUE) -> di
+             + missions[StatutMission.EN_COURS_COLIS_RECUPERE],
+             "missions_a_affecter": missions[StatutMission.PLANIFIEE],
+             "missions_a_cloturer": missions[StatutMission.LIVREE],
++            "missions_annulees_du_mois": missions_services.missions_annulees_entre(jour.replace(day=1), jour),
+             # Chaque barre mène à la liste filtrée sur ce statut (drill-down).
+             "graphique_camions": graphiques.barres_horizontales(
+                 {
+diff --git a/apps/dashboard/templates/dashboard/index.html b/apps/dashboard/templates/dashboard/index.html
+index 744db0b..ff68349 100644
+--- a/apps/dashboard/templates/dashboard/index.html
++++ b/apps/dashboard/templates/dashboard/index.html
+@@ -108,10 +108,11 @@
+         </div>
+       {% endif %}
+       {% if user.role_effectif != "PARCAUTO" %}
+-        <dl class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
++        <dl class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+           <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Missions en cours</dt><dd class="mt-1 text-2xl font-bold text-slate-900">{{ exploitation.missions_en_cours }}</dd></div>
+           <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Planifiées, à affecter</dt><dd class="mt-1 text-2xl font-bold text-slate-900">{{ exploitation.missions_a_affecter }}</dd></div>
+           <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Livrées, à clôturer</dt><dd class="mt-1 text-2xl font-bold text-slate-900">{{ exploitation.missions_a_cloturer }}</dd></div>
++          <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><dt class="text-sm text-slate-600">Annulées ce mois</dt><dd class="mt-1 text-2xl font-bold text-slate-900">{{ exploitation.missions_annulees_du_mois }}</dd></div>
+         </dl>
+       {% endif %}
+     </section>
+diff --git a/apps/dashboard/views.py b/apps/dashboard/views.py
+index 0810bf6..86ebf94 100644
+--- a/apps/dashboard/views.py
++++ b/apps/dashboard/views.py
+@@ -101,6 +101,7 @@ class DashboardImprimerView(TelechargementPdfMixin, LoginRequiredMixin, Template
+                     ("Missions en cours", str(exploitation["missions_en_cours"])),
+                     ("Planifiées, à affecter", str(exploitation["missions_a_affecter"])),
+                     ("Livrées, à clôturer", str(exploitation["missions_a_cloturer"])),
++                    ("Annulées ce mois", str(exploitation["missions_annulees_du_mois"])),
+                 ]
+             blocs += [pdf.Section("Exploitation"), pdf.Rubriques(indicateurs),
+                       _repartition("Camions par statut", exploitation["graphique_camions"])]
+diff --git a/apps/missions/services.py b/apps/missions/services.py
+index d78a41b..d742189 100644
+--- a/apps/missions/services.py
++++ b/apps/missions/services.py
+@@ -176,6 +176,13 @@ def repartition_par_statut() -> dict[str, int]:
+     return comptes
+ 
+ 
++def missions_annulees_entre(debut: date, fin: date) -> int:
++    """Missions annulées entre deux dates incluses (date d'annulation, heure locale) : tableau de bord."""
++    return Mission.objects.filter(
++        statut=StatutMission.ANNULEE, date_annulation__date__gte=debut, date_annulation__date__lte=fin
++    ).count()
++
++
+ def missions_par_mois(debut: date, fin: date) -> dict[str, dict[tuple[int, int], int]]:
+     """Missions créées et missions livrées (livrées ou clôturées) par mois, sur la période.
+ 

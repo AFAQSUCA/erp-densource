@@ -1,0 +1,22 @@
+diff --git a/apps/fleet/views.py b/apps/fleet/views.py
+index 9ebd9c3..92c5ecc 100644
+--- a/apps/fleet/views.py
++++ b/apps/fleet/views.py
+@@ -53,7 +53,7 @@ class VehiculeImprimerView(ImpressionListeMixin, VehiculeListView):
+     titre_impression = "Flotte"
+     colonnes = (
+         ("Immatriculation", "immatriculation"), ("Marque", "marque"), ("Modèle", "modele"),
+-        ("Année", "annee"), ("Statut", "get_statut_display"), ("Kilométrage", lambda v: f"{v.kilometrage:,} km".replace(",", " ")),
++        ("N° de châssis (VIN)", "vin"), ("Année", "annee"), ("Statut", "get_statut_display"), ("Kilométrage", lambda v: f"{v.kilometrage:,} km".replace(",", " ")),
+         ("Chauffeur habituel", lambda v: f"{v.chauffeur_habituel.prenom} {v.chauffeur_habituel.nom}" if v.chauffeur_habituel_id else "—"),
+     )
+ 
+@@ -228,7 +228,7 @@ class VehiculeExporterXlsxView(ExportXlsxMixin, VehiculeImprimerView):
+     nom_fichier = "flotte"
+     colonnes = (
+         ("Immatriculation", "immatriculation"), ("Marque", "marque"), ("Modèle", "modele"),
+-        ("Année", "annee"), ("Statut", "get_statut_display"), ("Kilométrage", lambda v: v.kilometrage),
++        ("N° de châssis (VIN)", "vin"), ("Année", "annee"), ("Statut", "get_statut_display"), ("Kilométrage", lambda v: v.kilometrage),
+         ("Capacité (t)", lambda v: v.capacite_charge_t), ("Réservoir (L)", lambda v: v.reservoir_l),
+         ("Chauffeur habituel", lambda v: f"{v.chauffeur_habituel.prenom} {v.chauffeur_habituel.nom}" if v.chauffeur_habituel_id else ""),
+     )

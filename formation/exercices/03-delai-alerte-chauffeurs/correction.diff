@@ -1,0 +1,212 @@
+diff --git a/apps/dashboard/services.py b/apps/dashboard/services.py
+index 5ceed02..f5dacdf 100644
+--- a/apps/dashboard/services.py
++++ b/apps/dashboard/services.py
+@@ -324,7 +324,7 @@ def _alertes_documents(aujourd_hui):
+ 
+ 
+ def _alertes_chauffeurs(aujourd_hui):
+-    lignes, jours = [], parametres_services.delai_alerte()
++    lignes, jours = [], parametres_services.delai_alerte_chauffeurs()
+     for chauffeur in drivers_services.chauffeurs_a_renouveler(aujourd_hui=aujourd_hui, jours=jours).exclude(
+         statut="INACTIF"
+     ):
+diff --git a/apps/dashboard/tests/test_dashboard.py b/apps/dashboard/tests/test_dashboard.py
+index 6f3d364..21acf0d 100644
+--- a/apps/dashboard/tests/test_dashboard.py
++++ b/apps/dashboard/tests/test_dashboard.py
+@@ -638,8 +638,10 @@ def test_le_graphique_des_clients_renvoie_a_la_fiche_client(client):
+ 
+ 
+ def test_le_delai_d_alerte_des_parametres_s_applique_aux_documents_et_aux_chauffeurs():
+-    # Audit M1-10 : délai porté à 60 jours par l'écran « Paramètres ».
+-    parametres_services.modifier_parametres(UserFactory(role=Role.ADMIN), delai_alerte_jours=60)
++    # Audit M1-10 : délais portés à 60 jours par l'écran « Paramètres » (camions, puis chauffeurs).
++    parametres_services.modifier_parametres(
++        UserFactory(role=Role.ADMIN), delai_alerte_jours=60, delai_alerte_chauffeurs_jours=60
++    )
+     _document(date_expiration=AUJOURD_HUI + timedelta(days=45))
+     ChauffeurFactory(date_expiration_permis=AUJOURD_HUI + timedelta(days=45))
+ 
+diff --git a/apps/drivers/services.py b/apps/drivers/services.py
+index 21abe58..3cab8bf 100644
+--- a/apps/drivers/services.py
++++ b/apps/drivers/services.py
+@@ -187,7 +187,7 @@ def chauffeurs_a_renouveler(
+     Inclut les documents déjà expirés (alerte préventive, 30 jours dans le
+     cahier-des-charges.md:95 et glossaire-metier.md:10-11).
+     """
+-    limite = (aujourd_hui or timezone.localdate()) + timedelta(days=parametres_services.delai_alerte(jours))
++    limite = (aujourd_hui or timezone.localdate()) + timedelta(days=parametres_services.delai_alerte_chauffeurs(jours))
+     return Chauffeur.objects.select_related("personnel").filter(
+         Q(date_expiration_permis__lte=limite)
+         | Q(date_expiration_visite_medicale__lte=limite)
+@@ -283,7 +283,7 @@ def etat_echeances(
+ ) -> list[dict]:
+     """Situation du permis et de la visite médicale (cahier-des-charges.md:110-111). Pour une liste, passer
+     ``jours`` (lu une fois) plutôt que de relire le paramètre pour chaque chauffeur."""
+-    jours = parametres_services.delai_alerte(jours)
++    jours = parametres_services.delai_alerte_chauffeurs(jours)
+     lignes = []
+     for libelle, expiration in (
+         ("Permis de conduire", chauffeur.date_expiration_permis),
+diff --git a/apps/drivers/tests/test_services.py b/apps/drivers/tests/test_services.py
+index 4aa028c..b5b2c06 100644
+--- a/apps/drivers/tests/test_services.py
++++ b/apps/drivers/tests/test_services.py
+@@ -154,7 +154,7 @@ def test_chauffeurs_disponibles_exclut_les_autres_statuts():
+ 
+ 
+ def test_un_delai_d_alerte_raccourci_dans_les_parametres_ecarte_un_permis_encore_lointain():
+-    parametres_services.modifier_parametres(UserFactory(role=Role.ADMIN), delai_alerte_jours=10)
++    parametres_services.modifier_parametres(UserFactory(role=Role.ADMIN), delai_alerte_chauffeurs_jours=10)
+     chauffeur = ChauffeurFactory(date_expiration_permis=date(2026, 10, 10))
+ 
+     assert chauffeur not in services.chauffeurs_a_renouveler(aujourd_hui=date(2026, 9, 20))
+diff --git a/apps/drivers/tests/test_views.py b/apps/drivers/tests/test_views.py
+index 892359b..b0c0a60 100644
+--- a/apps/drivers/tests/test_views.py
++++ b/apps/drivers/tests/test_views.py
+@@ -354,7 +354,7 @@ def test_les_formulaires_des_chauffeurs_sont_proteges_par_csrf():
+ 
+ 
+ def test_la_fiche_et_la_liste_appliquent_le_delai_d_alerte_des_parametres(client):
+-    parametres_services.modifier_parametres(UserFactory(role=Role.ADMIN), delai_alerte_jours=60)
++    parametres_services.modifier_parametres(UserFactory(role=Role.ADMIN), delai_alerte_chauffeurs_jours=60)
+     chauffeur = ChauffeurFactory(date_expiration_permis=timezone.localdate() + timedelta(days=45))
+     _connecte(client, Role.RH)
+ 
+diff --git a/apps/drivers/views.py b/apps/drivers/views.py
+index 81f3fc2..3337d34 100644
+--- a/apps/drivers/views.py
++++ b/apps/drivers/views.py
+@@ -35,7 +35,7 @@ class ChauffeurListView(PaginationTolerante, RoleRequiredMixin, ListView):
+ 
+     def get_context_data(self, **kwargs):
+         contexte = super().get_context_data(**kwargs)
+-        jours = parametres_services.delai_alerte()
++        jours = parametres_services.delai_alerte_chauffeurs()
+         contexte.update(
+             statuts=StatutChauffeur.choices,
+             statut_choisi=self.request.GET.get("statut", ""),
+@@ -85,7 +85,7 @@ class ChauffeurDetailView(RoleRequiredMixin, DetailView):
+         contexte = super().get_context_data(**kwargs)
+         chauffeur = self.object
+         peut_modifier = self.request.user.role_effectif in permissions.MODIFICATION
+-        jours = parametres_services.delai_alerte()
++        jours = parametres_services.delai_alerte_chauffeurs()
+         contexte.update(
+             echeances=services.etat_echeances(chauffeur, jours=jours),
+             delai_alerte=jours,
+diff --git a/apps/notifications/taches.py b/apps/notifications/taches.py
+index d93ee8e..31947c9 100644
+--- a/apps/notifications/taches.py
++++ b/apps/notifications/taches.py
+@@ -66,7 +66,7 @@ def alerter_documents_vehicules(*, aujourd_hui: date | None = None) -> int:
+ def alerter_echeances_chauffeurs(*, aujourd_hui: date | None = None) -> int:
+     """Permis et visites médicales des chauffeurs à renouveler ou expirés."""
+     aujourd_hui = aujourd_hui or timezone.localdate()
+-    jours = parametres_services.delai_alerte()
++    jours = parametres_services.delai_alerte_chauffeurs()
+     destinataires = list(utilisateurs_du_role(Role.RH, Role.DIRECTION))
+     crees = 0
+     chauffeurs = drivers_services.chauffeurs_a_renouveler(aujourd_hui=aujourd_hui, jours=jours).exclude(
+diff --git a/apps/notifications/tests/test_taches.py b/apps/notifications/tests/test_taches.py
+index 65ce54c..0edc9a9 100644
+--- a/apps/notifications/tests/test_taches.py
++++ b/apps/notifications/tests/test_taches.py
+@@ -226,7 +226,9 @@ def test_la_commande_affiche_les_compteurs_et_est_rejouable():
+ 
+ 
+ def test_le_delai_d_alerte_des_parametres_s_applique_aux_notifications():
+-    parametres_services.modifier_parametres(UserFactory(role=Role.ADMIN), delai_alerte_jours=60)
++    parametres_services.modifier_parametres(
++        UserFactory(role=Role.ADMIN), delai_alerte_jours=60, delai_alerte_chauffeurs_jours=60
++    )
+     parc, rh = UserFactory(role=Role.PARCAUTO), UserFactory(role=Role.RH)
+     DocumentReglementaireFactory(date_expiration=AUJOURD_HUI + timedelta(days=45))
+     ChauffeurFactory(date_expiration_permis=AUJOURD_HUI + timedelta(days=45))
+diff --git a/apps/parametres/migrations/0002_delai_alerte_chauffeurs.py b/apps/parametres/migrations/0002_delai_alerte_chauffeurs.py
+new file mode 100644
+index 0000000..f33d1a1
+--- /dev/null
++++ b/apps/parametres/migrations/0002_delai_alerte_chauffeurs.py
+@@ -0,0 +1,24 @@
++# Generated by Django 5.2.17 on 2026-10-29 17:39
++
++import django.core.validators
++from django.db import migrations, models
++
++
++class Migration(migrations.Migration):
++
++    dependencies = [
++        ('parametres', '0001_initial'),
++    ]
++
++    operations = [
++        migrations.AddField(
++            model_name='parametres',
++            name='delai_alerte_chauffeurs_jours',
++            field=models.PositiveSmallIntegerField(default=30, help_text='Permis de conduire et visite médicale des chauffeurs.', validators=[django.core.validators.MinValueValidator(1), django.core.validators.MaxValueValidator(365)], verbose_name="délai d'alerte des chauffeurs (jours)"),
++        ),
++        migrations.AlterField(
++            model_name='parametres',
++            name='delai_alerte_jours',
++            field=models.PositiveSmallIntegerField(default=30, help_text='Documents réglementaires des camions.', validators=[django.core.validators.MinValueValidator(1), django.core.validators.MaxValueValidator(365)], verbose_name="délai d'alerte avant expiration (jours)"),
++        ),
++    ]
+diff --git a/apps/parametres/models.py b/apps/parametres/models.py
+index b1d194d..66feeff 100644
+--- a/apps/parametres/models.py
++++ b/apps/parametres/models.py
+@@ -43,7 +43,11 @@ class Parametres(models.Model):
+     # --- alertes ---
+     delai_alerte_jours = models.PositiveSmallIntegerField(
+         _("délai d'alerte avant expiration (jours)"), default=DELAI_ALERTE_JOURS, validators=_bornes(1, 365),
+-        help_text=_("Documents des camions, permis et visite médicale des chauffeurs."),
++        help_text=_("Documents réglementaires des camions."),
++    )
++    delai_alerte_chauffeurs_jours = models.PositiveSmallIntegerField(
++        _("délai d'alerte des chauffeurs (jours)"), default=DELAI_ALERTE_JOURS, validators=_bornes(1, 365),
++        help_text=_("Permis de conduire et visite médicale des chauffeurs."),
+     )
+     seuil_conso_jaune_pct = models.DecimalField(
+         _("alerte jaune : écart de consommation (%)"), max_digits=5, decimal_places=2,
+diff --git a/apps/parametres/services.py b/apps/parametres/services.py
+index 11615cd..9d126f6 100644
+--- a/apps/parametres/services.py
++++ b/apps/parametres/services.py
+@@ -22,6 +22,7 @@ from .models import PK_UNIQUE, Parametres
+ 
+ CHAMPS = (
+     "delai_alerte_jours",
++    "delai_alerte_chauffeurs_jours",
+     "seuil_conso_jaune_pct",
+     "seuil_conso_rouge_pct",
+     "seuil_conso_saisie_pct",
+@@ -62,6 +63,11 @@ def delai_alerte(jours: int | None = None) -> int:
+     return parametres().delai_alerte_jours if jours is None else jours
+ 
+ 
++def delai_alerte_chauffeurs(jours: int | None = None) -> int:
++    """Délai d'alerte du permis et de la visite médicale : ``jours`` s'il est fourni, sinon le paramètre."""
++    return parametres().delai_alerte_chauffeurs_jours if jours is None else jours
++
++
+ def peut_modifier(utilisateur) -> bool:
+     return getattr(utilisateur, "role_effectif", None) in permissions.MODIFICATION
+ 
+diff --git a/apps/parametres/views.py b/apps/parametres/views.py
+index b8d54c5..2c316a7 100644
+--- a/apps/parametres/views.py
++++ b/apps/parametres/views.py
+@@ -12,7 +12,7 @@ from .forms import ParametresForm
+ from .models import Parametres
+ 
+ SECTIONS = (
+-    ("Alertes d'expiration", ("delai_alerte_jours",)),
++    ("Alertes d'expiration", ("delai_alerte_jours", "delai_alerte_chauffeurs_jours")),
+     (
+         "Carburant et compteur",
+         (
