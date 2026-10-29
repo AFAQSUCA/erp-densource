@@ -124,6 +124,7 @@ EXCLUS = [
     (r"^requirements/prod\.lock$", "généré par `python outils/verrouiller_dependances.py` (versions figées de la production)"),
     (r"^recette_navigateurs/RESULTATS\.md$", "généré par la recette navigateurs (`python -m pytest recette_navigateurs`)"),
     (r"^(outils|tutoriel)/", "outils et sources de ce tutoriel"),
+    (r"^formation/", "programme de formation (exercices et corrections), à faire après le tutoriel"),
     (r"^(Dockerfile|\.dockerignore|docker-compose\.yml)$|^nginx/|^ops/",
      "mise en production (Docker, Nginx, Gunicorn) : hors périmètre de ce tutoriel de développement — voir GUIDE-DEPLOIEMENT.md"),
 ]
