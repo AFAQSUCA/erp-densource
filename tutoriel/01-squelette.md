@@ -1,6 +1,6 @@
 # Chapitre 1 — Le squelette du projet
 
-> 19 fichier(s) dans ce chapitre, 847 lignes de code.
+> 19 fichier(s) dans ce chapitre, 849 lignes de code.
 
 ## Ce que vous allez construire
 
@@ -190,10 +190,12 @@ développement (`db.sqlite3`), les secrets (`.env`), les fichiers générés (`_
 
 #### `.gitattributes`
 
-*1 ligne*
+*3 lignes*
 
 ```text
 *.sh text eol=lf
+# Correctifs de la formation : appliqués avec git apply, à garder octet pour octet (dont un correctif binaire).
+formation/**/*.diff -text
 ```
 
 Ce fichier force les **scripts shell** (`*.sh`) en fins de ligne Unix (LF), même sur Windows : un script avec des fins de ligne Windows (CRLF) ne s'exécute pas dans un conteneur Linux.

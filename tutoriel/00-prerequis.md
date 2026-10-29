@@ -920,6 +920,51 @@ erp-densource/
 │   ├── celery.py  ← ch. 1
 │   ├── urls.py  ← ch. 1
 │   └── wsgi.py  ← ch. 1
+├── formation/
+│   ├── exercices/
+│   │   ├── 01-couleur-camion/
+│   │   │   ├── README.md  ← (programme de formation)
+│   │   │   ├── correction.diff  ← (programme de formation)
+│   │   │   ├── correction.md  ← (programme de formation)
+│   │   │   └── test_exercice_01.py  ← (programme de formation)
+│   │   ├── 02-carte-de-transport/
+│   │   │   ├── README.md  ← (programme de formation)
+│   │   │   ├── correction.diff  ← (programme de formation)
+│   │   │   ├── correction.md  ← (programme de formation)
+│   │   │   └── test_exercice_02.py  ← (programme de formation)
+│   │   ├── 03-delai-alerte-chauffeurs/
+│   │   │   ├── README.md  ← (programme de formation)
+│   │   │   ├── correction.diff  ← (programme de formation)
+│   │   │   ├── correction.md  ← (programme de formation)
+│   │   │   └── test_exercice_03.py  ← (programme de formation)
+│   │   ├── 04-categorie-frais-bancaires/
+│   │   │   ├── README.md  ← (programme de formation)
+│   │   │   ├── correction.diff  ← (programme de formation)
+│   │   │   ├── correction.md  ← (programme de formation)
+│   │   │   └── test_exercice_04.py  ← (programme de formation)
+│   │   ├── 05-missions-finance-rh/
+│   │   │   ├── README.md  ← (programme de formation)
+│   │   │   ├── correction.diff  ← (programme de formation)
+│   │   │   ├── correction.md  ← (programme de formation)
+│   │   │   └── test_exercice_05.py  ← (programme de formation)
+│   │   ├── 06-colonne-vin-flotte/
+│   │   │   ├── README.md  ← (programme de formation)
+│   │   │   ├── correction.diff  ← (programme de formation)
+│   │   │   ├── correction.md  ← (programme de formation)
+│   │   │   └── test_exercice_06.py  ← (programme de formation)
+│   │   ├── 07-missions-annulees-tableau-de-bord/
+│   │   │   ├── README.md  ← (programme de formation)
+│   │   │   ├── correction.diff  ← (programme de formation)
+│   │   │   ├── correction.md  ← (programme de formation)
+│   │   │   └── test_exercice_07.py  ← (programme de formation)
+│   │   └── 08-api-articles/
+│   │       ├── README.md  ← (programme de formation)
+│   │       ├── correction.diff  ← (programme de formation)
+│   │       ├── correction.md  ← (programme de formation)
+│   │       └── test_exercice_08.py  ← (programme de formation)
+│   ├── README.md  ← (programme de formation)
+│   ├── semaines-01-02-la-carte.md  ← (programme de formation)
+│   └── semaines-11-12-projet-final.md  ← (programme de formation)
 ├── frontend/
 │   ├── .gitignore  ← ch. 18
 │   ├── README.md  ← ch. 18

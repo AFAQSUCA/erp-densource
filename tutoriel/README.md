@@ -37,7 +37,7 @@ d'un chapitre avec un projet qui fonctionne.
 | N° | Chapitre | Fichiers | Lignes de code |
 |---|---|---|---|
 | 0 | [Prérequis et vue d'ensemble](00-prerequis.md) | — | — |
-| 1 | [Le squelette du projet](01-squelette.md) | 19 | 847 |
+| 1 | [Le squelette du projet](01-squelette.md) | 19 | 849 |
 | 2 | [Le socle : l'app core](02-core.md) | 36 | 2529 |
 | 3 | [Utilisateurs, rôles et sécurité de la connexion : l'app accounts](03-accounts.md) | 21 | 1246 |
 | 4 | [Le journal d'audit : l'app audit](04-audit.md) | 12 | 637 |
@@ -79,6 +79,7 @@ Ces fichiers sont dans le dépôt mais **ne se recopient pas**. Le chapitre conc
 | Fichiers | Raison |
 |---|---|
 | 84 (`apps/accounting/migrations/0001_initial.py`, `apps/accounting/migrations/0003_exercicecomptable.py`, `apps/accounting/migrations/0004_piece_reference_100.py` …) | généré par `python manage.py makemigrations` (sauf les migrations écrites à la main : le plan comptable, voir le chapitre « La comptabilité en partie double », et les triggers PostgreSQL des journaux append-only, voir les chapitres « Le journal d'audit » et « Le stock de pièces ») |
+| 35 (`formation/README.md`, `formation/exercices/01-couleur-camion/README.md`, `formation/exercices/01-couleur-camion/correction.diff` …) | programme de formation (exercices et corrections), à faire après le tutoriel |
 | 21 (`GUIDE-DEPLOIEMENT.md`, `GUIDE-INTERFACE.md`, `GUIDE-PARCOURS.md` …) | documents de référence à lire (ils décrivent le besoin), pas à recopier |
 | 17 (`.dockerignore`, `Dockerfile`, `docker-compose.yml` …) | mise en production (Docker, Nginx, Gunicorn) : hors périmètre de ce tutoriel de développement — voir GUIDE-DEPLOIEMENT.md |
 | 7 (`static/vendor/alpine/alpine.min.js`, `static/vendor/fontawesome/LICENSE.txt`, `static/vendor/fontawesome/css/all.min.css` …) | généré par `npm run build` (bibliothèques Alpine.js et Font Awesome) |
